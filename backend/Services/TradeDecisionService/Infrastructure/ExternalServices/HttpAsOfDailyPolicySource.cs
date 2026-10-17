@@ -39,7 +39,8 @@ public sealed class HttpAsOfDailyPolicySource(
                         $"報告書サービスが照会の時刻 {at:O} より後（{confirmedAt:O}）に確定した方針を返しました（契約違反）。記録を止めます。");
                 }
 
-                return (true, new DailyPolicy(date, summary));
+                // ADR-0068 決定3・4, #1373, IADR-0548: 判断時点までに確定した版の出所（欠けていれば null）。
+                return (true, new DailyPolicy(date, summary, DailyPolicyReferences.From(dto.PeriodKey, dto.Version)));
             },
             $"{at:O} の確定日報の方針",
             retryDelay ?? AsOfRetry.DefaultDelay,
@@ -47,5 +48,7 @@ public sealed class HttpAsOfDailyPolicySource(
             logger,
             cancellationToken);
 
-    private sealed record PolicyDto(DateOnly? Date, string? Summary, int? AssumptionsVersion, DateTimeOffset? ConfirmedAt);
+    private sealed record PolicyDto(
+        DateOnly? Date, string? Summary, int? AssumptionsVersion, DateTimeOffset? ConfirmedAt,
+        string? PeriodKey = null, int? Version = null);
 }

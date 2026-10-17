@@ -41,4 +41,8 @@ message DailyPolicyRecord {
   optional string date = 1;
   // 方針の要約（判断のプロンプトへそのまま渡す）。
   optional string summary = 2;
+  // FR-04, FR-11, ADR-0068 決定4, #1373, IADR-0548 決定5: この方針を持つ確定版の期間キー（例 daily-2026-10-17）と版番号
+  // （確定後の行の版）。取引判断が判断の記録へ残す。**欠けていても方針は使う**（送り手が古い間の並走。判断を止める理由にしない）。
+  optional string period_key = 3;
+  optional int32 version = 4;
 }

@@ -1,5 +1,6 @@
 extern alias ReportWorker;
 
+using AiStockTrading.Shared.Contracts.Trading;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -26,7 +27,7 @@ public class ReportReadContractTests
     [Fact]
     public async Task 日報方針は送り手の本物の型を直列化した応答から読める()
     {
-        var body = JsonSerializer.Serialize(new ConfirmedDailyPolicy(new DateOnly(2026, 7, 10), "米国株の押し目買い", 3), ReportWire);
+        var body = JsonSerializer.Serialize(new ConfirmedDailyPolicy(new DateOnly(2026, 7, 10), "米国株の押し目買い", 3, "daily-2026-07-10", 2), ReportWire);
         var provider = new HttpDailyPolicyProvider(
             new HttpClient(new StubHandler(body)) { BaseAddress = new Uri("http://reports") },
             NullLogger<HttpDailyPolicyProvider>.Instance);
@@ -35,6 +36,23 @@ public class ReportReadContractTests
 
         policy.Should().NotBeNull();
         (policy!.Date, policy.Summary).Should().Be((new DateOnly(2026, 7, 10), "米国株の押し目買い"));
+        // FR-04, FR-11, ADR-0068 決定4, #1373, IADR-0548 決定5: 確定版の期間キーと版番号（判断の記録へ残す）。
+        policy.Reference.Should().Be(new DailyPolicyReference("daily-2026-07-10", 2));
+    }
+
+    // ADR-0068 決定4, #1373, IADR-0548 決定5: 期間キーと版を返さない送り手（並走中の古い版）でも方針は使う。出所は null。
+    [Fact]
+    public async Task 期間キーと版の無い応答でも方針は読め_出所はnull()
+    {
+        const string body = """{"date":"2026-07-10","summary":"米国株の押し目買い","assumptionsVersion":3}""";
+        var provider = new HttpDailyPolicyProvider(
+            new HttpClient(new StubHandler(body)) { BaseAddress = new Uri("http://reports") },
+            NullLogger<HttpDailyPolicyProvider>.Instance);
+
+        var policy = await provider.GetCurrentAsync();
+
+        policy!.Summary.Should().Be("米国株の押し目買い");
+        policy.Reference.Should().BeNull();
     }
 
     private sealed class StubHandler(string body) : HttpMessageHandler

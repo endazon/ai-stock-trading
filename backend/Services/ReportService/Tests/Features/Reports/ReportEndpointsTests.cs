@@ -84,6 +84,9 @@ public class ReportEndpointsTests
         var policy = await client.GetFromJsonAsync<DailyPolicyDto>("/reports/daily-policy");
         policy!.Summary.Should().Be("翌営業日は押し目買い");
         policy.AssumptionsVersion.Should().Be(1);
+        // FR-04, FR-11, ADR-0068 決定4, #1373, IADR-0548 決定5: 確定版の期間キーと版番号（確定は版を 1 進める: Draft 1 → 2）。
+        policy.PeriodKey.Should().Be("daily-2026-07-10");
+        policy.Version.Should().Be(2);
     }
 
     [Fact]
@@ -153,6 +156,9 @@ public class ReportEndpointsTests
         later!.Summary.Should().Be("翌営業日は押し目買い");
         later.Date.Should().Be(new DateOnly(2026, 7, 10));
         later.ConfirmedAt.Should().BeBefore(new DateTimeOffset(2999, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        // ADR-0068 決定3・4, #1373, IADR-0548: 判断時点までに確定した版の期間キーと版番号。
+        later.PeriodKey.Should().Be("daily-2026-07-10");
+        later.Version.Should().Be(2);
 
         (await service.GetAsync("/reports/daily-policy/as-of?at=2000-01-01T00:00:00%2B09:00"))
             .StatusCode.Should().Be(HttpStatusCode.NotFound, "その時点ではまだ確定していない");
@@ -609,9 +615,10 @@ public class ReportEndpointsTests
 
     private sealed record BootstrapDto(string Kind, string PeriodKey, string PolicySummary);
 
-    private sealed record DailyPolicyDto(DateOnly Date, string Summary, int AssumptionsVersion);
+    private sealed record DailyPolicyDto(DateOnly Date, string Summary, int AssumptionsVersion, string? PeriodKey, int? Version);
 
-    private sealed record DailyPolicyAsOfDto(DateOnly Date, string Summary, int AssumptionsVersion, DateTimeOffset ConfirmedAt);
+    private sealed record DailyPolicyAsOfDto(
+        DateOnly Date, string Summary, int AssumptionsVersion, DateTimeOffset ConfirmedAt, string? PeriodKey, int? Version);
 
     private sealed record PnlSummaryDto(decimal RealizedPnlGross, decimal RealizedPnlNet, int RealizingTradeCount);
 

@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace ReportService.Infrastructure.Persistence;
 
 // FR-06/07, IADR-0012/0024: 報告書ストアの EF 実装。PeriodKey ごとに 1 行＋Version 楽観排他。確定済みは不変。
+// ADR-0068 決定2, #1373, IADR-0548: 確定した版の写しを別の表（report_confirmed_versions）に確定のたびに足し、最新の確定版はそこから選ぶ。
 public sealed class EfReportStore(ReportDbContext db) : IReportStore
 {
     public VersionedReport? Get(string periodKey)
@@ -120,7 +121,32 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
         return row.Version;
     }
 
+    // FR-07, ADR-0068 決定2, #1373, IADR-0548 決定2: 確定の保存の試行回数の上限（通し番号の衝突で読み直す回数を含む）。
+    internal const int MaxConfirmAttempts = 3;
+
+    // FR-07, FR-15, ADR-0068 決定2, #1373, IADR-0548 決定2: 確定は「行の確定」と「確定した版の写しの追加」を
+    // **1 回の SaveChanges（1 トランザクション）**で行う。写しの鍵（種別・通し番号）が衝突したら＝同じ種別の確定が並行したら、
+    // 追跡を外して読み直し、決め直す（読み直した行が確定済みなら冪等の答えになる）。
     public ConfirmResult? Confirm(string periodKey, int expectedVersion, DateTimeOffset confirmedAt)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return ConfirmOnce(periodKey, expectedVersion, confirmedAt);
+            }
+            catch (Exception ex) when (ex is DbUpdateException or ArgumentException)
+            {
+                // 保存に失敗した変更を追跡したまま残さない（UpsertDraft と同じ規律）。InMemory は鍵の衝突を
+                // ArgumentException で、relational は DbUpdateException（並行更新は DbUpdateConcurrencyException）で返す。
+                db.ChangeTracker.Clear();
+                if (attempt >= MaxConfirmAttempts)
+                    throw;
+            }
+        }
+    }
+
+    private ConfirmResult? ConfirmOnce(string periodKey, int expectedVersion, DateTimeOffset confirmedAt)
     {
         var row = db.Reports.Find(periodKey);
         if (row is null)
@@ -143,6 +169,23 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
         // **散文は作り直さない**——確定とは「その本文でよい」と承認した行為である。
         row.Body = ReportBodyStatus.MarkConfirmed(row.Body, confirmedAt);
         row.Version += 1;
+
+        // ADR-0068 決定2, IADR-0548 決定1: 確定した版の写し（書き換えない）。通し番号は種別ごとの最大＋1。
+        var sequence = (db.ReportConfirmedVersions.Where(v => v.Kind == row.Kind).Max(v => (int?)v.Sequence) ?? 0) + 1;
+        db.ReportConfirmedVersions.Add(new ReportConfirmedVersionRow
+        {
+            Kind = row.Kind,
+            Sequence = sequence,
+            PeriodKey = row.PeriodKey,
+            PeriodStart = row.PeriodStart,
+            Version = row.Version,
+            ConfirmedAt = confirmedAt,
+            BasedOn = row.BasedOn,
+            AssumptionsVersion = row.AssumptionsVersion,
+            PolicySummary = row.PolicySummary,
+            Body = row.Body,
+            UnsuppliedInputs = row.UnsuppliedInputs,
+        });
         db.SaveChanges();
         return new ConfirmResult(ToReport(row), Transitioned: true, row.Version);
     }
@@ -172,26 +215,46 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
         return decision;
     }
 
-    public VersionedReport? GetLatestConfirmed(ReportKind kind)
-    {
-        var row = db.Reports
-            .Where(r => r.Kind == kind && r.State == ReportState.Confirmed)
-            .OrderByDescending(r => r.PeriodStart)
-            .FirstOrDefault();
-        return row is null ? null : new VersionedReport(ToReport(row), row.Version);
-    }
+    // FR-07, ADR-0068 決定2, #1373, IADR-0548 決定3: 最新の確定済み報告書は確定した版の履歴から二段で選ぶ。
+    public VersionedReport? GetLatestConfirmed(ReportKind kind) =>
+        SelectLatest(db.ReportConfirmedVersions.Where(v => v.Kind == kind));
 
-    // FR-15, FR-07, #1308, IADR-0528 決定3: at の時点で確定していた最新（ConfirmedAt ≤ at の中で PeriodStart 最大）。
+    // FR-15, FR-07, ADR-0033 決定2, ADR-0068 決定3, #1308, #1373, IADR-0528 決定3, IADR-0548 決定4:
+    // at の時点で確定していた版（ConfirmedAt ≤ at）**だけ**を対象に、同じ二段で選ぶ。at より後に確定した版は使わない。
     // 🔴 Npgsql の timestamptz は UTC の値しか受けないため、比較の値を UTC へ寄せる（時刻そのものは変わらない）。
     public VersionedReport? GetLatestConfirmedAsOf(ReportKind kind, DateTimeOffset at)
     {
         var atUtc = at.ToUniversalTime();
-        var row = db.Reports
-            .Where(r => r.Kind == kind && r.State == ReportState.Confirmed && r.ConfirmedAt != null && r.ConfirmedAt <= atUtc)
-            .OrderByDescending(r => r.PeriodStart)
-            .FirstOrDefault();
-        return row is null ? null : new VersionedReport(ToReport(row), row.Version);
+        return SelectLatest(db.ReportConfirmedVersions.Where(v => v.Kind == kind && v.ConfirmedAt <= atUtc));
     }
+
+    // ADR-0068 決定2, IADR-0548 決定3: 1 段目は開始日が最大（同じ開始日は会話キーの降順）の期間キー、2 段目はその中で
+    // 確定時刻が最新、同時刻は版番号の大きい方。(開始日, 会話キー, 確定時刻, 版) の辞書順の先頭はこの二段の答えと一致する
+    // ——先頭 2 つで期間キーが決まり、残り 2 つはその期間キーの中だけで比べられる（確定時刻で期間キーをまたいで並べない）。
+    private static VersionedReport? SelectLatest(IQueryable<ReportConfirmedVersionRow> versions)
+    {
+        var v = versions
+            .OrderByDescending(x => x.PeriodStart)
+            .ThenByDescending(x => x.PeriodKey)
+            .ThenByDescending(x => x.ConfirmedAt)
+            .ThenByDescending(x => x.Version)
+            .FirstOrDefault();
+        return v is null ? null : new VersionedReport(ToReport(v), v.Version);
+    }
+
+    private static TradingReport ToReport(ReportConfirmedVersionRow v) => new()
+    {
+        PeriodKey = v.PeriodKey,
+        Kind = v.Kind,
+        PeriodStart = v.PeriodStart,
+        State = ReportState.Confirmed,
+        BasedOn = v.BasedOn,
+        AssumptionsVersion = v.AssumptionsVersion,
+        PolicySummary = v.PolicySummary,
+        Body = v.Body ?? string.Empty,
+        UnsuppliedInputs = ReportInputs.Parse(v.UnsuppliedInputs),
+        ConfirmedAt = v.ConfirmedAt,
+    };
 
     private static TradingReport ToReport(ReportRow r) => new()
     {

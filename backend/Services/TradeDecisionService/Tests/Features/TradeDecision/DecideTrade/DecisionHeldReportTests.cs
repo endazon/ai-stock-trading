@@ -26,7 +26,9 @@ namespace TradeDecisionService.Tests;
 public class DecisionHeldReportTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 29, 14, 0, 0, TimeSpan.Zero);
-    private static readonly DailyPolicy Policy = new(new DateOnly(2026, 9, 29), "様子見の方針");
+    // ADR-0068 決定4, #1373, IADR-0548 決定5: 確定版の期間キーと版番号つき（判断後の見送りの記録へ載る）。
+    private static readonly DailyPolicy Policy = new(
+        new DateOnly(2026, 9, 29), "様子見の方針", new DailyPolicyReference("daily-2026-09-29", 3));
 
     private const string BuyJson =
         """{"action":"Buy","rationale":"押し目","referencePrice":1000,"stopLossDistancePerShare":30}""";
@@ -200,6 +202,8 @@ public class DecisionHeldReportTests
         // FR-06, FR-08, #1356, IADR-0541 決定 1: 見送った判断も参照の記録を持つ（取得ポート未指定＝0 件。null＝記録なし と区別する）。
         report.References.Should().NotBeNull();
         report.References!.Items.Should().BeEmpty();
+        // FR-04, FR-11, ADR-0068 決定4, #1373, IADR-0548 決定5: 見送った判断が参照した方針の期間キーと版番号。
+        report.Policy.Should().Be(new DailyPolicyReference("daily-2026-09-29", 3));
     }
 
     // IADR-0452 決定3: 権威ある現在値（有効時）を起点の価格より優先する（TradeDecisionMade の参照価格と同じ向き）。

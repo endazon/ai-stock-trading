@@ -27,4 +27,7 @@ public record TradeDecisionHeld(
     string? CycleTrigger = null,
     // FR-06, FR-08, FR-11, #1356, IADR-0541 決定 1: 見送った判断のプロンプトが見た参考情報（RAG）と取得の状態（TradeDecisionMade と同じ）。
     // 🔴 **既定は null＝記録されていない**。
-    DecisionReferences? References = null);
+    DecisionReferences? References = null,
+    // FR-04, FR-07, FR-11, ADR-0068 決定4, #1373, IADR-0548 決定5: この判断が参照した確定済み日報の方針の期間キーと版番号。
+    // 🔴 **既定は null＝記録されていない**（本列の追加前の判断・送り手が版を返さなかった判断・判断を経ない経路）。
+    DailyPolicyReference? Policy = null);

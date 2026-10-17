@@ -5,7 +5,7 @@ status: active
 related_ids: [NFR, ADR-0029, IADR-0207, IADR-0320]
 author: claude (Claude Code)
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-17
 ---
 
 # 別紙: 計画 ID レンジの引き直し履歴と実測の記録（#1052）
@@ -85,3 +85,6 @@ trace ブロック規約〔ADR-0029 決定4〕の値域検査が読む）。
 - **2026-10-16 に 0067 へ**〔ADR-0067 判断由来の決済の指値は、発注から N 分（既定 15 分）未約定なら系が取り消すだけにする（置き直し・訂正・成行への切り替えはしない）。既定は無効・1 建玉 1 日 1 回・有効時の N は相場操縦の検知の窓より長い。moomoo の失効は「失注」として拒否と区別する（ADR-0050 決定 1 の補完）。planning#797（planning#800 で追加）。Accepted。前回の実測（`a321adb`）以降、既存の AST 計画 ADR の状態の変更は 0 件（ADR-0050 は補完節と相互リンクの追記のみ）。本リポの追随は #1339（ADR-0067 の実装・IADR-0539 と同じ PR）〕。
   **2026-10-16 実測**: 計画リポの `origin/main`（`fc61ca3`。`git rev-parse --is-shallow-repository` → `true` のため `git archive origin/main` で展開した木で実行。
   ファイルの実在の検査であり履歴は使わない）で `node tools/doc-checks/gen-plan-ranges.js --check` が exit 0、ai-stock-trading は ADR **[1, 67]・67 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。
+- **2026-10-17 に 0068 へ**〔ADR-0068 効いている確定済み日報は、`/policy` で版を足して再確定できる。最新の確定版が効き、旧版は確定時刻つきで不変のまま残す（日報だけ）。最新の確定済み日報は「開始日が最大の期間キー → その中で確定時刻が最新の版（同時刻は版番号の大きい方）」の二段で選び、Stage 0 の判断時点の組み直しも判断時点までに確定した版だけで同じ二段で選ぶ。判断の記録に参照した方針の期間キーと版を残す。planning#803（planning#804 で追加）。Accepted。前回の実測（`fc61ca3`）以降、既存の AST 計画 ADR の状態の変更は 0 件（`07_adr/` の差分は ADR-0068 の追加と README のみ）。本リポの追随は #1373 段 A（IADR-0548 と同じ PR。段 B は別 PR）〕。
+  **2026-10-17 実測**: 計画リポの `origin/main`（`55e464a`。`git rev-parse --is-shallow-repository` → `true` のため `git worktree add --detach origin/main` で展開した木で実行。
+  ファイルの実在の検査であり履歴は使わない）で `node tools/doc-checks/gen-plan-ranges.js --check` が exit 0、ai-stock-trading は ADR **[1, 68]・68 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。

@@ -442,6 +442,22 @@ public class TradeDecisionServiceTests
         typeof(DecisionReference).GetProperties().Select(p => p.Name).Should().NotContain("Text", "本文抜粋は記録しない");
     }
 
+    // FR-04, FR-11, ADR-0068 決定4, #1373, IADR-0548 決定5: 判断の記録（TradeDecisionMade）に、参照した確定済み日報の方針の
+    // 期間キーと版番号が載る。送り手が返さなかった（出所が null の）方針でも判断は止めず、記録は null（＝記録されていない）。
+    [Fact]
+    public async Task 判断の記録に参照した方針の期間キーと版番号が載り_出所の無い方針でも判断は止めない()
+    {
+        var withReference = Policy with { Reference = new DailyPolicyReference("daily-2026-07-10", 4) };
+        var decided = await new AppSvc(new CapturingLlm(BuyJson), new FakePolicy(withReference), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance).DecideAsync(Trigger());
+        decided!.Policy.Should().Be(new DailyPolicyReference("daily-2026-07-10", 4));
+
+        var withoutReference = await new AppSvc(new CapturingLlm(BuyJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance).DecideAsync(Trigger());
+        withoutReference.Should().NotBeNull("出所が欠けても方針は方針であり、判断を止めない");
+        withoutReference!.Policy.Should().BeNull();
+    }
+
     // FR-06, FR-08, #1356, IADR-0541 決定 1: 取得ポート未指定（NoOp）でも記録は作り、状態で「未構成・0 件」を区別できる（null にしない）。
     [Fact]
     public async Task 取得ポート未指定の判断も参照の記録を持ち_0件と状態を残す()

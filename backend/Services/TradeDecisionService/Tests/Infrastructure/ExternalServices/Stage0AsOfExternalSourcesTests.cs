@@ -95,12 +95,14 @@ public class Stage0AsOfExternalSourcesTests
     public async Task 方針は送り手の本物の型を直列化した応答から読み_時刻はUTCで渡す()
     {
         var body = JsonSerializer.Serialize(
-            new ConfirmedDailyPolicyAsOf(AsOf.AddDays(-1), "前日に確定した方針", 3, At.AddHours(-20)), ReportWire);
+            new ConfirmedDailyPolicyAsOf(AsOf.AddDays(-1), "前日に確定した方針", 3, At.AddHours(-20), "daily-2026-09-14", 3), ReportWire);
         var handler = new Scripted(_ => Json(HttpStatusCode.OK, body));
 
         var policy = await Policies(handler).GetAsync(new DateTimeOffset(2026, 9, 15, 16, 0, 0, TimeSpan.FromHours(-4)), TestContext.Current.CancellationToken);
 
         (policy!.Date, policy.Summary).Should().Be((AsOf.AddDays(-1), "前日に確定した方針"));
+        // ADR-0068 決定3・4, #1373, IADR-0548: 判断時点までに確定した版の出所。
+        policy.Reference.Should().Be(new DailyPolicyReference("daily-2026-09-14", 3));
         handler.Requests.Should().Equal("/reports/daily-policy/as-of?at=2026-09-15T20%3A00%3A00Z");
     }
 
@@ -129,7 +131,7 @@ public class Stage0AsOfExternalSourcesTests
     public async Task 判断時点より後に確定した方針は撃ち直さずにすぐ記録を止める()
     {
         var handler = new Scripted(_ => Json(HttpStatusCode.OK,
-            JsonSerializer.Serialize(new ConfirmedDailyPolicyAsOf(AsOf, "未来に確定", 1, At.AddSeconds(1)), ReportWire)));
+            JsonSerializer.Serialize(new ConfirmedDailyPolicyAsOf(AsOf, "未来に確定", 1, At.AddSeconds(1), "daily-2026-09-15", 4), ReportWire)));
 
         var act = () => Policies(handler).GetAsync(At, TestContext.Current.CancellationToken);
 

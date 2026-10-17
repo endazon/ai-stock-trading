@@ -74,13 +74,18 @@ public sealed class ReportAppService(
         return store.ApplyReview(periodKey, new ReviewCommand(action, actor, expectedVersion));
     }
 
-    /// <summary>最新の確定済み日報の方針（取引判断の IDailyPolicyProvider 実データ源）。未確定なら null。</summary>
+    /// <summary>
+    /// 最新の確定済み日報の方針（取引判断の IDailyPolicyProvider 実データ源）。未確定なら null。
+    /// ADR-0068 決定2・4, #1373, IADR-0548: 確定した版の写しから二段で選び、その版の期間キーと版番号を添える。
+    /// </summary>
     public ConfirmedDailyPolicy? GetConfirmedDailyPolicy()
     {
         var latest = store.GetLatestConfirmed(ReportKind.Daily);
         return latest is null
             ? null
-            : new ConfirmedDailyPolicy(latest.Report.PeriodStart, latest.Report.PolicySummary, latest.Report.AssumptionsVersion);
+            : new ConfirmedDailyPolicy(
+                latest.Report.PeriodStart, latest.Report.PolicySummary, latest.Report.AssumptionsVersion,
+                latest.Report.PeriodKey, latest.Version);
     }
 
     /// <summary>
@@ -95,7 +100,7 @@ public sealed class ReportAppService(
             ? null
             : new ConfirmedDailyPolicyAsOf(
                 latest.Report.PeriodStart, latest.Report.PolicySummary, latest.Report.AssumptionsVersion,
-                latest.Report.ConfirmedAt!.Value);
+                latest.Report.ConfirmedAt!.Value, latest.Report.PeriodKey, latest.Version);
     }
 
     /// <summary>

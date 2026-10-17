@@ -11,6 +11,9 @@ public sealed class InMemoryReportStore : IReportStore
     private readonly Lock _gate = new();
     private readonly Dictionary<string, (TradingReport Report, int Version, ReviewState Review)> _rows = new(StringComparer.Ordinal);
 
+    // FR-07, ADR-0068 決定2, #1373, IADR-0548 決定1: 確定した版の写し（確定のたびに 1 件。書き換えない。EfReportStore と同じ）。
+    private readonly List<VersionedReport> _confirmedVersions = [];
+
     public VersionedReport? Get(string periodKey)
     {
         lock (_gate)
@@ -98,38 +101,40 @@ public sealed class InMemoryReportStore : IReportStore
             };
             // 承認（対話的確定の Approve）でレビュー局面は Confirmed（終端）へ（IADR-0071 決定5）。
             _rows[periodKey] = (confirmed, existing.Version + 1, ReviewState.Confirmed);
+            // ADR-0068 決定2, IADR-0548 決定1: 確定した版の写しを足す（行の確定と同じ排他の中＝1 操作）。
+            _confirmedVersions.Add(new VersionedReport(confirmed, existing.Version + 1));
             return new ConfirmResult(confirmed, Transitioned: true, existing.Version + 1);
         }
     }
 
+    // FR-07, ADR-0068 決定2, #1373, IADR-0548 決定3: 確定した版の写しから二段で選ぶ（EfReportStore と同じ規則）。
     public VersionedReport? GetLatestConfirmed(ReportKind kind)
     {
         lock (_gate)
         {
-            var latest = _rows.Values
-                .Where(r => r.Report.Kind == kind && r.Report.State == ReportState.Confirmed)
-                .OrderByDescending(r => r.Report.PeriodStart)
-                .Select(r => new VersionedReport(r.Report, r.Version))
-                .FirstOrDefault();
-            return latest;
+            return SelectLatest(_confirmedVersions.Where(v => v.Report.Kind == kind));
         }
     }
 
-    // FR-15, FR-07, #1308, IADR-0528 決定3: at の時点で確定していた最新（ConfirmedAt ≤ at の中で PeriodStart 最大）。
+    // FR-15, FR-07, #1308, #1373, IADR-0528 決定3, IADR-0548 決定4: at の時点で確定していた版だけを対象に、同じ二段で選ぶ。
     public VersionedReport? GetLatestConfirmedAsOf(ReportKind kind, DateTimeOffset at)
     {
         lock (_gate)
         {
-            return _rows.Values
-                .Where(r => r.Report.Kind == kind
-                    && r.Report.State == ReportState.Confirmed
-                    && r.Report.ConfirmedAt is { } confirmedAt
-                    && confirmedAt <= at)
-                .OrderByDescending(r => r.Report.PeriodStart)
-                .Select(r => new VersionedReport(r.Report, r.Version))
-                .FirstOrDefault();
+            return SelectLatest(_confirmedVersions.Where(v => v.Report.Kind == kind
+                && v.Report.ConfirmedAt is { } confirmedAt
+                && confirmedAt <= at));
         }
     }
+
+    // ADR-0068 決定2, IADR-0548 決定3: 開始日（同日は会話キーの降順）で期間キーを選び、その中で確定時刻・版の大きい方。
+    private static VersionedReport? SelectLatest(IEnumerable<VersionedReport> versions) =>
+        versions
+            .OrderByDescending(v => v.Report.PeriodStart)
+            .ThenByDescending(v => v.Report.PeriodKey, StringComparer.Ordinal)
+            .ThenByDescending(v => v.Report.ConfirmedAt)
+            .ThenByDescending(v => v.Version)
+            .FirstOrDefault();
 
     public ReportReview? GetReview(string periodKey)
     {
