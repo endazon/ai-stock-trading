@@ -184,6 +184,22 @@ public class HttpReportNarrativeDrafterVisibilityTests
         LlmCostScope.IsGoverned(reported.Purpose).Should().BeFalse();
     }
 
+    // 🔴 NFR-13, ADR-0064 決定4, #1306, IADR-0550（受け入れ基準 1・2・6）: 入力トークン数の欠落・0 は「取れない」（null）のまま
+    // 計測へ渡す（0 へ潰すと 2 段の単価の安い側で引かれる）。
+    [Theory]
+    [InlineData("""{"text":"本日は堅調な地合いでした。","model":"claude-haiku-5-5","sent":true,"outputTokens":350}""")]
+    [InlineData("""{"text":"本日は堅調な地合いでした。","model":"claude-haiku-5-5","sent":true,"inputTokens":0,"outputTokens":350}""")]
+    public async Task 入力トークン数が取れない応答は取れないまま計上へ渡す(string body)
+    {
+        var usage = new RecordingUsageReporter();
+
+        await Drafter(new StubHandler(HttpStatusCode.OK, body), usage).DraftAsync(Ctx(ReportKind.Daily));
+
+        var reported = usage.Calls.Should().ContainSingle().Subject;
+        reported.InputTokens.Should().BeNull();
+        reported.OutputTokens.Should().Be(350);
+    }
+
     // 送信が成立していない（Sent=false・非 2xx）なら課金は発生していないので計測しない。
     [Fact]
     public async Task 送信不可なら費用を計上しない()

@@ -59,6 +59,20 @@ public class LlmReportPolicyReviserTests
         AiStockTrading.Shared.Contracts.Llm.LlmCostScope.IsGoverned("policy-revision").Should().BeFalse("月次 LLM 上限に積まない");
     }
 
+    // 🔴 NFR-13, ADR-0064 決定4, #1306, IADR-0550（受け入れ基準 1・6）: 入力トークン数が取れない応答は null のまま計上へ渡す。
+    [Fact]
+    public async Task 入力トークン数が取れない応答は取れないまま計上へ渡す()
+    {
+        var usage = new RecordingUsage();
+        var exchange = LlmCompletionExchange.Completed(new LlmCompletionPayload(ValidJson, true, null, "end_turn", null, 50));
+
+        await Reviser(new FakeTransport(exchange), usage).ReviseAsync(Context());
+
+        var reported = usage.Reported.Should().ContainSingle().Which;
+        reported.InputTokens.Should().BeNull();
+        reported.OutputTokens.Should().Be(50);
+    }
+
     // T-10-1308: 呼び出し失敗・解釈不能・送信拒否・拒否・形式違反は**案なし**（種別を区別）。形式違反でも費用は計上する。
     [Theory]
     [MemberData(nameof(Failures))]

@@ -66,6 +66,7 @@ public sealed class Stage0RecordingUsageCollector(ILlmUsageReporter inner) : ILl
         ArgumentNullException.ThrowIfNull(usages);
         ArgumentNullException.ThrowIfNull(priceTable);
 
-        return usages.Sum(u => LlmPricing.Compute(u.InputTokens, u.OutputTokens, priceTable.Resolve(u.Model, u.InputTokens)));
+        // #1306, IADR-0550: 段は取れない（null）とき高い側。金額の式の入力トークン数は 0 のまま（計上と同じ規則）。
+        return usages.Sum(u => LlmPricing.Compute(u.InputTokens ?? 0, u.OutputTokens, priceTable.Resolve(u.Model, u.InputTokens)));
     }
 }

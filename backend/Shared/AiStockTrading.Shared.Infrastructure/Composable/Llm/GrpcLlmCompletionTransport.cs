@@ -60,7 +60,9 @@ public sealed class GrpcLlmCompletionTransport(
                 // （`LlmAssignmentEvaluator` / `LlmStopReasons`）へ同じ形で渡すために null へ戻す。
                 NullIfEmpty(response.Model),
                 NullIfEmpty(response.StopReason),
-                response.InputTokens,
+                // NFR-13, ADR-0064 決定4, #1306, IADR-0550: proto3 の int32 は「無い」と 0 を区別できない。送った要求の入力が
+                // 0 トークンになることは無いので、0 は「取れない」と読み null へ写す（REST と同じ読み方。単価は高い側の段で引く）。
+                LlmReportedInputTokens.From(response.InputTokens),
                 response.OutputTokens,
                 // FR-04, FR-11, #1267, IADR-0517: Sent=false の原因（判定理由）を運ぶ。
                 NullIfEmpty(response.RoutingReason),

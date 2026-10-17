@@ -479,7 +479,7 @@ public sealed class Stage0DecisionRecorder(
             // 🔴 FR-04, FR-11, #1290, IADR-0525 決定 3: 一次の根拠文に文字化けの疑いがあれば記録にも目印を付ける。
             // 検出はオーケストレータが受け取った地点で 1 回だけ行い、その印を使う（ここで検出し直さない）。
             RationaleGarbleDetector.Mark(screen.Rationale, orchestrated.ScreeningRationaleGarbleSuspected),
-            screeningCall.Usages.Sum(u => u.InputTokens),
+            screeningCall.Usages.Sum(u => u.InputTokens ?? 0),
             screeningCall.Usages.Sum(u => u.OutputTokens),
             EffectiveModelOf(screeningCall.Usages));
 
@@ -496,7 +496,7 @@ public sealed class Stage0DecisionRecorder(
                 parsed.Decision.Rationale,
                 parsed.Decision.ReferencePrice,
                 parsed.Decision.StopLossDistancePerShare,
-                call.Usages.Sum(u => u.InputTokens),
+                call.Usages.Sum(u => u.InputTokens ?? 0),
                 call.Usages.Sum(u => u.OutputTokens),
                 parsed.IsUnparseable,
                 EffectiveModelOf(call.Usages)));
@@ -505,7 +505,8 @@ public sealed class Stage0DecisionRecorder(
         // 実効モデルで単価を引く（IADR-0122 決定1）。費用は両層の全呼び出しの合計。
         var allUsages = capturing.Calls.SelectMany(c => c.Usages).ToArray();
         var cost = Stage0RecordingUsageCollector.CostOf(allUsages, priceTable);
-        var inputTokens = allUsages.Sum(u => u.InputTokens);
+        // #1306, IADR-0550: 記録のトークン数は取れた分の合計（取れない要求は 0 として数える。単価の段とは別）。
+        var inputTokens = allUsages.Sum(u => u.InputTokens ?? 0);
         var outputTokens = allUsages.Sum(u => u.OutputTokens);
 
         // ADR-0033 決定4: 多数決は本番と同じ規則（同数・空は安全側 Hold）。一次で見送れば一次の Hold（根拠つき）。
