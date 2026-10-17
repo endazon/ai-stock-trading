@@ -203,6 +203,53 @@ public class Stage0ReplayEvaluationTests
         decision.Gate.FailedChecks.Should().NotContain(Stage0GateCheck.NoDecisionRecords);
     }
 
+    // 🔴 FR-15, ADR-0039 決定1, #1381, IADR-0554: 本番の記録点は台帳へ**日次**の IS Sharpe を記録する
+    // （判定器が DSR の観測値に使う SharpePerPeriod と同じ値。年率の SharpeRatio ではない）。
+    // 変異の対照: 記録点を `baseline.Metrics.SharpeRatio` に戻すとこの試験が赤になる。
+    [Fact]
+    public void 試行台帳には判定器の観測値と同じ日次Sharpeを記録する()
+    {
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf()));
+
+        preparation.IsReady.Should().BeTrue();
+        var metrics = preparation.BaselineRun!.Metrics;
+        var observed = SampleMomentsCalculator.Compute(metrics.DailyReturns).SharpePerPeriod;
+        metrics.SharpeRatio.Should().NotBe(0d); // 年率と日次が見分けられる標本であること
+        var recorded = preparation.GateContext!.Trials.Trials.Should().ContainSingle().Subject;
+        recorded.InSampleSharpePerPeriod.Should().Be(observed);
+        recorded.InSampleSharpePerPeriod.Should().NotBe(metrics.SharpeRatio);
+    }
+
+    // 🔴 FR-15, #1381, IADR-0554: **試行 1 本の現行の判定結果は変わらない。** 試行 2 未満では SR0 が 0 のため、
+    // 台帳を年率で記録しても（是正前）日次で記録しても（是正後）、DSR・ゲート・昇格推奨は一致する。
+    [Fact]
+    public void 試行1本の判定結果は台帳の単位に依らず不変である()
+    {
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf()));
+        var context = preparation.GateContext!;
+        var legacy = new TrialLedger();
+        legacy.Record(new BacktestTrial(
+            preparation.StrategyId, preparation.BaselineRun!.Metrics.SharpeRatio,
+            context.Trials.Trials[0].OutOfSampleReturn));
+
+        var service = new Stage0GateService();
+        var current = service.Evaluate(context);
+        var before = service.Evaluate(context with { Trials = legacy });
+
+        current.DeflatedSharpe.Should().Be(before.DeflatedSharpe);
+        current.Gate.Passed.Should().Be(before.Gate.Passed);
+        current.Gate.FailedChecks.Should().Equal(before.Gate.FailedChecks);
+        current.Promotion.Recommended.Should().Be(before.Promotion.Recommended);
+        current.Pbo.Should().Be(before.Pbo);
+        // 現行の判定（試行 1 本・この記録）: DSR とウォークフォワードで不合格。
+        current.Gate.Passed.Should().BeFalse();
+        current.Gate.FailedChecks.Should().Contain(Stage0GateCheck.DeflatedSharpe)
+            .And.Contain(Stage0GateCheck.WalkForward);
+        var moments = SampleMomentsCalculator.Compute(preparation.BaselineRun.Metrics.DailyReturns);
+        current.DeflatedSharpe.Should().Be(DeflatedSharpeRatio.Compute(
+            moments.SharpePerPeriod, moments.Count, moments.Skewness, moments.Kurtosis, expectedMaxSharpe: 0d));
+    }
+
     // 全バーがカットオフ後なら、検証条件①は未達理由に載らない（理由の読み違えを作らない）。
     [Fact]
     public void 全バーがカットオフ後なら検証条件1は未達にならない()

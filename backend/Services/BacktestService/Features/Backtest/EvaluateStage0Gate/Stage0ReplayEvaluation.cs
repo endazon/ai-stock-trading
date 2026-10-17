@@ -165,9 +165,13 @@ public static class Stage0ReplayEvaluation
         //
         // **試行数の記録そのものは免除されない**（ADR-0039 決定1）—— 記録しなければ「探索が無い」と
         // 「探索を隠した」が区別できなくなる。だからここは従来どおり 1 本を記録する。
+        //
+        // 🔴 FR-15, #1381, IADR-0554: 記録する IS Sharpe は **日次**（DSR の観測値と同じ単位）である。
+        // 旧記述は `baseline.Metrics.SharpeRatio`（年率）を記録していた —— 試行 1 本では SR0 が 0 で表に出ないが、
+        // 試行 2 本以上では SR0 が √252 倍に膨らむ。
         var trials = new TrialLedger();
-        trials.Record(new BacktestTrial(
-            recordSet.StrategyId, baseline.Metrics.SharpeRatio, (double)walkForwardReturn));
+        trials.Record(BacktestTrial.FromMetrics(
+            recordSet.StrategyId, baseline.Metrics, (double)walkForwardReturn));
 
         var context = new Stage0GateContext(
             BaselineMetrics: baseline.Metrics,
