@@ -765,12 +765,19 @@ public class TradeDecisionPromptBuilderTests
         var stopWidthRuleLine = $"- {TradeDecisionPromptBuilder.StopWidthBeyondDailyRangeRule}{Environment.NewLine}";
         prompt.Should().Contain(stopWidthRuleLine);
 
+        // #1384, IADR-0558 決定 3: 出力形式の建てた条件の 2 項目と、その入れ方の 1 行も後から足したものである。
+        var entryBasisFields = "," + TradeDecisionPromptBuilder.EntryBasisOutputFields;
+        var entryBasisRuleLine = $"{TradeDecisionPromptBuilder.OutputEntryBasisRule}{Environment.NewLine}";
+        prompt.Should().Contain(entryBasisFields).And.Contain(entryBasisRuleLine);
+
         Normalize(prompt
                 .Replace(noneSection, string.Empty, StringComparison.Ordinal)
                 .Replace(watchlistSection, string.Empty, StringComparison.Ordinal)
                 .Replace(priceContextLines, string.Empty, StringComparison.Ordinal)
                 .Replace(newsStatusLine, string.Empty, StringComparison.Ordinal)
-                .Replace(stopWidthRuleLine, string.Empty, StringComparison.Ordinal))
+                .Replace(stopWidthRuleLine, string.Empty, StringComparison.Ordinal)
+                .Replace(entryBasisFields, string.Empty, StringComparison.Ordinal)
+                .Replace(entryBasisRuleLine, string.Empty, StringComparison.Ordinal))
             .Should().Be(Normalize(LegacyScheduledPrompt));
     }
 
@@ -1097,6 +1104,8 @@ public class TradeDecisionPromptBuilderTests
         - 確定済み方針の銘柄の列挙は、新規建ての対象を定めます。保有中の銘柄の手仕舞い（利確・損切り）は、列挙に関係なく常に判断します（方針の銘柄の列挙に含まれないことは、方針の範囲外として手仕舞いを見送る理由になりません）。
         - この銘柄は保有中です。買い増し（Buy）・保有継続（Hold）・手仕舞い（Sell）のいずれかを判断します。手仕舞いは保有の全量をシステムが決済します（一部だけの決済は選べません）。
         - 出口の基準（利確・損切り・保有期間など）が方針にあれば、それに従います。方針に出口の基準が無ければ、保有継続（Hold）を既定とします。
+        - 建てた条件: 不明（建玉ごとの記録を取得できませんでした）
+        - 建てた条件が不明のロットは、方針の既定の出口（建てた条件を限定しない出口の基準）で扱います。建てた条件ごとの出口は当てはめません。
         - 記録上の損切りラインはリスク制約の一部です。現在値が損切りラインに達している建玉は、方針に出口の基準が無くても、リスク制約に基づいて手仕舞いを選べます。
         - 現在値が記録上の損切りラインに達している建玉へは、買い増し・売り増しをしません（損切りラインはリスク制約であり、方針が買い増しを支持していても同じです）。
         - 買い増し・売り増しは、方針がそれを支持する場合に限ります。保有を踏まえずに同じ根拠で新規建てを繰り返しません。

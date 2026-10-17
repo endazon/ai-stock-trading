@@ -166,6 +166,17 @@ public sealed class ApprovedOrderRow
     /// </para>
     /// </summary>
     public RiskManagementService.Features.RiskManagement.ApprovalSource? Source { get; set; }
+
+    /// <summary>
+    /// FR-04, FR-10, #1384, IADR-0558 決定 4: 新規建ての判断が建てた条件の記号（方針の「条件 X:」行の英大文字 1 字。発注意図の EntryBasis）。
+    /// 🔴 <c>null</c> ＝記録なし（本列の追加前の行・決済・保護レグ・判断が答えなかった・方針の条件の集合に無かった）。推定で埋めない。
+    /// </summary>
+    public string? EntryCondition { get; set; }
+
+    /// <summary>
+    /// FR-04, FR-10, #1384, IADR-0558 決定 4: その条件の判定に使った基準価格（ローカル通貨）。<c>null</c> ＝不明（確かめられなかった・記録なし）。
+    /// </summary>
+    public decimal? EntryReferencePrice { get; set; }
 }
 
 // FR-10, FR-05, IADR-0018: 約定（OrderExecuted）を OrderId で保持する追記専用行（取引台帳の一部）。

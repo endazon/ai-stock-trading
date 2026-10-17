@@ -159,11 +159,13 @@ public sealed class HttpHeldPositionProvider(
         var signed = 0;
         decimal? entryPrice = null;
         decimal? stopLossPrice = null;
+        List<OpenPositionEntryDto>? entries = null;
         foreach (var p in matched)
         {
             signed += p.Side == TradeSide.Buy ? p.Quantity!.Value : -p.Quantity!.Value;
             entryPrice = p.EntryPrice;
             stopLossPrice = p.StopLossPrice;
+            entries = p.Entries;
         }
 
         if (signed == 0)
@@ -173,7 +175,33 @@ public sealed class HttpHeldPositionProvider(
         return new HeldPosition(
             signed,
             entryPrice is > 0m ? entryPrice : null,
-            stopLossPrice is > 0m ? stopLossPrice : null);
+            stopLossPrice is > 0m ? stopLossPrice : null)
+        {
+            // FR-04, FR-10, #1384, IADR-0558 決定 6: ロットの列（射影は (銘柄, 市場) ごとに 1 行。複数行の応答はロットを渡さない）。
+            Lots = matched.Count == 1 ? InterpretLots(entries, Math.Abs(signed), logger) : null,
+        };
+    }
+
+    // FR-04, FR-10, #1384, IADR-0558 決定 6: ロットの列の解釈。🔴 **列が無い（旧い送り手）・行が欠けている・数量の合計が建玉と合わない列は
+    // null（記録の供給なし）** にする —— 取り違えた列を渡すと、保有中の判断が別のロットの条件で出口を探す。保有状況そのものは落とさない
+    // （ロットが読めないことを理由に、保有を「不明」へ倒して手仕舞いを止めない）。
+    internal static IReadOnlyList<HeldPositionLot>? InterpretLots(
+        IReadOnlyList<OpenPositionEntryDto>? entries, int heldQuantity, ILogger logger)
+    {
+        if (entries is null)
+            return null;
+
+        if (entries.Any(e => e is null || e.DecisionId is null || e.Quantity is not > 0 || e.OrderedAt is null)
+            || entries.Sum(e => e.Quantity!.Value) != heldQuantity)
+        {
+            logger.LogWarning("保有建玉のロットの列が欠けている、または数量が建玉と合いません。建てた条件は不明として扱います。");
+            return null;
+        }
+
+        return [.. entries.Select(e => new HeldPositionLot(
+            e.DecisionId!.Value, e.Quantity!.Value, e.OrderedAt!.Value,
+            string.IsNullOrWhiteSpace(e.EntryCondition) ? null : e.EntryCondition,
+            e.EntryReferencePrice is > 0m ? e.EntryReferencePrice : null))];
     }
 
     // FR-04, FR-10, ADR-0003, #934, IADR-0390 決定2: 当日の未約定の新規建て注文を GET /risk-controls/working-entry-orders から読む
@@ -262,6 +290,12 @@ public sealed class HttpHeldPositionProvider(
     // 価格 2 項目は nullable（項目を持たない応答を 0 と読まない）。
     // 🔴 #943, IADR-0390: 識別・数量の 4 項目も nullable で受ける —— 非 nullable だと項目の欠落（送り手の改名）が既定値
     // （銘柄 null・市場 0＝日本・方向 0＝買い・数量 0）に化けて「保有なし」と区別できない。契約は T-10-800 が本物の型で固定する。
+    // FR-04, FR-10, #1384, IADR-0558 決定 6: Entries（保有中のロット）。項目が無い応答（旧い送り手）は null＝記録の供給なし。
     internal sealed record OpenPositionDto(
-        string? Symbol, Market? Market, TradeSide? Side, int? Quantity, decimal? EntryPrice, decimal? StopLossPrice);
+        string? Symbol, Market? Market, TradeSide? Side, int? Quantity, decimal? EntryPrice, decimal? StopLossPrice,
+        List<OpenPositionEntryDto>? Entries = null);
+
+    // OpenPositionEntryView（RiskManagement・#1384）の受け手の行。全項目 nullable（欠落を既定値に化けさせない）。
+    internal sealed record OpenPositionEntryDto(
+        Guid? DecisionId, int? Quantity, DateTimeOffset? OrderedAt, string? EntryCondition, decimal? EntryReferencePrice);
 }
