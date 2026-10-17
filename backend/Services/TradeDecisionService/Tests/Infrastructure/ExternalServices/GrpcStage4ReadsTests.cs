@@ -280,7 +280,7 @@ public class GrpcStage4ReadsTests
     [Fact]
     public async Task T_10_1696_送り手の型の方針と監視銘柄と当時の一覧を受け手が同じ値で読む()
     {
-        var senderPolicy = new ConfirmedDailyPolicy(new DateOnly(2026, 9, 10), "押し目買いを優先する", 3);
+        var senderPolicy = new ConfirmedDailyPolicy(new DateOnly(2026, 9, 10), "押し目買いを優先する", 3, "daily-2026-09-10", 4);
         MonitoredSymbol[] senderRows = [new("7203", Market.Japan), new("AAPL", Market.UnitedStates)];
         var senderAsOf = new WatchlistAsOfResponse(true, senderRows, "after-change", DateTimeOffset.UtcNow, null, null);
         var watchlist = new MonitorProto.GetWatchlistResponse();
@@ -295,7 +295,9 @@ public class GrpcStage4ReadsTests
         });
         await using var sp = Compose(host.Address);
 
-        (await Policy(sp).GetCurrentAsync()).Should().Be(new DailyPolicy(senderPolicy.Date, senderPolicy.Summary));
+        // FR-04, FR-11, ADR-0068 決定4, #1373, IADR-0548 決定5: 確定版の期間キーと版番号も同じ値で読む。
+        (await Policy(sp).GetCurrentAsync()).Should().Be(new DailyPolicy(
+            senderPolicy.Date, senderPolicy.Summary, new DailyPolicyReference("daily-2026-09-10", 4)));
         var expected = senderRows.Select(r => new WatchedSymbol(r.Symbol, r.Market)).ToArray();
         (await Watchlist(sp).GetAuthoritativeWatchlistAsync()).Should().Equal(expected, "日本（C# の 0）が線上で未指定に化けない");
         (await Watchlist(sp).GetWatchlistAsync()).Should().Equal(expected);

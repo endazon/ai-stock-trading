@@ -33,7 +33,8 @@ public sealed class DailyPolicyReadGrpcService(ReportAppService reports) : Proto
     }
 }
 
-// NFR, IADR-0446 決定 3: 送り手の型 → 線上表現（提供側の写し）。C# の null は設定しない。運ぶのは取引判断が読む 2 項目だけ。
+// NFR, IADR-0446 決定 3: 送り手の型 → 線上表現（提供側の写し）。C# の null は設定しない。運ぶのは取引判断が読む項目だけ
+// （日付・要約に加え、ADR-0068 決定4, #1373, IADR-0548 決定5 で判断の記録へ残す期間キー・版番号）。
 public static class DailyPolicyWireMapping
 {
     public static Proto.DailyPolicyRecord ToProto(ConfirmedDailyPolicy policy)
@@ -43,6 +44,9 @@ public static class DailyPolicyWireMapping
         var record = new Proto.DailyPolicyRecord { Date = policy.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) };
         if (policy.Summary is not null)
             record.Summary = policy.Summary;
+        if (!string.IsNullOrEmpty(policy.PeriodKey))
+            record.PeriodKey = policy.PeriodKey;
+        record.Version = policy.Version;
         return record;
     }
 }

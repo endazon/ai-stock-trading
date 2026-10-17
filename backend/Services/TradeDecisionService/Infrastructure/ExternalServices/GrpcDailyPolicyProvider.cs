@@ -27,14 +27,18 @@ public sealed class GrpcDailyPolicyProvider(ReportsGrpcTransport transport, ILog
         if (response?.Policy is not { } policy)
             return null;
 
-        return ToPolicy(policy) ?? LogBroken();
+        return ToPolicy(policy, logger) ?? LogBroken();
     }
 
-    internal static DailyPolicy? ToPolicy(Proto.DailyPolicyRecord policy) =>
+    internal static DailyPolicy? ToPolicy(Proto.DailyPolicyRecord policy, ILogger logger) =>
         policy.HasDate
         && DateOnly.TryParseExact(policy.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
         && policy.HasSummary
-            ? new DailyPolicy(date, policy.Summary)
+            ? new DailyPolicy(
+                date, policy.Summary,
+                // ADR-0068 決定4, #1373, IADR-0548 決定5: 確定版の出所。欠けていれば null（方針は使う）。
+                DailyPolicyReferences.From(
+                    policy.HasPeriodKey ? policy.PeriodKey : null, policy.HasVersion ? policy.Version : null, logger, "grpc"))
             : null;
 
     private DailyPolicy? LogBroken()

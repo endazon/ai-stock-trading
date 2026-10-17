@@ -54,6 +54,7 @@ order_execution_svc	order_dispatch_reservations	reserved	ReservedAt	\"State\" = 
 order_execution_svc	order_lifecycle_events	ledger	OccurredAt	-
 order_execution_svc	protective_stop_orders	ledger	UpdatedAt	-
 report_svc	policy_revision_attempts	ledger	AttemptedAt	-
+report_svc	report_confirmed_versions	ledger	ConfirmedAt	-
 report_svc	report_regeneration_attempts	ledger	AttemptedAt	-
 report_svc	reports	ledger	ConfirmedAt	-
 risk_management_svc	account_equity_days	ledger	UpdatedAt	-

@@ -570,6 +570,7 @@
     "DecidedAt": "DateTimeOffset",
     "EventId": "Guid",
     "Market": "Market",
+    "Policy": "DailyPolicyReference",
     "Price": "Decimal",
     "Reason": "String",
     "References": "DecisionReferences",
@@ -581,6 +582,7 @@
     "DecidedAt": "DateTimeOffset",
     "DecisionId": "Guid",
     "Intent": "OrderIntent",
+    "Policy": "DailyPolicyReference",
     "Rationale": "String",
     "References": "DecisionReferences",
     "StopWidth": "StopWidthFloorApplication"

@@ -3,15 +3,15 @@ title: 報告書（reports）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-10-13
+updated: 2026-10-17
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-06, FR-07, FR-08, FR-11, FR-14, FR-15, FR-16, FR-17, UC-03, UC-04, UC-05]
-adrs: [ADR-0001, ADR-0003, ADR-0042, ADR-0052, ADR-0053]
-iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0381, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492, IADR-0493, IADR-0516, IADR-0522, IADR-0526]
-specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window, 20261006_1181_report-opening-inventory, 20261006_1182_report-regenerate-present-notice, 20261008_1224_report-ledger-inputs-session-window, 20261008_1255_ledger-entry-occurred-at, 20261010_243_policy-revision-max-tokens, 20261010_1300_report-draft-knowledge-copy]
-issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, #1181, #1182, #1224, #1255, #243, #1300, #1308, planning#711, planning#746, planning#724, planning#784]
+adrs: [ADR-0001, ADR-0003, ADR-0033, ADR-0042, ADR-0052, ADR-0053, ADR-0068]
+iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0381, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492, IADR-0493, IADR-0516, IADR-0522, IADR-0526, IADR-0528, IADR-0548]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window, 20261006_1181_report-opening-inventory, 20261006_1182_report-regenerate-present-notice, 20261008_1224_report-ledger-inputs-session-window, 20261008_1255_ledger-entry-occurred-at, 20261010_243_policy-revision-max-tokens, 20261010_1300_report-draft-knowledge-copy, 20261017_1373_daily-policy-version-history]
+issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, #1181, #1182, #1224, #1255, #243, #1300, #1308, #1373, planning#711, planning#746, planning#724, planning#784, planning#803]
 -->
 
 # データ仕様書: 報告書（reports）
@@ -55,12 +55,34 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, 
 | ConfirmedAt | timestamptz? | 確定日時 |
 | Version | int（並行トークン） | 版番号付き冪等確定の楽観排他 |
 
-- インデックス: `(Kind, State, PeriodStart)`（最新の確定済み日報の照会）。
+- インデックス: `(Kind, State, PeriodStart)`（作られた当時の、最新の確定済み日報の照会。照会は下の確定した版の履歴へ移った）。
+
+## エンティティ定義（`report_confirmed_versions`・確定した版の履歴・永続）
+
+確定のたびに 1 行を足し、**書き換えない**。`reports` の行（会話キーごとに 1 行）は現在の状態を持ち、こちらは「どの版がいつ確定したか」を持つ。
+期間キーは変えない（1 日 1 本の日報の前提を保つ）。
+
+| 属性 | 型 | 説明 |
+| --- | --- | --- |
+| Kind | 列挙（int 格納）(PK) | 種別 |
+| Sequence | int (PK) | 種別ごとの確定の通し番号（1 から）。同じ種別の確定が並行すると鍵が衝突し、後の保存は読み直して決め直す |
+| PeriodKey | string(64) | 期間キー |
+| PeriodStart | date | 期間開始日 |
+| Version | int | 確定した版（確定後の `reports` の版。確定は版を 1 進める）。`(PeriodKey, Version)` で一意 |
+| ConfirmedAt | timestamptz | その版の確定時刻 |
+| BasedOn / AssumptionsVersion / PolicySummary / Body / UnsuppliedInputs | `reports` と同じ | 確定した時点の内容の写し |
+
+- インデックス: `(PeriodKey, Version)`（一意）、`(Kind, PeriodStart, ConfirmedAt)`（二段の選び方）。
+- **最新の確定済み報告書は、この表から二段で選ぶ。** 1 段目は開始日が最大の期間キー（同じ開始日は期間キーの降順）、2 段目はその期間キーの中で
+  確定時刻が最新の版（同時刻は版番号の大きい方）。確定時刻だけで期間キーをまたいで並べない。
+- 確定は、`reports` の行の確定とこの表への追加を 1 回の保存（1 トランザクション）で行う。
+- 移行: 表を足したマイグレーションが、既存の確定済みの行（確定時刻のあるもの）をその時点の版のまま写した（各期間キーにつき 1 本）。
 
 ## 照会・操作
 
-- `GET /reports`、`GET /reports/{periodKey}`、`GET /reports/daily-policy`（確定済み日報方針＝Date/Summary/AssumptionsVersion・未確定は 404）。
-- `GET /reports/daily-policy/as-of?at=<時刻>`（**その時刻までに確定していた**日報のうち期間の始まりが最も新しいものの方針＝Date/Summary/AssumptionsVersion/ConfirmedAt。無ければ 404。`at` はオフセット付きの ISO 8601 で、無い・オフセットが無い・読めないときは 400）。確定済みの報告書は不変なので、答えはその時刻に `GET /reports/daily-policy` が返した値と一致する。Stage 0 の記録器が判断時点の方針を組むために読む。認可は `daily-policy` と同じく OwnerOrService。
+- `GET /reports`、`GET /reports/{periodKey}`、`GET /reports/daily-policy`（確定済み日報方針＝Date/Summary/AssumptionsVersion/PeriodKey/Version・未確定は 404）。
+  方針は確定した版の履歴から二段で選ぶ。PeriodKey・Version はその確定版の期間キーと版番号で、取引判断が判断の記録へ残す。gRPC の同じ照会も同じ 2 項目を運ぶ。
+- `GET /reports/daily-policy/as-of?at=<時刻>`（**その時刻までに確定していた**版だけを対象に、`daily-policy` と同じ二段で選んだ方針＝Date/Summary/AssumptionsVersion/ConfirmedAt/PeriodKey/Version。ConfirmedAt は選んだ版の確定時刻。無ければ 404。`at` はオフセット付きの ISO 8601 で、無い・オフセットが無い・読めないときは 400）。**その時刻より後に確定した版（同じ期間キーの後の版を含む）は使わない。** 確定した版の写しは書き換えないので、答えはその時刻に `GET /reports/daily-policy` が返した値と一致する。Stage 0 の記録器が判断時点の方針を組むために読む。認可は `daily-policy` と同じく OwnerOrService。
 - `GET /reports/period-keys`（会話キーと開始日だけの軽い一覧＝`[{periodKey, periodStart}]`・開始日の降順、同日は会話キーの降順・ページングなし）。Discord の `/report` の入力補完が打鍵ごとに読むため、本文・要約・状態を載せない。OwnerOnly。`/{periodKey}` より優先される（`daily-policy` と同じくリテラル一致）。
 - `PUT /reports/{periodKey}`（ドラフト upsert・楽観排他）、`POST /reports/{periodKey}/confirm`（版番号付き冪等確定）。すべて OwnerOnly。
 - `POST /reports/policy-revisions`（方針の改訂案。OwnerOnly）: 要求は `{instruction, periodKey?, onBehalfOf?}`。利用者の自由文の指示（1000 文字まで）から

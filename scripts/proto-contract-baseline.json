@@ -603,9 +603,19 @@
               "type": "string",
               "label": "optional"
             },
+            "period_key": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
             "summary": {
               "number": 2,
               "type": "string",
+              "label": "optional"
+            },
+            "version": {
+              "number": 4,
+              "type": "int32",
               "label": "optional"
             }
           },
