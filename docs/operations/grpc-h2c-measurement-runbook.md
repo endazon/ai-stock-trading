@@ -4,14 +4,14 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-10-04
-updated: 2026-10-10
+updated: 2026-10-17
 ---
 <!-- trace:
 ids: [NFR]
 adrs: [MSP:ADR-0029, MSP:ADR-0075, ADR-0047]
-iadrs: [IADR-0489, IADR-0284, IADR-0328, IADR-0331, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0439, IADR-0283, IADR-0493, IADR-0522]
-specs: [20261004_753_grpc-h2c-measurement-runbook, 20261010_243_policy-revision-max-tokens]
-issues: [#753, #626, #1178, #1181, #243]
+iadrs: [IADR-0489, IADR-0284, IADR-0328, IADR-0331, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0439, IADR-0283, IADR-0493, IADR-0522, IADR-0557]
+specs: [20261004_753_grpc-h2c-measurement-runbook, 20261010_243_policy-revision-max-tokens, 20261017_1388_grpc-late-routes-held-symbols-asof-policy]
+issues: [#753, #626, #1178, #1181, #243, #1388]
 -->
 <!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
@@ -59,11 +59,11 @@ values-local は 7 サービスの `extraEnv` を丸ごと持っているので�
 - 呼び出し側: `services.<name>.grpcClients.<提供側>: true` → env `<提供側>__Grpc` が描かれる。宛先は呼び先の `grpcPort` から `http://<呼び先>-service:8081` と導出される。
   呼び先に `grpcPort` が無い宣言・未知の提供側・`extraEnv` との二重定義は、**描画の時点で止まる**。
 
-CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps every env」）が、既定と values-local の両方で「overlay を重ねても消える env は 0 本、足されるのは gRPC の宣言だけ（呼び出し側 12〔#6 は別窓〕・提供側 6）で、宣言の宛先が期待表と一致する」こと、overlay に `grpcPort` と `grpcClients` 以外を書いていないことを毎回検めている。
+CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps every env」）が、既定と values-local の両方で「overlay を重ねても消える env は 0 本、足されるのは gRPC の宣言だけ（呼び出し側 13〔#6 は別窓〕・提供側 6）で、宣言の宛先が期待表と一致する」こと、overlay に `grpcPort` と `grpcClients` 以外を書いていないことを毎回検めている。
 
 ## 経路表（実測の対象）
 
-呼び出し側 13 宣言（overlay が既定で入れるのは #6 を除く 12）・提供側 6 サービス。rpc の名前は提供側のメトリクスの `http.route`（`/<package>.<Service>/<Method>`）にそのまま現れる。
+呼び出し側 14 宣言（overlay が既定で入れるのは #6 を除く 13）・提供側 6 サービス。rpc の名前は提供側のメトリクスの `http.route`（`/<package>.<Service>/<Method>`）にそのまま現れる。
 
 | # | 呼び出し側 | 宣言（env） | 呼び先:8081 | rpc（`aistocktrading.` を略す） | 段 | 発火のきっかけ | deadline（既定） |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -73,13 +73,14 @@ CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps ev
 | 4 | market-monitor | `RiskManagement__Grpc` | risk-management | `riskmanagement.v1.RiskControlsRead/GetOpenPositions` | 2 | 損切り監視の巡回（保有があるとき） | 5 秒 |
 | 5 | report | `RiskManagement__Grpc` | risk-management | `riskmanagement.v1.RiskControlsRead/GetOpenPositions`・`GetFills`・`GetDriftAdoptions`・`GetBuyInInferences`・`GetSessionUptime`・`GetStageGate`・`GetOpeningInventory` | 2 | 報告書の生成 | 10 秒 |
 | 6 | report | `Audit__Grpc` | audit | `audit.v1.AuditEventsRead/GetEventsByType` | 3 | 報告書の生成（監査台帳の 6 つの供給元）。🔴 **overlay の既定では宣言しない**（別窓。下の注意） | 10 秒 |
-| 7 | trade-decision | `Reports__Grpc` | report | `report.v1.DailyPolicyRead/GetConfirmedDailyPolicy` | 4 | 取引サイクル（その日の方針） | 5 秒 |
+| 7 | trade-decision | `Reports__Grpc` | report | `report.v1.DailyPolicyRead/GetConfirmedDailyPolicy`・`GetConfirmedDailyPolicyAsOf` | 4・5 の追補 | 取引サイクル（その日の方針）・Stage 0 の記録（当時の方針） | 5 秒 |
 | 8 | trade-decision | `MarketMonitor__Grpc` | market-monitor | `marketmonitor.v1.WatchlistRead/GetWatchlist`・`GetWatchlistAsOf` | 4 | 取引サイクル・Stage 0 の記録 | 5 秒 |
 | 9 | information-collection | `MarketMonitor__Grpc` | market-monitor | `marketmonitor.v1.WatchlistRead/GetWatchlist` | 4 | 収集の巡回（Finnhub を使う構成のとき） | 5 秒 |
 | 10 | information-collection | `CostControl__Grpc` | cost-control | `costcontrol.v1.CostStateRead/GetCostState` | 4 | 収集の巡回 | 5 秒 |
 | 11 | notification | `RiskManagement__Grpc` | risk-management | 読み: `riskmanagement.v1.RiskControlsOwnerRead/GetRiskStatus`・`RiskControlsRead/GetStageGate`／書き: `RiskControlsOwnerWrite/*`（8 本） | 5 | Discord の `/status`・`/stage`・`/pause`・`/resume`・`/gfv`・`/drift`・`/killswitch` | 5 秒 |
 | 12 | notification | `Reports__Grpc` | report | 読み: `report.v1.ReportOwnerRead/*`（3 本）／書き: `ReportOwnerWrite/*`（4 本） | 5 | Discord の `/report`・`/policy` | 5 秒（方針の改訂と適用の記録は 120 秒） |
 | 13 | notification | `MarketMonitor__Grpc` | market-monitor | 読み: `marketmonitor.v1.WatchlistRead/GetWatchlist`／書き: `WatchlistOwnerWrite/ApplyWatchlistProposal` | 5 | `/policy` の入れ替え案の適用 | 10 秒 |
+| 14 | information-collection | `RiskManagement__Grpc` | risk-management | `riskmanagement.v1.RiskControlsRead/GetOpenPositions` | 5 の追補 | 収集の巡回（監視銘柄に追随する構成で、保有を収集の対象へ足すとき） | 5 秒 |
 
 基盤のテキスト生成（呼び出し側の宣言 `LlmGateway__Grpc`）はこの表に入らない。呼び先がこのチャートの外にあり、段 1〜5 とは別の系列である。
 
@@ -149,7 +150,7 @@ overlay はリリースの値の**後に**重ねて描かれる（次の手順�
 
 - 🔴 1 行目 `OpenD の Deployment（opend）:` が「変化なし」（または「どちらにも無い」）。**終了コード 3 なら適用しない。**
 - env のキーの差が**追加だけ**で、中身が `Grpc__Port`（configuration・risk-management・audit・report・market-monitor・cost-control の 6）と
-  `*__Grpc`（上の経路表の 13 から #6 を除いた 12）だけであること。**削除が 1 つでも出たら適用しない。**
+  `*__Grpc`（上の経路表の 14 から #6 を除いた 13）だけであること。**削除が 1 つでも出たら適用しない。**
 - 変わる Deployment は 9 つ（上の 6 ＋ trade-decision・information-collection・notification）。order-execution・backtest・OpenD は変わらない。
 
 ### 2. 適用する

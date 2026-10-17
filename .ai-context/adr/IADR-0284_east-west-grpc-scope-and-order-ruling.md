@@ -20,13 +20,14 @@ related_ids:
   - IADR-0446
   - IADR-0448
   - IADR-0449
+  - IADR-0557
   - ADR-0047
   - ADR-0041
   - NFR-06
   - FR-14
 author: endazon (with Claude Code)
 created: 2026-09-03
-updated: 2026-09-27
+updated: 2026-10-17
 plan_refs:
   - planning:projects/microservices-platform/07_adr/ADR-0029_grpc-rest-usage-criteria.md
   - planning:projects/microservices-platform/07_adr/ADR-0075_east-west-grpc-migration-order.md
@@ -319,6 +320,18 @@ session-uptime｜提供側 1・消費側 3 サービス」）の読み方だけ�
   `/monitor/watchlist/as-of`・`/costs/state`）と、段 5 の後半で移す書き込み（上の `position-drift/adopt` を除く）。ボットの会話キーの一覧の退避先 `GET /reports` は、段 6 でボットの REST の
   アダプタを退役させると呼び出し元が無くなる（端点を消すかは段 6 の母集合で決める）。
 - AST→MSP の基盤待ち 2 本（DocumentService `POST /documents`・RetrievalService `POST /search`）は段の外であり、完了の数えに入らない（基盤が proto を公開したときに移す）。
+
+
+## ［2026-10-17 追記 / #1388］段 2〜5 の後に REST だけで足された east-west の読み取りを数え、提供側が面を持つ 2 本を段 5 の追補として移した
+
+段 6 の完了は呼び出し箇所で数える（上の 2026-09-27 追記）。段 2〜5 を閉じた後に REST だけで足された east-west の読み取りを
+`origin/develop` `c9a4d2ba` で引き直したところ 6 本あった（母集合は [作業仕様書](../specs/20261017_1388_grpc-late-routes-held-symbols-asof-policy.md)）。
+**決定 1・2・4 と、決定 5 の段の順序・切り方は変わらない。**
+
+- 提供側が gRPC の面を持つ 2 本（情報収集 → リスク管理の保有・取引判断の Stage 0 → 報告書の当時の方針）は、段 5 の追補として移した（[IADR-0557](IADR-0557_grpc-late-routes-held-symbols-asof-policy.md)）。
+- 発注執行への 4 本（リスク管理の借株可否・取引判断の日足と処理中の決済・バックテストの日足）は、発注執行に gRPC の面が無い。面の新設は別の段として扱い、
+  段 6 の前に移す。段 6 の着手時の母集合の引き直し（上の追記）でも、この 4 本を数える。
+- 作業仕様書の母集合の引き方（`Http*.cs` に `Grpc*` の対が無いもの）は、段 6 の着手時にも使える（偽陽性は LlmGateway の共有輸送と、同じファイルに gRPC 実装を持つもの）。
 
 ## 関連
 

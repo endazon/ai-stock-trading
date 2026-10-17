@@ -12,6 +12,8 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 //
 // - `Reports:BaseUrl` と `OrderExecution:BaseUrl` がともに絶対 URL のときだけ基底の供給（BaseAsOfDecisionInputProvider）。
 //   そうでなければ従来の `NoAsOfDecisionInputProvider`（記録は 0 件・LLM 0 回）。
+//   ［2026-10-17 追記 / #1388・IADR-0557 決定 2］報告書の口は `Reports:Grpc`（east-west gRPC の宣言）でも満たす。宣言があれば当時の方針は
+//   gRPC（GrpcAsOfDailyPolicySource）で読み、`Reports:BaseUrl` より優先する（段 1〜5 と同じ規則。既定は REST）。
 // - (b) の 3 源は個別に構成する（`Stage0AsOf:Finnhub:ApiKey`・`Stage0AsOf:SecEdgar:UserAgent`＋`Ciks`・`Stage0AsOf:Fred:ApiKey`＋`SeriesIds`）。
 //   構成の無い源は組み立てに入れない（AsOfReferenceAssembler が「未構成」として (b) を再構成不可にする）。
 // - 上位 K 件と新しさの足切りは本番の取得と同じ構成（`Retrieval:TopK`・`Retrieval:MaxAgeHours`）を読む。
@@ -26,9 +28,11 @@ public static class Stage0AsOfComposition
     /// <summary>Finnhub の自制の既定（回/分）。同じ鍵の他の用途の合計（57 回/分）と足して 60 回/分に収まる値。</summary>
     public const int DefaultFinnhubRequestsPerMinute = 3;
 
-    /// <summary>基底の供給の口（方針と日足）の接続先がそろっているか。</summary>
+    /// <summary>基底の供給の口（方針と日足）の接続先がそろっているか。方針の口は gRPC の宣言（<c>Reports:Grpc</c>）でも満たす。</summary>
+    /// <remarks>宣言の値の検証（絶対 URL・http）は輸送の登録（<see cref="ReportsGrpcExtensions"/>）が起動時に行う。</remarks>
     public static bool HasBaseEndpoints(IConfiguration configuration) =>
-        IsAbsolute(configuration["Reports:BaseUrl"]) && IsAbsolute(configuration["OrderExecution:BaseUrl"]);
+        (IsAbsolute(configuration["Reports:BaseUrl"]) || !string.IsNullOrWhiteSpace(configuration[ReportsGrpcTransport.AddressKey]))
+        && IsAbsolute(configuration["OrderExecution:BaseUrl"]);
 
     /// <summary>連鎖の最も内側（基底）を組む。</summary>
     public static IAsOfDecisionInputProvider CreateBase(IServiceProvider sp)
@@ -38,7 +42,7 @@ public static class Stage0AsOfComposition
         if (!HasBaseEndpoints(configuration))
         {
             loggers.CreateLogger(typeof(Stage0AsOfComposition).FullName!).LogWarning(
-                "Stage 0 の as-of 入力の基底を組めません（Reports:BaseUrl と OrderExecution:BaseUrl がそろっていない）。"
+                "Stage 0 の as-of 入力の基底を組めません（Reports:BaseUrl〔または Reports:Grpc〕と OrderExecution:BaseUrl がそろっていない）。"
                     + "記録は 1 件も作られません（NoAsOfDecisionInputProvider）。");
             return new NoAsOfDecisionInputProvider();
         }
@@ -56,20 +60,30 @@ public static class Stage0AsOfComposition
 
         var orderExecution = factory.CreateClient("order-execution");
         orderExecution.BaseAddress = new Uri(configuration["OrderExecution:BaseUrl"]!);
-        var reports = factory.CreateClient("reports");
-        reports.BaseAddress = new Uri(configuration["Reports:BaseUrl"]!);
 
         return new BaseAsOfDecisionInputProvider(
             new DailyBarsAsOfPriceSource(
                 new HttpDailyBarsSource(orderExecution, loggers.CreateLogger<HttpDailyBarsSource>()),
                 time,
                 loggers.CreateLogger<DailyBarsAsOfPriceSource>()),
-            new HttpAsOfDailyPolicySource(reports, time, loggers.CreateLogger<HttpAsOfDailyPolicySource>()),
+            PolicySource(sp, configuration, factory, time, loggers),
             new AsOfReferenceAssembler(
                 feeds,
                 ParsePositiveInt(configuration["Retrieval:TopK"], 5),
                 KnowledgeBaseRetrievalContextProvider.ParseMaxAge(configuration["Retrieval:MaxAgeHours"])),
             loggers.CreateLogger<BaseAsOfDecisionInputProvider>());
+    }
+
+    // NFR, #1388, IADR-0557 決定 2: 当時の方針の口。gRPC の輸送が登録されていれば（`Reports:Grpc` の宣言）gRPC、無ければ REST の "reports"。
+    internal static IAsOfDailyPolicySource PolicySource(
+        IServiceProvider sp, IConfiguration configuration, IHttpClientFactory factory, TimeProvider time, ILoggerFactory loggers)
+    {
+        if (sp.GetService<ReportsGrpcTransport>() is { } reportsGrpc)
+            return new GrpcAsOfDailyPolicySource(reportsGrpc, time, loggers.CreateLogger<GrpcAsOfDailyPolicySource>());
+
+        var reports = factory.CreateClient("reports");
+        reports.BaseAddress = new Uri(configuration["Reports:BaseUrl"]!);
+        return new HttpAsOfDailyPolicySource(reports, time, loggers.CreateLogger<HttpAsOfDailyPolicySource>());
     }
 
     /// <summary>構成された (b) の源（構成の無い源は入れない）。</summary>

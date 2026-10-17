@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16, FR-01, FR-02, FR-07, FR-13, FR-15, FR-14, NFR-06]
 adrs: [ADR-0001, ADR-0047, ADR-0052, MSP:ADR-0029, MSP:ADR-0075]
-iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491, IADR-0493, IADR-0521, IADR-0522, IADR-0556]
-specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate, 20261006_1181_report-opening-inventory, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens]
-issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181, #243]
+iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491, IADR-0493, IADR-0521, IADR-0522, IADR-0556, IADR-0557]
+specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate, 20261006_1181_report-opening-inventory, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261017_1388_grpc-late-routes-held-symbols-asof-policy]
+issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181, #243, #1388]
 -->
 
 # 通信仕様書: east-west gRPC（サービス間の同期呼び出し）
@@ -157,7 +157,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181,
 
 ## 6. 面: リスク管理の読み取り（`aistocktrading.riskmanagement.v1.RiskControlsRead`）
 
-- 概要: 報告書・取引判断・市場監視の 3 サービスが、構成 `RiskManagement:Grpc`（例 `http://risk-management-service:8081`）が
+- 概要: 報告書・取引判断・市場監視・情報収集の 4 サービスが、構成 `RiskManagement:Grpc`（例 `http://risk-management-service:8081`）が
   あるときだけ gRPC で照会し、無ければ REST `GET /risk-controls/*` で照会する。**並走中の正は REST。**
 - 認証・認可: 読み取りの面と同じ（サービス、または呼び出し元がボットの利用者のロール。§4）。REST の読み取り群の判定に呼び出し元の確認を足したポリシーを service のクラス属性で持つ。
 - 評価器: REST と**同じ**サービス・純関数を呼ぶ（評価器を 2 つにしない）。
@@ -165,7 +165,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181,
 
 | rpc | 対応する REST | 呼び出し元 | 取得できないときの呼び出し元の扱い |
 | --- | --- | --- | --- |
-| `GetOpenPositions` | `GET /risk-controls/open-positions` | 取引判断・市場監視・報告書 | 不明／空列（損切り検知対象なし）／未供給 |
+| `GetOpenPositions` | `GET /risk-controls/open-positions` | 取引判断・市場監視・報告書・情報収集 | 不明／空列（損切り検知対象なし）／未供給／不明（その巡回は監視銘柄だけから収集の対象を決める） |
 | `GetWorkingEntryOrders` | `GET /risk-controls/working-entry-orders` | 取引判断 | 不明 |
 | `GetEntryBlockers` | `GET /risk-controls/entry-blockers?symbol&market`（銘柄単位の新規建ての可否。審査と同じ述語で、状態から確定する拒否理由を方向別に返す。あわせて新規建て・決済を問わず全注文を拒否する理由〔市場の無効・禁止銘柄〕を `any_order` で返す） | 取引判断 | 不明（LLM を呼ぶ。審査は変わらない） |
 | `GetSizingContext` | `GET /risk-controls/sizing-context` | 取引判断 | 残枠 0 の安全既定 |
@@ -205,7 +205,7 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 | 構成キー | 既定 | 意味 |
 | --- | --- | --- |
 | `RiskManagement:Grpc` | 未設定（＝REST） | gRPC の宛先。**宣言してあるのに使えない値は起動時に落とす**。宣言があれば `RiskManagement:BaseUrl` より優先 |
-| `RiskManagement:GrpcTimeoutSeconds` | 報告書 10・取引判断 5・市場監視 5 | **試行ごとの** deadline。各サービスの REST の `HttpClient.Timeout` と同値 |
+| `RiskManagement:GrpcTimeoutSeconds` | 報告書 10・取引判断 5・市場監視 5・情報収集 5 | **試行ごとの** deadline。各サービスの REST の `HttpClient.Timeout` と同値 |
 | `RiskManagement:GrpcMaxAttempts` | 1 | 試行回数。**既定は再試行しない** |
 
 - チャネルは呼び出し元の輸送が所有する（同じサービスの別の面が引く型と衝突させない）。
@@ -272,18 +272,20 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 | service / rpc | 対応する REST | 呼び出し元 | 取得できないときの呼び出し元の扱い |
 | --- | --- | --- | --- |
 | `aistocktrading.report.v1.DailyPolicyRead/GetConfirmedDailyPolicy` | `GET /reports/daily-policy` | 取引判断 | 取引しない |
+| `aistocktrading.report.v1.DailyPolicyRead/GetConfirmedDailyPolicyAsOf` | `GET /reports/daily-policy/as-of?at=` | 取引判断（Stage 0 の記録） | 撃ち直してから記録を止める（無かったときは方針なしで記録する） |
 | `aistocktrading.marketmonitor.v1.WatchlistRead/GetWatchlist` | `GET /monitor/watchlist` | 取引判断（定時サイクル・判断のプロンプト）・情報収集 | 定時サイクルは構成の監視銘柄、プロンプトは不明、情報収集は不明（直前に読めた対象を使い続ける） |
 | `aistocktrading.marketmonitor.v1.WatchlistRead/GetWatchlistAsOf` | `GET /monitor/watchlist/as-of?at=` | 取引判断（Stage 0 の記録） | 再構成できない（理由つき・その記録は合否から外れる） |
 | `aistocktrading.costcontrol.v1.CostStateRead/GetCostState` | `GET /costs/state` | 情報収集 | 通常（停止せず・1 倍） |
 
 エラーは §6 と同じ（`UNAUTHENTICATED` / `PERMISSION_DENIED` は再試行しない、`UNAVAILABLE` / `DEADLINE_EXCEEDED` は再試行の対象）。
-当時の監視銘柄の時刻の欠落・オフセットの欠落・書式違いは `INVALID_ARGUMENT`（REST の 400 と同じ）。
+当時の監視銘柄と当時の方針の時刻の欠落・オフセットの欠落・書式違いは `INVALID_ARGUMENT`（REST の 400 と同じ）。
 
 ### 🔴 線上の写し
 
 | 契約 | 線上 | 写し |
 | --- | --- | --- |
 | 日報の方針の未確定 | **`policy` の無い応答**（`NOT_FOUND` にしない） | REST の 404 と同じく警告なしで「取引しない」。未確定は毎朝の平常の状態であり、失敗として記録しない |
+| 当時の方針の確定の時刻 | 応答の `optional string`（往復書式・オフセットごと） | 欠落・読めない書式は「取れなかった」（撃ち直す）。照会の時刻より後の確定は送り手の契約違反として撃ち直さずに記録を止める（REST と同じ） |
 | 方針の日付・要約 | `optional string` | 欠落・読めない日付は既定値で作らず「取引しない」 |
 | 監視銘柄の市場 | `MARKET_UNSPECIFIED = 0` を持つ列挙 | **名前で**写す。未指定・未知は不明（C# の 0 ＝日本は線上で 1） |
 | 当時の一覧 | 可否は `optional bool`、一覧は存在を持つ入れ物 | 入れ物が無ければ「一覧が無い」（空の一覧とは違う） |
@@ -295,7 +297,7 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 
 | 構成キー | 呼び出し元 | 既定 | 意味 |
 | --- | --- | --- | --- |
-| `Reports:Grpc` | 取引判断 | 未設定（＝REST） | 日報の方針の gRPC の宛先 |
+| `Reports:Grpc` | 取引判断 | 未設定（＝REST） | 日報の方針の gRPC の宛先（Stage 0 の記録の当時の方針も。宣言があれば `Reports:BaseUrl` が無くても記録の入力を組む） |
 | `MarketMonitor:Grpc` | 取引判断・情報収集 | 未設定（＝REST） | 監視銘柄の gRPC の宛先（取引判断は当時の一覧も） |
 | `CostControl:Grpc` | 情報収集 | 未設定（＝REST） | 費用統制の判定の gRPC の宛先 |
 | `<上記>:GrpcTimeoutSeconds` | 〃 | 5 | **試行ごとの** deadline。REST の `HttpClient.Timeout` と同値 |

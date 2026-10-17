@@ -624,6 +624,37 @@
             "names": []
           }
         },
+        "GetConfirmedDailyPolicyAsOfRequest": {
+          "fields": {
+            "at": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetConfirmedDailyPolicyAsOfResponse": {
+          "fields": {
+            "confirmed_at": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "policy": {
+              "number": 1,
+              "type": "DailyPolicyRecord",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
         "GetConfirmedDailyPolicyRequest": {
           "fields": {},
           "reserved": {
@@ -652,6 +683,12 @@
             "GetConfirmedDailyPolicy": {
               "request": "GetConfirmedDailyPolicyRequest",
               "response": "GetConfirmedDailyPolicyResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetConfirmedDailyPolicyAsOf": {
+              "request": "GetConfirmedDailyPolicyAsOfRequest",
+              "response": "GetConfirmedDailyPolicyAsOfResponse",
               "clientStreaming": false,
               "serverStreaming": false
             }
