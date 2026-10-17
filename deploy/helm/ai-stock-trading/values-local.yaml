@@ -306,8 +306,10 @@ services:
       # （#243 実測で発見。値・出典・fail-safe の詳細な説明は trade-decision.extraEnv の同名コメントを参照）。
       # 🔴 env 名ではモデル ID の `-` を `_` で書く（`-` を含む env 名は起動シェルが落とし ¥0 計上になる・#817。
       #   詳細は trade-decision.extraEnv の同名コメント）。
-      - { name: LlmPricing__PerModel__claude_fable_5__InputPer1kTokens, value: "1.637" }    # $10/1M（fail-safe 上限値・用途未割当）
-      - { name: LlmPricing__PerModel__claude_fable_5__OutputPer1kTokens, value: "8.186" }   # $50/1M
+      # NFR-13, ADR-0064 決定 9, #1305, IADR-0553: 表に無いモデル（旧 ID・禁止モデル・モデル名なし）の計上単価。単価表の行ではない
+      #   （どのモデル名にも結びつけない）。既定と同じ $10 / $50 を明示する。旧 `claude_fable_5` の行（上限値）はこの 2 行へ置き換えた。
+      - { name: LlmPricing__UnknownModel__InputPer1kTokens, value: "1.637" }    # $10/1M（未知モデルの計上単価）
+      - { name: LlmPricing__UnknownModel__OutputPer1kTokens, value: "8.186" }   # $50/1M
       # #1295, IADR-0524: 5.5 系（利用者裁定 2026-10-10・planning#783。提供元の公表値 確認日 2026-10-10）。
       - { name: LlmPricing__PerModel__claude_opus_5_5__InputPer1kTokens, value: "0.655" }   # $4/1M（report-monthly・report-weekly）
       - { name: LlmPricing__PerModel__claude_opus_5_5__OutputPer1kTokens, value: "3.274" }  # $20/1M
@@ -506,8 +508,10 @@ services:
       #   global 単一ペアでは実態と乖離する（従来の opus 基準は trade-decision で約 2.5 倍の過大計上だった）。
       #   単価は**応答が名乗った実効モデル**（CompletionApiResponse.Model）で引く。要求側の
       #   希望モデルではない（ゲートウェイは越境ルーティング〈ADR-0010〉で別モデルへ着地し得る）。
-      # fail-safe（IADR-0122 決定3・**「安全側 = 0」ではない**）:
-      #   表に無いモデル・モデル名なし → **表の最大単価**（現行 fable-5）。0 に倒すと上限が構造的に効かなくなる。
+      # fail-safe（IADR-0122 決定3・**「安全側 = 0」ではない**。#1305 / IADR-0553 で改めた）:
+      #   表に無いモデル・モデル名なし → **未知モデルの計上単価**（LlmPricing__UnknownModel__*・既定 $10 / $50）。
+      #   表の行から導かないので、行を足し外ししても変わらない。0 に倒すと上限が構造的に効かなくなる。
+      #   解析できない・0 以下の値は既定値で計上し、起動時に WARNING を出す。
       #   表が空 → 従来キー LlmPricing__InputPer1kTokens/__OutputPer1kTokens（未設定 0）。
       #   本番 values.yaml は**表を持たない**（設計。IADR-0114 決定6 / IADR-0122 決定4 / IADR-0296。#243 で
       #   「移植」を試みたが helm.yml の既定描画ゲートが止め、経路B 限定を維持した）。本番で LLM を有効にするときは
@@ -516,10 +520,10 @@ services:
       #   （#1197 / IADR-0499。0 円計上で月次上限が黙って無効になる経路を塞ぐ）。
       #
       # 出典・前提（2026-07 時点・**恒久値ではない**）:
-      #   Anthropic 公開単価（$/1M トークン・入力/出力）: fable-5 = 10/50（禁止モデル。表に無いモデルの上限値として残す。
-      #     外すのは未知モデルの計上単価の専用設定値と同時＝計画 ADR-0064 決定 9）。
+      #   #1305 / IADR-0553: fable-5（禁止モデル・10/50）の行は撤去した。上限値は専用の設定値「未知モデルの計上単価」
+      #     （既定 10/50 ＝ 1.637 / 8.186 円/1k）が担う（計画 ADR-0064 決定 9）。
       #   #1296: 旧世代（opus-5 / opus-4-8 = 5/25、sonnet-5 = 2/10、haiku-4-5 = 1/5）の行は撤去した（5.5 系だけを受け付ける。
-      #     旧 ID の応答は表に無いモデルとして fable-5 の上限で多めに計上される）。
+      #     旧 ID の応答は表に無いモデルとして未知モデルの計上単価で多めに計上される）。
       #   #1295, IADR-0524（確認日 2026-10-10・planning#783）: opus-5-5 = 4/20、sonnet-5-5 = 2/10、
       #     haiku-5-5 = **プロンプト長で 2 段**（入力 100,000 トークン以下 0.10/0.50・超 0.50/2.50。キャッシュ読み書きを含む
       #     入力トークンの合計で要求ごとに決まる）。第 2 段は LongContextThresholdTokens / LongContextInputPer1kTokens /
@@ -541,8 +545,10 @@ services:
       #   渡さない。ハイフン形のままだと Pod 定義には在るのに dotnet へ 0 件しか届かず、表が空＝全呼び出し ¥0 計上に
       #   なっていた（稼働実測 2026-09-17: Pod env 10 件 → /proc/1/environ 0 件）。LlmPriceTable は `-` と `_` を
       #   同一視して応答の実効モデル名（claude-sonnet-5-5）と照合する。helm.yml が描画後の全 env 名を識別子形で検査する。
-      - { name: LlmPricing__PerModel__claude_fable_5__InputPer1kTokens, value: "1.637" }    # $10/1M（fail-safe 上限値・用途未割当）
-      - { name: LlmPricing__PerModel__claude_fable_5__OutputPer1kTokens, value: "8.186" }   # $50/1M
+      # NFR-13, ADR-0064 決定 9, #1305, IADR-0553: 表に無いモデル（旧 ID・禁止モデル・モデル名なし）の計上単価。単価表の行ではない
+      #   （どのモデル名にも結びつけない）。既定と同じ $10 / $50 を明示する。旧 `claude_fable_5` の行（上限値）はこの 2 行へ置き換えた。
+      - { name: LlmPricing__UnknownModel__InputPer1kTokens, value: "1.637" }    # $10/1M（未知モデルの計上単価）
+      - { name: LlmPricing__UnknownModel__OutputPer1kTokens, value: "8.186" }   # $50/1M
       # #1295, IADR-0524: 5.5 系（利用者裁定 2026-10-10・planning#783。提供元の公表値 確認日 2026-10-10）。
       - { name: LlmPricing__PerModel__claude_opus_5_5__InputPer1kTokens, value: "0.655" }   # $4/1M（report-monthly・report-weekly）
       - { name: LlmPricing__PerModel__claude_opus_5_5__OutputPer1kTokens, value: "3.274" }  # $20/1M

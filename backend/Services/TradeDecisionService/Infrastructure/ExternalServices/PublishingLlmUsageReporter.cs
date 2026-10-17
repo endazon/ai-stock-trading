@@ -12,7 +12,7 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 // 費用統制サービスが購読して月次台帳へ計上する（HTTP /costs/record は OwnerOnly のため使わない）。
 // #303, IADR-0122: 単価は global 単一ペアではなく**応答が名乗った実効モデル**から引く（用途別モデル割当により
 // trade-decision=sonnet-5 / report-*=fable-5・opus-5・sonnet-5 と混在するため）。未知モデルの倒し先は
-// LlmPriceTable が持つ（0 ではなく最大単価＝過小計上を作らない）。
+// LlmPriceTable が持つ（0 ではなく未知モデルの計上単価＝過小計上を作らない。#1305, IADR-0553）。
 //
 // NFR（費用）, 05_trading-assumptions §6.1, #347, IADR-0218: **用途（purpose）を必ず載せる。**
 // 月次 LLM 費用上限（15,000 円）の対象は取引判断サイクルのみであり、対象範囲の判別は購読側

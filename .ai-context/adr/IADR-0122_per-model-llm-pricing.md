@@ -14,9 +14,10 @@ related_ids:
   - IADR-0114
   - IADR-0120
   - IADR-0499
+  - IADR-0553
 author: claude
 created: 2026-07-31
-updated: 2026-10-07
+updated: 2026-10-17
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-04／NFR 費用: 月次上限 15,000 円)
   - planning:projects/ai-stock-trading/07_adr/ADR-0014_llm-model-assignment-revision.md (用途別モデル割当・Accepted)
@@ -185,6 +186,15 @@ AST 側で「用途→単価」を静的に対応付けても実際の呼び出�
 >    計上時の解決（決定 3・IADR-0055 の best-effort）は変えない。
 > 3. 決定 3（未知モデルは最大単価）と経路B（`values-local.yaml`）の単価表は変えない。`values-local.yaml` の
 >    「本番 values.yaml へ本表を移植した」というコメントは実物と逆だったので、「本番は表を持たない・投入は 1. による」へ直した。
+
+> ［2026-10-17 追記 / #1305］**決定 3 の 2（未知モデル＝表の成分ごとの最大単価）を改めた**（計画 ADR-0064 決定 9・追加裁定 2026-10-10。
+> [IADR-0553](./IADR-0553_unknown-model-price-setting.md)）。
+>
+> 1. 表が非空のとき、表に無いモデル・モデル名の無い応答は、単価表の行とは別の設定値「未知モデルの計上単価」
+>    （`LlmPricing:UnknownModel:InputPer1kTokens` / `:OutputPer1kTokens`。既定 $10 / $50＝1.637 / 8.186 円/1k）で計上する。表の最大は使わない。
+> 2. 決定 4 の表の `claude-fable-5` の行（上限値として載っていた）は `values-local.yaml` から外した。上限は 1. の設定値が担う。
+> 3. 決定 3 の原則（未知モデルを 0 に倒さない・過小計上を危険側とする）と、1・3 の段（一致・表が空なら既定ペア）は変えない。
+>    設定値の不正（解析できない・0 以下）は 0 円にも表の最大にも倒さず既定値で計上し、起動時に警告する。
 
 ## 理由
 

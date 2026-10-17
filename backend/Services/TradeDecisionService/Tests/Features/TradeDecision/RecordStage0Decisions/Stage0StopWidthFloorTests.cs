@@ -206,7 +206,9 @@ public class Stage0StopWidthFloorTests
             llm, DecisionOrchestrationOptions.Default, wrap(new StubInputs()), sink,
             // #1342, IADR-0537: 実行の状態（印・台帳）はメモリ上の置き場。
             new InMemoryStage0RecordingState(), new InMemoryStage0RecordingState(), collector,
-            LlmPriceTable.From([("claude-sonnet-5-5", "1", "1")], "1", "1"),
+
+            // #1305, IADR-0553: 表に無いモデル（この表に無い層）も同じ 1/1 で引く（未知モデルの計上単価を明示する。既定は $10 / $50）。
+            LlmPriceTable.From([("claude-sonnet-5-5", "1", "1")], "1", "1", unknownModelInputPer1kTokens: "1", unknownModelOutputPer1kTokens: "1"),
             new ManualTimeProvider(FarFuture), NullLogger<Stage0DecisionRecorder>.Instance);
         return (recorder, llm, sink);
     }

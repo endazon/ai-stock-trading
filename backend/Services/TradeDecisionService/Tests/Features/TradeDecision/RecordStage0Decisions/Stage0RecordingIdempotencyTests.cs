@@ -31,8 +31,11 @@ public class Stage0RecordingIdempotencyTests
     private static readonly DateTimeOffset Now = new(2026, 9, 9, 0, 0, 0, TimeSpan.Zero);
 
     // 単価: 入力 1 円 / 1k・出力 1 円 / 1k。1 呼び出し 1,000 / 1,000 トークン ＝ 2 円。1 判断時点（一次 1 ＋ 本判断 1）＝ 4 円。
+    // #1305, IADR-0553: 表に無いモデル（下の claude-opus-5-5 への差し替え）も同じ 1/1 で引く（未知モデルの計上単価を明示する）。
     private static LlmPriceTable Prices() =>
-        LlmPriceTable.From([("claude-sonnet-5-5", "1", "1"), ("claude-haiku-5-5", "1", "1")], "1", "1");
+        LlmPriceTable.From(
+            [("claude-sonnet-5-5", "1", "1"), ("claude-haiku-5-5", "1", "1")], "1", "1",
+            unknownModelInputPer1kTokens: "1", unknownModelOutputPer1kTokens: "1");
 
     // 2026-06-01（月）〜 to の平日 × AAPL。見積り = 平日数 × 4 円。
     private static Stage0RecordingOptions Options(string to = "2026-06-03", decimal? approvedJpy = null) => new()
@@ -269,7 +272,7 @@ public class Stage0RecordingIdempotencyTests
         await Build(state).Recorder.RunAsync(Options(), TestContext.Current.CancellationToken);
 
         var changed = Options();
-        changed.Model = "claude-opus-5-5"; // 同じ単価表の既定（1/1）で見積りは同じ＝承認値は一致する
+        changed.Model = "claude-opus-5-5"; // 表に無いモデル＝未知モデルの計上単価（1/1）で見積りは同じ＝承認値は一致する
         var (recorder, llm, sink) = Build(state);
         var outcome = await recorder.RunAsync(changed, TestContext.Current.CancellationToken);
 

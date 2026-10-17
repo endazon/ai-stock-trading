@@ -44,8 +44,6 @@ public class LlmPricingWiringTests
         {
             ["LlmPricing:PerModel:claude-sonnet-5-5:InputPer1kTokens"] = "0.327",
             ["LlmPricing:PerModel:claude-sonnet-5-5:OutputPer1kTokens"] = "1.637",
-            ["LlmPricing:PerModel:claude-fable-5:InputPer1kTokens"] = "1.637",
-            ["LlmPricing:PerModel:claude-fable-5:OutputPer1kTokens"] = "8.186",
         });
 
         (await ReportAsync(factory, "claude-sonnet-5-5")).Should().Be(3.601m);
@@ -60,8 +58,6 @@ public class LlmPricingWiringTests
         {
             ["LlmPricing:PerModel:claude_sonnet_5_5:InputPer1kTokens"] = "0.327",
             ["LlmPricing:PerModel:claude_sonnet_5_5:OutputPer1kTokens"] = "1.637",
-            ["LlmPricing:PerModel:claude_fable_5:InputPer1kTokens"] = "1.637",
-            ["LlmPricing:PerModel:claude_fable_5:OutputPer1kTokens"] = "8.186",
         });
 
         (await ReportAsync(factory, "claude-sonnet-5-5")).Should().Be(3.601m);
@@ -172,19 +168,68 @@ public class LlmPricingWiringTests
         logs.Warnings.Should().NotContain(m => m.Contains(LlmPricingStartupGuard.Marker));
     }
 
-    // 基準4（#303）: 表に無いモデルは最大単価（fable-5）へ倒れる＝過小計上を作らない。
-    [Fact]
-    public async Task 表に無いモデルは最大単価で計上される()
+    // 基準4（#303）→ #1305, IADR-0553（ADR-0064 決定9）: 表に無いモデルは専用の設定値「未知モデルの計上単価」で計上する。
+    // 未設定なら既定 $10 / $50（1.637 + 2 × 8.186 = 18.009 円）。表に fable-5 の行が無くても下がらない＝過小計上を作らない。
+    [Theory]
+    [InlineData("claude-opus-5")]
+    [InlineData(null)]
+    public async Task 表に無いモデルは未設定なら既定の未知モデルの計上単価で計上される(string? model)
     {
         using var factory = new Factory(new Dictionary<string, string?>
         {
-            ["LlmPricing:PerModel:claude-sonnet-5-5:InputPer1kTokens"] = "0.327",
-            ["LlmPricing:PerModel:claude-sonnet-5-5:OutputPer1kTokens"] = "1.637",
-            ["LlmPricing:PerModel:claude-fable-5:InputPer1kTokens"] = "1.637",
-            ["LlmPricing:PerModel:claude-fable-5:OutputPer1kTokens"] = "8.186",
+            ["LlmPricing:PerModel:claude_sonnet_5_5:InputPer1kTokens"] = "0.327",
+            ["LlmPricing:PerModel:claude_sonnet_5_5:OutputPer1kTokens"] = "1.637",
         });
 
-        (await ReportAsync(factory, "claude-sonnet-4-6")).Should().Be(18.009m);
+        (await ReportAsync(factory, model)).Should().Be(18.009m);
+    }
+
+    // #1305: env 名 `LlmPricing__UnknownModel__*` が構成キー `LlmPricing:UnknownModel:*` になり、未知モデルの計上額へ届く。
+    [Fact]
+    public async Task 表に無いモデルは専用の設定値で計上される()
+    {
+        using var factory = new Factory(new Dictionary<string, string?>
+        {
+            ["LlmPricing:PerModel:claude_sonnet_5_5:InputPer1kTokens"] = "0.327",
+            ["LlmPricing:PerModel:claude_sonnet_5_5:OutputPer1kTokens"] = "1.637",
+            ["LlmPricing:UnknownModel:InputPer1kTokens"] = "2.5",
+            ["LlmPricing:UnknownModel:OutputPer1kTokens"] = "12.5",
+        });
+
+        (await ReportAsync(factory, "gpt-5")).Should().Be(27.5m);   // 2.5 + 2 × 12.5
+    }
+
+    // #1305 受け入れ基準 6: 専用の設定値が解析できない・0 以下なら起動時に警告し（起動は止めない）、既定値で計上する。
+    [Fact]
+    public async Task 専用の設定値が不正なら起動時に警告して既定値で計上する()
+    {
+        var logs = new CapturingLoggerProvider();
+        using var factory = new Factory(new Dictionary<string, string?>
+        {
+            ["LlmPricing:PerModel:claude_sonnet_5_5:InputPer1kTokens"] = "0.327",
+            ["LlmPricing:PerModel:claude_sonnet_5_5:OutputPer1kTokens"] = "1.637",
+            ["LlmPricing:UnknownModel:InputPer1kTokens"] = "0",
+            ["LlmPricing:UnknownModel:OutputPer1kTokens"] = "abc",
+        }, logs);
+
+        (await ReportAsync(factory, "gpt-5")).Should().Be(18.009m);
+        logs.Warnings.Should().Contain(m => m.Contains("未知モデルの計上単価"));
+    }
+
+    [Fact]
+    public void 専用の設定値が正しいか未設定なら警告しない()
+    {
+        var logs = new CapturingLoggerProvider();
+        using var factory = new Factory(new Dictionary<string, string?>
+        {
+            ["LlmPricing:PerModel:claude_sonnet_5_5:InputPer1kTokens"] = "0.327",
+            ["LlmPricing:PerModel:claude_sonnet_5_5:OutputPer1kTokens"] = "1.637",
+            ["LlmPricing:UnknownModel:InputPer1kTokens"] = "1.637",
+        }, logs);
+
+        _ = factory.CreateClient();
+
+        logs.Warnings.Should().NotContain(m => m.Contains("未知モデルの計上単価"));
     }
 
     // 後方互換: PerModel を持たない既存デプロイは従来キー（global 単一ペア）のまま動く。

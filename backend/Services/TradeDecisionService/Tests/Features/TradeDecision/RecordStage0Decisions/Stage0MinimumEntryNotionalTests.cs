@@ -126,7 +126,9 @@ public class Stage0MinimumEntryNotionalTests
         var recorder = new Stage0DecisionRecorder(
             new RecorderLlm(collector, decisionJson), DecisionOrchestrationOptions.Default, new FixedInputs(input), sink,
             new InMemoryStage0RecordingState(), new InMemoryStage0RecordingState(), collector,
-            LlmPriceTable.From([(TestModel, "1", "1")], "1", "1"),
+
+            // #1305, IADR-0553: 表に無いモデル（この表に無い層）も同じ 1/1 で引く（未知モデルの計上単価を明示する。既定は $10 / $50）。
+            LlmPriceTable.From([(TestModel, "1", "1")], "1", "1", unknownModelInputPer1kTokens: "1", unknownModelOutputPer1kTokens: "1"),
             new ManualTimeProvider(Now), NullLogger<Stage0DecisionRecorder>.Instance, options);
 
         var outcome = await recorder.RunAsync(Options(), TestContext.Current.CancellationToken);

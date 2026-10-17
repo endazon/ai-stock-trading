@@ -45,4 +45,29 @@ public class LlmPricingWiringTests
         session.Sent.MessagesOf<LlmCostIncurred>().Should().ContainSingle()
             .Which.Amount.Should().Be((decimal)expected);
     }
+
+    // NFR-13, ADR-0064 決定9, #1305, IADR-0553: 表に無いモデル（旧世代・モデル名なし）は専用の設定値「未知モデルの計上単価」で計上する。
+    // 構成キー（env 名 `LlmPricing__UnknownModel__*`）が report-service の Program.cs でも読まれ、未設定なら既定 $10 / $50 になる。
+    [Theory]
+    [InlineData("claude-opus-5", null, null, 18.009)]   // 既定: 1.637 + 2 × 8.186
+    [InlineData(null, null, null, 18.009)]
+    [InlineData("claude-opus-5", "2.5", "12.5", 27.5)]  // 設定値: 2.5 + 2 × 12.5
+    public async Task 表に無いモデルは未知モデルの計上単価で計上される(string? model, string? input, string? output, double expected)
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+        using var configured = factory.WithWebHostBuilder(b =>
+        {
+            foreach (var (key, value) in TieredHaiku)
+                b.UseSetting(key, value);
+            b.UseSetting("LlmPricing:UnknownModel:InputPer1kTokens", input);
+            b.UseSetting("LlmPricing:UnknownModel:OutputPer1kTokens", output);
+        });
+
+        var reporter = configured.Services.GetRequiredService<ILlmUsageReporter>();
+        var session = await configured.Services.ExecuteAndWaitForTestAsync(() =>
+            reporter.ReportAsync(new LlmUsage(LlmPurposes.ReportMonthly, 1_000, 2_000, model)));
+
+        session.Sent.MessagesOf<LlmCostIncurred>().Should().ContainSingle()
+            .Which.Amount.Should().Be((decimal)expected);
+    }
 }
