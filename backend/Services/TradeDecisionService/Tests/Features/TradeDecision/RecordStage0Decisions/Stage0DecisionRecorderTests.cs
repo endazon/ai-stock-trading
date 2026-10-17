@@ -211,6 +211,16 @@ public class Stage0DecisionRecorderTests
         Stage0RecordingUsageCollector.CostOf(usages, TieredPrices()).Should().Be(1111.01m);
     }
 
+    // 🔴 NFR-13, ADR-0064 決定4, #1306, IADR-0550（受け入れ基準 5）: Stage 0 の実費も計上と同じ規則で引く。
+    // 入力トークン数が取れない計測は第 2 段（金額の入力は 0 のまま）: 出力 1k × 10 = 10 円。0 として第 1 段なら 1 円だった。
+    [Fact]
+    public void 実費は入力トークン数が取れない計測を第2段で引く()
+    {
+        LlmUsage[] usages = [new(LlmPurposes.TradeDecisionScreening, null, 1_000, "claude-haiku-5-5")];
+
+        Stage0RecordingUsageCollector.CostOf(usages, TieredPrices()).Should().Be(10m);
+    }
+
     // 肯定形（承認ゲートの対）: 承認が一致すれば実行され、記録が保存される。
     [Fact]
     public async Task 承認が一致すれば記録して保存する()

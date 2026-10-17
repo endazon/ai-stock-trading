@@ -140,6 +140,50 @@ public class LlmTransportUnsentParityTests
         payload.RoutingReason.Should().Be(RoutingAllowed);
     }
 
+    // ---- 入力トークン数の読み方（NFR-13, ADR-0064 決定4, #1306, IADR-0550）---------------------------
+
+    // 🔴 受け入れ基準 2: proto3 の int32 は「無い」と 0 を区別できない。送った要求の入力が 0 になることは無いので、
+    // gRPC の 0 は「取れない」（null）と読む。基盤の REST も int で返し、取れないと 0 になるため同じ読み方を通す
+    // （輸送によって段が変わらないように、両輸送の出口を突き合わせる）。
+    [Theory]
+    [InlineData(0, null)]
+    [InlineData(-1, null)]
+    [InlineData(1, 1)]
+    [InlineData(100_000, 100_000)]
+    [InlineData(100_001, 100_001)]
+    public async Task 入力トークン数の_0_は両輸送とも取れないと読む(int reported, int? expected)
+    {
+        var rest = await RestPayload(
+            "{\"text\":\"買い\",\"sent\":true,\"inputTokens\":"
+            + reported.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",\"outputTokens\":5}");
+        var grpc = await GrpcPayload(new CompleteResponse { Text = "買い", Sent = true, InputTokens = reported, OutputTokens = 5 });
+
+        rest.InputTokens.Should().Be(expected);
+        grpc.InputTokens.Should().Be(expected);
+        // 出力トークン数は本件の対象外（読み方を変えない）。
+        grpc.OutputTokens.Should().Be(5);
+    }
+
+    // 受け入れ基準 1: REST の欠落（null）は「取れない」のまま出口へ出る。
+    [Fact]
+    public async Task REST_の入力トークン数の欠落は取れないまま出口へ出る()
+    {
+        var rest = await RestPayload("{\"text\":\"買い\",\"sent\":true}");
+
+        rest.InputTokens.Should().BeNull();
+    }
+
+    // 受け入れ基準 2 の通し: gRPC の 0 を受けた要求は、claude-haiku-5-5 の第 2 段（高い側）の単価で引かれる。
+    [Fact]
+    public async Task gRPC_で入力トークン数が_0_の応答は第2段の単価で引かれる()
+    {
+        var table = LlmPriceTable.FromRows(
+            [new LlmPriceRow("claude-haiku-5-5", "0.0164", "0.0819", "100000", "0.0819", "0.409")]);
+        var grpc = await GrpcPayload(new CompleteResponse { Text = "買い", Sent = true, Model = "claude-haiku-5-5", OutputTokens = 1000 });
+
+        table.Resolve(grpc.Model, grpc.InputTokens).Should().Be(new LlmPrice(0.0819m, 0.409m));
+    }
+
     // ---- 入力の組み立て --------------------------------------------------------------------------
 
     private static string RestBody(Case c)
@@ -149,7 +193,7 @@ public class LlmTransportUnsentParityTests
           .Append(",\"sent\":").Append(c.Sent ? "true" : "false")
           .Append(",\"routingReason\":").Append(c.RoutingReason is null ? "null" : Json(c.RoutingReason))
           // 基盤の CompletionApiResponse はトークン数を int で常に返す（gRPC の 0 と同じ値）。
-          // 🔴 トークン数の欠落の扱い（REST は null・gRPC は 0）は本件の範囲外のため、ここでは揃えて与える。
+          // 入力トークン数の 0 は両輸送とも「取れない」（null）へ写る（#1306, IADR-0550。突き合わせは本クラスの 入力トークン数の_0_は両輸送とも取れないと読む）。
           .Append(",\"inputTokens\":0,\"outputTokens\":0");
         // 欠落（旧い基盤）は**フィールドごと出さない**。
         if (c.FailureKind is not null)

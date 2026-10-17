@@ -130,4 +130,40 @@ public class PublishingLlmUsageReporterTests
 
         amount.Should().Be(0m);
     }
+
+    // ---- 入力トークン数が取れない要求（NFR-13, FR-04, ADR-0064 決定4, #1306, IADR-0550）----
+
+    private static LlmPriceTable TieredPrices() => LlmPriceTable.FromRows(
+    [
+        new LlmPriceRow("claude-sonnet-5-5", "0.327", "1.637"),
+        new LlmPriceRow("claude-haiku-5-5", "0.0164", "0.0819", "100000", "0.0819", "0.409"),
+    ]);
+
+    // 受け入れ基準 1・3・5: 計上の経路は、取れない（null）要求を第 2 段で、取れた要求を閾値どおりに引く。
+    // 金額の式の入力トークン数は 0 のまま（推定しない）＝取れない要求は出力 1k × 第 2 段 0.409 円。
+    [Theory]
+    [InlineData(null, "0.409")]            // 取れない → 第 2 段（修正前は第 1 段の 0.0819 だった）
+    [InlineData(100_000, "1.7219")]        // 100 × 0.0164 + 1 × 0.0819（ちょうどは第 1 段）
+    [InlineData(100_001, "8.5990819")]     // 100.001 × 0.0819 + 1 × 0.409
+    public async Task 取れない要求は第2段で計上し取れた要求は閾値どおりに計上する(int? inputTokens, string expected)
+    {
+        var amount = await ReportAsync(
+            new LlmUsage(LlmPurposes.TradeDecisionScreening, inputTokens, 1_000, "claude-haiku-5-5"), TieredPrices());
+
+        amount.Should().Be(decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    // 受け入れ基準 4: 第 2 段を持たない行は取れなくても従来の単価（入力 0 ＋ 出力 1k × 1.637）。
+    [Fact]
+    public async Task 第2段の無い行は取れなくても従来の単価で計上する()
+    {
+        var amount = await ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, null, 1_000, "claude-sonnet-5-5"), TieredPrices());
+
+        amount.Should().Be(1.637m);
+    }
+
+    // 受け入れ基準 6（形の固定）: 計測は「取れない」を表せる型で入力トークン数を運ぶ（int へ戻すと egress が 0 へ潰すしかなくなる）。
+    [Fact]
+    public void 計測は取れないを表せる型で入力トークン数を運ぶ() =>
+        typeof(LlmUsage).GetProperty(nameof(LlmUsage.InputTokens))!.PropertyType.Should().Be(typeof(int?));
 }

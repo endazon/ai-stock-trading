@@ -26,6 +26,10 @@ namespace AiStockTrading.Shared.Infrastructure.Composable.Llm;
 // 単価が違う。提供元の公表値 2026-10-10・planning#783）。行に任意の第 2 段（`LongContextThresholdTokens` と第 2 の単価ペア）を
 // 持たせ、**計上時の入力トークン数**が閾値を超えた要求だけ第 2 段で引く（要求ごとに決まる）。上限側へ寄せた 1 段にしないのは、
 // 常時の過大計上が月次上限を実態より早く効かせ続けるため（ADR-0037 決定1 の趣旨）。第 2 段を持たない行・未知モデルの扱いは従来どおり。
+//
+// NFR-13, FR-04, ADR-0064 決定4, #1306, IADR-0550: **入力トークン数が取れない（null）要求は第 2 段（高い側）で引く。**
+// 取れないことを 0 と読むと第 1 段（安い側）＝過小計上になる（IADR-0122 の危険側）。変えるのは段の選択だけで、
+// 金額の式（LlmPricing.Compute）へ渡す入力トークン数は推定しない（呼び出し側が 0 を渡す）。
 public sealed class LlmPriceTable
 {
     private readonly IReadOnlyDictionary<string, LlmPriceEntry> _perModel;
@@ -110,8 +114,12 @@ public sealed class LlmPriceTable
     /// （過小計上を避ける側）へ倒す。入力トークン数が行の閾値を超えれば第 2 段、それ以外は第 1 段。
     /// 第 2 段を持たない行・未知モデル・表が空のときは入力トークン数に依らない。
     /// 🔴 入力トークン数を取らない多重定義は置かない（呼び出し側が段の判定を黙って落とせないようにする）。
+    /// 🔴 <paramref name="inputTokens"/> の null は「取れない」であり、第 2 段（高い側）で引く（#1306, IADR-0550・ADR-0064 決定4）。
+    /// 取れないことを 0 へ潰してから渡さない（0 は第 1 段＝安い側になる）。
     /// </summary>
-    public LlmPrice Resolve(string? model, int inputTokens)
+    /// <param name="model">応答が名乗った実効モデル。</param>
+    /// <param name="inputTokens">その要求の入力トークン数。取れないときは null。</param>
+    public LlmPrice Resolve(string? model, int? inputTokens)
     {
         if (_perModel.Count == 0)
             return _fallback;
@@ -119,7 +127,8 @@ public sealed class LlmPriceTable
         if (string.IsNullOrWhiteSpace(model) || !_perModel.TryGetValue(Normalize(model), out var entry))
             return _unknownModel;
 
-        return entry.LongContext is { } tier && inputTokens > tier.ThresholdTokens
+        // #1306, IADR-0550: 取れない（null）は高い側。取れていれば閾値を**超える**ときだけ第 2 段（100,000 ちょうどは第 1 段）。
+        return entry.LongContext is { } tier && (inputTokens is not { } known || known > tier.ThresholdTokens)
             ? tier.Price
             : entry.Base;
     }
