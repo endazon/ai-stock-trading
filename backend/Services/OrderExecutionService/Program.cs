@@ -26,6 +26,7 @@ using AiStockTrading.Shared.Contracts.Operations;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Observability;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Grpc;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -524,6 +525,10 @@ builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
 // 生の Broker:Provider だけでは取引環境（シム／実弾）が判らず「今どの階層か」を実行時に確認できない。
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b.AddPort("broker", brokerSelection.Tier));
 
+// NFR, MSP:ADR-0029, IADR-0328 決定3, IADR-0559 決定 1, #1391 (#753): east-west gRPC の h2c 専用ポート。
+// **`Grpc:Port` が未設定・0 なら立たない**（既定配備の振る舞いは変わらない。helm の `grpcPort` を宣言したときだけ env が入る）。`AddGrpc()` は常に呼ばれる。
+builder.AddAiStockTradingGrpcListener();
+
 var app = builder.Build();
 
 // 🔴 FR-10, #942, IADR-0395: 追随の打ち切りのカウンタを**起動完了後に 0 で計上して系列を先に作る**。
@@ -565,6 +570,10 @@ app.MapDailyBarsEndpoint();
 
 // FR-04, FR-10, #1338, IADR-0535 決定2: 処理中の決済の照会（取引判断が LLM の前に読む）。
 app.MapInFlightClosesEndpoint();
+
+// NFR, IADR-0284 決定 5（段 5 の追補 2）, IADR-0559 決定 1・2, #1391 (#753): 読み取りの gRPC 面（上の 3 つの照会の口と同じ照会サービス・同じ入力の検証）。
+// 門は GrpcOwnerOrService（deny-by-default）。呼び出し元（リスク管理・取引判断・バックテスト）は `OrderExecution:Grpc` を宣言したときだけ使う（既定は REST）。
+app.MapGrpcService<OrderExecutionReadGrpcService>();
 
 // #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
 return await app.RunAiStockTradingAsync(args);

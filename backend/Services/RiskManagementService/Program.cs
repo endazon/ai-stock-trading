@@ -289,8 +289,15 @@ builder.Services.AddScoped<RiskManagementService.Domain.IManipulativeOrderPatter
 builder.Services.AddHttpClient("order-execution", c => c.Timeout = TimeSpan.FromSeconds(5))
     .AddAiStockTradingServiceToken(builder.Configuration);
 builder.Services.AddSingleton<UnavailableShortSellBorrowSource>();
+// NFR, MSP:ADR-0029, IADR-0284 決定 5（段 5 の追補 2）, IADR-0559 決定 3, #1391 (#753): east-west gRPC（`OrderExecutionRead/GetShortPermit`）。
+// **`OrderExecution:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば借株可否の供給元が
+// gRPC 実装を選ぶ（`OrderExecution:BaseUrl` より優先し、BaseUrl が空でも読む）。不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingOrderExecutionGrpc(builder.Configuration);
 builder.Services.AddScoped<IShortSellBorrowSource>(sp =>
 {
+    if (sp.GetService<OrderExecutionGrpcTransport>() is { } orderExecutionGrpc)
+        return new GrpcShortSellBorrowSource(orderExecutionGrpc, sp.GetRequiredService<ILogger<GrpcShortSellBorrowSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["OrderExecution:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return sp.GetRequiredService<UnavailableShortSellBorrowSource>();

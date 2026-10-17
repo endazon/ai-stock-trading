@@ -24,19 +24,26 @@ public static class InFlightClosesEndpoint
                 CancellationToken cancellationToken) =>
             {
                 // 値域外は照会しない（ブローカーの枠を使わない）。市場・決済の方向は数値（Market・TradeSide の値）で受ける。
-                if (string.IsNullOrWhiteSpace(symbol) || symbol.Length > MaxSymbolLength
-                    || market is not { } marketValue || !Enum.IsDefined((Market)marketValue)
-                    || closeSide is not { } sideValue || !Enum.IsDefined((TradeSide)sideValue))
+                if (!IsValidQuery(symbol, market, closeSide))
                 {
                     return Results.BadRequest(new { error = "symbol（銘柄コード）・market（市場の数値）・closeSide（決済の方向の数値）が必要です。" });
                 }
 
                 return Results.Ok(await service
-                    .QueryAsync(symbol, (Market)marketValue, (TradeSide)sideValue, cancellationToken)
+                    .QueryAsync(symbol!, (Market)market!.Value, (TradeSide)closeSide!.Value, cancellationToken)
                     .ConfigureAwait(false));
             })
             .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
 
         return app;
     }
+
+    /// <summary>
+    /// 照会してよい入力か（値域外は照会しない＝ブローカーの枠を使わない）。REST と gRPC の面（OrderExecutionReadGrpcService）が共有する。
+    /// NFR, IADR-0559, #1391: gRPC の面を足すときに、REST の検証をそのまま切り出した（規則は 1 つも変えていない）。
+    /// </summary>
+    internal static bool IsValidQuery(string? symbol, int? market, int? closeSide) =>
+        !string.IsNullOrWhiteSpace(symbol) && symbol.Length <= MaxSymbolLength
+        && market is { } marketValue && Enum.IsDefined((Market)marketValue)
+        && closeSide is { } sideValue && Enum.IsDefined((TradeSide)sideValue);
 }

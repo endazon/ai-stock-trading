@@ -152,7 +152,7 @@ jobs:
             cl && line ~ /^      [A-Z][A-Za-z]*: (true|false)$/ { next }
             { printf "::error::%s:%d は許した形ではない（grpcPort / grpcClients.<提供側>: true|false だけを書く・#753）: %s\n", FILENAME, FNR, $0; bad=1 }
             END { exit bad }' "$O"
-          # 期待する宣言（Deployment・env・宛先）。#6（report → Audit）は既定 false（別窓で測る）。
+          # 期待する宣言（Deployment・env・宛先）。#6（report → Audit）・#17（risk-management → OrderExecution。#1391）は既定 false（別窓で測る）。
           expected="$(printf '%s\n' \
             'cost-control-service	Configuration__Grpc	http://configuration-service:8081' \
             'trade-decision-service	Configuration__Grpc	http://configuration-service:8081' \
@@ -166,7 +166,9 @@ jobs:
             'information-collection-service	RiskManagement__Grpc	http://risk-management-service:8081' \
             'notification-service	RiskManagement__Grpc	http://risk-management-service:8081' \
             'notification-service	Reports__Grpc	http://report-service:8081' \
-            'notification-service	MarketMonitor__Grpc	http://market-monitor-service:8081' | sort)"
+            'notification-service	MarketMonitor__Grpc	http://market-monitor-service:8081' \
+            'trade-decision-service	OrderExecution__Grpc	http://order-execution-service:8081' \
+            'backtest-service	OrderExecution__Grpc	http://order-execution-service:8081' | sort)"
           for profile in default local; do
             if [ "$profile" = local ]; then base=(-f "$CHART/values-local.yaml"); else base=(); fi
             before_out="$(helm template ast "$CHART" "${base[@]}")"
@@ -182,14 +184,14 @@ jobs:
             if [ -n "$removed" ]; then
               echo "::error::[$profile] overlay を重ねると env が消える（配列の置き換え）:"; printf '%s\n' "$removed"; exit 1
             fi
-            # ④ 増えたのは gRPC の宣言だけ（提供側 6 の Grpc__Port）。
+            # ④ 増えたのは gRPC の宣言だけ（提供側 7 の Grpc__Port。#1391 で発注執行を足した）。
             added="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))"
             if grep -vqE $'\t''([A-Za-z]+__Grpc|Grpc__Port)$' <<<"$added"; then
               echo "::error::[$profile] overlay が gRPC 以外の env を足した:"; printf '%s\n' "$added"; exit 1
             fi
             ports="$(grep -cE $'\t''Grpc__Port$' <<<"$added" || true)"
-            if [ "$ports" -ne 6 ]; then
-              echo "::error::[$profile] 提供側の Grpc__Port が $ports/6。Runbook の経路表と揃える。"; exit 1
+            if [ "$ports" -ne 7 ]; then
+              echo "::error::[$profile] 提供側の Grpc__Port が $ports/7。Runbook の経路表と揃える。"; exit 1
             fi
             # ⑤ 呼び出し側の宣言（Deployment・env・宛先）が期待表と完全に一致する（数・呼び先の取り違え・false の無視を捕まえる）。
             got="$(grpc_urls <<<"$after_out")"
@@ -207,6 +209,9 @@ jobs:
           on="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -f "$O" --set services.report.grpcClients.Audit=true | grpc_urls)"
           grep -qx $'report-service\tAudit__Grpc\thttp://audit-service:8081' <<<"$on" \
             || { echo "::error::grpcClients.Audit=true で report に Audit__Grpc（http://audit-service:8081）が描かれない。"; exit 1; }
+          on17="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -f "$O" --set services.risk-management.grpcClients.OrderExecution=true | grpc_urls)"
+          grep -qx $'risk-management-service\tOrderExecution__Grpc\thttp://order-execution-service:8081' <<<"$on17" \
+            || { echo "::error::grpcClients.OrderExecution=true で risk-management に OrderExecution__Grpc（http://order-execution-service:8081）が描かれない（#1391）。"; exit 1; }
           # ⑦ 片方だけの宣言・未知の提供側・真偽値でない値・extraEnv との二重定義は、**その理由で**描画が止まる。
           must_fail() {
             local label="$1" want="$2"; shift 2
@@ -218,7 +223,7 @@ jobs:
           must_fail "未知の提供側" "grpcClients.Auditt は未知の提供側です" --set services.audit.grpcPort=8081 --set services.report.grpcClients.Auditt=true
           must_fail "真偽値でない" "grpcClients.Audit は true / false で指定してください" --set services.audit.grpcPort=8081 --set-string services.report.grpcClients.Audit=true
           must_fail "extraEnv と二重定義" "は extraEnv の Audit__Grpc と grpcClients.Audit を併用できません" -f "$O" --set services.report.grpcClients.Audit=true --set 'services.report.extraEnv[0].name=Audit__Grpc'
-          echo "ok: 計測 overlay は env を 1 本も消さず、段 1〜5 の宣言（呼び出し側 13〔#6 は別窓〕・提供側 6）だけを足す"
+          echo "ok: 計測 overlay は env を 1 本も消さず、段 1〜5 の宣言（呼び出し側 15〔#6・#17 は別窓〕・提供側 7）だけを足す"
       - name: helm template (externalSecrets.enabled=true)
         run: helm template ast "$CHART" --set externalSecrets.enabled=true > /dev/null
       # #24 / IADR-0094: API 鍵群（ast-secrets）の Vault 同期 opt-in。既定描画では評価されないため

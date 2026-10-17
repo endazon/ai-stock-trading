@@ -301,7 +301,7 @@ spec:
               value: {{ index $envOverrides $e.name | default $e.value | quote }}
               {{- end }}
             {{- end }}
-            {{- /* NFR, IADR-0284 決定 5（段 1〜5）, IADR-0489, #753: east-west gRPC の呼び出し側の宣言（`<提供側>__Grpc`）。
+            {{- /* NFR, IADR-0284 決定 5（段 1〜5）, IADR-0489, IADR-0559（#1391: 発注執行を足した）, #753: east-west gRPC の呼び出し側の宣言（`<提供側>__Grpc`）。
                    services.<name>.grpcClients.<提供側> を true にしたときだけ描く。宛先は**呼び先の grpcPort から導出する**
                    （http://<呼び先>-service:<grpcPort>）。未宣言・false・null は何も描かない＝既定描画・values-local 描画は追加前とバイト等価。
                    🔴 extraEnv（配列）へ足させないのは、2 つ目の values や --set で配列を重ねると**配列ごと置き換わり**、
@@ -309,7 +309,7 @@ spec:
                    🔴 呼び先の grpcPort が無い・未知の提供側・extraEnv と同名の二重定義は描画時に止める
                       （片方だけの宣言は「切り替えたつもりで常に安全側既定へ倒れる」を作る）。
                    提供側の名前は各サービスの輸送が読む構成キー（`<提供側>:Grpc`）の節名と同じ。基盤の LlmGateway（chart の外）は対象外。 */}}
-            {{- $grpcCallees := dict "Configuration" "configuration" "RiskManagement" "risk-management" "Audit" "audit" "Reports" "report" "MarketMonitor" "market-monitor" "CostControl" "cost-control" }}
+            {{- $grpcCallees := dict "Configuration" "configuration" "RiskManagement" "risk-management" "Audit" "audit" "Reports" "report" "MarketMonitor" "market-monitor" "CostControl" "cost-control" "OrderExecution" "order-execution" }}
             {{- $extraEnvNames := dict }}
             {{- range $e := $svc.extraEnv }}{{- $_ := set $extraEnvNames $e.name true }}{{- end }}
             {{- range $provider, $on := ($svc.grpcClients | default dict) }}

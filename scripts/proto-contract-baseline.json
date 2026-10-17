@@ -590,6 +590,308 @@
         }
       }
     },
+    "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/orderexecution/v1/order_execution_read.proto": {
+      "syntax": "proto3",
+      "package": "aistocktrading.orderexecution.v1",
+      "csharpNamespace": "AiStockTrading.Shared.Grpc.OrderExecution.V1",
+      "imports": [],
+      "messages": {
+        "DailyBarRow": {
+          "fields": {
+            "close": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            },
+            "date": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "high": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
+            "low": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            },
+            "open": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "volume": {
+              "number": 6,
+              "type": "int64",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetDailyBarsRequest": {
+          "fields": {
+            "from": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "to": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetDailyBarsResponse": {
+          "fields": {
+            "bars": {
+              "number": 5,
+              "type": "DailyBarRow",
+              "label": "repeated"
+            },
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "status": {
+              "number": 3,
+              "type": "DailyBarsState",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "unavailable_reason": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetInFlightClosesRequest": {
+          "fields": {
+            "close_side": {
+              "number": 3,
+              "type": "TradeSide",
+              "label": "singular"
+            },
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetInFlightClosesResponse": {
+          "fields": {
+            "close_side": {
+              "number": 3,
+              "type": "TradeSide",
+              "label": "singular"
+            },
+            "in_flight_quantity": {
+              "number": 6,
+              "type": "int32",
+              "label": "optional"
+            },
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "order_ids": {
+              "number": 7,
+              "type": "string",
+              "label": "repeated"
+            },
+            "status": {
+              "number": 4,
+              "type": "InFlightClosesState",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "unknown_reason": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetShortPermitRequest": {
+          "fields": {
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetShortPermitResponse": {
+          "fields": {
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "status": {
+              "number": 3,
+              "type": "ShortPermitState",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "unknown_reason": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "enums": {
+        "DailyBarsState": {
+          "values": {
+            "DAILY_BARS_STATE_AVAILABLE": 2,
+            "DAILY_BARS_STATE_UNAVAILABLE": 1,
+            "DAILY_BARS_STATE_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "InFlightClosesState": {
+          "values": {
+            "IN_FLIGHT_CLOSES_STATE_COVERED": 2,
+            "IN_FLIGHT_CLOSES_STATE_NOT_COVERED": 3,
+            "IN_FLIGHT_CLOSES_STATE_UNKNOWN": 1,
+            "IN_FLIGHT_CLOSES_STATE_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "Market": {
+          "values": {
+            "MARKET_JAPAN": 1,
+            "MARKET_UNITED_STATES": 2,
+            "MARKET_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "ShortPermitState": {
+          "values": {
+            "SHORT_PERMIT_STATE_NOT_PERMITTED": 3,
+            "SHORT_PERMIT_STATE_PERMITTED": 2,
+            "SHORT_PERMIT_STATE_UNKNOWN": 1,
+            "SHORT_PERMIT_STATE_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "TradeSide": {
+          "values": {
+            "TRADE_SIDE_BUY": 1,
+            "TRADE_SIDE_SELL": 2,
+            "TRADE_SIDE_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "services": {
+        "OrderExecutionRead": {
+          "rpcs": {
+            "GetDailyBars": {
+              "request": "GetDailyBarsRequest",
+              "response": "GetDailyBarsResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetInFlightCloses": {
+              "request": "GetInFlightClosesRequest",
+              "response": "GetInFlightClosesResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetShortPermit": {
+              "request": "GetShortPermitRequest",
+              "response": "GetShortPermitResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            }
+          }
+        }
+      }
+    },
     "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/report/v1/daily_policy_read.proto": {
       "syntax": "proto3",
       "package": "aistocktrading.report.v1",

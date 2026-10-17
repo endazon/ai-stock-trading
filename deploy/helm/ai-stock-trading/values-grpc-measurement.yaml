@@ -1,4 +1,4 @@
-# east-west gRPC（h2c）の往復を稼働クラスタで実測するための**一時 overlay**（NFR, IADR-0284 決定 5 の段 1〜5, IADR-0489, IADR-0557, #753）。
+# east-west gRPC（h2c）の往復を稼働クラスタで実測するための**一時 overlay**（NFR, IADR-0284 決定 5 の段 1〜5, IADR-0489, IADR-0557, IADR-0559, #753）。
 # 手順・合否・切り戻し・中止条件は docs/operations/grpc-h2c-measurement-runbook.md が単一情報源である。
 #
 # 🔴 **本ファイルは既定の配備に含めない**（values.yaml / values-local.yaml / scripts/k8s-local-deploy.sh / ArgoCD のいずれからも参照しない）。
@@ -23,6 +23,11 @@ services:
     grpcPort: 8081            # 段 1: aistocktrading.configuration.v1.Assumptions
   risk-management:
     grpcPort: 8081            # 段 2・5: RiskControlsRead / RiskControlsOwnerRead / RiskControlsOwnerWrite
+    grpcClients:
+      # 段 5 の追補 2（#1391）: 借株可否（GetShortPermit）。🔴 **既定は false（この overlay では宣言しない）。** values.yaml・values-local の
+      # どちらでも OrderExecution__BaseUrl は空（REST も未結線）で、宣言すると借株可否の照会が新しく始まる（空売りの審査の入力が変わる）。
+      # #6 と同じく、所有者の同意を得てから別の窓で --set services.risk-management.grpcClients.OrderExecution=true を足して測る（Runbook「経路 #17 の別窓」）。
+      OrderExecution: false
   audit:
     grpcPort: 8081            # 段 3: AuditEventsRead
   report:
@@ -43,6 +48,8 @@ services:
     grpcPort: 8081            # 段 4: CostStateRead
     grpcClients:
       Configuration: true     # 段 1: 全体前提条件（Assumptions/Get）
+  order-execution:
+    grpcPort: 8081            # 段 5 の追補 2（#1391）: OrderExecutionRead（借株可否・日足・処理中の決済）
   # ---- 呼び出し側だけ（提供する面を持たない） ----
   trade-decision:
     grpcClients:
@@ -50,6 +57,10 @@ services:
       RiskManagement: true    # 段 2: GetOpenPositions・GetWorkingEntryOrders・GetSizingContext・GetEntryBlockers
       Reports: true           # 段 4: GetConfirmedDailyPolicy／段 5 の追補（#1388）: GetConfirmedDailyPolicyAsOf（Stage 0 の記録）
       MarketMonitor: true     # 段 4: GetWatchlist・GetWatchlistAsOf
+      OrderExecution: true    # 段 5 の追補 2（#1391）: GetDailyBars（出来高・ATR(14)・Stage 0 の当時の価格）・GetInFlightCloses
+  backtest:
+    grpcClients:
+      OrderExecution: true    # 段 5 の追補 2（#1391）: 過去データ源 order-execution の GetDailyBars（Provider を明示したときだけ読む）
   information-collection:
     grpcClients:
       MarketMonitor: true     # 段 4: Finnhub の対象銘柄（GetWatchlist）
