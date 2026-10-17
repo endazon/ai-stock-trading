@@ -305,8 +305,8 @@ public static class ReportNarrativePromptBuilder
         {
             sb.AppendLine(unvaluedCount > 0
                 ? string.Format(CultureInfo.InvariantCulture,
-                    "決済の事実（コードで確定済み）: 損益を算定できた決済は 0 件（期間より前に建てた建玉の決済 {0} 件は損益を算定できていません）。",
-                    unvaluedCount)
+                    "決済の事実（コードで確定済み）: 損益を算定できた決済は 0 件（期間より前に建てた建玉の決済 {0} 件〔種別: {1}〕は損益を算定できていません）。",
+                    unvaluedCount, KindBreakdown([.. entries.Where(e => e.Unvalued)]))
                 : "決済の事実（コードで確定済み）: 当期間の決済は 0 件です（事実。未供給ではありません）。");
             sb.AppendLine("最良・最悪の決済や決済の種別を創作しないでください。");
             return;
@@ -318,8 +318,10 @@ public static class ReportNarrativePromptBuilder
             "- 決済件数（損益を算定できた分）: {0} 件（種別: {1}）", valued.Count, KindBreakdown(valued)));
         if (unvaluedCount > 0)
         {
+            // #1362, IADR-0552 決定 3: 本文の「損切り執行」は算定できなかった決済も数えるため、ここにも種別を出す（2 行の和が本文の件数）。
             sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                "- 期間より前に建てた建玉の決済 {0} 件は損益を算定できておらず、以下に含めていません。", unvaluedCount));
+                "- 期間より前に建てた建玉の決済 {0} 件（種別: {1}）は損益を算定できておらず、以下に含めていません。",
+                unvaluedCount, KindBreakdown([.. entries.Where(e => e.Unvalued)])));
         }
 
         if (highlights is { Best: { } best, Worst: { } worst })

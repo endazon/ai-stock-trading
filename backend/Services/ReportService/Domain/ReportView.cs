@@ -239,6 +239,13 @@ public sealed record ReportView
     public IReadOnlyList<FillPnlAttribution>? FillAttributions { get; init; }
 
     /// <summary>
+    /// FR-06, FR-16, #1362, IADR-0552 決定 1: 期間の約定を<b>照会できなかった</b>か（<c>UnsuppliedInputs</c> に約定がある）。
+    /// <c>true</c> のとき <see cref="FillAttributions"/> は空列でも「約定 0 件」ではない。週報 §1「うち損切り」と §5「損切り執行」は
+    /// 散文（<c>ReportNarrativeContext.Settlements</c> が null）と同じく「未供給」と描く（0 件と書かない）。
+    /// </summary>
+    public bool FillsUnsupplied { get; init; }
+
+    /// <summary>
     /// FR-06, FR-07, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5・月報 §1（計画 ADR-0035, #1201, IADR-0501）:
     /// <b>費用の内訳と費用率</b>。週報と月報が持つ（日報は持たない）。
     /// <para>

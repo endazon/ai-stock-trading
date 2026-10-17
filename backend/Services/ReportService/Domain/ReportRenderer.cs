@@ -257,15 +257,49 @@ public static class ReportRenderer
         sb.Append(CultureInfo.InvariantCulture,
             $"- 「判断の要点」「原因」は**取引判断の記録をそのまま転記**しています"
                 + $"（報告書生成時に文章を作っていません）。相関できなかった決済は `{UnsuppliedCell}` です。\n");
+        sb.Append(SettlementKindLegend);
         AppendUnvaluedSettlementNote(sb, entries);
         sb.Append('\n');
     }
 
-    // ハイライト 1 件の見出し部（銘柄・市場・損益・決済日・該当日報の自然キー）。
+    // ハイライト 1 件の見出し部（銘柄・市場・損益・決済日・該当日報の自然キー・決済の種別）。
+    // FR-06, FR-16, #1362, IADR-0552 決定 2: 種別の語は散文と同じ SettlementKinds.Label（同じ決済に同じ語。null＝種別未供給）。
     private static string Highlight(FillPnlAttribution entry) =>
-        string.Format(CultureInfo.InvariantCulture, "{0}（{1}） {2} — {3:yyyy-MM-dd} 決済（該当日報: `{4}`）",
+        string.Format(CultureInfo.InvariantCulture, "{0}（{1}） {2} — {3:yyyy-MM-dd} 決済（該当日報: `{4}`） — 種別: {5}",
             entry.Symbol, MarketLabel(entry.Market), Amount(entry.RealizedPnlGross), entry.SessionDateJst,
-            ReportPeriod.ExpectedKey(ReportKind.Daily, entry.SessionDateJst));
+            ReportPeriod.ExpectedKey(ReportKind.Daily, entry.SessionDateJst), SettlementKinds.Label(entry.Kind));
+
+    // FR-06, FR-16, #1362, IADR-0552 決定 2: §3 の種別の凡例（種別の記録源と、種別未供給を推測しないこと）。
+    private const string SettlementKindLegend =
+        "- 「種別」は取引台帳の承認行の由来（と判断の記録の有無）から決めた決済の種別です（散文に渡した種別と同じ値）。"
+        + "「" + SettlementKinds.UnsuppliedLabel + "」は種別を記録から取れなかった決済で、**推測で埋めていません。**"
+        + "「取引判断による決済」が利確か方針による撤退かは、判断の記録に書かれている場合だけ読み取れます。\n";
+
+    // FR-06, FR-10, FR-16, #1362, IADR-0552 決定 1: 週報 §1「うち損切り」と §5「損切り執行」のセル（同じ値を 2 か所に描く）。
+    // 🔴 帰属が未供給（約定を取得できなかった）なら「0 件」と書かない。種別未供給の決済があれば件数を併記する（損切りの件数は下限）。
+    private static string StopLossCell(ReportView view)
+    {
+        if (view.FillsUnsupplied || view.FillAttributions is not { } entries)
+            return UnsuppliedCell;
+
+        var tally = SettlementKinds.Tally(entries);
+        var notes = new List<string>(2);
+        if (tally.UnvaluedStopLoss > 0)
+        {
+            notes.Add(string.Format(CultureInfo.InvariantCulture,
+                "うち {0} 件は期間より前に建てた建玉の決済で損益を算定できていません", tally.UnvaluedStopLoss));
+        }
+
+        if (tally.Unsupplied > 0)
+        {
+            notes.Add(string.Format(CultureInfo.InvariantCulture,
+                "ほかに{0}の決済 {1} 件。その中に損切りがあり得ます", SettlementKinds.UnsuppliedLabel, tally.Unsupplied));
+        }
+
+        return notes.Count == 0
+            ? string.Format(CultureInfo.InvariantCulture, "{0} 件", tally.StopLoss)
+            : string.Format(CultureInfo.InvariantCulture, "{0} 件（{1}）", tally.StopLoss, string.Join("。", notes));
+    }
 
     // FR-06, FR-07, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5: リスク・費用レビュー。
     //
@@ -273,7 +307,7 @@ public static class ReportRenderer
     //   - 損切り執行 <n 件>・発注拒否 <n 件>・上限使用率の週間最大 <n%>
     //   - 費用の内訳（手数料/諸費用/為替スプレッド/借株料）と費用率 <n%>（分母は約定代金差額。計画 ADR-0035, #1201）
     //
-    // 🔴 **1 行目の 3 項目は記録源が無い。** それでも**行ごと落とさない**——計画が求めた項目が出ていないことは
+    // 🔴 **1 行目の 3 項目は記録源が無かった**（#1362 で損切り執行は決済の種別から数えるようにした。残る 2 項目は記録源が無い）。それでも**行ごと落とさない**——計画が求めた項目が出ていないことは
     // 報告書自身に見えていなければならない（ADR-0030 決定3 と同じ理由）。**「0 件」とも書かない**
     //（「損切りは 1 度も執行されなかった」と読めるが、実際は「記録していない」である）。
     //
@@ -283,11 +317,16 @@ public static class ReportRenderer
     {
         sb.Append("## 5. リスク・費用レビュー\n\n");
 
-        // 計画の 1 行目。3 項目とも記録源が無いため、**理由を項目ごとに**書く（まとめて 1 行にしない）。
+        // 計画の 1 行目。発注拒否・上限使用率は記録源が無いため、**理由を項目ごとに**書く（まとめて 1 行にしない）。
+        // FR-06, FR-10, #1362, IADR-0552 決定 1: 損切り執行は決済の種別（§1「うち損切り」・散文と同じ値）で数える。
         sb.Append(CultureInfo.InvariantCulture,
-            $"- 損切り執行: {UnsuppliedCell} / 発注拒否: {UnsuppliedCell} / 上限使用率の週間最大: {UnsuppliedCell}\n");
-        sb.Append("  - **損切り執行**: 判断の起点（損切りか否か）が記録されていません"
-            + "（取引判断の記録にも発注の意図にも、起点を表す列がありません）。**「損切りが 0 件だった」ではありません。**\n");
+            $"- 損切り執行: {StopLossCell(view)} / 発注拒否: {UnsuppliedCell} / 上限使用率の週間最大: {UnsuppliedCell}\n");
+        sb.Append(view.FillsUnsupplied || view.FillAttributions is null
+            ? "  - **損切り執行**: 当週の約定を取得できなかったため、決済の種別から数えられていません。"
+                + "**「損切りが 0 件だった」ではありません。**\n"
+            : "  - **損切り執行**: 決済の種別（取引台帳の承認行の由来）が損切り——保護逆指値（S0）の約定・ソフトウェア逆指値（S1）の決済——の件数です"
+                + "（§1「うち損切り」と同じ値）。保護逆指値が成立しないときの手仕舞いは損切りに数えていません。"
+                + "**種別未供給の決済は推測して数えていません。**\n");
         sb.Append("  - **発注拒否**: 本サービスに発注拒否の記録源がありません"
             + "（**約定の記録には拒否が現れません**——約定していないためです）。\n");
         sb.Append("  - **上限使用率の週間最大**: 算出元が本サービスにも取引管理サービスにもありません"
@@ -1843,6 +1882,8 @@ public static class ReportRenderer
                 yield return ("週間実現損益（税引後・費用込み）", AmountOrUnvalued(p, p.RealizedPnlNet));
                 yield return ("勝率（勝ち取引/全決済取引）", WinRateCell(p));
                 yield return ("取引回数（買/売/決済）", counts);
+                // FR-06, FR-10, #1362, IADR-0552 決定 1: 計画の「うち…損切り」。§5「損切り執行」と同じセル（変動トリガーは記録源が無い）。
+                yield return ("うち損切り（決済の種別）", StopLossCell(view));
                 // 計画 ADR-0035 決定 3, #1201, IADR-0501: 計画の 4 区分のラベル。借株料を含め、未供給は過小である旨を書く。
                 yield return ("費用合計（手数料・諸費用・為替スプレッド・借株料）", CostTotalCell(CostTotalOf(view)));
                 // 計画 ADR-0059 決定 3・§結果, #1218, IADR-0519 決定 5: 位置を事実として示し、達成・未達は判定しない（分け方が計画で未決）。

@@ -235,4 +235,53 @@ public class ReportNarrativeSettlementFactsTests
         NarrativePromptText.Inline("@@振り返り と UNTRUSTED_DATA と <<<", 100).Should().Be("@@振り返り と UNTRUSTED_DATA と <<<");
         NarrativePromptText.Inline("短い", 10).Should().Be("短い");
     }
+
+    // #1362, IADR-0552（A1・A2）: 本文（§1・§3・§5）と散文が同じ決済に同じ種別を描く。W42 の形（TSLA 損切り・MSFT 判断・NVDA 由来なし）。
+    [Fact]
+    public async Task 本文と散文で同じ決済の種別が一致する()
+    {
+        var (draft, prompt, _) = await Weekly(WeekFills());
+
+        // 最悪 TSLA は両方で「損切り」、最良 MSFT は両方で「取引判断による決済」。
+        draft.Markdown.Should().Contain("- **最悪**: TSLA（US） -6,999.60 USD — 2026-10-13 決済（該当日報: `daily-2026-10-13`） — 種別: 損切り");
+        prompt.Should().Contain("- 最悪の決済: TSLA（US） -6,999.60 USD・種別: 損切り");
+        draft.Markdown.Should().Contain("- **最良**: MSFT（US） +1,220.00 USD — 2026-10-12 決済（該当日報: `daily-2026-10-12`） — 種別: 取引判断による決済");
+        prompt.Should().Contain("- 最良の決済: MSFT（US） +1,220.00 USD・種別: 取引判断による決済");
+
+        // 損切りの件数（本文 §1・§5）＝散文の種別ごとの件数の損切り。由来の無い NVDA は両方で種別未供給。
+        prompt.Should().Contain("（種別: 損切り 1 件・取引判断による決済 2 件・種別未供給 1 件）");
+        draft.Markdown.Should().Contain("| うち損切り（決済の種別） | 1 件（ほかに種別未供給の決済 1 件。その中に損切りがあり得ます） |");
+        draft.Markdown.Should().Contain("- 損切り執行: 1 件（ほかに種別未供給の決済 1 件。その中に損切りがあり得ます） / 発注拒否:");
+        draft.Markdown.Should().NotContain("判断の起点（損切りか否か）が記録されていません");
+    }
+
+    // #1362, IADR-0552（A4）: 約定を照会できなかった週は、散文（決済の事実を渡さない）と同じく本文も未供給（空列でも 0 件と書かない）。
+    [Fact]
+    public async Task 約定が未供給なら本文の損切りも未供給と描く()
+    {
+        var (draft, _, context) = await Weekly([], unsupplied: [ReportInput.Fills]);
+
+        context.Settlements.Should().BeNull();
+        draft.Markdown.Should().Contain("| うち損切り（決済の種別） | **未供給** |");
+        draft.Markdown.Should().Contain("- 損切り執行: **未供給** / 発注拒否:");
+    }
+
+    // #1362, IADR-0552 決定 3（A6）: 損益を算定できなかった決済の種別も散文へ渡し、本文の損切りの件数と突き合わせられる。
+    [Fact]
+    public async Task 損益を算定できなかった損切りは本文に数え散文にも種別を渡す()
+    {
+        var fills = new[]
+        {
+            // 期間より前に建てた建玉の S1 決済（取得原価が無い）と、当期間に建てて S0 で決済した TSLA。
+            Fill("AAPL", TradeSide.Sell, 10, 90m, 0, Guid.NewGuid(), FillApprovalSource.SoftwareStopS1),
+            Fill("TSLA", TradeSide.Buy, 10, 300m, 0),
+            Fill("TSLA", TradeSide.Sell, 10, 290m, 1, TslaStop, FillApprovalSource.ProtectiveStopS0),
+        };
+
+        var (draft, prompt, _) = await Weekly(fills);
+
+        draft.Markdown.Should().Contain("| うち損切り（決済の種別） | 2 件（うち 1 件は期間より前に建てた建玉の決済で損益を算定できていません） |");
+        prompt.Should().Contain("（種別: 損切り 1 件）");
+        prompt.Should().Contain("- 期間より前に建てた建玉の決済 1 件（種別: 損切り 1 件）は損益を算定できておらず、以下に含めていません。");
+    }
 }

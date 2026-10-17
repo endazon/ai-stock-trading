@@ -79,4 +79,32 @@ public static class SettlementKinds
 
     /// <summary>種別を取れなかった決済の語。</summary>
     public const string UnsuppliedLabel = "種別未供給";
+
+    /// <summary>
+    /// FR-06, FR-10, FR-16, #1362, IADR-0552 決定 1: 決済（在庫が減った約定と、損益を算定できなかった決済）の損切りの件数と種別未供給の件数。
+    /// 🔴 <b>損益を算定できなかった決済（<see cref="FillPnlAttribution.Unvalued"/>）も数える</b>——損切りが執行された事実は
+    /// 損益の算定と別である。本文の週報 §1「うち損切り」と §5「損切り執行」は同じ本関数の値で描く。
+    /// </summary>
+    public static SettlementKindTally Tally(IReadOnlyList<FillPnlAttribution> entries)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+
+        // 🔴 全量を算定できなかった決済は Realizing=false・Unvalued=true である（FillPnlAttribution.Side の注記）。決済として数える。
+        var settlements = entries.Where(e => e.Realizing || e.Unvalued).ToList();
+        return new SettlementKindTally(
+            settlements.Count,
+            settlements.Count(e => e.Kind == SettlementKind.StopLoss),
+            settlements.Count(e => e.Kind is null),
+            settlements.Count(e => e is { Kind: SettlementKind.StopLoss, Unvalued: true }));
+    }
 }
+
+/// <summary>
+/// FR-06, FR-10, #1362, IADR-0552 決定 1: <see cref="SettlementKinds.Tally"/> の結果。
+/// <see cref="Unsupplied"/> &gt; 0 なら <see cref="StopLoss"/> は<b>下限</b>である（種別未供給の決済の中に損切りがあり得る）。
+/// </summary>
+/// <param name="Settlements">決済の件数（損益を算定できなかった決済を含む）。</param>
+/// <param name="StopLoss">損切り（S0 の約定・S1 の決済）の件数。</param>
+/// <param name="Unsupplied">種別未供給の決済の件数。</param>
+/// <param name="UnvaluedStopLoss">損切りのうち、損益を算定できなかった決済（期間より前に建てた建玉の決済）の件数。</param>
+public sealed record SettlementKindTally(int Settlements, int StopLoss, int Unsupplied, int UnvaluedStopLoss);
