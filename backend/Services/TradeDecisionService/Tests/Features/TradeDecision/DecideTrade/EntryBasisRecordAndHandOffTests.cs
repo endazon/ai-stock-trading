@@ -49,6 +49,21 @@ public class EntryBasisRecordAndHandOffTests
         result.Reason.Should().BeNull();
     }
 
+    // #1393 AC-1, IADR-0558 追記（2026-10-20）: 稼働中の方針の書式（行頭の「A 上放れ追随:」）でも記号は記録される。
+    // PoC（2026-10-20 00:32 JST・SMCI 条件 A）では「方針に「条件 X:」行が無い」で記録全体が不明になっていた。
+    [Fact]
+    public void 行頭の記号と名前の書式の方針でも記号と基準価格は記録される()
+    {
+        const string policy = "A 上放れ追随: 当日始値比 +2% 以上で買い\nB 急落反発: 日中安値から +1% 戻したら買い\n出口: 平均取得単価から -1.5%";
+
+        var result = EntryBasisValidator.Validate(policy, "A", 99m, Intraday, 96m, Scheduled());
+
+        result.Basis.Should().Be(new EntryBasis("A", 99m));
+        result.Reason.Should().BeNull();
+        // 判断の AI への出力の規則も、2 つの書式を記号の行として示す（「条件 X:」だけだと稼働中の書式で null を答え得る）。
+        TradeDecisionPromptBuilder.OutputEntryBasisRule.Should().Contain("条件 X:").And.Contain("「X 名前:」");
+    }
+
     // #1384 AC-04-02（否定形）: 記号が欠落・形が違う・方針の集合に無い・方針に「条件 X:」行が無い → 記録全体が不明（見送りにはしない）。
     [Theory]
     [InlineData(PolicyText, null)]

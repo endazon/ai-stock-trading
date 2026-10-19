@@ -49,4 +49,16 @@ public class PolicyRevisionEntryBasisMaterialTests
         PolicyRevisionPromptBuilder.EntryConditionLineRule.Should().Contain("「条件 A: AAPL 前日比 -3% 以下で買い」")
             .And.Contain("「買い条件 B（急落反発）: 日中安値から +1% 戻したら買い」");
     }
+
+    // #1393 AC-5, IADR-0558 追記（2026-10-20）: 案内は「X 名前:」の書式も示し、その例の行も共有カーネルで記号として読める。
+    // 材料の行も 2 つの書式を指す（改訂の AI が「条件 X:」だけを記号の行と読み、稼働中の書式を書き換えさせないため）。
+    [Fact]
+    public void 案内は行頭の記号と名前の書式も示しその例の行も共有カーネルで読める()
+    {
+        const string example = "A 上放れ追随: 当日始値比 +2% 以上で日中高値を更新したら買い";
+
+        PolicyRevisionPromptBuilder.EntryConditionLineRule.Should().Contain($"「{example}」").And.Contain("20 字以内");
+        PolicyEntryConditions.Symbols(example).Should().BeEquivalentTo(["A"]);
+        PolicyRevisionPromptBuilder.HeldPositionMaterial.Should().Contain("「X 名前:」");
+    }
 }

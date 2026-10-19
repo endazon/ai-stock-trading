@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace AiStockTrading.Shared.Kernel.Trading;
 
-// FR-04, FR-07, ADR-0003, #1384, IADR-0558 決定 1: 方針の**決まった書式の「条件 X:」行だけ**から新規建ての条件の記号を読む（純関数・決定的）。
+// FR-04, FR-07, ADR-0003, #1384, IADR-0558 決定 1: 方針の**決まった書式の行（「条件 X:」「X 名前:」）だけ**から新規建ての条件の記号を読む（純関数・決定的）。
 //
 // 取引判断（新規建ての判断が答えた「成立した条件の記号」を、この集合に含まれるときだけ記録する）と、報告書（方針の改訂の AI へ書式を案内する）が
 // **同じ部品**を引く。IADR-0470（「利確:」行）と同じく、🔴 **自由文は読まない** —— 説明の文から記号を拾うと、方針に無い記号を「方針の条件」として
@@ -12,6 +12,15 @@ namespace AiStockTrading.Shared.Kernel.Trading;
 // 書式（1 行に 1 つ。NFKC で全角を半角へ寄せ、前後の空白を除いてから読む）:
 //   [行頭の箇条書きの印 - * ・ のどれか][買い|売り|新規建て|空売り]条件 <英大文字 1 字>[ (<名前>)]: <説明>
 //   例「条件 A: AAPL 前日比 -3% 以下で買い」「買い条件 B（急落反発）: 日中安値から +1% 戻したら買い」
+// #1393, IADR-0558 追記（2026-10-20）: 行頭に記号を置く書式も読む（稼働中の方針 daily-2026-10-17 の版 5 が「A 上放れ追随: …」と書き、
+// 「条件 X:」しか読まないと記録が常に不明になった）:
+//   [行頭の箇条書きの印 - * ・ のどれか]<英大文字 1 字><空白><名前（1〜20 字。「:」「。」・空白を含まない）>: <説明>
+//   例「A 上放れ追随: 前日高値を上抜けたら買い」「- B 急落反発: 日中安値から +1% 戻したら買い」
+//   🔴 誤読の範囲: 記号の直後に空白が要る（「AI:」「EPS:」「AI 銘柄:」は読まない）。区切りの無い行（「A 社の決算が…」）・行頭以外の位置・
+//   名前の無い「A: …」・名前が 21 字以上の行は読まない（文として書かれた行を条件の行と取り違えない）。
+//   名前に空白を許さない（「A new high: …」のような英文を読まない。#1394 のレビュー）。
+//   🔴 残余（許容）: 「A 社の決算は好調: …」のように、空白の無い日本語で 20 字以内に「:」がある自由文は書式だけでは見分けられず読まれる。
+//   方針に無い記号が集合に入っても、判断がその記号を答えない限り記録は変わらない（集合は答えた記号の実在の確かめにだけ使う）ため、影響は限定的である。
 // 記号は英大文字 1 字（A〜Z）に限る。読み取りの誤りより、書式を 1 つに保つほうを採る（記号の長さで判断の出力が揺れない）。
 // 同じ記号の行が複数あっても集合としては 1 つである（条件の中身は判断の LLM が方針の本文から読む。ここは記号の実在だけを確かめる）。
 public static class PolicyEntryConditions
@@ -21,9 +30,14 @@ public static class PolicyEntryConditions
         @"\A(?:[-*・]\s*)?(?:買い|売り|新規建て|空売り)?条件\s*(?<symbol>[A-Z])\s*(?:\([^()]{0,40}\)\s*)?:",
         RegexOptions.CultureInvariant);
 
+    // #1393, IADR-0558 追記（2026-10-20）: 行頭の「X 名前:」（名前に空白を含めない）。名前の上限 20 字は、条件の呼び名（「上放れ追随」「急落反発」）を通し、文を通さないための幅。
+    private static readonly Regex NamedSymbolLine = new(
+        @"\A(?:[-*・]\s*)?(?<symbol>[A-Z])\s+[^:。\s]{1,20}:",
+        RegexOptions.CultureInvariant);
+
     private static readonly Regex LineBreak = new(@"\r\n|\r|\n", RegexOptions.CultureInvariant);
 
-    /// <summary>方針の「条件 X:」行の記号の集合（英大文字 1 字。出現順を保たない）。読める行が無ければ空。</summary>
+    /// <summary>方針の「条件 X:」行・「X 名前:」行の記号の集合（英大文字 1 字。出現順を保たない）。読める行が無ければ空。</summary>
     public static IReadOnlySet<string> Symbols(string? policy)
     {
         var result = new HashSet<string>(StringComparer.Ordinal);
@@ -34,7 +48,10 @@ public static class PolicyEntryConditions
         var text = policy.Normalize(NormalizationForm.FormKC);
         foreach (var raw in LineBreak.Split(text))
         {
-            var match = ConditionLine.Match(raw.Trim());
+            var line = raw.Trim();
+            var match = ConditionLine.Match(line);
+            if (!match.Success)
+                match = NamedSymbolLine.Match(line);
             if (match.Success)
                 result.Add(match.Groups["symbol"].Value);
         }

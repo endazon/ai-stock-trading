@@ -13,7 +13,7 @@ public sealed record EntryBasisValidation(EntryBasis? Basis, string? Reason);
 // 🔴 **判断・数量・損切りには一切効かせない**（記録だけ）。通らない値は「不明」として記録し、見送りにしない ——
 // 記録のための項目の欠落で新規建てを捨てれば、方針どおりの売買を記録の都合で止めることになる（#1187 と同じ形の事故）。
 //
-// - 記号: 英大文字 1 字へ寄せ（PolicyEntryConditions.NormalizeSymbol）、**方針の「条件 X:」行の記号の集合に含まれる**ときだけ記録する。
+// - 記号: 英大文字 1 字へ寄せ（PolicyEntryConditions.NormalizeSymbol）、**方針の「条件 X:」行・「X 名前:」行（#1393）の記号の集合に含まれる**ときだけ記録する。
 //   集合が空（方針が記号つきの条件を書いていない）・含まれない・欠落はすべて不明（全体を null）。
 // - 基準価格: 記号を記録できたときだけ検討する。**正**かつ**当日の価格の範囲内**のときだけ記録し、それ以外は基準価格だけを不明にする。
 //   範囲は日中安値〜日中高値を、前日終値・当日始値・判断時の現在値・急変の現在値と基準値で広げたもの（条件は前日比・急変を参照し得る）。
@@ -40,7 +40,7 @@ public static class EntryBasisValidator
 
         var conditions = PolicyEntryConditions.Symbols(policySummary);
         if (conditions.Count == 0)
-            return new EntryBasisValidation(null, "方針に「条件 X:」行が無い");
+            return new EntryBasisValidation(null, "方針に条件の記号の行（「条件 X:」「X 名前:」）が無い");
         if (!conditions.Contains(symbol))
             return new EntryBasisValidation(null, "条件の記号が方針の条件の集合に無い");
 

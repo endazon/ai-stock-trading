@@ -117,15 +117,15 @@ public static class TradeDecisionPromptBuilder
         "保有中の建玉を手仕舞う売買（ロング保有中の Sell・ショート保有中の Buy）では stopLossDistancePerShare を null にしてよい（決済は保有全量で、損切り幅を使わない）。referencePrice は数値を入れる。";
 
     // 🔴 FR-04, FR-10, FR-11, #1384, IADR-0558 決定 3: 本判断の出力の項目「建てた条件の記号」「基準価格」と、その入れ方。
-    // 新規建て（買い増し・売り増しを含む）の判断が答え、システムが方針の「条件 X:」行と当日の価格で確かめてから建玉ごとに記録し、保有中の判断へ渡す。
+    // 新規建て（買い増し・売り増しを含む）の判断が答え、システムが方針の「条件 X:」行・「X 名前:」行（#1393）と当日の価格で確かめてから建玉ごとに記録し、保有中の判断へ渡す。
     // 🔴 答えない・確かめられない値は「不明」として記録するだけで、見送りにはしない（解釈 TradeDecisionParser・検証 EntryBasisValidator）。
     // テストがこれらの const を直接参照する。
     public const string EntryBasisOutputFields = "\"entryCondition\":\"成立した条件の記号\",\"entryReferencePrice\":基準価格";
 
     public const string OutputEntryBasisRule =
-        "新規建ての Buy/Sell（買い増し・売り増しを含む）では、方針の「条件 X:」行のうち成立した条件の記号（英大文字 1 字）を entryCondition に、"
+        "新規建ての Buy/Sell（買い増し・売り増しを含む）では、方針の「条件 X:」行または行頭の「X 名前:」行（例「A 上放れ追随:」）のうち成立した条件の記号（英大文字 1 字）を entryCondition に、"
         + "その条件の判定に使った価格（例: 日中安値からの反発の条件なら日中安値、前日終値からの変化率の条件なら前日終値）を entryReferencePrice に入れる。"
-        + "システムは建てた建玉ごとにこれを記録し、保有中の判断へ渡す。方針に「条件 X:」行が無いとき・決済・Hold では両方を null にする。";
+        + "システムは建てた建玉ごとにこれを記録し、保有中の判断へ渡す。方針にそのどちらの行も無いとき・決済・Hold では両方を null にする。";
 
     // 🔴 FR-04, FR-10, ADR-0003, #1384, IADR-0558 決定 7: 保有中の建玉を**建てた判断の記録**（ロットごとの条件の記号と基準価格）の文言。
     // 実測（PoC 2026-10-17）: 方針に「条件 B で建てた建玉は B の判定に使った日中安値を割ったら撤退」を書こうとしたが、判断は保有を
@@ -134,7 +134,7 @@ public static class TradeDecisionPromptBuilder
     // 「−1.5%」のような方針の値は固定文に書かない（方針が変われば固定文が方針と食い違う）。方針の本文の既定の出口を指す。
     // 建て増しで混ざるときは各ロットを列挙する（加重平均・直近だけは採らない。記号は平均できず、直近だけでは先のロットの出口が消える）。
     // テストがこれらの const を直接参照する（IADR-0297 決定1 と同じ規律）。
-    public const string EntryBasisLotsLead = "建てた判断の記録（ロットごと・古い順。条件は方針の「条件 X:」行の記号、基準価格はその条件の判定に使った価格）";
+    public const string EntryBasisLotsLead = "建てた判断の記録（ロットごと・古い順。条件は方針の「条件 X:」行・「X 名前:」行の記号、基準価格はその条件の判定に使った価格）";
 
     public const string EntryBasisUnknownText = "不明（記録なし）";
 
