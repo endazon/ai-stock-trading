@@ -77,9 +77,19 @@ public class PolicyEntryConditionsTests
     [InlineData("a 上放れ追随: 小文字")] // 小文字
     [InlineData("A 上放れ追随は前日の高値を上抜けたときに買う条件である: 説明")] // 名前が 21 字以上（文）
     [InlineData("A 上放れ。追随: 句点を含む")] // 名前に句点
+    [InlineData("A new high: 英文の行")] // 名前に空白（英文）
+    [InlineData("- B 急落 反発: 名前の途中に空白")] // 名前に空白
     public void 行頭の記号の書式に合わない行からは記号を読まない(string policy)
     {
         PolicyEntryConditions.Symbols(policy).Should().BeEmpty();
+    }
+
+    // #1393, IADR-0558 追記（2026-10-20）: 🔴 許容する残余を固定する。空白の無い日本語で 20 字以内に「:」がある自由文は、書式だけでは見分けられず読まれる。
+    // 影響は限定的: 集合は判断が答えた記号の実在の確かめにだけ使い、判断がこの記号を答えない限り記録は変わらない。この挙動が変わったら追記を見直す。
+    [Fact]
+    public void 空白の無い日本語の自由文で20字以内に区切りがある行は読まれる許容する残余()
+    {
+        PolicyEntryConditions.Symbols("A 社の決算は好調: 様子見とする").Should().BeEquivalentTo(["A"]);
     }
 
     // #1384 AC-04-22: 判断が答えた記号を英大文字 1 字へ寄せる。寄せられなければ null。
