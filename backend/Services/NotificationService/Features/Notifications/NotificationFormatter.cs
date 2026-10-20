@@ -23,13 +23,19 @@ public static class NotificationFormatter
     // 🔴 **Warning であって Critical ではない。** Critical は「実際に統制が破れた」事象
     //（保護喪失・損切りライン到達）に取っておく——手仕舞いが流れたこと自体は統制の破れではない。
     // ただし Info にもしない: **手仕舞えなかった建玉が実在し、無保護なら翌日へ持ち越される**。
+    //
+    // 🔴 FR-10, FR-09, UC-06, #1395, IADR-0560 決定3: 残った建玉は**取消・失効の時点の記録からの推定**であり、建玉の照会では確かめていない
+    // （同じ建玉をソフトウェア逆指値などの別の決済が売っていることがある。PoC 2026-10-20 は S1 の成行が全量を決済した直後に
+    // 「建玉はこの数量ぶん残っています」と断定した）。推定と分かる言い方にし、手仕舞い直す前に建玉を確かめさせる（二重の売りを促さない）。
+    // S1 が自分で取り消した手仕舞いには、そもそも本イベントが出ない（リスク管理の OrderExecutedLedgerHandler が抑止する）。
     public static NotificationMessage From(PositionCloseAbandoned e) => new(
         "手仕舞いが約定せず終了",
         $"{e.Symbol}/{e.Market} {e.Side} 数量{e.ApprovedQuantity} の手仕舞いが {OrderStatusDisplay.Describe(e.TerminalStatus)} で終了しました"
             + $"（約定 {e.FilledQuantity}・**未決済 {e.RemainingQuantity}**）。"
-            + "建玉はこの数量ぶん残っています（当日注文は引け後に失効します）。"
+            + "記録上はこの数量の建玉が残っている見込みです（終了の時点の記録による推定で、建玉の照会では確かめていません。"
+            + "ソフトウェア逆指値などの別の決済で既に減っていることがあります。当日注文は引け後に失効します）。"
             + "**逆指値なしの建玉はこのまま翌日へ持ち越されます。**"
-            + $"手仕舞い直すか、建玉を確認してください（DecisionId={e.DecisionId}）。",
+            + $"建玉を確認してから、手仕舞い直すか判断してください（DecisionId={e.DecisionId}）。",
         NotificationSeverity.Warning);
 
     // リスク統制発動: 発注拒否（理由つき）。

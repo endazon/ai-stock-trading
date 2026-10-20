@@ -54,4 +54,8 @@ public sealed class ExecutedOrderRow
     // 🔴 FR-10, FR-19, ADR-0067 決定1・2, #1339, IADR-0539: 判断由来の決済の指値の取消を系が求めた時刻（取消を送る前に書く）。
     // null＝求めていない。**列の追加だけ**（既存行は null＝取消を求めたことが無い）。
     public DateTimeOffset? UnfilledCancelRequestedAt { get; set; }
+
+    // 🔴 FR-10, FR-09, UC-06, #1395, IADR-0560: S1 が損切りの前にこの決済の取消を求めた時刻（取消を送る前に書く）。
+    // null＝求めていない。**列の追加だけ**（既存行は null＝従来どおり「手仕舞いが約定せず終了」を出す側）。
+    public DateTimeOffset? SoftwareStopCancelRequestedAt { get; set; }
 }

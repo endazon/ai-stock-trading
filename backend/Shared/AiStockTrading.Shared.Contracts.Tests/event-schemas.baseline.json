@@ -257,6 +257,7 @@
   },
   "OrderExecuted": {
     "AveragePrice": "Decimal",
+    "CancelledBySoftwareStop": "Boolean",
     "CycleStartedAt": "DateTimeOffset?",
     "CycleTrigger": "String",
     "DecisionId": "Guid",

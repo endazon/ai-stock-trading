@@ -274,6 +274,40 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
         }
     }
 
+    // 🔴 FR-10, FR-09, #1395, IADR-0560: S1 が取消を求めた印を書く（その値だけ。非終端のときだけ。既にあれば上書きしない）。
+    public bool MarkSoftwareStopCancelRequested(string orderId, DateTimeOffset requestedAt)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(orderId);
+
+        lock (_gate)
+        {
+            var index = _records.FindIndex(r => r.OrderId == orderId);
+            if (index < 0 || !OrderStatusLifecycle.IsPending(_records[index].Status))
+                return false;
+            if (_records[index].SoftwareStopCancelRequestedAt is not null)
+                return true;
+
+            _records[index] = _records[index] with { SoftwareStopCancelRequestedAt = requestedAt };
+            return true;
+        }
+    }
+
+    // 🔴 #1395, IADR-0560: S1 の取消が失敗したときに印を戻す（その値だけ。非終端のときだけ）。
+    public bool ClearSoftwareStopCancelRequested(string orderId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(orderId);
+
+        lock (_gate)
+        {
+            var index = _records.FindIndex(r => r.OrderId == orderId);
+            if (index < 0 || !OrderStatusLifecycle.IsPending(_records[index].Status))
+                return false;
+
+            _records[index] = _records[index] with { SoftwareStopCancelRequestedAt = null };
+            return true;
+        }
+    }
+
     // #270, IADR-0113: 観測した最新状態を既存記録へ反映する（無ければ何もしない＝新規に作らない）。
     public bool UpdateOutcome(
         string orderId,

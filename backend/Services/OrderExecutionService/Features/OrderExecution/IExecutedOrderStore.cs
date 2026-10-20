@@ -186,6 +186,27 @@ public interface IExecutedOrderStore
     /// </summary>
     bool MarkUnfilledCancelRequested(string orderId, DateTimeOffset requestedAt) => false;
 
+    /// <summary>
+    /// 🔴 FR-10, FR-09, UC-06, #1395, IADR-0560: 記録に「S1 が損切りの前に取消を求めた」印（<paramref name="requestedAt"/>）を書く（<b>その 1 列だけ</b>）。
+    /// <b>取消を送る前に呼ぶ</b>——約定追跡がどの時点で取消を観測しても、その終端が S1 の取消だと分かるように。
+    /// 記録が無い・終端なら何もせず false。既に印があれば上書きせず true（同じ注文を巡回ごとに取り消し直すため）。
+    /// 既定の実装（試験用の包み型のためのもの）は何もしない（＝印なし＝従来どおり通知が出る側）。
+    /// </summary>
+    bool MarkSoftwareStopCancelRequested(string orderId, DateTimeOffset requestedAt) => false;
+
+    /// <summary>
+    /// 🔴 #1395, IADR-0560: 注文の「S1 が取消を求めた」印を<b>保存先から</b>読む（無い・記録が無ければ null）。
+    /// 約定追跡が終端の取消を観測したときに読み直す（巡回の頭で読んだ写しは印より古いことがある）。本番のストア（EF）は追跡しない問い合わせで上書きする。
+    /// </summary>
+    /// <summary>
+    /// 🔴 #1395, IADR-0560: 「S1 が取消を求めた」印を戻す（null にする。<b>その 1 列だけ</b>）。S1 の取消が失敗し、注文がまだ終わっていないときに呼ぶ
+    /// （残すと、後の利用者の取消まで S1 の取消として扱われる）。記録が無い・終端なら何もせず false。既定の実装は何もしない。
+    /// </summary>
+    bool ClearSoftwareStopCancelRequested(string orderId) => false;
+
+    DateTimeOffset? FindSoftwareStopCancelRequestedAt(string orderId) =>
+        GetAll().FirstOrDefault(r => r.OrderId == orderId)?.SoftwareStopCancelRequestedAt;
+
     // #820 の 4 巡目監査, IADR-0344 追記(4): FindClosesSince（建玉照会がまだ映していない決済の走査）は撤去した。
     // 持ち分を毎巡回引き直す方式そのものをやめ、保護記録が残保護数量を状態として持つ形へ作り直したため、
     // 決済レグの記録を持ち分の計算に使わない（完了済み S0 行の取消済みレグで持ち分が食われる事故も構造的に消える）。
