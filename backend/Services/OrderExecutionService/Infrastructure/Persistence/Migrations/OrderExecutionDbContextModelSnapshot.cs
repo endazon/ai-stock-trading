@@ -67,6 +67,9 @@ namespace OrderExecutionService.Infrastructure.Migrations
                     b.Property<decimal>("SlippageRatio")
                         .HasColumnType("numeric");
 
+                    b.Property<DateTimeOffset?>("SoftwareStopCancelRequestedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 

@@ -374,6 +374,7 @@ public class NotificationTemplateGoldenTests
         // 🔴 FR-09, FR-10, UC-06, #847, IADR-0357: 手仕舞いが未約定残を残して終わった（引け跨ぎの失効・取消）。
         // **「未決済 N」と「翌日へ持ち越される」が本文から欠けると、利用者は建玉が残ったことに気づかない**
         // ——従来の「約定 Expired 数量0@0」がまさにそれだった。
+        // 🔴 #1395, IADR-0560 決定3: 残った建玉は推定と書き（建玉照会で確かめていない）、手仕舞い直す前に建玉を確かめさせる。
         ["PositionCloseAbandoned"] = (
             new PositionCloseAbandoned(
                 Id, "AAPL", Market.UnitedStates, TradeSide.Sell, 3381, 0, 3381, OrderStatus.Expired, T),
@@ -381,9 +382,10 @@ public class NotificationTemplateGoldenTests
                 "手仕舞いが約定せず終了",
                 "AAPL/UnitedStates Sell 数量3381 の手仕舞いが Expired（失注: 期限切れで失効） で終了しました"
                     + "（約定 0・**未決済 3381**）。"
-                    + "建玉はこの数量ぶん残っています（当日注文は引け後に失効します）。"
+                    + "記録上はこの数量の建玉が残っている見込みです（終了の時点の記録による推定で、建玉の照会では確かめていません。"
+                    + "ソフトウェア逆指値などの別の決済で既に減っていることがあります。当日注文は引け後に失効します）。"
                     + "**逆指値なしの建玉はこのまま翌日へ持ち越されます。**"
-                    + "手仕舞い直すか、建玉を確認してください"
+                    + "建玉を確認してから、手仕舞い直すか判断してください"
                     + "（DecisionId=11111111-1111-1111-1111-111111111111）。",
                 NotificationSeverity.Warning)),
 

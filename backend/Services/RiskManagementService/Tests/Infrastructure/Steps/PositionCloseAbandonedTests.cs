@@ -274,4 +274,51 @@ public class PositionCloseAbandonedTests
 
         await host.StopAsync();
     }
+
+    // 🔴 T-10-2912, FR-10, FR-09, UC-06, #1395, IADR-0560: **ソフトウェア逆指値（S1）が損切りの前に自分で取り消した**判断の手仕舞いは
+    // 「手仕舞いが約定せず終了・建玉が残っている」にしない（PoC 2026-10-20 SMCI: S1 の成行が全量 7165 株を決済した直後に誤って出た）。
+    // 終端の記録（在庫の解放）は従来どおり行う。
+    [Fact]
+    public async Task T_10_2912_S1が取り消した判断の手仕舞いは手仕舞いが流れたと通知しない()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        using var host = await BuildHostAsync(ledger);
+        var decisionId = await ApproveCloseAsync(host, 7_165);
+
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderExecuted(
+            decisionId, "ORD-SMCI", OrderStatus.Cancelled, 0, 0m, Approved.AddMinutes(5),
+            BrokerProvider.MoomooSimulate, CancelledBySoftwareStop: true));
+
+        session.Sent.MessagesOf<PositionCloseAbandoned>().Should().BeEmpty("建玉は S1 の成行が決済した。通知は二重の売りを促す");
+        ledger.MarkTerminal(decisionId, OrderStatus.Cancelled, Approved.AddMinutes(6))
+            .Should().BeFalse("終端（在庫の解放）は記録されている");
+
+        await host.StopAsync();
+    }
+
+    // 🔴 T-10-2913, #1395, IADR-0560: S1 以外の取消・失効は従来どおり通知する（印の無い取消・印があっても失効・OrderCancelled の経路）。
+    [Fact]
+    public async Task T_10_2913_S1以外の取消と失効は従来どおり手仕舞いが流れたと通知する()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        using var host = await BuildHostAsync(ledger);
+
+        var plainCancel = await ApproveCloseAsync(host, 100);
+        (await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderExecuted(
+                plainCancel, "ORD-1", OrderStatus.Cancelled, 0, 0m, Approved.AddMinutes(5), BrokerProvider.MoomooSimulate)))
+            .Sent.MessagesOf<PositionCloseAbandoned>().Should().ContainSingle("利用者が証券会社のアプリで取り消した");
+
+        var expiredWithMark = await ApproveCloseAsync(host, 100);
+        (await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderExecuted(
+                expiredWithMark, "ORD-2", OrderStatus.Expired, 0, 0m, Approved.AddHours(6), BrokerProvider.MoomooSimulate,
+                CancelledBySoftwareStop: true)))
+            .Sent.MessagesOf<PositionCloseAbandoned>().Should().ContainSingle("引けでの失効は S1 の取消ではない");
+
+        var systemCancel = await ApproveCloseAsync(host, 100);
+        (await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderCancelled(
+                systemCancel, "ORD-3", "判断由来の決済の指値が未約定のため系が取消（ADR-0067）: 発注から 15 分", Approved.AddMinutes(15))))
+            .Sent.MessagesOf<PositionCloseAbandoned>().Should().ContainSingle("系の未約定取消は従来どおり");
+
+        await host.StopAsync();
+    }
 }

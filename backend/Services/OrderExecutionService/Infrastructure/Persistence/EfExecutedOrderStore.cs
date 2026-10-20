@@ -36,6 +36,8 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
             ProtectionReleasedQuantity = record.ProtectionReleasedQuantity,
             // #1339, IADR-0539: 保存の時点では系は取消を求めていない（呼び出し側が渡す値をそのまま書く。既定 null）。
             UnfilledCancelRequestedAt = record.UnfilledCancelRequestedAt,
+            // #1395, IADR-0560: 保存の時点では S1 は取消を求めていない（呼び出し側が渡す値をそのまま書く。既定 null）。
+            SoftwareStopCancelRequestedAt = record.SoftwareStopCancelRequestedAt,
         });
         db.SaveChanges();
     }
@@ -270,6 +272,33 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
         return true;
     }
 
+    // 🔴 FR-10, FR-09, #1395, IADR-0560: S1 が取消を求めた印を書く（**この 1 列だけ**。非終端のときだけ。既にあれば上書きしない）。
+    public bool MarkSoftwareStopCancelRequested(string orderId, DateTimeOffset requestedAt)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(orderId);
+
+        var row = db.ExecutedOrders.Find(orderId);
+        if (row is null || !(row.Status == OrderStatus.Accepted || row.Status == OrderStatus.PartiallyFilled))
+            return false;
+        if (row.SoftwareStopCancelRequestedAt is not null)
+            return true;
+
+        row.SoftwareStopCancelRequestedAt = requestedAt;
+        db.SaveChanges();
+        return true;
+    }
+
+    // 🔴 #1395, IADR-0560: 印を保存先から読む（**追跡しない**問い合わせ。同じ文脈が先に読んだ行の古い値を返さない）。
+    public DateTimeOffset? FindSoftwareStopCancelRequestedAt(string orderId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(orderId);
+
+        return db.ExecutedOrders.AsNoTracking()
+            .Where(r => r.OrderId == orderId)
+            .Select(r => r.SoftwareStopCancelRequestedAt)
+            .FirstOrDefault();
+    }
+
     // #270, IADR-0113: 観測した最新のブローカ状態を既存行へ反映する。行が無ければ何もしない
     // （新規に作らない＝DecisionId 1:1 の不変を壊さない）。
     public bool UpdateOutcome(
@@ -298,5 +327,6 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
     private static ExecutionRecord ToRecord(ExecutedOrderRow r) => new(
         r.DecisionId, r.OrderId, r.Symbol, r.Market, r.Side, r.ProductType, r.PositionEffect,
         r.Quantity, r.PlannedPrice, r.FilledQuantity, r.AveragePrice, r.Status, r.SlippageRatio, r.ExecutedAt,
-        r.StopFloorSource, r.ApprovalOrigin, r.ProtectionReleasedQuantity, r.UnfilledCancelRequestedAt);
+        r.StopFloorSource, r.ApprovalOrigin, r.ProtectionReleasedQuantity, r.UnfilledCancelRequestedAt,
+        r.SoftwareStopCancelRequestedAt);
 }

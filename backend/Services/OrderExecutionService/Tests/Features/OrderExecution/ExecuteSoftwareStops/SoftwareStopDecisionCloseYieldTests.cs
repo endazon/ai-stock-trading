@@ -5,6 +5,7 @@ using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
+using OrderExecutionService.Features.OrderExecution.PollOrderFills;
 using OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
 using OrderExecutionService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Contracts.Events;
@@ -1077,5 +1078,94 @@ public class SoftwareStopDecisionCloseYieldTests
         var sent = f.Broker.MarketCloses.Should().ContainSingle().Subject;
         f.Reservations.Find(sent.DecisionId)!.PositionEffect.Should().Be(PositionEffect.Close);
         f.Store.FindByDecisionId(sent.DecisionId)!.PositionEffect.Should().Be(PositionEffect.Close, "予約の行と発注の記録は同じ値を持つ");
+    }
+
+    // ───── #1395, IADR-0560: 取消の主体（S1 か）を約定追跡の OrderExecuted まで運ぶ ─────
+
+    private static OrderFillPoller Poller(Fixture f) => new(f.Broker, f.Store, f.Clock);
+
+    private static async Task<OrderExecuted> PollTerminalOf(Fixture f, ExecutionRecord decision)
+    {
+        var polled = await Poller(f).PollOnceAsync(TimeSpan.FromHours(1), 100);
+        return polled.Executed.Single(e => e.DecisionId == decision.DecisionId);
+    }
+
+    // 🔴 T-10-2914: S1 は判断の手仕舞いの取消を**送る前に**印を書く。発注の挙動（取り消す注文・成行の数量と結果）は変わらない。
+    [Fact]
+    public async Task T_10_2914_S1は取消を送る前に印を書き発注の挙動は変えない()
+    {
+        var f = NewFixture();
+        PocStops(f);
+        var decision = PendingClose(f, 1_428);
+        DateTimeOffset? markedWhenCancelSent = null;
+        f.Broker.CancelThrowsFor = id =>
+        {
+            if (id == decision.OrderId)
+                markedWhenCancelSent = ((IExecutedOrderStore)f.Store).FindSoftwareStopCancelRequestedAt(id);
+            return null;
+        };
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        markedWhenCancelSent.Should().Be(T0, "取消が板で効く前に印が保存先にある（約定追跡がいつ観測しても主体が分かる）");
+        f.Broker.Cancels.Should().Equal([decision.OrderId]);
+        f.Broker.MarketCloses.Should().ContainSingle();
+        f.Broker.MarketCloses[0].Status.Should().Be(OrderStatus.Accepted);
+        f.Broker.MarketCloses[0].Intent.Quantity.Should().Be(713);
+        f.Store.FindByDecisionId(decision.DecisionId)!.Status.Should().Be(OrderStatus.Accepted, "記録の状態は書かない（約定追跡が書く）");
+    }
+
+    // 🔴 T-10-2915: S1 が取り消した判断の手仕舞いの終端は CancelledBySoftwareStop つきで出る。
+    // S1 以外の取消（印なし）は false のまま。S1 が取消を求めたが約定し切った・失効したものも false（主体は S1 の取消ではない）。
+    [Fact]
+    public async Task T_10_2915_約定追跡はS1が取り消した終端にだけ主体の印を載せる()
+    {
+        var f = NewFixture();
+        PocStops(f);
+        var decision = PendingClose(f, 1_428);
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        var bySoftwareStop = await PollTerminalOf(f, decision);
+        bySoftwareStop.Status.Should().Be(OrderStatus.Cancelled);
+        bySoftwareStop.CancelledBySoftwareStop.Should().BeTrue();
+
+        var other = NewFixture();
+        var userCancelled = PendingClose(other, 100);
+        other.Broker.Orders[userCancelled.OrderId].Status = OrderStatus.Cancelled; // 利用者が証券会社のアプリで取り消した
+        (await PollTerminalOf(other, userCancelled)).CancelledBySoftwareStop.Should().BeFalse("S1 は取消を求めていない");
+
+        var expired = PendingClose(other, 100);
+        other.Store.MarkSoftwareStopCancelRequested(expired.OrderId, T0).Should().BeTrue();
+        other.Broker.Orders[expired.OrderId].Status = OrderStatus.Expired;
+        var filled = PendingClose(other, 100);
+        other.Store.MarkSoftwareStopCancelRequested(filled.OrderId, T0).Should().BeTrue();
+        other.Broker.Orders[filled.OrderId].Filled = 100;
+        other.Broker.Orders[filled.OrderId].Status = OrderStatus.Filled;
+        var polled = await Poller(other).PollOnceAsync(TimeSpan.FromHours(1), 100);
+        polled.Executed.Single(e => e.DecisionId == expired.DecisionId).CancelledBySoftwareStop.Should().BeFalse("失効は S1 の取消ではない");
+        polled.Executed.Single(e => e.DecisionId == filled.DecisionId).CancelledBySoftwareStop.Should().BeFalse("約定し切った");
+    }
+
+    // 🔴 T-10-2916: 巡回が記録を読んだ**後**に S1 が印を書いて取り消しても、終端は S1 の取消として出る（印は保存先から読み直す）。
+    [Fact]
+    public async Task T_10_2916_巡回が記録を読んだ後にS1が取り消しても主体はS1になる()
+    {
+        var f = NewFixture();
+        var decision = PendingClose(f, 1_428);
+        var raced = false;
+        f.Broker.QueryThrowsFor = id =>
+        {
+            // 巡回は記録を読み終えてから 1 件ずつ照会する。照会の直前に S1 が印を書いて取り消した形。
+            if (id == decision.OrderId && !raced)
+            {
+                raced = true;
+                f.Store.MarkSoftwareStopCancelRequested(id, T0).Should().BeTrue();
+                f.Broker.Orders[id].Status = OrderStatus.Cancelled;
+            }
+
+            return null;
+        };
+
+        (await PollTerminalOf(f, decision)).CancelledBySoftwareStop.Should().BeTrue("巡回の頭で読んだ写しは印より古い");
     }
 }

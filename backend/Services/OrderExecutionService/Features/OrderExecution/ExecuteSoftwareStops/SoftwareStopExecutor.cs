@@ -675,6 +675,24 @@ public sealed class SoftwareStopExecutor(
                 continue;
             }
 
+            // 🔴 FR-10, FR-09, UC-06, #1395, IADR-0560: **取消を送る前に**「S1 が取消を求めた」印を記録へ書く。
+            // 約定追跡がこの取消を観測して OrderExecuted(Cancelled) を出すとき、印を CancelledBySoftwareStop へ写し、
+            // リスク管理は「手仕舞いが約定せず終了・建玉が残っている」を出さない（建玉は直後の S1 の成行が決済する）。
+            // 送った後に書くと、その間に約定追跡が取消を観測したとき印の無い終端になる。
+            // 印の書き込みの失敗は取消を止めない（発注の挙動は変えない。印が無い＝従来どおり通知が出る側）。
+            try
+            {
+                store.MarkSoftwareStopCancelRequested(record.OrderId, clock.UtcNow);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex,
+                    "判断の手仕舞いに「ソフトウェア逆指値が取消を求めた」印を書けませんでした（取消は送ります。"
+                        + "この取消には「手仕舞いが約定せず終了」の通知が出ることがあります）。"
+                        + "EntryDecisionId={EntryDecisionId} 取消対象 DecisionId={DecisionId} OrderId={OrderId}",
+                    stop.EntryDecisionId, record.DecisionId, record.OrderId);
+            }
+
             try
             {
                 await broker.CancelOrderAsync(record.OrderId, cancellationToken).ConfigureAwait(false);

@@ -161,6 +161,10 @@ public sealed class OrderFillPoller(
         // FR-16: 実効スリッページは約定価格が確定してから算出し直す（発注時点の 0 のままにしない）。
         var slippage = SlippageCalculator.Compute(record.PlannedPrice, averagePrice, record.Side);
 
+        // 🔴 FR-10, FR-09, UC-06, #1395, IADR-0560: 終端が取消で、その取消を S1 が損切りの前に求めていた（印あり）ときだけ立てる。
+        // 失効・約定し切った・拒否は印があっても立てない（主体は S1 の取消ではない）。
+        var cancelledBySoftwareStop = snapshot.Status == OrderStatus.Cancelled && IsSoftwareStopCancel(record);
+
         if (!store.UpdateOutcome(
                 record.OrderId, snapshot.Status, filledQuantity, averagePrice, slippage, executedAt))
         {
@@ -172,7 +176,7 @@ public sealed class OrderFillPoller(
         // （照会できるのは自分が出した注文だけであり、構成が変われば照会は null に倒れて発行されない）。
         executed.Add(new OrderExecuted(
             record.DecisionId, record.OrderId, snapshot.Status, filledQuantity, averagePrice, executedAt,
-            broker.Provider));
+            broker.Provider, CancelledBySoftwareStop: cancelledBySoftwareStop));
         if (!terminal)
             return (ApplyOutcome.Updated, snapshot.Status, filledQuantity);
 
@@ -197,6 +201,26 @@ public sealed class OrderFillPoller(
         }
 
         return (ApplyOutcome.Terminalized, snapshot.Status, filledQuantity);
+    }
+
+    // 🔴 #1395, IADR-0560: 印は**保存先から読み直す**。巡回の頭で読んだ記録の写しは、S1 が印を書く前のものであり得る
+    // （巡回が記録を読む → S1 が印を書いて取り消す → 巡回が取消を観測する）。読めなければ印なし（従来どおり通知が出る側）とし、
+    // 約定・終端の記録と OrderExecuted の発行は止めない。
+    private bool IsSoftwareStopCancel(ExecutionRecord record)
+    {
+        if (record.SoftwareStopCancelRequestedAt is not null)
+            return true;
+        try
+        {
+            return store.FindSoftwareStopCancelRequestedAt(record.OrderId) is not null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "取消の主体（ソフトウェア逆指値か）を読めませんでした（S1 以外の取消として扱います）。DecisionId={DecisionId} OrderId={OrderId}",
+                record.DecisionId, record.OrderId);
+            return false;
+        }
     }
 
     // 🔴 FR-10, FR-11, #1048（利用者裁定 2026-10-02・Q3）, IADR-0481 決定3: 追跡上限を過ぎた非終端の記録のうち、

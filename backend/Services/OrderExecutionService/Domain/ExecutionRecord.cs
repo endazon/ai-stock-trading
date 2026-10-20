@@ -16,6 +16,10 @@ namespace OrderExecutionService.Domain;
 // 🔴 FR-10, FR-19, ADR-0067 決定1・2, #1339, IADR-0539: UnfilledCancelRequestedAt は判断由来の決済の指値を「N 分未約定なので系が取り消す」と
 // 決めて**取消を送る前に**書いた時刻。null＝系はこの注文の取消を求めていない。同じ注文を二度取り消さない印であり、
 // 1 建玉 1 日の回数の上限の数え（市場の現地取引日）にも使う。書くのは DecisionCloseUnfilledCanceller だけ（MarkUnfilledCancelRequested）。
+// 🔴 FR-10, FR-09, UC-06, #1395, IADR-0560: SoftwareStopCancelRequestedAt はソフトウェア逆指値（S1）が損切りの成行の前に
+// この決済（同じ建玉を売る判断の手仕舞い）を取り消すと決めて**取消を送る前に**書いた時刻。null＝S1 はこの注文の取消を求めていない。
+// 約定追跡が終端（Cancelled）を観測したとき OrderExecuted.CancelledBySoftwareStop へ写す（取消の主体を通知の判定へ届ける唯一の運び手）。
+// 書くのは SoftwareStopExecutor だけ（MarkSoftwareStopCancelRequested）。UnfilledCancelRequestedAt とは別の列——そちらは回数の上限に数える。
 public record ExecutionRecord(
     Guid DecisionId,
     string OrderId,
@@ -34,4 +38,5 @@ public record ExecutionRecord(
     StopWidthFloorSource? StopFloorSource = null,
     OrderApprovalOrigin? ApprovalOrigin = null,
     int ProtectionReleasedQuantity = 0,
-    DateTimeOffset? UnfilledCancelRequestedAt = null);
+    DateTimeOffset? UnfilledCancelRequestedAt = null,
+    DateTimeOffset? SoftwareStopCancelRequestedAt = null);
