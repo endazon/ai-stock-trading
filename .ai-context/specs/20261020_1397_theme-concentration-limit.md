@@ -35,6 +35,8 @@ plan_refs:
 
 IADR-0562 の決定 1〜4 のとおり。
 
+［2026-10-20 追記 / PR #1400 のレビュー］市場の構成値は名前だけを受け付ける（数値の文字列を拒む）。同じ集まりの銘柄を既に上限を超えて持っているときは買い増しも止まる（安全側。そのままとする）。受け手の新しい読み取り（`GetHoldingsAsync`）には送り手の型の契約テストを足した（`RiskManagementReadContractTests`）。
+
 ## 母集合（規則 9・10）
 
 走査語: `RejectionReason.`・`new OrderScreeningService(`・`PortfolioState {`/`PortfolioSnapshot`（射影の入力）・`IHeldSymbolsProvider` の実装・`ReserveChars`・「発動しない機能」。

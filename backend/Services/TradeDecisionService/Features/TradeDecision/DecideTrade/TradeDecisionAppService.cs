@@ -1146,8 +1146,6 @@ public sealed class TradeDecisionAppService(
         }
     }
 
-    // 🔴 FR-10, FR-04, #1113, IADR-0463 決定 4: 新規建ての可否の照会（fail-safe ラッパ）。例外・キャンセル以外の失敗は
-    // **null（不明）**に縮退する（＝LLM を呼ぶ。見送らない）。本判断のキャンセルは伝える。
     // FR-04, FR-10, #1397, IADR-0562 決定 3: 保有中の全銘柄の照会（fail-safe）。例外（キャンセルを除く）は null（＝不明）。
     private async Task<IReadOnlyList<HeldHolding>?> GetHoldingsSafeAsync(CancellationToken cancellationToken)
     {
@@ -1162,6 +1160,8 @@ public sealed class TradeDecisionAppService(
         }
     }
 
+    // 🔴 FR-10, FR-04, #1113, IADR-0463 決定 4: 新規建ての可否の照会（fail-safe ラッパ）。例外・キャンセル以外の失敗は
+    // **null（不明）**に縮退する（＝LLM を呼ぶ。見送らない）。本判断のキャンセルは伝える。
     private async Task<EntryBlockers?> GetEntryBlockersSafeAsync(
         DecisionTrigger trigger, CancellationToken cancellationToken)
     {

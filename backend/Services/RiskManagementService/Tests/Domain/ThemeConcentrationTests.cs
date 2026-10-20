@@ -52,7 +52,19 @@ public class ThemeConcentrationTests
     public void T_10_2937_別の集まりと集まりに属さない銘柄には掛けない(string entry)
     {
         Evaluate(Intent(entry), Holding("MARA")).IsApproved.Should().BeTrue();
+    }
+
+    [Fact]
+    public void T_10_2937_集まりに属さない銘柄は他の集まりを満杯に持っていても通す()
+    {
         Evaluate(Intent("AAPL"), Holding("MARA", "NVDA", "TSLA")).IsApproved.Should().BeTrue();
+    }
+
+    // 同じ集まりの銘柄を既に上限を超えて持っているときは、その集まりの銘柄の買い増しも止まる（安全側の挙動。IADR-0562 決定 2）。
+    [Fact]
+    public void T_10_2937_既に上限を超えて持っているときは買い増しも止まる()
+    {
+        Evaluate(Intent("MARA"), Holding("MARA", "COIN")).Reasons.Should().Contain(RejectionReason.ThemeConcentrationExceeded);
     }
 
     // 🔴 手仕舞い（Close）は止めない（ADR-0009）。空売りの新規建ても新規建てとして数える（方向は問わない）。
@@ -150,6 +162,8 @@ public class ThemeConcentrationTests
     [InlineData("暗号資産", "x", "COIN", null)]
     [InlineData("暗号資産", "1", null, null)]
     [InlineData("暗号資産", "1", "COIN", "Europe")]
+    [InlineData("暗号資産", "1", "COIN", "99")] // 数値の文字列（存在しない市場の集まりを作らない。PR #1400 のレビュー）
+    [InlineData("暗号資産", "1", "COIN", "1")]  // 定義済みの値でも数値では受け付けない（名前だけ）
     public void T_10_2940_誤った定義は起動を止める(string name, string max, string? symbol, string? market)
     {
         var values = new Dictionary<string, string?> { ["0:Name"] = name, ["0:MaxPositions"] = max };

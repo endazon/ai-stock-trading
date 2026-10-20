@@ -29,7 +29,9 @@ public static class ThemeConcentrationLoader
 
             var market = Market.UnitedStates;
             var rawMarket = child["Market"];
-            if (!string.IsNullOrWhiteSpace(rawMarket) && !Enum.TryParse(rawMarket, ignoreCase: false, out market))
+            // 🔴 PR #1400 のレビュー: 名前だけを受け付ける（Enum.TryParse は "99" のような数値の文字列も通し、存在しない市場の集まりを作って上限が黙って効かなくなる）。
+            if (!string.IsNullOrWhiteSpace(rawMarket)
+                && (!Enum.TryParse(rawMarket, ignoreCase: false, out market) || !Enum.IsDefined(market) || !Enum.GetNames<Market>().Contains(rawMarket.Trim())))
                 throw new InvalidOperationException($"{Section}:{child.Key}:Market「{rawMarket}」は未知の市場です（UnitedStates / Japan）。起動を止めます。");
 
             var rawMax = child["MaxPositions"];
