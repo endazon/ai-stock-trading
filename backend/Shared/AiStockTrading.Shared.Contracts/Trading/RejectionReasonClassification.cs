@@ -63,6 +63,7 @@ public static class RejectionReasonClassification
             // #935, IADR-0394: 当日に損切りしたかを確かめられない状態も「取引を止めている状態そのものの記録」。
             // 確かめられた損切り（StoppedOutSameDay）は下の既定＝クラス A（統制の正常作動）へ落ちる。
             // #1176, IADR-0495: 判断由来の決済の後の同日・同方向の拒否（DecisionExitSameDay）も確かめられた事実なのでクラス A（既定）。
+            // #1396, IADR-0561: 閉場前の締め切り（PreCloseEntryCutoff）も時刻の規則が設計どおり作動した記録なのでクラス A（既定）。
             or RejectionReason.StopOutStatusUnknown
             or RejectionReason.MarketDisabled => RejectionReasonClass.B,
 

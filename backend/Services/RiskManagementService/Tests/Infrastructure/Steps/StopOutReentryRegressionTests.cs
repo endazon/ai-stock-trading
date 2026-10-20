@@ -77,7 +77,7 @@ public class StopOutReentryRegressionTests
         return new OrderScreeningService(
             new InMemoryRiskSettingsStore(), snapshotBuilder, new InMemoryLockoutStore(), clock,
             new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(), stores.Ledger,
-            TestShortSellContexts.Unavailable(clock, stores.Ledger), new InMemoryEntryReservationStore());
+            TestShortSellContexts.Unavailable(clock, stores.Ledger), new InMemoryEntryReservationStore(), TradingDefaults.CreatePreCloseEntryCutoff());
     }
 
     private static async Task InvokeAsync<T>(IHost host, T message)

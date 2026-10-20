@@ -313,7 +313,8 @@ public static class TradeDecisionPromptBuilder
         NewsCollectionStatus? news = null,
         DailyVolumeContext? volume = null,
         IReadOnlyList<RejectionReason>? addOnBlockers = null,
-        StopWidthFloorContext? stopFloor = null)
+        StopWidthFloorContext? stopFloor = null,
+        MarketClockContext? marketClock = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -356,6 +357,8 @@ public static class TradeDecisionPromptBuilder
                 sb.Append(PriceContextLines(cp, intraday, priceUnit, volume));
             }
         }
+        // FR-04, FR-10, #1396, IADR-0561 決定 5: 市場の現地時刻と閉場までの残り時間（方針の時刻の条件を読めるように。null なら出さない）。
+        sb.Append(MarketClockLine(marketClock));
         // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態（定時・急変の両方。現在値の有無に依らず無条件）。
         sb.Append(NewsStatusLine(news));
         sb.AppendLine();
@@ -468,7 +471,8 @@ public static class TradeDecisionPromptBuilder
         IntradayPriceContext? intraday = null,
         NewsCollectionStatus? news = null,
         DailyVolumeContext? volume = null,
-        IReadOnlyList<RejectionReason>? addOnBlockers = null)
+        IReadOnlyList<RejectionReason>? addOnBlockers = null,
+        MarketClockContext? marketClock = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -497,6 +501,8 @@ public static class TradeDecisionPromptBuilder
             sb.Append(PriceContextLines(cp, intraday, priceUnit, volume));
         }
 
+        // FR-04, FR-10, #1396, IADR-0561 決定 5: 本判断と同じ市場の現地時刻の行（縮退の保護分 ScreeningContextAssembler.MarketClockReserveChars）。
+        sb.Append(MarketClockLine(marketClock));
         // FR-04, ADR-0020 決定2, #1081, IADR-0455: 本判断と同じニュースの状態の行（現在値の有無に依らず無条件・縮退の保護分）。
         sb.Append(NewsStatusLine(news));
         sb.AppendLine();
@@ -619,6 +625,38 @@ public static class TradeDecisionPromptBuilder
     // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態の行（本判断の定時・急変の節と一次で共用。末尾の改行まで含む）。
     // 縮退の見積りの予約（ScreeningContextAssembler.NewsStatusReserveChars）と試験が同じ文字列の長さを測るため公開する。
     // 🔴 **null と未定義の値は「不明」**（「取得済み」へ倒さない。既定値を健全と読ませない）。
+    // 🔴 FR-04, FR-10, #1396, IADR-0561 決定 5: 市場の現地時刻と閉場までの残り時間の行（本判断・一次で共用）。取引判断のプロンプトには時刻が無く、
+    // 方針の「取引終盤は新規建てを控えて手仕舞いを優先する」を AI が評価できなかった（PoC 2026-10-19: 閉場の約 1 時間前に MARA を新規建て）。
+    // 時刻は市場ローカル（米国は米国東部時間・東証は日本時間。夏時間は TimeZoneInfo が吸収）。閉場は市場カレンダーの当日の最後の閉場（半日取引日は前倒し）。
+    // 休場日は「なし（休場日）」、閉場の後は「閉場後」と書く。null（材料なし）なら行を出さない。テストがこの const を直接参照する。
+    public const string MarketClockLinePrefix = "- 市場の現地時刻: ";
+
+    public static string MarketClockLine(MarketClockContext? marketClock)
+    {
+        if (marketClock is null)
+            return string.Empty;
+
+        var ci = CultureInfo.InvariantCulture;
+        var zone = MarketHours.ZoneOf(marketClock.Market);
+        var local = TimeZoneInfo.ConvertTime(marketClock.Now, zone);
+        var zoneLabel = marketClock.Market == Market.Japan ? "日本時間" : "米国東部時間";
+        string closeText;
+        if (marketClock.SessionClose is not { } close)
+        {
+            closeText = "なし（休場日）";
+        }
+        else
+        {
+            var localClose = TimeZoneInfo.ConvertTime(close, zone);
+            var remaining = PreCloseWindow.Remaining(marketClock.Now, close)!.Value;
+            closeText = remaining > TimeSpan.Zero
+                ? $"{localClose.ToString("HH:mm", ci)}（残り {((int)Math.Ceiling(remaining.TotalMinutes)).ToString(ci)} 分）"
+                : $"{localClose.ToString("HH:mm", ci)}（閉場後）";
+        }
+
+        return $"{MarketClockLinePrefix}{local.ToString("yyyy-MM-dd HH:mm", ci)}（{zoneLabel}） / 本日の閉場: {closeText}{Environment.NewLine}";
+    }
+
     public static string NewsStatusLine(NewsCollectionStatus? news)
     {
         var text = news switch

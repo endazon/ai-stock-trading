@@ -277,4 +277,18 @@ public class TradingDefaultsTests
         policy.SettingsFor(TradingStage.Stage2MinimalLive)
             .OrderableCapFor(TradingDefaults.InitialCapital).Should().Be(900m);
     }
+
+    // T-10-2934, FR-10, FR-19, #1396, IADR-0561 決定 2・3: 閉場前の新規建ての締め切りと閉場前の手仕舞いの既定値（利用者裁定 2026-10-20・planning#808）。
+    // 計画 05_trading-assumptions §5 は 2026-10-20 時点で反映待ちであり、値は裁定の値である（§5 へ行が入ったら一致を確かめ直す）。
+    [Fact]
+    public void T_10_2934_閉場前の締め切りは60分で手仕舞いは15分かつ既定は無効()
+    {
+        TradingDefaults.PreCloseEntryCutoffMinutes.Should().Be(60);
+        TradingDefaults.PreCloseFlattenMinutes.Should().Be(15);
+        TradingDefaults.PreCloseFlattenEnabled.Should().BeFalse();
+
+        var cutoff = TradingDefaults.CreatePreCloseEntryCutoff();
+        cutoff.MinutesFor(AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates).Should().Be(60);
+        cutoff.MinutesFor(AiStockTrading.Shared.Contracts.Trading.Market.Japan).Should().Be(60);
+    }
 }

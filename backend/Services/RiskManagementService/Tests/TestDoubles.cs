@@ -178,3 +178,28 @@ internal sealed class FixedShortSellBorrowSource(ShortSellBorrowObservation obse
         return Task.FromResult(observation);
     }
 }
+
+// #1396, IADR-0561: 実時刻で動く試験の時計。実時刻が米国・東証のどちらかの閉場前の新規建ての締め切り（閉場の 60 分前以降の同じ現地の日）に入っているときは、
+// 入っていない時刻（その市場の締め切りの 1 分前）まで戻す。締め切りの拒否を、締め切りを関心に持たない試験へ時刻次第で混ぜない
+// （試験の結果を実行した時刻に依らせない）。戻すのは同じ市場ローカルの日のうちだけ（取引日は変わらない）。
+internal sealed class OutsidePreCloseCutoffClock : IClock
+{
+    // 本番の時計（SystemClock）を包む（本番の組み立てが結線する本物を試験が参照し続ける。IADR-0397 の W3）。
+    private readonly SystemClock _system = new();
+
+    public DateTimeOffset UtcNow => Resolve(_system.UtcNow);
+
+    public DateOnly Today => TradingDay.Of(UtcNow);
+
+    internal static DateTimeOffset Resolve(DateTimeOffset now)
+    {
+        foreach (var market in new[] { AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates, AiStockTrading.Shared.Contracts.Trading.Market.Japan })
+        {
+            var close = AiStockTrading.Shared.Kernel.Trading.MarketHours.SessionCloseOn(market, now);
+            if (AiStockTrading.Shared.Kernel.Trading.PreCloseWindow.IsAtOrAfter(now, close, Domain.TradingDefaults.PreCloseEntryCutoffMinutes))
+                now = close!.Value.AddMinutes(-Domain.TradingDefaults.PreCloseEntryCutoffMinutes - 1).ToUniversalTime();
+        }
+
+        return now;
+    }
+}

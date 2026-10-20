@@ -103,6 +103,35 @@ public static class TradingDefaults
         DesignatedSymbols = [],
     };
 
+    /// <summary>
+    /// 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: <b>閉場前の新規建ての締め切り＝閉場の 60 分前</b>（JP・US とも。利用者裁定 2026-10-20・環流 planning#808）。
+    /// 閉場の 60 分前以降の新規建て（買い増し・売り増しを含む）を審査が <c>PreCloseEntryCutoff</c> で拒否する。市場ごとに構成で変えられる
+    /// （<c>PreCloseEntryCutoff:Minutes:UnitedStates</c> / <c>:Japan</c>。範囲は <see cref="PreCloseEntryCutoffSettings.Validate"/>）。
+    /// 計画の 05_trading-assumptions §5 には 2026-10-20 時点で行が無い（反映待ち）。値は裁定の値である。
+    /// </summary>
+    public const int PreCloseEntryCutoffMinutes = 60;
+
+    /// <summary>
+    /// 🔴 FR-10, FR-19, #1396, IADR-0561 決定 3: <b>閉場前の手仕舞い＝閉場の 15 分前</b>（JP・US とも。利用者裁定 2026-10-20・環流 planning#808）。
+    /// 有効なとき、閉場の 15 分前以降に保有中の建玉を成行で手仕舞う（方針に「持ち越し可」と明記した銘柄を除く）。市場ごとに構成で変えられる
+    /// （取引判断サービスの <c>PreCloseFlatten:Minutes:UnitedStates</c> / <c>:Japan</c>）。§5 は反映待ち。
+    /// </summary>
+    public const int PreCloseFlattenMinutes = 15;
+
+    /// <summary>
+    /// 🔴 FR-10, FR-19, #1396, IADR-0561 決定 3: 閉場前の手仕舞いの<b>既定は無効</b>（利用者裁定 2026-10-20）。方針の決まった書式の行
+    /// （「閉場前の手仕舞い: 有効」）か構成（<c>PreCloseFlatten:Enabled</c>）で有効にする。
+    /// </summary>
+    public const bool PreCloseFlattenEnabled = false;
+
+    /// <summary>FR-10, FR-19, #1396, IADR-0561 決定 2: 閉場前の新規建ての締め切りの既定（JP・US とも 60 分）。</summary>
+    public static PreCloseEntryCutoffSettings CreatePreCloseEntryCutoff() => new(
+        new Dictionary<Market, int>
+        {
+            [Market.UnitedStates] = PreCloseEntryCutoffMinutes,
+            [Market.Japan] = PreCloseEntryCutoffMinutes,
+        });
+
     // FR-10, #329, ADR-0018, IADR-0130: 既定値はすべて計画の**確定単一値**である（レンジ表記は用いない）。
     // 金額系 3 値は equity 比で保持し、固定額では持たない（05_trading-assumptions §5 注記）。
     public static RiskLimitSettings CreateRiskLimits() => new()

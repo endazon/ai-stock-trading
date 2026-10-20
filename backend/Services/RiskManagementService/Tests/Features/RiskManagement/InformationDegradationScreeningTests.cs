@@ -50,7 +50,7 @@ public class InformationDegradationScreeningTests
             new InMemoryRiskSettingsStore(), builder, new InMemoryLockoutStore(),
             new FakeClock(Now, new DateOnly(2026, 7, 9)), new WeekendBusinessCalendar(),
             new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(),
-            TestShortSellContexts.Unavailable(new FakeClock(Now, new DateOnly(2026, 7, 9))), new InMemoryEntryReservationStore());
+            TestShortSellContexts.Unavailable(new FakeClock(Now, new DateOnly(2026, 7, 9))), new InMemoryEntryReservationStore(), TradingDefaults.CreatePreCloseEntryCutoff());
         return (service, degradation);
     }
 

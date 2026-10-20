@@ -144,6 +144,20 @@ public static class PolicyRevisionPromptBuilder
         "- 建てた条件ごとに出口を分けてよい（例「条件 B で建てた建玉は、B の判定に使った日中安値を現在値が下回ったら撤退」）。"
         + "ただし記録が不明の建玉もあるため、建てた条件を限定しない既定の出口も必ず書く。建て増しで条件の異なる建玉が混ざると、いずれかの建玉の出口に達した時点で保有の全量の手仕舞いが検討される。";
 
+    /// <summary>FR-04, FR-07, FR-10, #1396, IADR-0561 決定 4: 閉場前の締め切りと手仕舞いの節の見出し（日報の改訂にだけ出す）。</summary>
+    public const string PreCloseHeading = "閉場前の締め切りと手仕舞いの書き方（日報の方針）:";
+
+    /// <summary>
+    /// 🔴 FR-04, FR-07, FR-10, #1396, IADR-0561 決定 4: 閉場前の締め切り（コードが強制）と、閉場前の手仕舞いの有効化・持ち越しの指定の書式の行。
+    /// 方針の「取引終盤は新規建てを控えて手仕舞いを優先する」は判断のプロンプトに時刻が無く効かなかった（PoC 2026-10-19）。自由文はシステムに読まれないことを示す。
+    /// 例の行は試験が共有カーネルの読み取り（PolicyPreCloseLines）で読めることを固定する。
+    /// </summary>
+    public const string PreCloseRule =
+        "- 閉場の一定時間前（既定 60 分）以降の新規建て（買い増し・売り増しを含む）は、コードが審査で拒否する（方針では変えられない）。"
+        + "閉場前の手仕舞い（閉場の一定時間前〔既定 15 分〕に保有を成行で全量手仕舞う）は既定で無効であり、方針で有効にするときは「閉場前の手仕舞い: 有効」の 1 行を書く。"
+        + "有効なときに翌日へ持ち越してよい銘柄は「持ち越し可: NVDA, AAPL」のように 1 行に並べる（書かなければ全建玉を手仕舞う）。"
+        + "この 2 つの書式の行の外の文（例「終盤は手仕舞いを優先する」）はシステムに読まれない。";
+
     /// <summary>日報の改訂で上位方針があるときの末尾の指示（#1365, IADR-0544 決定 1）。</summary>
     public const string DailyParentPolicyInstruction =
         "上位方針の目標と矛盾しない範囲で、利用者の指示を反映してください。上位方針の条件やしきい値を使うときは、参照で済ませず方針の中へ数値を書き写してください。矛盾する場合は rationale にその旨を書いてください。";
@@ -201,6 +215,10 @@ public static class PolicyRevisionPromptBuilder
             sb.AppendLine(EntryConditionHeading);
             sb.AppendLine(EntryConditionLineRule);
             sb.AppendLine(EntryConditionExitRule);
+            sb.AppendLine();
+            // FR-04, FR-07, FR-10, #1396, IADR-0561 決定 4: 閉場前の締め切り（コードが強制）と手仕舞いの書式の行。
+            sb.AppendLine(PreCloseHeading);
+            sb.AppendLine(PreCloseRule);
             sb.AppendLine();
         }
 
