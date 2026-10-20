@@ -195,15 +195,15 @@ public interface IExecutedOrderStore
     bool MarkSoftwareStopCancelRequested(string orderId, DateTimeOffset requestedAt) => false;
 
     /// <summary>
-    /// 🔴 #1395, IADR-0560: 注文の「S1 が取消を求めた」印を<b>保存先から</b>読む（無い・記録が無ければ null）。
-    /// 約定追跡が終端の取消を観測したときに読み直す（巡回の頭で読んだ写しは印より古いことがある）。本番のストア（EF）は追跡しない問い合わせで上書きする。
-    /// </summary>
-    /// <summary>
     /// 🔴 #1395, IADR-0560: 「S1 が取消を求めた」印を戻す（null にする。<b>その 1 列だけ</b>）。S1 の取消が失敗し、注文がまだ終わっていないときに呼ぶ
     /// （残すと、後の利用者の取消まで S1 の取消として扱われる）。記録が無い・終端なら何もせず false。既定の実装は何もしない。
     /// </summary>
     bool ClearSoftwareStopCancelRequested(string orderId) => false;
 
+    /// <summary>
+    /// 🔴 #1395, IADR-0560: 注文の「S1 が取消を求めた」印を<b>保存先から</b>読む（無い・記録が無ければ null）。
+    /// 約定追跡が終端の取消を観測したときに読み直す（巡回の頭で読んだ写しは印より古いことがある）。本番のストア（EF）は追跡しない問い合わせで上書きする。
+    /// </summary>
     DateTimeOffset? FindSoftwareStopCancelRequestedAt(string orderId) =>
         GetAll().FirstOrDefault(r => r.OrderId == orderId)?.SoftwareStopCancelRequestedAt;
 
