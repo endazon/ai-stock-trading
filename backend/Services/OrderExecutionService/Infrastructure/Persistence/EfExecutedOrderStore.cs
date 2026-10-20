@@ -288,6 +288,20 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
         return true;
     }
 
+    // 🔴 #1395, IADR-0560: S1 の取消が失敗したときに印を戻す（この 1 列だけ。非終端のときだけ）。
+    public bool ClearSoftwareStopCancelRequested(string orderId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(orderId);
+
+        var row = db.ExecutedOrders.Find(orderId);
+        if (row is null || !(row.Status == OrderStatus.Accepted || row.Status == OrderStatus.PartiallyFilled))
+            return false;
+
+        row.SoftwareStopCancelRequestedAt = null;
+        db.SaveChanges();
+        return true;
+    }
+
     // 🔴 #1395, IADR-0560: 印を保存先から読む（**追跡しない**問い合わせ。同じ文脈が先に読んだ行の古い値を返さない）。
     public DateTimeOffset? FindSoftwareStopCancelRequestedAt(string orderId)
     {

@@ -693,12 +693,14 @@ public sealed class SoftwareStopExecutor(
                     stop.EntryDecisionId, record.DecisionId, record.OrderId);
             }
 
+            var cancelFailed = false;
             try
             {
                 await broker.CancelOrderAsync(record.OrderId, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                cancelFailed = true;
                 // 取消に失敗しても、既に終端（約定し切った等）なら次の照会で分かる。
                 _logger.LogWarning(ex,
                     "ソフトウェア逆指値の決済の前に、判断の手仕舞いの取消に失敗しました（状態を照会します）。"
@@ -707,6 +709,12 @@ public sealed class SoftwareStopExecutor(
             }
 
             var after = await TryGetOrderAsync(record.OrderId, cancellationToken).ConfigureAwait(false);
+
+            // 🔴 #1395, IADR-0560 決定1（2026-10-20 追記）: 取消が失敗し、注文がまだ終わっていない（照会できない・非終端）なら印を戻す。
+            // 残すと、後で利用者が取り消したときの「手仕舞いが約定せず終了」まで黙る（主体は S1 ではない）。
+            // S1 は次の巡回で取り消し直し、そのときに印を書き直す。失敗しても板で取消が効いて終端していれば印は残す（S1 の取消）。
+            if (cancelFailed && (after is null || !OrderStatusLifecycle.IsTerminal(after.Status)))
+                ClearSoftwareStopCancelMark(stop, record);
             if (after is null || !OrderStatusLifecycle.IsTerminal(after.Status))
             {
                 _logger.LogWarning(
@@ -728,6 +736,22 @@ public sealed class SoftwareStopExecutor(
         }
 
         return result;
+    }
+
+    // 🔴 #1395, IADR-0560: 「S1 が取消を求めた」印を戻す。戻せなくても取消・決済は止めない（印が残る側の残余は IADR-0560）。
+    private void ClearSoftwareStopCancelMark(ProtectiveStopOrder stop, ExecutionRecord record)
+    {
+        try
+        {
+            store.ClearSoftwareStopCancelRequested(record.OrderId);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "取消に失敗した判断の手仕舞いの「ソフトウェア逆指値が取消を求めた」印を戻せませんでした（この注文が後で取り消されても"
+                    + "「手仕舞いが約定せず終了」が出ないことがあります）。EntryDecisionId={EntryDecisionId} DecisionId={DecisionId} OrderId={OrderId}",
+                stop.EntryDecisionId, record.DecisionId, record.OrderId);
+        }
     }
 
     // 🔴 #1222, IADR-0515 決定3: 出どころが利用者の手仕舞い・維持率割れの自動縮小か。null（分からない）・TradeDecision は false。

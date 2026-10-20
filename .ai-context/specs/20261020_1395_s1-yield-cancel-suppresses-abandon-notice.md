@@ -70,7 +70,8 @@ S1 は設計どおり指値を取り消して成行で全量（7165 @ 32.215）�
 | 10 | 監査（`AuditEntryFactory`・`AuditEventHandlers`・`AuditCycleCompletenessTests`） | 変えない（抑止した取消は PositionCloseAbandoned が無いので監査にも載らない。S1 の取消はログと S1 の ClosePlaced の監査で残る） |
 | 11 | `OrderCancellationConfirmationTests` | 変えない（OrderCancelled 経路） |
 | 12 | `docs/operations/operations.md` §「手仕舞いが約定せず終了」の行 | 「出どころを問わない」に S1 の例外を書き足す |
-| 13 | `docs/functional/FR-10_risk-controls.md`・`docs/tests/FR-10_risk-controls-tests.md` | 表示の規則・試験名の一覧のみ。文面・判定に触れないので変えない |
+| 13 | `docs/functional/FR-10_risk-controls.md` | 表示の規則のみ。文面・判定に触れないので変えない |
+| 13a | `docs/tests/FR-10_risk-controls-tests.md` | 必須のテスト仕様書（FR-10）。本件の節（T-10-2912〜T-10-2918・変異 SY1〜SY6・残余）を足し、trace ブロックへ本件の ID を足す |
 | 14 | `.ai-context/adr/IADR-0357`・`IADR-0539`・README | 凍結記録は書き換えない。README へ IADR-0560 の行を足す |
 
 除外: `.ai-context/specs/`（凍結）。
@@ -84,9 +85,10 @@ S1 は設計どおり指値を取り消して成行で全量（7165 @ 32.215）�
 | 3 | S1 は取消を送る前に印を書く・発注の挙動は変えない | 発注執行: S1 の取消後、記録に印・送った成行は従来と同じ |
 | 4 | 約定追跡は印つきの取消だけに欄を立てる | 発注執行: 印あり Cancelled → true、印なし → false、印ありでも Filled → false |
 | 5 | 文面は推定と分かる | 通知の黄金 |
+| 7 | S1 の取消が例外で失敗し注文が生きていれば印を戻し、後の利用者の取消は通知される側（PR レビュー 🟡 で追加） | 発注執行: T-10-2918（印が null・後の取消の OrderExecuted は false。例外でも取消が効いていれば true） |
 | 6 | 変異: 主体の判定を外すと赤 | ハンドラの判定を外して試験 1 が赤、約定追跡の欄を外して試験 4 が赤（手元で確認） |
 
 ## 残余
 
-- 印を書いた後に S1 の取消が効かず、別の原因（利用者の取消）で終わった場合も抑止される。S1 は到達済みで取消・決済を続けるため建玉は S1 が売る（IADR-0560 残余）。
+- 取消が例外で失敗したら印を戻す（受け入れ基準 7）。取消が受け付けられたが板でまだ効いていない間の利用者の取消は抑止される。S1 は到達済みで取消・決済を続けるため建玉は S1 が売る（IADR-0560 残余）。
 - 失効（Expired）は印があっても抑止しない（主体は S1 ではない）。

@@ -44,6 +44,12 @@ public class ExecutedOrderStoreSoftwareStopCancelMarkTests
         poller.FindSoftwareStopCancelRequestedAt("missing").Should().BeNull();
         store().GetAll().Single(r => r.OrderId == "live").SoftwareStopCancelRequestedAt.Should().Be(Now);
 
+        // 取消が失敗したときに戻す（非終端だけ）。T-10-2918。
+        store().ClearSoftwareStopCancelRequested("partial").Should().BeTrue();
+        poller.FindSoftwareStopCancelRequestedAt("partial").Should().BeNull();
+        store().ClearSoftwareStopCancelRequested("filled").Should().BeFalse("終端");
+        store().ClearSoftwareStopCancelRequested("missing").Should().BeFalse("記録が無い");
+
         // 系の未約定取消の印（回数の上限に数える）とは別の列。
         store().GetAll().Single(r => r.OrderId == "live").UnfilledCancelRequestedAt.Should().BeNull();
         store().FindUnfilledDecisionCloses(Now, 100).Select(r => r.OrderId).Should().BeEquivalentTo(["live", "partial"],

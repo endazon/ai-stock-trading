@@ -1168,4 +1168,30 @@ public class SoftwareStopDecisionCloseYieldTests
 
         (await PollTerminalOf(f, decision)).CancelledBySoftwareStop.Should().BeTrue("巡回の頭で読んだ写しは印より古い");
     }
+
+    // 🔴 T-10-2918: S1 の取消が失敗して注文が生きたままなら印を戻す。その後に利用者が取り消した終端は S1 の取消として扱わない
+    // （「手仕舞いが約定せず終了」が出る側）。失敗しても板で取消が効いて終端していれば印は残す（S1 の取消）。
+    [Fact]
+    public async Task T_10_2918_S1の取消が失敗したら印を戻し後の利用者の取消は通知される側になる()
+    {
+        var f = NewFixture();
+        PocStops(f);
+        var decision = PendingClose(f, 1_428);
+        f.Broker.CancelThrows = true;
+        f.Broker.CancelTakesEffect = false;
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Should().BeEmpty("取消が確定するまで送らない（発注の挙動は従来どおり）");
+        ((IExecutedOrderStore)f.Store).FindSoftwareStopCancelRequestedAt(decision.OrderId).Should().BeNull("取消は失敗した");
+        f.Broker.Orders[decision.OrderId].Status = OrderStatus.Cancelled; // 利用者が証券会社のアプリで取り消した
+        (await PollTerminalOf(f, decision)).CancelledBySoftwareStop.Should().BeFalse("主体は利用者");
+
+        var effective = NewFixture();
+        PocStops(effective);
+        var cancelled = PendingClose(effective, 1_428);
+        effective.Broker.CancelThrows = true; // 取消は板で効いたが、応答が例外になった
+        await effective.Executor.OnTriggeredAsync(Trigger());
+        (await PollTerminalOf(effective, cancelled)).CancelledBySoftwareStop.Should().BeTrue("S1 の取消は効いている");
+    }
 }
