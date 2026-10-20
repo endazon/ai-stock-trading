@@ -695,6 +695,8 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
       '索引行は出力が切り詰められたため、先頭部分しか目視していない。', // #1318
       '追記した 2 行の全文は読めていない。', // #1318
       'テスト 3 本は流し読みした。',
+      'テストは名前だけを確認した。', // AST#1400 の是正で「名前だけ」を読み方の文脈に限った（陽性は残る）
+      'テスト 4 本は名前だけで照らし合わせた。',
     ]) {
       const v = findFloorViolations(review(`${head}${line}`), []);
       assert.strictEqual(notRead(v).length, 1, line);
@@ -714,6 +716,9 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
       '`全行は読んでいない` を検出する正規表現を足した。',
       '計画書（FR-10）は読んでいない（計画リポ参照不可）。', // 計画書は読む対象のファイルではない
       '計画 ADR の本文は精読していない。',
+      '`ThemeConcentrationLoader` が市場の名前だけを受け付けることを確かめた。', // AST#1400: コードの挙動の説明（読み方の自認ではない）
+      '市場は名前だけを受け付け、`"99"` のような数値の文字列は拒む。',
+      '構成値は名前だけ許し、数値を通さない。',
     ]) {
       assert.deepStrictEqual(notRead(findFloorViolations(review(`${head}${line}`), [])), [], line);
     }
