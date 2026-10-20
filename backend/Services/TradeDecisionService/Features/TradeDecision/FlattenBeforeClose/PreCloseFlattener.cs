@@ -37,6 +37,9 @@ public sealed class PreCloseFlattener(
     /// <summary>手仕舞いの判断の根拠文の頭（監査・通知で本統制の決済を見分ける）。</summary>
     public const string RationalePrefix = "閉場前の手仕舞い（統制）";
 
+    /// <summary>DecisionId の区切りの幅（分）。同じ区切りの中の重複は下流の冪等が止め、区切りが変われば出し直せる。</summary>
+    public const int DecisionIdBucketMinutes = 5;
+
     /// <summary>今この瞬間に出すべき閉場前の手仕舞いの判断（0 件以上）。</summary>
     public async Task<IReadOnlyList<TradeDecisionMade>> FlattenAsync(CancellationToken cancellationToken = default)
     {
@@ -150,6 +153,9 @@ public sealed class PreCloseFlattener(
             target.Symbol,
             target.Market,
             closeSide,
+            // PR #1399 のレビュー: 決済の ProductType は判断の決済（TradeDecisionAppService）・利用者の手仕舞い（PositionCloseService）と同じ Cash。
+            // 決済では種別を読まない —— 審査の種別の判定（ProductTypeResolver.IsEnabled・差金決済防止・空売り統制）は新規建て（isEntry）だけ、
+            // 発注執行の種別の分岐（StopLossMethodPolicy）も新規建てだけで、moomoo へは売買の向きだけを送る（種別は送らない）。台帳は向きと数量で建玉を減らす。
             ProductType.Cash,
             context.Mode,
             quantity,
@@ -166,7 +172,14 @@ public sealed class PreCloseFlattener(
         logger.LogWarning(
             "閉場前の手仕舞い: {Symbol} {Side} 数量={Quantity} 成行（閉場 {Close:O}）", target.Symbol, closeSide, quantity, close);
 
-        return new TradeDecisionMade(Guid.NewGuid(), intent, rationale, now, Policy: policy?.Reference);
+        // 🔴 PR #1399 のレビュー: DecisionId は (現地の日付, 市場, 銘柄, 方向, 5 分の区切り) から決定的に導く（ScheduledDecisionIds.ForPreCloseFlatten）。
+        // 入れ替え中に新旧の Pod の常駐が同じ区切りで出しても、発注執行の DecisionId の一意予約が 2 本目を止める。
+        var localNow = TimeZoneInfo.ConvertTime(now, MarketHours.ZoneOf(target.Market));
+        var bucket = (localNow.Hour * 60 + localNow.Minute) / DecisionIdBucketMinutes;
+        var decisionId = ScheduledDecisionIds.ForPreCloseFlatten(
+            DateOnly.FromDateTime(localNow.DateTime), target.Market, target.Symbol, closeSide, bucket);
+
+        return new TradeDecisionMade(decisionId, intent, rationale, now, Policy: policy?.Reference);
     }
 
     private async Task<decimal?> GetReferencePriceAsync(WatchedSymbol target, CancellationToken cancellationToken)

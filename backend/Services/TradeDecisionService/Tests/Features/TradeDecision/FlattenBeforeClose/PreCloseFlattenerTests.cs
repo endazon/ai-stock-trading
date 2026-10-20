@@ -252,6 +252,24 @@ public class PreCloseFlattenerTests
         (await Run(f, Enabled)).Should().BeEmpty();
     }
 
+    // 🔴 PR #1399 のレビュー: 同じ 5 分の区切りの中で 2 回出しても（入れ替え中の新旧の Pod・巡回の重なり）DecisionId は同じ＝発注執行の一意予約が 2 本目を止める。
+    // 区切りが変われば別の ID（最初の決済が見送られても次の区切りで出し直せる）。方向・銘柄・日付でも分かれる。
+    [Fact]
+    public async Task T_10_2931_DecisionIdは5分の区切りの中で同じで区切りが変われば変わる()
+    {
+        var f = new Fixture { Now = new DateTimeOffset(2026, 10, 19, 19, 45, 10, TimeSpan.Zero) }; // 15:45:10 ET
+        var first = (await Run(f, Enabled)).ToDictionary(d => d.Intent.Symbol, d => d.DecisionId);
+
+        f.Now = new DateTimeOffset(2026, 10, 19, 19, 49, 50, TimeSpan.Zero); // 同じ区切り（15:45〜15:50）
+        var sameBucket = (await Run(f, Enabled)).ToDictionary(d => d.Intent.Symbol, d => d.DecisionId);
+        f.Now = new DateTimeOffset(2026, 10, 19, 19, 50, 0, TimeSpan.Zero); // 次の区切り
+        var nextBucket = (await Run(f, Enabled)).ToDictionary(d => d.Intent.Symbol, d => d.DecisionId);
+
+        sameBucket.Should().Equal(first);
+        nextBucket["MARA"].Should().NotBe(first["MARA"]);
+        first["MARA"].Should().NotBe(first["NVDA"]);
+    }
+
     [Fact]
     public async Task T_10_2933_分数は市場ごとの構成を使う()
     {

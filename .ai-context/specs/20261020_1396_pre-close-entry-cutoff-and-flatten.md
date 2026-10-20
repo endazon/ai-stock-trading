@@ -49,6 +49,7 @@ MARA を閉場の約 1 時間前（03:58 JST）に新規建てし、NVDA・MARA 
    決済する `TradeDecisionMade`（Close・MarketOrder）を発行する（既存の決済の経路: 審査 → OrderApproved〔出どころ TradeDecision〕→ 発注執行の成行の口）。
    有効化は構成 `PreCloseFlatten:Enabled` か方針の「閉場前の手仕舞い: 有効」の行。持ち越しは方針の「持ち越し可: …」の行（共有カーネル `PolicyPreCloseLines`）。
    処理中の決済が覆う・全注文が拒否される・保有不明・換算レートなし・参照価格なしは出さない。
+   ［2026-10-20 追記 / PR #1399 のレビュー］DecisionId は (現地の日付, 市場, 銘柄, 方向, 5 分の区切り) から決定的に導く（重複は下流の冪等が止める）。決済の ProductType は Cash（既存の決済の経路と同じ。種別は新規建てでしか読まれない）。
 4. **プロンプト**: 本判断・一次の両方に「- 市場の現地時刻: yyyy-MM-dd HH:mm（米国東部時間|日本時間） / 本日の閉場: HH:mm（残り N 分|閉場後）|なし（休場日）」。
    一次の縮退の保護分 `MarketClockReserveChars`（100）。
 5. **方針の改訂の AI**: 日報の改訂に締め切り（コードが強制）と 2 つの書式の行を案内する（`PolicyRevisionPromptBuilder.PreCloseRule`）。
