@@ -132,6 +132,17 @@ public static class TradingDefaults
             [Market.Japan] = PreCloseEntryCutoffMinutes,
         });
 
+    /// <summary>
+    /// 🔴 FR-10, FR-19, #1397, IADR-0562 決定 1: <b>テーマごとの同時保有の上限の既定</b>（利用者裁定 2026-10-20・環流 planning#809）。
+    /// 暗号資産＝COIN・MARA・MSTR・HOOD、AI・半導体＝NVDA・SMCI（米国株）。上限はどちらも 1。定義は構成（<c>ThemeConcentration:Themes</c>）で置き換えられる。
+    /// 計画の 05_trading-assumptions §5 には 2026-10-20 時点で行が無い（反映待ち）。値は裁定の値である。
+    /// </summary>
+    public static ThemeConcentrationSettings CreateThemeConcentration() => new(
+    [
+        new ThemeLimit("暗号資産", Market.UnitedStates, ["COIN", "MARA", "MSTR", "HOOD"], MaxPositions: 1),
+        new ThemeLimit("AI・半導体", Market.UnitedStates, ["NVDA", "SMCI"], MaxPositions: 1),
+    ]);
+
     // FR-10, #329, ADR-0018, IADR-0130: 既定値はすべて計画の**確定単一値**である（レンジ表記は用いない）。
     // 金額系 3 値は equity 比で保持し、固定額では持たない（05_trading-assumptions §5 注記）。
     public static RiskLimitSettings CreateRiskLimits() => new()

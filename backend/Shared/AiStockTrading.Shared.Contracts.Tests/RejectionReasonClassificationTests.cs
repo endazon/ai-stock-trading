@@ -75,6 +75,8 @@ public class RejectionReasonClassificationTests
     [InlineData(RejectionReason.DecisionExitSameDay, RejectionReasonClass.A)]
     // T-10-2920, FR-10, FR-19, #1396, IADR-0561: 閉場前の締め切りは時刻の規則の正常作動（A）。クラス C ではない。
     [InlineData(RejectionReason.PreCloseEntryCutoff, RejectionReasonClass.A)]
+    // T-10-2936, FR-10, FR-19, #1397, IADR-0562: テーマの同時保有の上限は上限の正常作動（A）。クラス C ではない。
+    [InlineData(RejectionReason.ThemeConcentrationExceeded, RejectionReasonClass.A)]
     public void 上限超過と停止中の拒否はクラスAとBに分かれる(
         RejectionReason reason, RejectionReasonClass expected)
     {

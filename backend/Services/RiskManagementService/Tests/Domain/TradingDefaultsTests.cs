@@ -291,4 +291,15 @@ public class TradingDefaultsTests
         cutoff.MinutesFor(AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates).Should().Be(60);
         cutoff.MinutesFor(AiStockTrading.Shared.Contracts.Trading.Market.Japan).Should().Be(60);
     }
+
+    // T-10-2941, FR-10, FR-19, #1397, IADR-0562 決定 1: テーマごとの同時保有の上限の既定（利用者裁定 2026-10-20・planning#809）。計画 §5 は反映待ち。
+    [Fact]
+    public void T_10_2941_テーマの同時保有の上限は暗号資産とAI半導体の2つで上限はどちらも1()
+    {
+        var themes = TradingDefaults.CreateThemeConcentration().Themes;
+
+        themes.Select(t => (t.Name, string.Join(",", t.Symbols), t.MaxPositions, t.Market)).Should().Equal(
+            ("暗号資産", "COIN,MARA,MSTR,HOOD", 1, AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates),
+            ("AI・半導体", "NVDA,SMCI", 1, AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates));
+    }
 }

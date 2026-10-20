@@ -54,7 +54,7 @@ public class ScreeningContextAssemblerTests
         // #1081, IADR-0455: ニュースの状態の行の予約ぶん 700→900 へ底上げ（予算も同幅 +NewsStatusReserveChars シフト）。
         // #1292, IADR-0523 決定 2: 保有の手仕舞いの固定文の行の予約ぶん底上げ（予算も同幅 +HeldExitRuleReserveChars シフト）。
         // #1384, IADR-0558 決定 7: 建てた条件の要約の行の予約ぶん底上げ（予算も同幅 +HeldEntryBasisReserveChars シフト）。
-        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_330 + ScreeningContextAssembler.PriceContextReserveChars + ScreeningContextAssembler.NewsStatusReserveChars + ScreeningContextAssembler.HeldExitRuleReserveChars + ScreeningContextAssembler.HeldEntryBasisReserveChars + ScreeningContextAssembler.MarketClockReserveChars + WatchlistUnknownChars
+        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_330 + ScreeningContextAssembler.PriceContextReserveChars + ScreeningContextAssembler.NewsStatusReserveChars + ScreeningContextAssembler.HeldExitRuleReserveChars + ScreeningContextAssembler.HeldEntryBasisReserveChars + ScreeningContextAssembler.MarketClockReserveChars + ScreeningContextAssembler.PortfolioReserveChars + WatchlistUnknownChars
             // #1359, IADR-0542 決定 5: 残す 1 件ぶんの境界語の文字数を同幅ずらす。
             + TradeDecisionPromptBuilder.ReferenceBoundaryChars, watchlist: null);
 
@@ -79,7 +79,7 @@ public class ScreeningContextAssemblerTests
         // #1035, IADR-0451: 400→700（値動きの行の予約）も同幅でずらした（上のテストと同じ）。
         // #1081, IADR-0455: 700→900（ニュースの状態の行の予約）も同幅でずらした。
         // #1292, IADR-0523 決定 2: 保有の手仕舞いの固定文の行の予約も同幅でずらした。
-        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_330 + ScreeningContextAssembler.PriceContextReserveChars + ScreeningContextAssembler.NewsStatusReserveChars + ScreeningContextAssembler.HeldExitRuleReserveChars + ScreeningContextAssembler.HeldEntryBasisReserveChars + ScreeningContextAssembler.MarketClockReserveChars + WatchlistUnknownChars
+        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_330 + ScreeningContextAssembler.PriceContextReserveChars + ScreeningContextAssembler.NewsStatusReserveChars + ScreeningContextAssembler.HeldExitRuleReserveChars + ScreeningContextAssembler.HeldEntryBasisReserveChars + ScreeningContextAssembler.MarketClockReserveChars + ScreeningContextAssembler.PortfolioReserveChars + WatchlistUnknownChars
             // #1359, IADR-0542 決定 5: 残す 1 件ぶんの境界語の文字数を同幅ずらす。
             + TradeDecisionPromptBuilder.ReferenceBoundaryChars, watchlist: null);
 

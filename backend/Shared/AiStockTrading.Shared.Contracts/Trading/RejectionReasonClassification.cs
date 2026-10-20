@@ -64,6 +64,7 @@ public static class RejectionReasonClassification
             // 確かめられた損切り（StoppedOutSameDay）は下の既定＝クラス A（統制の正常作動）へ落ちる。
             // #1176, IADR-0495: 判断由来の決済の後の同日・同方向の拒否（DecisionExitSameDay）も確かめられた事実なのでクラス A（既定）。
             // #1396, IADR-0561: 閉場前の締め切り（PreCloseEntryCutoff）も時刻の規則が設計どおり作動した記録なのでクラス A（既定）。
+            // #1397, IADR-0562: テーマの同時保有の上限（ThemeConcentrationExceeded）も上限の正常作動なのでクラス A（既定）。
             or RejectionReason.StopOutStatusUnknown
             or RejectionReason.MarketDisabled => RejectionReasonClass.B,
 

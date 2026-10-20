@@ -3,6 +3,7 @@ using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
+using Microsoft.Extensions.Logging;
 
 namespace RiskManagementService.Features.RiskManagement;
 
@@ -38,6 +39,9 @@ namespace RiskManagementService.Features.RiskManagement;
 // 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: **閉場前の新規建ての締め切り（preCloseCutoff）も必須依存である。** 省略可能にすると、
 // Program.cs から外しても試験が緑のまま締め切りだけが静かに効かなくなる（IADR-0163 決定2）。閉場は共有カーネルの MarketHours（取引判断・
 // 市場監視と同じ暦。休場日・半日取引日の規則計算）から求める。
+//
+// 🔴 FR-10, FR-19, #1397, IADR-0562 決定 2: **テーマごとの同時保有の上限の定義（themes）も必須依存である**（同じ理由）。入力は snapshot の
+// 保有中 ∪ 未約定の新規建て（予約を含む）の銘柄であり、新規建ての審査は直列化されている（IADR-0529）ので、同時に届いた同じ集まりの判断も 1 件しか通らない。
 public sealed class OrderScreeningService(
     IRiskSettingsStore settingsStore,
     PortfolioSnapshotBuilder snapshotBuilder,
@@ -49,7 +53,9 @@ public sealed class OrderScreeningService(
     ShortSellContextSupplier shortSellContexts,
     IEntryReservationStore entryReservations,
     PreCloseEntryCutoffSettings preCloseCutoff,
-    IManipulativeOrderPatternDetector? patternDetector = null)
+    ThemeConcentrationSettings themes,
+    IManipulativeOrderPatternDetector? patternDetector = null,
+    ILogger<OrderScreeningService>? logger = null)
 {
     public Task<ScreeningOutcome> ScreenAsync(TradeDecisionMade decision, CancellationToken cancellationToken = default)
     {
@@ -215,8 +221,19 @@ public sealed class OrderScreeningService(
         var result = RiskEvaluator.Evaluate(
             intent, settings, snapshot, patternDetector,
             shortSellContext: shortSellContext, buyInBan: buyInBan, stopOuts: stopOuts, decisionExits: decisionExits,
-            preCloseCutoff: preCloseCutoffSupply);
+            preCloseCutoff: preCloseCutoffSupply, themes: themes);
         var reasons = new List<RejectionReason>(result.Reasons);
+
+        // FR-10, #1397, IADR-0562 決定 2: 拒否の理由に加えて、どの集まりで上限に達したかをログへ残す（OrderRejected は理由の列挙だけを運ぶ）。
+        if (reasons.Contains(RejectionReason.ThemeConcentrationExceeded) && logger is not null)
+        {
+            var exceeded = themes.Exceeded(intent.Symbol, intent.Market, snapshot.HeldOrPendingSymbols);
+            logger.LogInformation(
+                "テーマの同時保有の上限で新規建てを拒否: {Symbol} themes={Themes} held={Held}",
+                intent.Symbol,
+                string.Join(",", exceeded.Select(t => $"{t.Name}(上限 {t.MaxPositions})")),
+                string.Join(",", snapshot.HeldOrPendingSymbols.Where(h => exceeded.Any(t => t.Contains(h.Symbol, h.Market))).Select(h => h.Symbol)));
+        }
 
         // 日次損失上限に「新規到達」したら当日ロックアウトを設定する（翌営業日まで）。
         // RiskEvaluator は実現+含み損の合算で当該時点の到達を判定する（IADR-0008）。
