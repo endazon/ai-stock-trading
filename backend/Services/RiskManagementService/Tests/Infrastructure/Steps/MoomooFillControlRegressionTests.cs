@@ -95,7 +95,7 @@ public class MoomooFillControlRegressionTests
         // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         return (new OrderScreeningService(settingsStore, snapshotBuilder, new InMemoryLockoutStore(), clock,
                 new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(), stores.Ledger,
-                TestShortSellContexts.Unavailable(clock, stores.Ledger), new InMemoryEntryReservationStore(), TradingDefaults.CreatePreCloseEntryCutoff()),
+                TestShortSellContexts.Unavailable(clock, stores.Ledger), new InMemoryEntryReservationStore(), TradingDefaults.CreatePreCloseEntryCutoff(), TradingDefaults.CreateThemeConcentration()),
             new SizingContextService(snapshotBuilder, settingsStore));
     }
 

@@ -68,7 +68,7 @@ public class EntryScreeningSerializationTests
         return new OrderScreeningService(
             settingsStore ?? new InMemoryRiskSettingsStore(settings), snapshots, controls.Lockout, clock,
             new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(), stores.Ledger,
-            TestShortSellContexts.Unavailable(clock, stores.Ledger), stores.Reservations, TradingDefaults.CreatePreCloseEntryCutoff());
+            TestShortSellContexts.Unavailable(clock, stores.Ledger), stores.Reservations, TradingDefaults.CreatePreCloseEntryCutoff(), TradingDefaults.CreateThemeConcentration());
     }
 
     // 米国株・内蔵 paper（口座種別を要求しない）の新規買い。

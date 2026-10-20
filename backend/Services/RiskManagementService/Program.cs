@@ -320,6 +320,8 @@ builder.Services.AddScoped(sp => new ShortSellContextSupplier(
     sp.GetRequiredService<ILogger<ShortSellContextSupplier>>()));
 // 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: 閉場前の新規建ての締め切り。構築時に読む（範囲外・読めない値は起動を止める）。
 builder.Services.AddSingleton(PreCloseEntryCutoffLoader.FromConfiguration(builder.Configuration));
+// 🔴 FR-10, FR-19, #1397, IADR-0562 決定 1: テーマごとの同時保有の上限の定義。構築時に読む（誤った定義は起動を止める）。
+builder.Services.AddSingleton(ThemeConcentrationLoader.FromConfiguration(builder.Configuration));
 builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetRequiredService<IRiskSettingsStore>(),
     sp.GetRequiredService<PortfolioSnapshotBuilder>(),
@@ -336,7 +338,10 @@ builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetRequiredService<IEntryReservationStore>(),
     // 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: 閉場前の新規建ての締め切り（必須引数。構成 PreCloseEntryCutoff:Minutes:<Market>・既定 60 分）。
     sp.GetRequiredService<RiskManagementService.Domain.PreCloseEntryCutoffSettings>(),
-    sp.GetService<RiskManagementService.Domain.IManipulativeOrderPatternDetector>()));
+    // 🔴 FR-10, FR-19, #1397, IADR-0562 決定 1・2: テーマごとの同時保有の上限の定義（必須引数。構成 ThemeConcentration:Themes・既定は暗号資産と AI・半導体の 2 つ）。
+    sp.GetRequiredService<RiskManagementService.Domain.ThemeConcentrationSettings>(),
+    sp.GetService<RiskManagementService.Domain.IManipulativeOrderPatternDetector>(),
+    sp.GetRequiredService<ILogger<OrderScreeningService>>()));
 // FR-10, #331, IADR-0210 決定5: 損切りの機械執行（旧 StopLossExecutionService・IADR-0015）は撤去した。
 // 損切りの実行はブローカー側の逆指値が担い、StopLossTriggered の購読は検知の記録のみを行う（二重決済の防止）。
 // FR-10, FR-11, UC-06, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い（POST /risk-controls/positions/close）。

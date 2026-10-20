@@ -38,7 +38,7 @@ public class EntryBlockersServiceTests
 
         public OrderScreeningService Screening() => new(
             Settings, Snapshots(), Lockout, Clock, new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(),
-            Ledger, TestShortSellContexts.Unavailable(Clock, Ledger), new InMemoryEntryReservationStore(), TradingDefaults.CreatePreCloseEntryCutoff());
+            Ledger, TestShortSellContexts.Unavailable(Clock, Ledger), new InMemoryEntryReservationStore(), TradingDefaults.CreatePreCloseEntryCutoff(), TradingDefaults.CreateThemeConcentration());
     }
 
     private static TradeDecisionMade Buy() =>

@@ -78,6 +78,28 @@ public sealed class GrpcHeldPositionProvider(
         return HttpHeldPositionProvider.InterpretHeldSymbols(rows, logger);
     }
 
+    // 🔴 FR-04, FR-10, #1397, IADR-0562 決定 3: 保有中の全銘柄（数量つき）。REST と同じ解釈（HttpHeldPositionProvider.InterpretHoldings）。
+    public async Task<IReadOnlyList<HeldHolding>?> GetHoldingsAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await transport.CallAsync(
+            "保有中の全銘柄",
+            "プロンプトは「不明」と書きます。",
+            (client, options) => client.GetOpenPositionsAsync(new Proto.GetOpenPositionsRequest(), options),
+            cancellationToken).ConfigureAwait(false);
+        if (response is null)
+            return null;
+
+        try
+        {
+            return HttpHeldPositionProvider.InterpretHoldings([.. response.Positions.Select(ToRow)], logger);
+        }
+        catch (FormatException ex)
+        {
+            logger.LogWarning(ex, "保有中の全銘柄の gRPC 応答を読めません（10 進の書式）。プロンプトは「不明」と書きます。");
+            return null;
+        }
+    }
+
     public async Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(
         string symbol, Market market, CancellationToken cancellationToken = default)
     {

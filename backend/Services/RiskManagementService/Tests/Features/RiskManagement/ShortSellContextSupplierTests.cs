@@ -191,7 +191,7 @@ public class ShortSellContextSupplierTests
             new InMemoryRiskSettingsStore(settings with { Guard = settings.Guard with { EnabledProductTypes = enabled } }),
             builder, new InMemoryLockoutStore(), clock, new WeekendBusinessCalendar(),
             new InMemoryBuyInInferenceStore(), ledger,
-            TestShortSellContexts.Supplier(source, clock, ledger, prices: new FixedCurrentPrices(prices ?? Prices())), new InMemoryEntryReservationStore(), TradingDefaults.CreatePreCloseEntryCutoff());
+            TestShortSellContexts.Supplier(source, clock, ledger, prices: new FixedCurrentPrices(prices ?? Prices())), new InMemoryEntryReservationStore(), TradingDefaults.CreatePreCloseEntryCutoff(), TradingDefaults.CreateThemeConcentration());
         return (service, source);
     }
 
@@ -272,7 +272,7 @@ public class ShortSellContextSupplierTests
             TestShortSellContexts.Supplier(
                 new FixedShortSellBorrowSource(ShortSellBorrowObservation.Permitted()), clock, ledger,
                 new FixedWorkingEntries([Working("MSFT", TradeSide.Sell, 6, 25m, pendingId)]),
-                new FixedCurrentPrices(Prices(("AAPL", 100m)))), new InMemoryEntryReservationStore(), TradingDefaults.CreatePreCloseEntryCutoff());
+                new FixedCurrentPrices(Prices(("AAPL", 100m)))), new InMemoryEntryReservationStore(), TradingDefaults.CreatePreCloseEntryCutoff(), TradingDefaults.CreateThemeConcentration());
 
         // 2 件目 7 × 25 = 175。単独なら 175 ≦ 300 だが、未約定の 150 と合わせて 325 > 300。
         var outcome = await service.ScreenAsync(

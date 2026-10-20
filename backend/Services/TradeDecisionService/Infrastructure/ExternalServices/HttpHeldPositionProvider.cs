@@ -105,10 +105,46 @@ public sealed class HttpHeldPositionProvider(
         }
     }
 
+    // 🔴 FR-04, FR-10, #1397, IADR-0562 決定 3: 保有中の全銘柄（数量つき）。照会・失敗の扱いは GetHeldSymbolsAsync と同じ（失敗は null＝不明）。
+    public async Task<IReadOnlyList<HeldHolding>?> GetHoldingsAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient
+                .GetAsync("/risk-controls/open-positions", cancellationToken)
+                .ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("保有中の全銘柄の照会に失敗（{Status}）。プロンプトは「不明」と書きます。", (int)response.StatusCode);
+                return null;
+            }
+
+            var positions = await response.Content
+                .ReadFromJsonAsync<List<OpenPositionDto>>(cancellationToken)
+                .ConfigureAwait(false);
+            return positions is null ? null : InterpretHoldings(positions, logger);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("保有中の全銘柄の照会がタイムアウト。プロンプトは「不明」と書きます。");
+            return null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "保有中の全銘柄の照会で例外。プロンプトは「不明」と書きます。");
+            return null;
+        }
+    }
+
     // 🔴 FR-02, FR-04, #1286, IADR-0521 決定 1: 応答の全行から保有中の (銘柄, 市場) を導く（輸送に依らず 1 つ。gRPC も呼ぶ）。
     // 行の検証は InterpretPositions と同じ規則（#943・#854）—— 銘柄・市場・方向・数量の欠けた行、数量が正でない行が 1 つでもあれば
     // 応答全体を解釈できない（null＝不明）。欠けた行を飛ばすと、その行の銘柄が黙って判断対象から落ちる。
     internal static IReadOnlyList<WatchedSymbol>? InterpretHeldSymbols(
+        IReadOnlyList<OpenPositionDto> positions, ILogger logger) =>
+        InterpretHoldings(positions, logger)?.Select(h => new WatchedSymbol(h.Symbol, h.Market)).ToList();
+
+    // 🔴 FR-04, FR-10, #1397, IADR-0562 決定 3: 同じ検証で、保有中の全銘柄を符号付き数量つきで返す（判断のプロンプトの「保有中の全銘柄」）。
+    internal static IReadOnlyList<HeldHolding>? InterpretHoldings(
         IReadOnlyList<OpenPositionDto> positions, ILogger logger)
     {
         if (positions.Any(p => p is null || string.IsNullOrEmpty(p.Symbol) || p.Market is null
@@ -121,8 +157,8 @@ public sealed class HttpHeldPositionProvider(
         // (銘柄, 市場) ごとに符号付きで合計し、0 でないものだけを残す（応答の順を保つ）。
         return positions
             .GroupBy(p => (Symbol: p.Symbol!, Market: p.Market!.Value))
-            .Where(g => g.Sum(p => p.Side == TradeSide.Buy ? p.Quantity!.Value : -p.Quantity!.Value) != 0)
-            .Select(g => new WatchedSymbol(g.Key.Symbol, g.Key.Market))
+            .Select(g => new HeldHolding(g.Key.Symbol, g.Key.Market, g.Sum(p => p.Side == TradeSide.Buy ? p.Quantity!.Value : -p.Quantity!.Value)))
+            .Where(h => h.SignedQuantity != 0)
             .ToList();
     }
 

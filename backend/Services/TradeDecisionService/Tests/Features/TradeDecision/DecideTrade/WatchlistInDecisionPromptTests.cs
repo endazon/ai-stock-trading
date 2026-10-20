@@ -295,6 +295,8 @@ public class WatchlistInDecisionPromptTests
             + ScreeningContextAssembler.HeldEntryBasisReserveChars
             // #1396, IADR-0561 決定 5: 市場の現地時刻の行の予約ぶん底上げ。
             + ScreeningContextAssembler.MarketClockReserveChars
+            // #1397, IADR-0562 決定 3: 保有中の全銘柄の節の予約ぶん底上げ。
+            + ScreeningContextAssembler.PortfolioReserveChars
             + ("記事".Length + 100 + 60)
             // #1359, IADR-0542 決定 5: 境界語はプロンプト側で足すため、見積りに 1 件あたりの境界語の文字数が加わる（残す 1 件ぶん同幅ずらす）。
             + TradeDecisionPromptBuilder.ReferenceBoundaryChars;

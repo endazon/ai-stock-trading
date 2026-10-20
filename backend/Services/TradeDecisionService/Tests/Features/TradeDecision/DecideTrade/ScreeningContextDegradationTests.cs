@@ -141,6 +141,8 @@ public class ScreeningContextDegradationTests
                 + TradeDecisionService.Features.TradeDecision.DecideTrade.ScreeningContextAssembler.HeldEntryBasisReserveChars
                 // #1396, IADR-0561 決定 5: 市場の現地時刻の行の予約ぶん底上げ。
                 + TradeDecisionService.Features.TradeDecision.DecideTrade.ScreeningContextAssembler.MarketClockReserveChars
+                // #1397, IADR-0562 決定 3: 保有中の全銘柄の節の予約ぶん底上げ。
+                + TradeDecisionService.Features.TradeDecision.DecideTrade.ScreeningContextAssembler.PortfolioReserveChars
                 + watchlistUnknownChars
                 // #1359, IADR-0542 決定 5: 残す参考情報（市況・重要ニュースの 2 件）ぶんの境界語の文字数を同幅ずらす。
                 + (2 * TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDecisionPromptBuilder.ReferenceBoundaryChars)

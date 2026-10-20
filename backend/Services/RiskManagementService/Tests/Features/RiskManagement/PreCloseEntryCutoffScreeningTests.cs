@@ -42,7 +42,7 @@ public class PreCloseEntryCutoffScreeningTests
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, new InMemoryLockoutStore(), clock, new WeekendBusinessCalendar(),
             new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(), TestShortSellContexts.Unavailable(clock),
-            reservations, cutoff ?? TradingDefaults.CreatePreCloseEntryCutoff());
+            reservations, cutoff ?? TradingDefaults.CreatePreCloseEntryCutoff(), TradingDefaults.CreateThemeConcentration());
         return (service, clock, reservations);
     }
 

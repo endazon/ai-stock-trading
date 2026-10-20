@@ -47,8 +47,13 @@ public sealed class TradeDecisionAppService(
     IDailyBarsProvider? dailyBars = null,
     MinimumEntryNotionalOptions? minimumEntryNotional = null,
     IInFlightCloseProvider? inFlightCloses = null,
-    IMarketCalendar? marketCalendar = null)
+    IMarketCalendar? marketCalendar = null,
+    IHeldSymbolsProvider? holdings = null)
 {
+    // FR-04, FR-10, #1397, IADR-0562 決定 3: プロンプトの「保有中の全銘柄」の供給口。未指定＝節を出さない（従来のプロンプト）。
+    // 本番は DI が保有照会と同じ実装（IHeldSymbolsProvider）を渡す。照会できなければ節は「不明」と書く。
+    private readonly IHeldSymbolsProvider? _holdings = holdings;
+
     // FR-04, FR-10, #1396, IADR-0561 決定 5: プロンプトの「閉場までの残り時間」の暦。未指定＝共有カーネルの規則計算だけ（構成の臨時休場・臨時の半日を足さない）。
     // 本番は DI が IMarketCalendar（MarketCalendar）を渡す。
     private readonly IMarketCalendar? _marketCalendar = marketCalendar;
@@ -573,10 +578,13 @@ public sealed class TradeDecisionAppService(
             trigger.Market, marketClockNow,
             _marketCalendar?.SessionClose(trigger.Market, marketClockNow) ?? MarketHours.SessionCloseOn(trigger.Market, marketClockNow));
 
+        // 🔴 FR-04, FR-10, #1397, IADR-0562 決定 3: 保有中の全銘柄（本判断・一次の両方へ同じ値）。照会の失敗は不明（判断は止めない）。
+        var portfolio = _holdings is null ? null : new PortfolioHoldingsContext(await GetHoldingsSafeAsync(cancellationToken).ConfigureAwait(false));
+
         var decisionPrompt = TradeDecisionPromptBuilder.Build(
             trigger, policy, context, retrieved, includeProfitability: _profitabilityOptions.Enabled,
             currentPrice: currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist, intraday: intraday,
-            news: news, volume: volume, addOnBlockers: addOnBlockers, stopFloor: stopFloor, marketClock: marketClock);
+            news: news, volume: volume, addOnBlockers: addOnBlockers, stopFloor: stopFloor, marketClock: marketClock, portfolio: portfolio);
 
         // #337, IADR-0247: 縮退制御が有効（スクリーニング有効かつ予算設定）なときだけ、スクリーニング入力
         // （方針・市況＝保護、RAG・ニュース＝削減可）へ縮退順序 ①分割→②RAG→③ニュース を適用する。
@@ -594,10 +602,10 @@ public sealed class TradeDecisionAppService(
             () => screening is null
                 ? TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist,
-                    intraday: intraday, news: news, volume: volume, addOnBlockers: addOnBlockers, marketClock: marketClock)
+                    intraday: intraday, news: news, volume: volume, addOnBlockers: addOnBlockers, marketClock: marketClock, portfolio: portfolio)
                 : TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, screening.RetainedReferences, heldPosition, workingEntries,
-                    watchlist, intraday, news, volume, addOnBlockers, marketClock),
+                    watchlist, intraday, news, volume, addOnBlockers, marketClock, portfolio),
             decisionPrompt,
             // 🔴 FR-04, FR-10, #1187, IADR-0248: 二次本判断の解釈へ、プロンプトへ渡したのと同じ保有（null＝不明）を渡す。
             // 保有を決済する売買（ロング保有中の Sell・ショート保有中の Buy）では損切り幅を任意にする（決済は保有全量で損切り幅を
@@ -1140,6 +1148,20 @@ public sealed class TradeDecisionAppService(
 
     // 🔴 FR-10, FR-04, #1113, IADR-0463 決定 4: 新規建ての可否の照会（fail-safe ラッパ）。例外・キャンセル以外の失敗は
     // **null（不明）**に縮退する（＝LLM を呼ぶ。見送らない）。本判断のキャンセルは伝える。
+    // FR-04, FR-10, #1397, IADR-0562 決定 3: 保有中の全銘柄の照会（fail-safe）。例外（キャンセルを除く）は null（＝不明）。
+    private async Task<IReadOnlyList<HeldHolding>?> GetHoldingsSafeAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _holdings!.GetHoldingsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "保有中の全銘柄の照会で例外。プロンプトは「不明」と書きます。");
+            return null;
+        }
+    }
+
     private async Task<EntryBlockers?> GetEntryBlockersSafeAsync(
         DecisionTrigger trigger, CancellationToken cancellationToken)
     {

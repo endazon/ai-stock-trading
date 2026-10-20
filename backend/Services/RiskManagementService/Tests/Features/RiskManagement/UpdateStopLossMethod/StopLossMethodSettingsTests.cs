@@ -231,7 +231,7 @@ public class StopLossMethodSettingsTests
         var service = new OrderScreeningService(
             settings, builder, new InMemoryLockoutStore(), clock, new WeekendBusinessCalendar(),
             new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(),
-            TestShortSellContexts.Unavailable(clock), new InMemoryEntryReservationStore(), TradingDefaults.CreatePreCloseEntryCutoff());
+            TestShortSellContexts.Unavailable(clock), new InMemoryEntryReservationStore(), TradingDefaults.CreatePreCloseEntryCutoff(), TradingDefaults.CreateThemeConcentration());
         var intent = new OrderIntent(
             "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m,
             PositionEffect.Open);

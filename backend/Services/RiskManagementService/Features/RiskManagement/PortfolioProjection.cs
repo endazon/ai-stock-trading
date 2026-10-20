@@ -127,6 +127,8 @@ public static class PortfolioProjection
         // 計画 FR-10 は日次枠を「新規建ての発注代金の合計」で定め、§5 は Stage の上限を「発注可能額」と呼ぶ。
         // 約定だけを数えると、指値が溜まっている間は上限を超えて承認し続けられる（#27 と同型の累計超過の穴）。
         var openPositionCount = openPositions.Count;
+        // 🔴 FR-10, #1397, IADR-0562 決定 2: テーマの同時保有の上限の入力＝保有中の銘柄 ∪ 未約定の新規建て（予約を含む）の銘柄。
+        var heldOrPending = openPositions.Select(p => (p.Symbol, p.Market)).ToHashSet();
         if (workingEntries is { Count: > 0 })
         {
             // FR-04, #934, IADR-0390 決定1: 残数量の導出は ProjectWorkingEntries に切り出した（判断の入力も同じ定義を読む）。
@@ -145,6 +147,7 @@ public static class PortfolioProjection
             }
 
             openPositionCount += pendingNewKeys.Count;
+            heldOrPending.UnionWith(pendingNewKeys);
             // IADR-0346 決定4: SymbolsTradedToday（同日再エントリーの入力）には算入しない。
         }
 
@@ -166,6 +169,7 @@ public static class PortfolioProjection
             DrawdownRatio = PortfolioValuation.DrawdownRatio(equityHighWaterMark, currentEquity),
             ConsecutiveLosses = consecutiveLosses,
             SymbolsTradedToday = symbolsTradedToday,
+            HeldOrPendingSymbols = heldOrPending,
         };
     }
 

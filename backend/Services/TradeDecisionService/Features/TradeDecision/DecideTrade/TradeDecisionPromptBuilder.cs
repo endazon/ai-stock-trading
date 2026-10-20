@@ -314,7 +314,8 @@ public static class TradeDecisionPromptBuilder
         DailyVolumeContext? volume = null,
         IReadOnlyList<RejectionReason>? addOnBlockers = null,
         StopWidthFloorContext? stopFloor = null,
-        MarketClockContext? marketClock = null)
+        MarketClockContext? marketClock = null,
+        PortfolioHoldingsContext? portfolio = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -368,6 +369,8 @@ public static class TradeDecisionPromptBuilder
             ? triggerPrice
             : currentPrice;
         AppendHeldPositionSection(sb, held, working, markPrice, priceUnit, context.StopLossMethod, addOnBlockers, policy.Summary, trigger.Symbol, currency);
+        // FR-04, FR-10, #1397, IADR-0562 決定 3: 保有中の全銘柄（銘柄・方向・数量。null なら節を出さない）。
+        sb.Append(PortfolioSection(portfolio));
         sb.AppendLine("# リスク制約");
         // FR-10, #869, ADR-0041 決定2, IADR-0354: 基準資金はブローカーの口座照会に由来し、**未供給があり得る**。
         // 🔴 **未供給を数値で埋めない**——LLM に「その額の運用資金がある」と読ませることになる。
@@ -472,7 +475,8 @@ public static class TradeDecisionPromptBuilder
         NewsCollectionStatus? news = null,
         DailyVolumeContext? volume = null,
         IReadOnlyList<RejectionReason>? addOnBlockers = null,
-        MarketClockContext? marketClock = null)
+        MarketClockContext? marketClock = null,
+        PortfolioHoldingsContext? portfolio = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -522,6 +526,8 @@ public static class TradeDecisionPromptBuilder
             ? triggerPrice
             : currentPrice;
         AppendHeldPositionSectionShort(sb, held, working, markPrice, priceUnit, context.StopLossMethod, addOnBlockers, policy.Summary, trigger.Symbol, currency);
+        // FR-04, FR-10, #1397, IADR-0562 決定 3: 本判断と同じ保有中の全銘柄の節（縮退の保護分 ScreeningContextAssembler.PortfolioReserveChars）。
+        sb.Append(PortfolioSection(portfolio));
         // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件の短縮版（結論のみ）。
         // 二段判断（IADR-0039）の費用統制のため、誘因の詳細説明（本判断側）は省き結論だけを渡す。
         // 無条件で出す（Build と同じく空売り可否のフラグをこのメソッドへ持ち込まない）。
@@ -630,6 +636,54 @@ public static class TradeDecisionPromptBuilder
     // 時刻は市場ローカル（米国は米国東部時間・東証は日本時間。夏時間は TimeZoneInfo が吸収）。閉場は市場カレンダーの当日の最後の閉場（半日取引日は前倒し）。
     // 休場日は「なし（休場日）」、閉場の後は「閉場後」と書く。null（材料なし）なら行を出さない。テストがこの const を直接参照する。
     public const string MarketClockLinePrefix = "- 市場の現地時刻: ";
+
+    // 🔴 FR-04, FR-10, #1397, IADR-0562 決定 3: 保有中の全銘柄（銘柄・方向・数量）の節。従来は判断している銘柄の保有だけが渡り、方針の
+    // 「COIN・MARA・MSTR・HOOD は同時に 1 銘柄まで」を AI が評価できなかった（PoC 2026-10-16: MARA の保有中に COIN を判断しても AI は MARA を知らない）。
+    // 強制は審査のテーマの上限（ThemeConcentrationExceeded）が行う。並べるのは PortfolioMaxShown 件まで（超えた分は件数）。null（材料なし）なら節を出さない。
+    public const string PortfolioSectionTitle = "# 保有中の全銘柄（ポートフォリオ）";
+
+    public const string PortfolioUnknownLine = "- 不明（保有中の全銘柄を取得できませんでした。「保有なし」とは扱いません）";
+
+    public const string PortfolioNoneLine = "- なし（保有中の建玉はありません）";
+
+    public const string PortfolioRule =
+        "- 方針が銘柄の組み合わせ（同時に保有する銘柄の数など）を制限しているときは、この一覧で確かめます。テーマ（相関の高い銘柄の集まり）ごとの同時保有の上限はシステムが審査で強制します。";
+
+    internal const int PortfolioMaxShown = 10;
+
+    public static string PortfolioSection(PortfolioHoldingsContext? portfolio)
+    {
+        if (portfolio is null)
+            return string.Empty;
+
+        var ci = CultureInfo.InvariantCulture;
+        var sb = new StringBuilder();
+        sb.AppendLine(PortfolioSectionTitle);
+        if (portfolio.Holdings is not { } holdings)
+        {
+            sb.AppendLine(PortfolioUnknownLine);
+        }
+        else if (holdings.Count == 0)
+        {
+            sb.AppendLine(PortfolioNoneLine);
+        }
+        else
+        {
+            foreach (var h in holdings.Take(PortfolioMaxShown))
+            {
+                var direction = h.SignedQuantity > 0 ? "ロング" : "ショート";
+                var market = h.Market == Market.Japan ? "東証" : "米国";
+                sb.AppendLine($"- {Sanitize(h.Symbol, MaxSymbolChars)}（{market}）: {direction} {Math.Abs(h.SignedQuantity).ToString(ci)} 株");
+            }
+
+            if (holdings.Count > PortfolioMaxShown)
+                sb.AppendLine($"- ほか {(holdings.Count - PortfolioMaxShown).ToString(ci)} 銘柄");
+        }
+
+        sb.AppendLine(PortfolioRule);
+        sb.AppendLine();
+        return sb.ToString();
+    }
 
     public static string MarketClockLine(MarketClockContext? marketClock)
     {

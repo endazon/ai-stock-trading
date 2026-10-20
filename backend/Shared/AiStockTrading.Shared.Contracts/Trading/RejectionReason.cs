@@ -278,4 +278,16 @@ public enum RejectionReason
     /// <para>**序数は 33（末尾追加）で不変**（IADR-0134 決定2）。</para>
     /// </summary>
     PreCloseEntryCutoff,
+
+    /// <summary>
+    /// FR-10, FR-19, #1397, IADR-0562 決定 2: <b>テーマ（相関の高い銘柄の集まり）ごとの同時保有の上限</b> —— 新規建ての銘柄が属する集まりで、ほかの銘柄を
+    /// 既に上限の数だけ保有している（未約定の新規建てを含む）（利用者裁定 2026-10-20・planning#809）。
+    /// <para>
+    /// 集まりの定義は設定値（既定: 暗号資産＝COIN・MARA・MSTR・HOOD、AI・半導体＝NVDA・SMCI。上限はどちらも 1）。どの集まりにも属さない銘柄には掛けない。
+    /// 同じ銘柄の買い増し・売り増しは集まりの銘柄の数を増やさないので本理由は立たない。
+    /// </para>
+    /// <para><b>手仕舞い（Close）は止めない。</b>クラス分類は<b>クラス A</b>（統制が設計どおり作動した記録）。</para>
+    /// <para>**序数は 34（末尾追加）で不変**（IADR-0134 決定2）。</para>
+    /// </summary>
+    ThemeConcentrationExceeded,
 }
