@@ -2,6 +2,7 @@ using RiskManagementService.Common.Abstractions;
 using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 
 namespace RiskManagementService.Features.RiskManagement;
 
@@ -33,6 +34,10 @@ namespace RiskManagementService.Features.RiskManagement;
 // 定時サイクルの判断 N 件は同時に届き、承認行は OrderApproved の往復の後にしか書かれないため、予約が無いと N 件すべてが
 // 同じ古い snapshot で保有建玉数・日次発注累計・段階資金を通る（PoC 2026-10-12 に 6 建玉の疑い）。
 // **手仕舞い（Close）は直列化しない・予約しない**（ADR-0009。新規建ての審査の待ちで手仕舞いを遅らせない）。
+//
+// 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: **閉場前の新規建ての締め切り（preCloseCutoff）も必須依存である。** 省略可能にすると、
+// Program.cs から外しても試験が緑のまま締め切りだけが静かに効かなくなる（IADR-0163 決定2）。閉場は共有カーネルの MarketHours（取引判断・
+// 市場監視と同じ暦。休場日・半日取引日の規則計算）から求める。
 public sealed class OrderScreeningService(
     IRiskSettingsStore settingsStore,
     PortfolioSnapshotBuilder snapshotBuilder,
@@ -43,6 +48,7 @@ public sealed class OrderScreeningService(
     IPortfolioLedgerStore ledger,
     ShortSellContextSupplier shortSellContexts,
     IEntryReservationStore entryReservations,
+    PreCloseEntryCutoffSettings preCloseCutoff,
     IManipulativeOrderPatternDetector? patternDetector = null)
 {
     public Task<ScreeningOutcome> ScreenAsync(TradeDecisionMade decision, CancellationToken cancellationToken = default)
@@ -141,6 +147,9 @@ public sealed class OrderScreeningService(
             reasons.Add(RejectionReason.TradingPaused);
         if (IsLockedOut(tradingDay))
             reasons.Add(RejectionReason.DailyLossLimitReached);
+        // 🔴 #1396, IADR-0561 決定 2: 締め切りの前に承認した予約を、締め切りの後に組み直して発行しない（閉場前に新規建てを出さない）。
+        if (PreCloseCutoffFor(intent.Market, now).IsWithinCutoff)
+            reasons.Add(RejectionReason.PreCloseEntryCutoff);
 
         if (reasons.Count > 0)
         {
@@ -201,9 +210,12 @@ public sealed class OrderScreeningService(
         var decisionExits = closes is null ? null : DecisionExitProjection.Project(closes, intent.Market, clock.UtcNow);
 
         // 判定コア（決定的）を実行し、違反理由を集約する。
+        // 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: 閉場前の締め切りの供給（新規建てのときだけ。手仕舞いは判定しない）。
+        var preCloseCutoffSupply = isEntry ? PreCloseCutoffFor(intent.Market, clock.UtcNow) : null;
         var result = RiskEvaluator.Evaluate(
             intent, settings, snapshot, patternDetector,
-            shortSellContext: shortSellContext, buyInBan: buyInBan, stopOuts: stopOuts, decisionExits: decisionExits);
+            shortSellContext: shortSellContext, buyInBan: buyInBan, stopOuts: stopOuts, decisionExits: decisionExits,
+            preCloseCutoff: preCloseCutoffSupply);
         var reasons = new List<RejectionReason>(result.Reasons);
 
         // 日次損失上限に「新規到達」したら当日ロックアウトを設定する（翌営業日まで）。
@@ -244,6 +256,10 @@ public sealed class OrderScreeningService(
             BuildApproved(decision, result.ApprovedQuantity, clock.UtcNow, settings.StopLossMethod),
             observation);
     }
+
+    // FR-10, FR-19, #1396, IADR-0561 決定 2: その市場の当日の閉場（MarketHours。休場日は null＝締め切りに入らない）と構成の分数。
+    private PreCloseEntryCutoffSupply PreCloseCutoffFor(Market market, DateTimeOffset now) =>
+        new(now, MarketHours.SessionCloseOn(market, now), preCloseCutoff.MinutesFor(market));
 
     private static DateTimeOffset TruncateToMicroseconds(DateTimeOffset value) =>
         value.AddTicks(-(value.Ticks % TimeSpan.TicksPerMicrosecond));

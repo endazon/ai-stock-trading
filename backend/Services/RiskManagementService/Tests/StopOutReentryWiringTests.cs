@@ -106,6 +106,8 @@ public class StopOutReentryWiringTests
             // 縮退の観測が無いと新規建ては別の理由（縮退）で止まり、対照が成り立たない。
             services.RemoveAll<IInformationDegradationStore>();
             services.AddSingleton<IInformationDegradationStore>(FakeInformationDegradation.Affirmed());
+            // #1396, IADR-0561: 実時刻が閉場前の締め切りに入っていても対照の新規建てが締め切りで落ちないようにする。
+            services.AddSingleton<IClock>(new OutsidePreCloseCutoffClock());
         }));
 
         // 手仕舞いの対象となる建玉（AAPL 1 株）を台帳へ積む。金額は既定の基準資金（3,000 USD）の段階上限の内側に置く

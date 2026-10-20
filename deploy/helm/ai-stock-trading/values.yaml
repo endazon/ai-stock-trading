@@ -766,6 +766,11 @@ services:
       # fail-safe: 未設定/空=誰の onBehalfOf も信じない（承認者はトークンの主体へ倒れる）。
       - name: RiskControls__DelegatedActor__TrustedClientIds
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: 閉場前の新規建ての締め切り（閉場の何分前から新規建て〔買い増し・売り増しを含む〕を審査で拒否するか）。
+      # **既定 60 分（JP・US とも）はコードの既定で効くため、このキーは意図的に置いていない**（置くと既定描画が変わる）。変えるときだけ足す
+      # （1〜場中の長さ〔米国 390・東証 330〕。0〔統制を外す値〕・読めない値・範囲外・未知の市場は起動が止まる）:
+      #   - { name: PreCloseEntryCutoff__Minutes__UnitedStates, value: "60" }
+      #   - { name: PreCloseEntryCutoff__Minutes__Japan, value: "60" }
       # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
@@ -790,6 +795,12 @@ services:
       # FR-10, #1176, IADR-0495 決定1: 新規建ての最小の名目額（equity 比）。🔴 **既定 0.01（1%）はコードの既定で効くため、このキーは意図的に置いていない**
       # （置くと既定描画が変わる）。変えるときだけ足す（0 以上 0.25 以下。読めない値・範囲外は起動が止まる。0 は統制を外す）:
       #   - { name: Sizing__MinEntryNotionalRatio, value: "0.01" }
+      # 🔴 FR-10, FR-19, #1396, IADR-0561 決定 3・4: 閉場前の手仕舞い（閉場の 15 分前以降に保有を成行で全量手仕舞う。方針の「持ち越し可: …」行の銘柄は残す）。
+      # **既定は無効**（コードの既定で効くため、このキーは意図的に置いていない）。方針の「閉場前の手仕舞い: 有効」の行でも有効になる。
+      # 構成で有効にするとき・分数を変えるときだけ足す（分数 1〜60・巡回 10〜300 秒。読めない値・範囲外は起動が止まる）:
+      #   - { name: PreCloseFlatten__Enabled, value: "true" }
+      #   - { name: PreCloseFlatten__Minutes__UnitedStates, value: "15" }
+      #   - { name: PreCloseFlatten__Minutes__Japan, value: "15" }
       # 🔴 ADR-0066 決定1, #1291: 変えるときは高ボラティリティ銘柄の区分の上限（SC-02 または GET /risk-controls/settings の highVolatility・既定 5%）との関係を確かめること。区分の上限の下端は
       # 既定値 1% の固定でこの値に連動しない。この値を区分の上限より上げると、区分の銘柄の新規建ては常に見送りになる（起動時に警告が出る）。
       - { name: Reports__BaseUrl, value: "" }

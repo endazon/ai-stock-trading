@@ -7,6 +7,7 @@ using TradeDecisionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AiStockTrading.Shared.Infrastructure.Composable.Observability;
 using Microsoft.Extensions.Logging;
@@ -45,8 +46,13 @@ public sealed class TradeDecisionAppService(
     IStopWidthFloorSource? stopWidthFloor = null,
     IDailyBarsProvider? dailyBars = null,
     MinimumEntryNotionalOptions? minimumEntryNotional = null,
-    IInFlightCloseProvider? inFlightCloses = null)
+    IInFlightCloseProvider? inFlightCloses = null,
+    IMarketCalendar? marketCalendar = null)
 {
+    // FR-04, FR-10, #1396, IADR-0561 決定 5: プロンプトの「閉場までの残り時間」の暦。未指定＝共有カーネルの規則計算だけ（構成の臨時休場・臨時の半日を足さない）。
+    // 本番は DI が IMarketCalendar（MarketCalendar）を渡す。
+    private readonly IMarketCalendar? _marketCalendar = marketCalendar;
+
     // 🔴 FR-04, FR-10, #1338, IADR-0535 決定2・3: 処理中の決済が建玉を覆うかの照会口（発注執行が決済のゲートと同じ判定で答える）。
     // 未指定＝NoOp（常に不明＝LLM を呼ぶ＝従来どおり）。本番は Program.cs が OrderExecution:BaseUrl のときだけ Http を明示的に渡す。
     private readonly IInFlightCloseProvider _inFlightCloses = inFlightCloses ?? new NoOpInFlightCloseProvider();
@@ -560,10 +566,17 @@ public sealed class TradeDecisionAppService(
             stopFloor = new StopWidthFloorContext(await GetStopWidthFloorSafeAsync(trigger, cancellationToken).ConfigureAwait(false));
         }
 
+        // 🔴 FR-04, FR-10, #1396, IADR-0561 決定 5: 市場の現地時刻と閉場までの残り時間（本判断・一次の両方へ同じ値）。閉場は市場カレンダー
+        // （未指定なら共有カーネルの規則計算）。時刻は判断の瞬間の 1 回だけ読む。
+        var marketClockNow = clock.UtcNow;
+        var marketClock = new MarketClockContext(
+            trigger.Market, marketClockNow,
+            _marketCalendar?.SessionClose(trigger.Market, marketClockNow) ?? MarketHours.SessionCloseOn(trigger.Market, marketClockNow));
+
         var decisionPrompt = TradeDecisionPromptBuilder.Build(
             trigger, policy, context, retrieved, includeProfitability: _profitabilityOptions.Enabled,
             currentPrice: currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist, intraday: intraday,
-            news: news, volume: volume, addOnBlockers: addOnBlockers, stopFloor: stopFloor);
+            news: news, volume: volume, addOnBlockers: addOnBlockers, stopFloor: stopFloor, marketClock: marketClock);
 
         // #337, IADR-0247: 縮退制御が有効（スクリーニング有効かつ予算設定）なときだけ、スクリーニング入力
         // （方針・市況＝保護、RAG・ニュース＝削減可）へ縮退順序 ①分割→②RAG→③ニュース を適用する。
@@ -581,10 +594,10 @@ public sealed class TradeDecisionAppService(
             () => screening is null
                 ? TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist,
-                    intraday: intraday, news: news, volume: volume, addOnBlockers: addOnBlockers)
+                    intraday: intraday, news: news, volume: volume, addOnBlockers: addOnBlockers, marketClock: marketClock)
                 : TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, screening.RetainedReferences, heldPosition, workingEntries,
-                    watchlist, intraday, news, volume, addOnBlockers),
+                    watchlist, intraday, news, volume, addOnBlockers, marketClock),
             decisionPrompt,
             // 🔴 FR-04, FR-10, #1187, IADR-0248: 二次本判断の解釈へ、プロンプトへ渡したのと同じ保有（null＝不明）を渡す。
             // 保有を決済する売買（ロング保有中の Sell・ショート保有中の Buy）では損切り幅を任意にする（決済は保有全量で損切り幅を

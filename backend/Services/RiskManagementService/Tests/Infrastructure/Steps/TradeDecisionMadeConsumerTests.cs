@@ -1,3 +1,4 @@
+using RiskManagementService.Domain;
 using RiskManagementService.Infrastructure.Persistence;
 using RiskManagementService.Infrastructure.ExternalServices;
 using RiskManagementService.Common.Abstractions;
@@ -37,7 +38,8 @@ public class TradeDecisionMadeConsumerTests
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
-                opts.Services.AddSingleton<IClock, SystemClock>();
+                // #1396, IADR-0561: 実時刻が閉場前の締め切りに入っていても締め切りの外の時刻で審査する（結果を実行時刻に依らせない）。
+                opts.Services.AddSingleton<IClock, OutsidePreCloseCutoffClock>();
                 opts.Services.AddSingleton<IBusinessCalendar, WeekendBusinessCalendar>();
                 opts.Services.AddSingleton<IRiskSettingsStore, InMemoryRiskSettingsStore>();
                 opts.Services.AddSingleton(killSwitch);
@@ -79,7 +81,7 @@ public class TradeDecisionMadeConsumerTests
                     // #967, IADR-0425: 空売り文脈の供給も必須依存。本テストは空売りを関心に持たない（借株可否は常に分からない）。
                     TestShortSellContexts.Unavailable(sp.GetRequiredService<IClock>()),
                     // #1319, IADR-0529: 新規建ての審査の直列化と予約も必須依存。
-                    reservations ?? new InMemoryEntryReservationStore(),
+                    reservations ?? new InMemoryEntryReservationStore(), TradingDefaults.CreatePreCloseEntryCutoff(),
                     null));
 
                 // 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。

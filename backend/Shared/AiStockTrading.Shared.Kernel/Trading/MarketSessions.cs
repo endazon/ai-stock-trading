@@ -94,5 +94,18 @@ public static class MarketSessions
         _ => null,
     };
 
+    /// <summary>
+    /// FR-10, FR-19, #1396, IADR-0561 決定 1: その日の<b>最後の閉場</b>（大引け。市場ローカル）。米国 16:00（半日取引日は 13:00）・
+    /// 東証 15:30（半日取引日は無い。昼休みの 11:30 は閉場ではない）・未知の市場 <c>null</c>。閉場前の新規建ての締め切りと閉場前の手仕舞いの基準であり、
+    /// 時刻の定数は <see cref="IsWithinSession"/> と同じもの（境界の定義を 2 か所に置かない）。<see cref="RegularClose"/> と違い半日の前倒しを使う
+    /// —— 締め切りと手仕舞いは早い側へ倒す（半日の日に 16:00 を基準にすると、閉場の後に締め切りが来る）。
+    /// </summary>
+    public static TimeOnly? FinalClose(Market market, bool isHalfDay) => market switch
+    {
+        Market.UnitedStates => isHalfDay ? UsHalfDayClose : UsClose,
+        Market.Japan => JpAfternoonClose,
+        _ => null,
+    };
+
     private static int Minutes(TimeOnly from, TimeOnly to) => (int)(to - from).TotalMinutes;
 }

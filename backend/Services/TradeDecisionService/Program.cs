@@ -669,6 +669,12 @@ builder.Services.AddScoped(sp => new Stage0DecisionRecorder(
     sp.GetRequiredService<MinimumEntryNotionalOptions>()));
 builder.Services.AddHostedService<Stage0RecordingService>();
 
+// 🔴 FR-10, FR-19, #1396, IADR-0561 決定 3・4: 閉場前の手仕舞い（既定は無効。PreCloseFlatten:Enabled か方針の「閉場前の手仕舞い: 有効」の行で有効）。
+// 構成は構築時に読む（範囲外・読めない値は起動を止める）。常駐は常に登録する（方針の行で有効になるため。窓の外では照会もしない）。
+builder.Services.AddSingleton(PreCloseFlattenOptionsLoader.FromConfiguration(builder.Configuration));
+builder.Services.AddScoped<TradeDecisionService.Features.TradeDecision.FlattenBeforeClose.PreCloseFlattener>();
+builder.Services.AddHostedService<PreCloseFlattenService>();
+
 // ADR-0003, IADR-0011, IADR-0023: 価格変動（イベント駆動）と収集完了（定時）の両系統を購読し、
 // 取引判断で合流して TradeDecisionMade を発行する。
 // ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。ハンドラは明示登録ではなくアセンブリ走査で発見されるため、

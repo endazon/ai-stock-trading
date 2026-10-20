@@ -129,10 +129,30 @@ public sealed class EntryScreeningSerializationE2ETests : IAsyncLifetime
             IReadOnlyList<OpenPosition> positions) => new Dictionary<(string Symbol, Market Market), decimal>();
     }
 
+    // #1396, IADR-0561: 実時刻が米国の閉場前の新規建ての締め切り（閉場の 60 分前以降）に入っているときは、同じ市場ローカルの日のうち
+    // 締め切りの 1 分前へ戻す（本試験は直列化を確かめるもので、締め切りの拒否を混ぜない。取引日は変わらない）。
+    private sealed class OutsidePreCloseCutoffClock : IClock
+    {
+        public DateTimeOffset UtcNow
+        {
+            get
+            {
+                var now = DateTimeOffset.UtcNow;
+                var close = AiStockTrading.Shared.Kernel.Trading.MarketHours.SessionCloseOn(Market.UnitedStates, now);
+                return AiStockTrading.Shared.Kernel.Trading.PreCloseWindow.IsAtOrAfter(
+                        now, close, TradingDefaults.PreCloseEntryCutoffMinutes)
+                    ? close!.Value.AddMinutes(-TradingDefaults.PreCloseEntryCutoffMinutes - 1).ToUniversalTime()
+                    : now;
+            }
+        }
+
+        public DateOnly Today => TradingDay.Of(UtcNow);
+    }
+
     // 本番と同じ EF のストア（台帳・注文源・予約）を 1 つの DbContext に載せ、残りの状態はインメモリで「健全」にする。
     private static OrderScreeningService Screening(RiskManagementDbContext db, RiskManagementSettings settings)
     {
-        var clock = new SystemClock();
+        var clock = new OutsidePreCloseCutoffClock();
         var ledger = new EfPortfolioLedgerStore(db);
         var working = new EfWorkingEntryOrderSource(db);
         var provider = new SlowStateProvider(
@@ -148,7 +168,7 @@ public sealed class EntryScreeningSerializationE2ETests : IAsyncLifetime
         return new OrderScreeningService(
             new InMemoryRiskSettingsStore(settings), snapshots, new InMemoryLockoutStore(), clock,
             new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(), ledger, shortSell,
-            new EfEntryReservationStore(db));
+            new EfEntryReservationStore(db), TradingDefaults.CreatePreCloseEntryCutoff());
     }
 
     private static TradeDecisionMade Decision(string symbol, int quantity = 10, decimal price = 10m) =>

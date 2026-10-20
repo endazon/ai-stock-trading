@@ -139,6 +139,8 @@ public class ScreeningContextDegradationTests
                 + TradeDecisionService.Features.TradeDecision.DecideTrade.ScreeningContextAssembler.HeldExitRuleReserveChars
                 // #1384, IADR-0558 決定 7: 銘柄行は建てた条件の要約の行の予約ぶん底上げ（予算も同幅シフト）。
                 + TradeDecisionService.Features.TradeDecision.DecideTrade.ScreeningContextAssembler.HeldEntryBasisReserveChars
+                // #1396, IADR-0561 決定 5: 市場の現地時刻の行の予約ぶん底上げ。
+                + TradeDecisionService.Features.TradeDecision.DecideTrade.ScreeningContextAssembler.MarketClockReserveChars
                 + watchlistUnknownChars
                 // #1359, IADR-0542 決定 5: 残す参考情報（市況・重要ニュースの 2 件）ぶんの境界語の文字数を同幅ずらす。
                 + (2 * TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDecisionPromptBuilder.ReferenceBoundaryChars)

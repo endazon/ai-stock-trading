@@ -16,7 +16,8 @@ public static class RiskEvaluator
         StageProductPolicy.StageReleaseContext? stageRelease = null,
         BuyInBanSupply? buyInBan = null,
         StopOutReentrySupply? stopOuts = null,
-        DecisionExitReentrySupply? decisionExits = null)
+        DecisionExitReentrySupply? decisionExits = null,
+        PreCloseEntryCutoffSupply? preCloseCutoff = null)
     {
         var reasons = new List<RejectionReason>();
         // FR-10, FR-19, IADR-0004: エントリー判定は建玉効果（PositionEffect）で行う。売買方向（Side）ではない。
@@ -210,6 +211,16 @@ public static class RiskEvaluator
         if (isEntry && decisionExits is { } exits && EntryStateBlockers.DecisionExit(exits, intent.Side))
         {
             reasons.Add(RejectionReason.DecisionExitSameDay);
+        }
+
+        // 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: **閉場前の新規建ての締め切り**（利用者裁定 2026-10-20）。その市場の当日の閉場の N 分前
+        // （既定 60 分・市場ごと）以降の新規建てを拒否する。**買い増し・売り増しも含める**（建玉効果 Open をすべて止める。方向は問わない）。
+        // 方針の「終盤は新規建てを控える」は判断のプロンプトに時刻が無く効かなかった（PoC 2026-10-19 の MARA）——方針の文言に頼らない。
+        // **手仕舞い（Close）は止めない**（isEntry の短絡。ADR-0009）。preCloseCutoff が null（＝この呼び出し元は供給していない）なら評価しない。
+        // 本番の呼び出し元（OrderScreeningService）は新規建てで**常に**供給する（締め切りの構成は必須依存。IADR-0163 決定2）。
+        if (isEntry && preCloseCutoff is { IsWithinCutoff: true })
+        {
+            reasons.Add(RejectionReason.PreCloseEntryCutoff);
         }
 
         // FR-19, #375, ADR-0021 決定4-2/決定4-3: **現金口座でのみ**加わる 2 統制。

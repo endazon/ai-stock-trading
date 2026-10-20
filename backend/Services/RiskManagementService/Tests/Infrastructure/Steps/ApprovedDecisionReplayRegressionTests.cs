@@ -84,7 +84,7 @@ public class ApprovedDecisionReplayRegressionTests
         return new OrderScreeningService(
             new InMemoryRiskSettingsStore(OnePosition()), snapshotBuilder, lockout, clock,
             new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(), stores.Ledger,
-            TestShortSellContexts.Unavailable(clock, stores.Ledger), new InMemoryEntryReservationStore());
+            TestShortSellContexts.Unavailable(clock, stores.Ledger), new InMemoryEntryReservationStore(), TradingDefaults.CreatePreCloseEntryCutoff());
     }
 
     // 審査 → 承認の発行 → 自分の射影（本番の順序）。承認された判断を返す。

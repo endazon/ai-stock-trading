@@ -25,6 +25,10 @@ public sealed class MarketCalendar(
     public bool IsOpen(Market market, DateTimeOffset instant) =>
         MarketHours.IsOpen(market, instant, Extra(holidays, market), Extra(_halfDays, market));
 
+    // FR-10, FR-19, #1396, IADR-0561 決定 1: 当日の最後の閉場（場中の判定と同じ構成の臨時休場・臨時の半日を足す）。
+    public DateTimeOffset? SessionClose(Market market, DateTimeOffset instant) =>
+        MarketHours.SessionCloseOn(market, instant, Extra(holidays, market), Extra(_halfDays, market));
+
     private static IReadOnlySet<DateOnly>? Extra(
         IReadOnlyDictionary<Market, IReadOnlySet<DateOnly>> source, Market market) =>
         source.TryGetValue(market, out var dates) ? dates : null;

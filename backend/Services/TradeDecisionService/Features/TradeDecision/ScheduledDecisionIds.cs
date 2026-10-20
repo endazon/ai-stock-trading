@@ -37,8 +37,25 @@ public static class ScheduledDecisionIds
         if (cycleEventId == Guid.Empty)
             return null;
 
-        var name = string.Create(
-            CultureInfo.InvariantCulture, $"scheduled\n{cycleEventId:D}\n{market}\n{symbol}");
+        return FromName(string.Create(
+            CultureInfo.InvariantCulture, $"scheduled\n{cycleEventId:D}\n{market}\n{symbol}"));
+    }
+
+    /// <summary>
+    /// 🔴 FR-10, FR-19, #1396, IADR-0561 決定 3（PR #1399 のレビュー）: 閉場前の手仕舞いの判断の DecisionId を
+    /// (市場ローカルの日付, 市場, 銘柄, 決済の方向, 5 分の区切り) から決定的に導く。同じ区切りの中で 2 回出しても（入れ替え中の新旧の Pod・
+    /// 巡回の重なり）下流の DecisionId の冪等（発注執行の一意予約）が 2 本目を止める。区切りが変われば別の ID になり、最初の決済が見送られても
+    /// 次の区切りでやり直せる（処理中の決済が覆えば、手仕舞い側の照会と発注執行のゲートが止める）。
+    /// </summary>
+    public static Guid ForPreCloseFlatten(DateOnly localDate, Market market, string symbol, TradeSide closeSide, int bucket)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(symbol);
+        return FromName(string.Create(
+            CultureInfo.InvariantCulture, $"pre-close-flatten\n{localDate:yyyy-MM-dd}\n{market}\n{symbol}\n{closeSide}\n{bucket}"));
+    }
+
+    private static Guid FromName(string name)
+    {
         var nameBytes = Encoding.UTF8.GetBytes(name);
         var input = new byte[16 + nameBytes.Length];
         Namespace.TryWriteBytes(input.AsSpan(0, 16), bigEndian: true, out _);

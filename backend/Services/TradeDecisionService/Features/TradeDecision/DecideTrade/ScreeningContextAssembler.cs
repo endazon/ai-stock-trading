@@ -67,8 +67,13 @@ public static class ScreeningContextAssembler
     // 並べるロットは ScreeningMaxLots まで。見積りは保有の有無を知らないため無条件に予約する。最悪長が予約を超えないことを試験で固定する。
     public const int HeldEntryBasisReserveChars = 450;
 
+    // FR-04, FR-10, #1396, IADR-0561 決定 5: 市場の現地時刻と閉場までの残り時間の行（TradeDecisionPromptBuilder.MarketClockLine）は**保護分**である
+    // （削ると方針の時刻の条件を一次が評価できない）。見積りは時刻を知らないため無条件に予約する。最長が予約を超えないことを試験で固定する。
+    public const int MarketClockReserveChars = 100;
+
     private const int PerSymbolLineChars =
-        400 + PriceContextReserveChars + NewsStatusReserveChars + HeldExitRuleReserveChars + HeldEntryBasisReserveChars;
+        400 + PriceContextReserveChars + NewsStatusReserveChars + HeldExitRuleReserveChars + HeldEntryBasisReserveChars
+        + MarketClockReserveChars;
 
     // 参考情報 1 件の JSON 化オーバーヘッド（キー名・引用符・フェンス）の概算。
     private const int PerReferenceOverheadChars = 60;
