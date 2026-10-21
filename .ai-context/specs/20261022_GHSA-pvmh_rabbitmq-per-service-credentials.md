@@ -53,4 +53,4 @@ plan_refs:
 3. 閉場後に `scripts/k8s-local-deploy.sh` を回す。ExternalSecret `ast-rabbitmq-users` が同期し、Worker が新しい資格情報で作り直される
    （OpenD は対象外で再起動しない）。
 4. 確認: `kubectl -n ai-stock-trading get externalsecret ast-rabbitmq-users` が `SecretSynced`、全 Worker が Ready、
-   `kubectl -n platform-infra exec deploy/rabbitmq -- rabbitmqctl list_connections user` に `guest` の AST からの接続が無い。
+   `kubectl -n platform-infra exec deploy/rabbitmq -- rabbitmqctl list_connections user` に `ast-*` が並ぶ（AST からの接続に `guest` が無い）。
