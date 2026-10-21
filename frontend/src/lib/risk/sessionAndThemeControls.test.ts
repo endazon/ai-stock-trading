@@ -23,6 +23,26 @@ describe('閉場前の統制とテーマの定義の画面側の判定（#1407�
     expect(isPreCloseControlsView({ ...cloneContract(CONTRACT_PRE_CLOSE_CONTROLS), flattenMaxMinutes: '60' })).toBe(false);
   });
 
+  // 🔴 PR #1409 のレビュー: 締め切りの効いている値・N の上限・手仕舞いの効いている値の市場の集合が揃わなければ想定外の形として拒む
+  // （上限が 0 になり「1〜0 分」の満たせない検証になる・手仕舞いの欄が常に入力エラーになるのを防ぐ）。
+  it('T-10-2963 入力に使う 3 つの市場の集合が揃わない応答は拒む', () => {
+    const view = cloneContract(CONTRACT_PRE_CLOSE_CONTROLS);
+    expect(isPreCloseControlsView({ ...view, cutoffMaxMinutes: view.cutoffMaxMinutes.filter((r) => r.market !== 1) })).toBe(false);
+    expect(
+      isPreCloseControlsView({
+        ...view,
+        effectiveFlatten: { ...view.effectiveFlatten, minutes: view.effectiveFlatten.minutes.filter((r) => r.market !== 0) },
+      }),
+    ).toBe(false);
+    expect(
+      isPreCloseControlsView({
+        ...view,
+        effectiveCutoff: { minutes: [...view.effectiveCutoff.minutes, view.effectiveCutoff.minutes[0]!] },
+      }),
+    ).toBe(false);
+    expect(isPreCloseControlsView({ ...view, effectiveCutoff: { minutes: [] } })).toBe(false);
+  });
+
   it('T-10-2963 テーマの緩める変更を列挙する（外す・銘柄を外す・上限を上げる・市場を変える。名前の変更は外して足す）', () => {
     const current = [
       { name: '暗号資産', market: 1, symbols: ['COIN', 'MARA'], maxPositions: 1 },

@@ -1247,7 +1247,23 @@ export function isPreCloseControlsView(value: unknown): value is PreCloseControl
     typeof v.cutoffDrift === 'boolean' &&
     typeof v.flattenDrift === 'boolean' &&
     isMinutesRows(v.cutoffMaxMinutes) &&
-    typeof v.flattenMaxMinutes === 'number'
+    typeof v.flattenMaxMinutes === 'number' &&
+    sameMarkets(v.effectiveCutoff!.minutes, v.cutoffMaxMinutes) &&
+    sameMarkets(v.effectiveCutoff!.minutes, v.effectiveFlatten!.minutes)
+  );
+}
+
+// 🔴 PR #1409 のレビュー: 入力に使う 3 つ（締め切りの効いている値・N の上限・手仕舞いの効いている値）の市場の集合が揃っていなければ、
+// 満たせない検証（「1〜0 分」）や常に入力エラーになる。想定外の形として扱い、区画を縮退させる（入力欄を出さない）。
+function sameMarkets(a: readonly MarketMinutesView[], b: readonly MarketMinutesView[]): boolean {
+  const left = a.map((r) => r.market);
+  const right = b.map((r) => r.market);
+  return (
+    left.length > 0 &&
+    new Set(left).size === left.length &&
+    new Set(right).size === right.length &&
+    left.length === right.length &&
+    left.every((m) => right.includes(m))
   );
 }
 

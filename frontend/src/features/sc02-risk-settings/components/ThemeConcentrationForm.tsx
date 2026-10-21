@@ -194,6 +194,9 @@ export function ThemeConcentrationForm({ view }: { view: ThemeConcentrationContr
   const watchlistPending = watchlistQuery.isPending;
 
   const [themes, setThemes] = useState<ThemeView[]>(() => cloneThemes(view.effective));
+  // PR #1409 のレビュー: 区画の key は位置ではなく安定した番号にする（途中のテーマを外したとき、後ろの区画の入力の下書きが前へずれない）。
+  const [themeIds, setThemeIds] = useState<number[]>(() => view.effective.map((_, i) => i));
+  const [nextThemeId, setNextThemeId] = useState(view.effective.length);
   const [reason, setReason] = useState('');
   const [confirmLoosening, setConfirmLoosening] = useState(false);
   const [confirmedSignature, setConfirmedSignature] = useState('');
@@ -206,6 +209,8 @@ export function ThemeConcentrationForm({ view }: { view: ThemeConcentrationContr
   if (syncedSignature !== signature) {
     setSyncedSignature(signature);
     setThemes(cloneThemes(view.effective));
+    setThemeIds(view.effective.map((_, i) => i));
+    setNextThemeId(view.effective.length);
     setReason('');
     setConfirmLoosening(false);
   }
@@ -277,7 +282,7 @@ export function ThemeConcentrationForm({ view }: { view: ThemeConcentrationContr
           <p className="mt-2 text-[11px] text-fg-muted">{i18n._(msg`テーマはありません（上限は掛かりません）。`)}</p>
         )}
         {themes.map((theme, index) => (
-          <fieldset key={index} className="mt-2 rounded-md border border-border p-2">
+          <fieldset key={themeIds[index] ?? `new-${index}`} className="mt-2 rounded-md border border-border p-2">
             <legend className="text-[11px]">{`${i18n._(msg`テーマ`)} ${index + 1}`}</legend>
             <div className="flex flex-wrap items-end gap-2">
               <div>
@@ -310,7 +315,10 @@ export function ThemeConcentrationForm({ view }: { view: ThemeConcentrationContr
               </div>
               <Button
                 type="button"
-                onClick={() => setThemes(themes.filter((_, i) => i !== index))}
+                onClick={() => {
+                  setThemes(themes.filter((_, i) => i !== index));
+                  setThemeIds(themeIds.filter((_, i) => i !== index));
+                }}
                 aria-label={`${theme.name || `${i18n._(msg`テーマ`)} ${index + 1}`}${i18n._(msg`を外す`)}`}
               >
                 {i18n._(msg`テーマを外す`)}
@@ -373,7 +381,11 @@ export function ThemeConcentrationForm({ view }: { view: ThemeConcentrationContr
         <div className="mt-2">
           <Button
             type="button"
-            onClick={() => setThemes([...themes, { name: '', market: MARKET_UNITED_STATES, symbols: [], maxPositions: 1 }])}
+            onClick={() => {
+              setThemes([...themes, { name: '', market: MARKET_UNITED_STATES, symbols: [], maxPositions: 1 }]);
+              setThemeIds([...themeIds, nextThemeId]);
+              setNextThemeId(nextThemeId + 1);
+            }}
           >
             {i18n._(msg`テーマを足す`)}
           </Button>

@@ -190,6 +190,16 @@ describe('SC-02 閉場前の統制（#1407・ADR-0070 決定 5）', () => {
     expect(putCalls(PRE_CLOSE)).toHaveLength(1);
   });
 
+  // T-10-2960（否定形・PR #1409 のレビュー）: 市場の集合が揃わない応答（N の上限に米国の行が無い）も、入力欄を出さずに縮退する。
+  it('T-10-2960 市場の集合が揃わない応答は入力欄を出さずに縮退する', async () => {
+    const view = configuredPreClose();
+    mockBff({ preClose: { ...view, cutoffMaxMinutes: view.cutoffMaxMinutes.filter((r) => r.market !== 1) } });
+    renderWithProviders(<RiskSettingsPage />);
+
+    expect(await screen.findByText(/閉場前の統制を取得できません。効いている値が分からないため、変更できません。/)).toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: '閉場前の統制の変更' })).toBeNull();
+  });
+
   // T-10-2960（否定形）: 取得できなければ既定値で入力欄を出さない（効いている値が分からないまま保存させない）。
   it('T-10-2960 取得できなければ入力欄を出さずに取得できないと示す', async () => {
     mockBff({ preClose: 'error' });
