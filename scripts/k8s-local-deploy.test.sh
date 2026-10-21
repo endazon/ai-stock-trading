@@ -58,10 +58,13 @@ case "${1:-} ${2:-}" in
     [ -f "$f" ] || { echo "Error from server (NotFound): secrets \"$name\" not found" >&2; exit 1; }
     for a in "$@"; do
       case "$a" in
-        # GHSA-pcf9: 1 キーの値（base64 のまま）。$S/data-<key> が無ければ空。
-        go-template={{with\ index\ .data*)
+        # GHSA-pcf9: 1 キーの値（base64 のまま）。実の kubectl と同じく、キーが無いとき
+        # `{{index .data "k"}}` は `<no value>` を出し、`{{with index .data "k"}}…{{end}}` は空を出す。
+        go-template={{*index\ .data*)
           k="${a#*\"}"; k="${k%%\"*}"
-          [ -f "$S/data-$k" ] && cat "$S/data-$k"
+          if [ -f "$S/data-$k" ]; then cat "$S/data-$k"
+          else case "$a" in *"{{with index"*) ;; *) printf '<no value>' ;; esac
+          fi
           exit 0 ;;
         go-template=*) cat "$S/nonempty_keys"; exit 0 ;;
         jsonpath=*ownerReferences*) [ -f "$S/owner-$name" ] && cat "$S/owner-$name"; exit 0 ;;
