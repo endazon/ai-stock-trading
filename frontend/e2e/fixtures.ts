@@ -2,11 +2,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Page, Route } from '@playwright/test';
 import type {
+  PreCloseControlsView,
   RiskManagementSettings,
   RiskStatusView,
   SettingsChangeEntry,
   ShortSellingStatusView,
   StageGateStatus,
+  ThemeConcentrationControlView,
 } from '../src/lib/risk/contracts';
 import type {
   MarketMonitorSettings,
@@ -109,6 +111,10 @@ export const RISK_STATUS: RiskStatusView = {
 };
 
 // SC-02 監視銘柄（watchlist）セクション（#196・別サービス MarketMonitor）。market は数値 enum（0=日本/1=米国）。
+// FR-10, SC-02, ADR-0070・ADR-0071 決定 5, #1407, IADR-0564: 閉場前の統制とテーマの定義（契約フィクスチャ＝保存後・構成と食い違う形）。
+export const PRE_CLOSE_CONTROLS = loadContract<PreCloseControlsView>('risk-controls.settings-pre-close.json');
+export const THEME_CONCENTRATION = loadContract<ThemeConcentrationControlView>('risk-controls.settings-theme-concentration.json');
+
 export const WATCHLIST = [
   { symbol: '7203', market: 0 },
   { symbol: 'AAPL', market: 1 },
@@ -145,6 +151,11 @@ export function defaultBff(): BffConfig {
     'PUT /risk-controls/settings/broker-provider': { status: 200, body: { settings: RISK_SETTINGS } },
     // FR-10, SC-02, ADR-0066 決定2, #1291: 高ボラティリティ銘柄の統制値（区分の上限・明示指定）の変更（全置換）。
     'PUT /risk-controls/settings/high-volatility': { status: 200, body: RISK_SETTINGS },
+    // FR-10, SC-02, #1407: 閉場前の統制とテーマの定義（効いている値・構成の値・保存値・食い違い）。
+    'GET /risk-controls/settings/pre-close': { status: 200, body: PRE_CLOSE_CONTROLS },
+    'PUT /risk-controls/settings/pre-close': { status: 200, body: PRE_CLOSE_CONTROLS },
+    'GET /risk-controls/settings/theme-concentration': { status: 200, body: THEME_CONCENTRATION },
+    'PUT /risk-controls/settings/theme-concentration': { status: 200, body: THEME_CONCENTRATION },
     'GET /risk-controls/status': { status: 200, body: RISK_STATUS },
     'GET /risk-controls/stage-gate': { status: 200, body: STAGE_GATE },
     // FR-10, SC-03, #340: 空売りの現況（維持率・空売り比率・建玉方向・借株料累計）。
