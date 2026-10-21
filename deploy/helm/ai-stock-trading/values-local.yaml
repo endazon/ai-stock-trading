@@ -15,8 +15,9 @@
 #   - secret は secretKeyRef のまま（平文の鍵・トークンは置かない）。実値は ESO(Vault) 同期（IADR-0094）が既定で
 #     供給する（#795 / IADR-0341: 値は基盤の画面から Vault へ書く）。AST_ESO=0 の従来経路でだけ
 #     k8s-local-deploy.sh が env から ast-secrets を作る。
-#   - order-execution は含めない → Broker__Provider は template 既定 paper（broker.tier 未指定・IADR-0111）＝実弾 OFF 不変。
-#     発注予約の自動リコンサイル（Reconciliation__*）も values.yaml をそのまま継ぐ。🔴 #1051: 解放の門は取引環境ごとの
+#   - order-execution は extraEnv だけを写す（#1339: 判断由来の決済の未約定取消の有効化）。broker は書かない → Broker__Provider は
+#     template 既定 paper（broker.tier 未指定・IADR-0111）＝実弾 OFF 不変。発注予約の自動リコンサイル（Reconciliation__*）は
+#     values.yaml と同じ値を写す。🔴 #1051: 解放の門は取引環境ごとの
 #     Reconciliation__ReleaseOnNotPlaced__Simulate / __Real で、**ローカルでもどちらも "false"（閉）**。ここで上書きしない
 #     （開けるには、その取引環境の実機の記録を添えた values.yaml の変更が要る。docs/operations/operations.md）。
 #   - notification の OwnerAuth__TokenEndpoint は入れない（template が global.authAuthority から注入・IADR-0098）。
@@ -129,7 +130,32 @@ services:
       # report の Reports__DelegatedActor__TrustedClientIds と同じ秘密鍵＝単一情報源。
       - name: RiskControls__DelegatedActor__TrustedClientIds
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # 🔴 FR-10, FR-19, ADR-0070 決定 2, #1407, IADR-0564 決定 1: 閉場前の手仕舞いを経路B（PoC）の構成で有効にする（利用者裁定 2026-10-21）。
+      # 本番既定（values.yaml）は無効のまま（キーを置かない）。分数は既定の 15 分（JP・US とも）のままなので __Minutes__* は書かない。
+      # 🔴 trade-decision には書かない（書くと起動が止まる。IADR-0564 決定 1）。SC-02 で手仕舞いを保存済みなら、保存値が優先される
+      #    （構成は「保存するまでの値」。GET /risk-controls/settings/pre-close の flattenSource / flattenDrift で確かめる）。
+      - { name: PreCloseFlatten__Enabled, value: "true" }
       # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
+      - name: Auth__GrpcOwnerClients__0
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+
+  # ============ 判断由来の決済の指値の未約定時の取消（ADR-0067・#1339・利用者裁定 2026-10-21）============
+  # FR-10, FR-19, ADR-0067 決定 2・6, #1339, IADR-0539: 判断由来の決済の指値が N 分たっても約定しなければ取り消す（取り消すだけ）。
+  # 本番既定（values.yaml）は無効のまま（キーを置かない）。N は暫定値の 15 分（既定と同じ）なので __UnfilledMinutes は書かない。
+  # 🔴 Helm はリスト(extraEnv)を置換するため、values.yaml の order-execution の extraEnv を全要素写す（値は本番既定と同一。
+  #    helm.yml の「values-local drops no env from prod default」検査に掛かる）。Broker__Provider は template が決めるので不変（paper）。
+  #    発注予約の自動リコンサイルの解放の門（Reconciliation__ReleaseOnNotPlaced__*）も本番既定と同じ "false"（閉）のまま（#1051）。
+  order-execution:
+    extraEnv:
+      - { name: Reconciliation__Enabled, value: "true" }
+      - { name: Reconciliation__UseBrokerProbe, value: "true" }
+      - { name: Reconciliation__ReleaseOnNotPlaced__Simulate, value: "false" }
+      - { name: Reconciliation__ReleaseOnNotPlaced__Real, value: "false" }
+      - { name: Reconciliation__StallThresholdHours, value: "2" }
+      - { name: Reconciliation__IntervalHours, value: "1" }
+      - { name: Reconciliation__BatchSize, value: "50" }
+      - { name: DecisionCloseUnfilledCancel__Enabled, value: "true" }  # ← 取消（既定 false＝本番既定）
+      # NFR-06, IADR-0448, IADR-0559, #1391: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
 

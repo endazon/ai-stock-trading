@@ -6,7 +6,7 @@ namespace OrderExecutionService.Features.OrderExecution.CancelUnfilledDecisionCl
 // 🔴 FR-10, FR-19, ADR-0067 決定2・6, 05_trading-assumptions §5, #1339, IADR-0539: 判断由来の決済の指値の未約定時の取消の構成。
 //
 // **既定は無効**（ADR-0067 決定2）。有効にするのは #1214（保護逆指値の GTC）の実弾確認と PoC の確認の後で、利用者が決める（決定6）。
-// 配備（Helm values）にも有効化を書かない。値の変更は §5 の他の統制値と同じ手続き（方針確定プロセスまたは利用者の設定変更）であり、
+// 本番の配備（Helm の values.yaml）にも有効化を書かない（PoC の経路の values-local.yaml だけ、利用者裁定 2026-10-21 で有効）。値の変更は §5 の他の統制値と同じ手続き（方針確定プロセスまたは利用者の設定変更）であり、
 // 生成 AI と自動処理は変えられない。
 //
 // **有効なときだけ**範囲を検証し、外れたら起動で止める（ValidateOnStart。黙ってクランプしない——統制値を書き間違えたまま動かさない）。
