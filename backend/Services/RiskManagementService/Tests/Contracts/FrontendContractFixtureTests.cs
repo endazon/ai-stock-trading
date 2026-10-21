@@ -164,6 +164,52 @@ public class FrontendContractFixtureTests
         await AssertMatchesFixtureAsync("risk-controls.settings-history.json", res);
     }
 
+    // FR-10, FR-19, SC-02, ADR-0070 決定 5, #1407, IADR-0564: GET /risk-controls/settings/pre-close（閉場前の統制。効いている値・構成の値・保存値・食い違い）。
+    // 保存値と食い違いの形を契約に出すため、構成と違う値を 1 回保存してから採る（保存値が null のままでは SavedCutoff の形が現れない）。
+    [Fact]
+    public async Task 閉場前の統制の応答がフロントの契約フィクスチャと一致する()
+    {
+        using var factory = new RiskWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+
+        var put = await client.PutAsJsonAsync("/risk-controls/settings/pre-close", new
+        {
+            cutoffMinutes = new[] { new { market = (int)Market.Japan, minutes = 60 }, new { market = (int)Market.UnitedStates, minutes = 90 } },
+            flattenEnabled = true,
+            flattenMinutes = new[] { new { market = (int)Market.Japan, minutes = 15 }, new { market = (int)Market.UnitedStates, minutes = 15 } },
+            reason = "契約フィクスチャ生成のための保存",
+        });
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var res = await client.GetAsync("/risk-controls/settings/pre-close");
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        await AssertMatchesFixtureAsync("risk-controls.settings-pre-close.json", res);
+    }
+
+    // FR-10, FR-19, SC-02, ADR-0071 決定 5, #1407, IADR-0564: GET /risk-controls/settings/theme-concentration（テーマの定義）。保存してから採る。
+    [Fact]
+    public async Task テーマの定義の応答がフロントの契約フィクスチャと一致する()
+    {
+        using var factory = new RiskWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+
+        var put = await client.PutAsJsonAsync("/risk-controls/settings/theme-concentration", new
+        {
+            themes = new[]
+            {
+                new { name = "暗号資産", market = (int)Market.UnitedStates, symbols = new[] { "COIN", "MARA", "MSTR", "HOOD" }, maxPositions = 1 },
+            },
+            reason = "契約フィクスチャ生成のための保存",
+        });
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var res = await client.GetAsync("/risk-controls/settings/theme-concentration");
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        await AssertMatchesFixtureAsync("risk-controls.settings-theme-concentration.json", res);
+    }
+
     private static async Task AssertMatchesFixtureAsync(string fileName, HttpResponseMessage response)
     {
         var actual = ContractFixtureComparer.Normalize(await response.Content.ReadAsStringAsync());

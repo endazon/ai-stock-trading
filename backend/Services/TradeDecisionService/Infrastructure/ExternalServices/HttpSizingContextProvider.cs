@@ -68,7 +68,9 @@ public sealed class HttpSizingContextProvider(
         return new SizingContext(
             dto.Capital, dto.StageCapitalRemaining, dto.DailyOrderRemaining, losses, drawdown, mode, limits, stopLossMethod,
             // #1291, IADR-0527 決定3: 項目を持たない旧応答は null（読む側が既定の 5%・明示指定なしで効かせる）。
-            dto.HighVolatility);
+            dto.HighVolatility,
+            // #1407, IADR-0564 決定 1: 閉場前の手仕舞いの効いている値。項目を持たない旧応答・値域の外は null（読む側が既定＝無効・15 分で効かせる）。
+            dto.PreCloseFlatten is { } flatten && flatten.Violations().Count == 0 ? flatten : null);
     }
 
     // フェイルセーフ既定: 段階/日次残枠 0 → availableCapital 0 → 数量 0 → 見送り（取引しない）。Limits は PositionSizer を動かせる既定値。
@@ -93,5 +95,6 @@ public sealed class HttpSizingContextProvider(
         BrokerProvider? Mode,
         RiskLimitSettings? Limits,
         StopLossExecutionMethod? StopLossMethod,
-        HighVolatilitySettings? HighVolatility = null);
+        HighVolatilitySettings? HighVolatility = null,
+        PreCloseFlattenSettings? PreCloseFlatten = null);
 }

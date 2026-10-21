@@ -72,6 +72,62 @@ export interface RiskManagementSettings {
   // FR-10, UC-06, ADR-0063, ADR-0066 決定2, #1291: **高ボラティリティ銘柄の統制値**（区分の 1 注文上限＝equity 比・既定 0.05 と、利用者の明示指定）。
   // 変更は `PUT /risk-controls/settings/high-volatility`（利用者のみ）。SC-02 の表示・入力は `HighVolatilityForm`（IADR-0530）。
   highVolatility: HighVolatilitySettings;
+  // FR-10, SC-02, #1407, IADR-0564: 閉場前の統制とテーマの定義は**この応答に載らない**。効いている値・構成の値・保存値・食い違いは
+  // `GET /risk-controls/settings/pre-close`（PreCloseControlsView）と `GET /risk-controls/settings/theme-concentration`（ThemeConcentrationControlView）が返す。
+}
+
+// ---- 閉場前の統制とテーマの上限（FR-10, FR-19, SC-02, ADR-0070 決定 5, ADR-0071 決定 5, #1407, IADR-0564） ----
+
+// ControlValueSource（0=構成の値が効いている, 1=画面で保存した値が効いている）。
+export const CONTROL_VALUE_SOURCE_CONFIGURATION = 0;
+export const CONTROL_VALUE_SOURCE_SAVED = 1;
+
+// 市場ごとの分（market は Market enum・数値）。
+export interface MarketMinutesView {
+  market: number;
+  minutes: number;
+}
+
+export interface PreCloseEntryCutoffValues {
+  minutes: MarketMinutesView[];
+}
+
+export interface PreCloseFlattenValues {
+  enabled: boolean;
+  minutes: MarketMinutesView[];
+}
+
+// `GET /risk-controls/settings/pre-close`。effective* が効いている値、configured* が構成の値、saved* が保存値（無ければ null）、
+// *Source がどちらが効いているか、*Drift が保存値と構成の値の食い違い。
+export interface PreCloseControlsView {
+  effectiveCutoff: PreCloseEntryCutoffValues;
+  configuredCutoff: PreCloseEntryCutoffValues;
+  savedCutoff: PreCloseEntryCutoffValues | null;
+  cutoffSource: number;
+  cutoffDrift: boolean;
+  effectiveFlatten: PreCloseFlattenValues;
+  configuredFlatten: PreCloseFlattenValues;
+  savedFlatten: PreCloseFlattenValues | null;
+  flattenSource: number;
+  flattenDrift: boolean;
+  cutoffMaxMinutes: MarketMinutesView[];
+  flattenMaxMinutes: number;
+}
+
+export interface ThemeView {
+  name: string;
+  market: number;
+  symbols: string[];
+  maxPositions: number;
+}
+
+// `GET /risk-controls/settings/theme-concentration`。
+export interface ThemeConcentrationControlView {
+  effective: ThemeView[];
+  configured: ThemeView[];
+  saved: ThemeView[] | null;
+  source: number;
+  drift: boolean;
 }
 
 // FR-10, ADR-0063, #1291: 明示指定の銘柄（market は Market enum・数値）。
@@ -409,6 +465,9 @@ const CHANGE_TYPE_LABELS: Record<number, string> = {
   9: '損切りの実行機構',
   // FR-10, ADR-0063, #1291: 10 は高ボラティリティ銘柄の統制値（HighVolatilityChanged）。
   10: '高ボラティリティ銘柄',
+  // FR-10, SC-02, #1407, IADR-0564: 11 は閉場前の統制（締め切り・手仕舞い）、12 はテーマの定義と上限。
+  11: '閉場前の統制',
+  12: 'テーマの同時保有の上限',
 };
 
 // FR-13, SC-03, #334: 発注先の変更履歴を絞り込むための種別値（SettingsChangeType.BrokerProviderChanged）。

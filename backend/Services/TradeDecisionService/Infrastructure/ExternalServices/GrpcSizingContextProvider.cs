@@ -58,7 +58,26 @@ public sealed class GrpcSizingContextProvider(
         RiskManagementWire.Provider(r.Mode),
         ToLimits(r.Limits),
         RiskManagementWire.StopLossMethod(r.StopLossMethod),
-        ToHighVolatility(r.HighVolatility));
+        ToHighVolatility(r.HighVolatility),
+        ToPreCloseFlatten(r.PreCloseFlatten));
+
+    // FR-10, SC-02, ADR-0070, #1407, IADR-0564 決定 1: 閉場前の手仕舞いの効いている値。メッセージ・有効の欠落は null（読む側が既定＝無効・15 分で効かせる）。
+    // 市場が未指定・未知の行と分の欠けた行は落とす（その市場は既定の 15 分）。値域の外も null（Interpret と同じ）。
+    private static PreCloseFlattenSettings? ToPreCloseFlatten(Proto.PreCloseFlattenControls? f)
+    {
+        if (f is null || !f.HasEnabled)
+            return null;
+
+        var minutes = new Dictionary<AiStockTrading.Shared.Contracts.Trading.Market, int>();
+        foreach (var row in f.Minutes)
+        {
+            if (row.HasMinutes && RiskManagementWire.Market(row.Market) is { } market)
+                minutes[market] = row.Minutes;
+        }
+
+        var settings = new PreCloseFlattenSettings(f.Enabled, minutes);
+        return settings.Violations().Count == 0 ? settings : null;
+    }
 
     // FR-10, ADR-0063, #1291, IADR-0527 決定3: 高ボラティリティ銘柄の統制値。メッセージの欠落は null（読む側が既定 5%・明示指定なしで効かせる）。
     // 比率の欠落は既定の 5%（区分の上限を外さない）。市場が未指定・未知の行と銘柄コードが空の行は照合できないため落とす

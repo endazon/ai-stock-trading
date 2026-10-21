@@ -341,6 +341,15 @@ public static class RiskReadWireMapping
             response.HighVolatility = controls;
         }
 
+        // #1407, IADR-0564 決定 1: 閉場前の手仕舞いの効いている値（有効・無効と市場ごとの M）。
+        if (view.PreCloseFlatten is { } flatten)
+        {
+            var controls = new Proto.PreCloseFlattenControls { Enabled = flatten.Enabled };
+            controls.Minutes.AddRange(flatten.Minutes.OrderBy(kv => kv.Key).Select(kv =>
+                new Proto.MarketMinutesRow { Market = ToProto(kv.Key), Minutes = kv.Value }));
+            response.PreCloseFlatten = controls;
+        }
+
         return response;
     }
 

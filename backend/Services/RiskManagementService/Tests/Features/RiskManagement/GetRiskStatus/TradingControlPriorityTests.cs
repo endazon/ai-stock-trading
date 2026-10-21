@@ -98,7 +98,7 @@ public class TradingControlPriorityTests
                 new FakeClock(Now, Today),
                 new WeekendBusinessCalendar(),
                 new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(),
-                TestShortSellContexts.Unavailable(new FakeClock(Now, Today)), new InMemoryEntryReservationStore(), TradingDefaults.CreatePreCloseEntryCutoff(), TradingDefaults.CreateThemeConcentration());
+                TestShortSellContexts.Unavailable(new FakeClock(Now, Today)), new InMemoryEntryReservationStore(), ConfiguredSessionAndThemeControls.Default);
             var intent = new OrderIntent(
                 "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
                 10, 1_000m, effect);

@@ -42,6 +42,9 @@ namespace RiskManagementService.Features.RiskManagement;
 //
 // 🔴 FR-10, FR-19, #1397, IADR-0562 決定 2: **テーマごとの同時保有の上限の定義（themes）も必須依存である**（同じ理由）。入力は snapshot の
 // 保有中 ∪ 未約定の新規建て（予約を含む）の銘柄であり、新規建ての審査は直列化されている（IADR-0529）ので、同時に届いた同じ集まりの判断も 1 件しか通らない。
+//
+// 🔴 SC-02, #1407, IADR-0564 決定 2: 上の 2 つは**構成の値**（configuredControls）として必須依存で受け、審査のたびに設定行の保存値と突き合わせて
+// 効く値を解決する（保存値があれば保存値。再起動なしで画面の変更が効く）。
 public sealed class OrderScreeningService(
     IRiskSettingsStore settingsStore,
     PortfolioSnapshotBuilder snapshotBuilder,
@@ -52,8 +55,7 @@ public sealed class OrderScreeningService(
     IPortfolioLedgerStore ledger,
     ShortSellContextSupplier shortSellContexts,
     IEntryReservationStore entryReservations,
-    PreCloseEntryCutoffSettings preCloseCutoff,
-    ThemeConcentrationSettings themes,
+    ConfiguredSessionAndThemeControls configuredControls,
     IManipulativeOrderPatternDetector? patternDetector = null,
     ILogger<OrderScreeningService>? logger = null)
 {
@@ -154,7 +156,8 @@ public sealed class OrderScreeningService(
         if (IsLockedOut(tradingDay))
             reasons.Add(RejectionReason.DailyLossLimitReached);
         // 🔴 #1396, IADR-0561 決定 2: 締め切りの前に承認した予約を、締め切りの後に組み直して発行しない（閉場前に新規建てを出さない）。
-        if (PreCloseCutoffFor(intent.Market, now).IsWithinCutoff)
+        var effectiveCutoff = SessionAndThemeControlResolution.EffectivePreCloseEntryCutoff(settingsStore.GetCurrent(), configuredControls);
+        if (PreCloseCutoffFor(effectiveCutoff, intent.Market, now).IsWithinCutoff)
             reasons.Add(RejectionReason.PreCloseEntryCutoff);
 
         if (reasons.Count > 0)
@@ -217,7 +220,10 @@ public sealed class OrderScreeningService(
 
         // 判定コア（決定的）を実行し、違反理由を集約する。
         // 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: 閉場前の締め切りの供給（新規建てのときだけ。手仕舞いは判定しない）。
-        var preCloseCutoffSupply = isEntry ? PreCloseCutoffFor(intent.Market, clock.UtcNow) : null;
+        // 🔴 SC-02, #1407, IADR-0564 決定 2: 画面で保存した値があればそれが効く。無ければ構成の値（項目ごとに解決する）。
+        var preCloseCutoff = SessionAndThemeControlResolution.EffectivePreCloseEntryCutoff(settings, configuredControls);
+        var themes = SessionAndThemeControlResolution.EffectiveThemeConcentration(settings, configuredControls);
+        var preCloseCutoffSupply = isEntry ? PreCloseCutoffFor(preCloseCutoff, intent.Market, clock.UtcNow) : null;
         var result = RiskEvaluator.Evaluate(
             intent, settings, snapshot, patternDetector,
             shortSellContext: shortSellContext, buyInBan: buyInBan, stopOuts: stopOuts, decisionExits: decisionExits,
@@ -274,8 +280,8 @@ public sealed class OrderScreeningService(
             observation);
     }
 
-    // FR-10, FR-19, #1396, IADR-0561 決定 2: その市場の当日の閉場（MarketHours。休場日は null＝締め切りに入らない）と構成の分数。
-    private PreCloseEntryCutoffSupply PreCloseCutoffFor(Market market, DateTimeOffset now) =>
+    // FR-10, FR-19, #1396, IADR-0561 決定 2: その市場の当日の閉場（MarketHours。休場日は null＝締め切りに入らない）と効いている分数（#1407 で保存値を加えた）。
+    private static PreCloseEntryCutoffSupply PreCloseCutoffFor(PreCloseEntryCutoffSettings preCloseCutoff, Market market, DateTimeOffset now) =>
         new(now, MarketHours.SessionCloseOn(market, now), preCloseCutoff.MinutesFor(market));
 
     private static DateTimeOffset TruncateToMicroseconds(DateTimeOffset value) =>

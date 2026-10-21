@@ -117,6 +117,54 @@ public sealed class RiskSettingsService(
             reason);
     }
 
+    /// <summary>
+    /// 🔴 FR-10, FR-19, SC-02, ADR-0070 決定 5, #1407, IADR-0564 決定 4: 閉場前の統制（締め切り N〔市場ごと〕・手仕舞いの有効と M〔市場ごと〕）を<b>保存する</b>。
+    /// 保存した値は構成の値より優先して効く（再起動は要らない。<see cref="SessionAndThemeControlResolution"/>）。
+    /// 値域の外は <see cref="ArgumentException"/>（HTTP 400）で拒み、<b>設定を一切変更せず履歴も残さない</b>。
+    /// 変更は利用者だけ（エンドポイントは OwnerOnly。生成 AI・AI の監視銘柄の入れ替え案の経路は本メソッドへ届かない）。
+    /// </summary>
+    public void UpdatePreCloseControls(PreCloseEntryCutoffSettings cutoff, PreCloseFlattenSettings flatten, string actor, string reason)
+    {
+        ArgumentNullException.ThrowIfNull(cutoff);
+        ArgumentNullException.ThrowIfNull(flatten);
+        RequireActorAndReason(actor, reason);
+        var violations = SessionAndThemeControlValidation.Violations(cutoff).Concat(flatten.Violations()).ToList();
+        if (violations.Count > 0)
+            throw new ArgumentException(string.Join(" ", violations), nameof(cutoff)).ClientVisible();
+
+        var current = store.GetCurrent();
+        Save(
+            current with { PreCloseEntryCutoff = cutoff, PreCloseFlatten = flatten },
+            $"{current.PreCloseEntryCutoff?.ToString() ?? "未保存（構成の値）"}; {current.PreCloseFlatten?.ToString() ?? "未保存（構成の値）"}",
+            $"{cutoff}; {flatten}",
+            SettingsChangeType.PreCloseControlsChanged,
+            actor,
+            reason);
+    }
+
+    /// <summary>
+    /// 🔴 FR-10, FR-19, SC-02, ADR-0071 決定 5, #1407, IADR-0564 決定 4: テーマの定義と上限を<b>保存する</b>（定義の全体を置き換える）。
+    /// 名前の前後の空白を落とし、銘柄コードは大文字へ揃える（照合は大文字小文字と空白を区別しない）。値域（ADR-0071 決定 2）の外は 400・設定も履歴も変えない。
+    /// </summary>
+    public void UpdateThemeConcentration(ThemeConcentrationSettings themes, string actor, string reason)
+    {
+        ArgumentNullException.ThrowIfNull(themes);
+        RequireActorAndReason(actor, reason);
+        var normalized = SessionAndThemeControlValidation.Normalize(themes);
+        var violations = SessionAndThemeControlValidation.Violations(normalized);
+        if (violations.Count > 0)
+            throw new ArgumentException(string.Join(" ", violations), nameof(themes)).ClientVisible();
+
+        var current = store.GetCurrent();
+        Save(
+            current with { ThemeConcentration = normalized },
+            current.ThemeConcentration?.ToString() ?? "未保存（構成の値）",
+            normalized,
+            SettingsChangeType.ThemeConcentrationChanged,
+            actor,
+            reason);
+    }
+
     public void UpdateStage(StageSettings stage, string actor, string reason)
     {
         ArgumentNullException.ThrowIfNull(stage);

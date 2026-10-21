@@ -27,6 +27,7 @@ using RiskManagementService.Features.RiskManagement.GetWorkingEntryOrders;
 using RiskManagementService.Features.RiskManagement.PauseTrading;
 using RiskManagementService.Features.RiskManagement.RequestStageTransition;
 using RiskManagementService.Features.RiskManagement.ResumeTrading;
+using RiskManagementService.Features.RiskManagement.SessionAndThemeControls;
 using RiskManagementService.Features.RiskManagement.UpdateBrokerProvider;
 using RiskManagementService.Features.RiskManagement.UpdateHighVolatility;
 using RiskManagementService.Features.RiskManagement.UpdateRiskLimits;
@@ -125,6 +126,11 @@ internal static class RiskControlEndpoints
         owner.MapUpdateStopLossMethod();
         // FR-10, UC-06, ADR-0063, #1291, IADR-0527 決定2: 高ボラティリティ銘柄の統制値（区分の上限・利用者の明示指定）。
         owner.MapUpdateHighVolatility();
+        // 🔴 FR-10, FR-19, SC-02, ADR-0070 決定 5・ADR-0071 決定 5, #1407, IADR-0564: 閉場前の統制とテーマの上限（効いている値・食い違いの表示と保存）。
+        owner.MapGetPreCloseControls();
+        owner.MapUpdatePreCloseControls();
+        owner.MapGetThemeConcentration();
+        owner.MapUpdateThemeConcentration();
 
         // ---- 段階ゲート（FR-20, UC-06, ADR-0008, IADR-0041/0070） ----
         read.MapGetStageGate();

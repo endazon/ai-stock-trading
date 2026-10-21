@@ -42,7 +42,13 @@ public static class RiskSettingsSerialization
             settings.Stage1MinimumTradeCount,
             settings.StopLossMethod,
             productTypesRevision,
-            new HighVolatilityDto(settings.HighVolatility.MaxOrderAmountRatio, [.. settings.HighVolatility.DesignatedSymbols]));
+            new HighVolatilityDto(settings.HighVolatility.MaxOrderAmountRatio, [.. settings.HighVolatility.DesignatedSymbols]),
+            // 🔴 FR-10, SC-02, #1407, IADR-0564 決定 1・5: 画面で保存した閉場前の統制とテーマの定義。保存していない（null）ならキーを書かない＝構成の値が効く。
+            settings.PreCloseEntryCutoff is { } cutoff ? new Dictionary<Market, int>(cutoff.Minutes) : null,
+            settings.PreCloseFlatten is { } flatten ? new PreCloseFlattenDto(flatten.Enabled, new Dictionary<Market, int>(flatten.Minutes)) : null,
+            settings.ThemeConcentration is { } themes
+                ? [.. themes.Themes.Select(t => new ThemeDto(t.Name, t.Market, [.. t.Symbols], t.MaxPositions))]
+                : null);
         return JsonSerializer.Serialize(dto, Options);
     }
 
@@ -113,7 +119,40 @@ public static class RiskSettingsSerialization
             // （例: 0.5% → 1%）。下端未満の行は書き込みの経路（ThrowIfInvalid・API の 400）では作れず、DB の手での編集などでだけ生じる。
             // ADR-0066 はこの丸めを改めず、残る制約として記録した（IADR-0527 決定2 の 2026-10-13 追記）。
             HighVolatility = ResolveHighVolatility(dto.HighVolatility),
+            // 🔴 FR-10, SC-02, #1407, IADR-0564 決定 5: 画面で保存した閉場前の統制とテーマの定義。**キーの無い行（旧行・保存していない）は null＝構成の値が効く。**
+            // 値域の外の行（手での編集など。書き込みの経路は値域の外を拒む）も **null として読む＝構成の値へ倒す**（構成は起動時に値域を確かめている）。
+            // 黙って丸めない・統制を外す値（0 分・上限 0）を効かせない。
+            PreCloseEntryCutoff = ResolvePreCloseEntryCutoff(dto.PreCloseEntryCutoff),
+            PreCloseFlatten = ResolvePreCloseFlatten(dto.PreCloseFlatten),
+            ThemeConcentration = ResolveThemeConcentration(dto.ThemeConcentration),
         };
+    }
+
+    private static PreCloseEntryCutoffSettings? ResolvePreCloseEntryCutoff(Dictionary<Market, int>? minutes)
+    {
+        if (minutes is null || minutes.Count == 0)
+            return null;
+        var settings = new PreCloseEntryCutoffSettings(minutes);
+        return SessionAndThemeControlValidation.Violations(settings).Count == 0 ? settings : null;
+    }
+
+    private static PreCloseFlattenSettings? ResolvePreCloseFlatten(PreCloseFlattenDto? dto)
+    {
+        if (dto?.Enabled is not { } enabled || dto.Minutes is null || dto.Minutes.Count == 0)
+            return null;
+        var settings = new PreCloseFlattenSettings(enabled, dto.Minutes);
+        return settings.Violations().Count == 0 ? settings : null;
+    }
+
+    private static ThemeConcentrationSettings? ResolveThemeConcentration(List<ThemeDto>? themes)
+    {
+        if (themes is null)
+            return null;
+        var settings = SessionAndThemeControlValidation.Normalize(new ThemeConcentrationSettings(
+        [
+            .. themes.Where(t => t is not null).Select(t => new ThemeLimit(t.Name ?? string.Empty, t.Market, t.Symbols ?? [], t.MaxPositions ?? 0)),
+        ]));
+        return SessionAndThemeControlValidation.Violations(settings).Count == 0 ? settings : null;
     }
 
     private static HighVolatilitySettings ResolveHighVolatility(HighVolatilityDto? dto)
@@ -164,7 +203,18 @@ public static class RiskSettingsSerialization
         long? ProductTypesRevision = null,
         // FR-10, ADR-0063, #1291, IADR-0527 決定2: 高ボラティリティ銘柄の統制値。nullable＝本プロパティの追加前に書かれた行
         // （旧行はキーを持たないため null のまま入り、既定〔上限 5%・明示指定なし〕で読む）。**マイグレーションで既存行を書き換えない**（IADR-0161 決定2）。
-        HighVolatilityDto? HighVolatility = null);
+        HighVolatilityDto? HighVolatility = null,
+        // 🔴 FR-10, SC-02, #1407, IADR-0564 決定 5: 画面で保存した値。nullable＝保存していない（旧行もキーを持たない）。**マイグレーションで既存行を書き換えない**（IADR-0161 決定2）。
+        Dictionary<Market, int>? PreCloseEntryCutoff = null,
+        PreCloseFlattenDto? PreCloseFlatten = null,
+        // 空の一覧（テーマなし＝上限を掛けない）は値域の上では受理できる定義であり、null（保存していない）と区別する。
+        List<ThemeDto>? ThemeConcentration = null);
+
+    // FR-10, SC-02, #1407: 閉場前の手仕舞いの永続 DTO（nullable で旧行と欠けた行を読み分ける）。
+    private sealed record PreCloseFlattenDto(bool? Enabled, Dictionary<Market, int>? Minutes);
+
+    // FR-10, SC-02, #1407: テーマの永続 DTO。
+    private sealed record ThemeDto(string? Name, Market Market, List<string>? Symbols, int? MaxPositions);
 
     // FR-10, ADR-0063, #1291: 高ボラティリティ銘柄の統制値の永続 DTO（具象コレクション・nullable で旧行と値域外を読み分ける）。
     private sealed record HighVolatilityDto(

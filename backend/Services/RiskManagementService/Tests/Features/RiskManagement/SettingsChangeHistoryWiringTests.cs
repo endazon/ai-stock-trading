@@ -30,6 +30,9 @@ public class SettingsChangeHistoryWiringTests(RiskWorkerWebApplicationFactory fa
             [SettingsChangeType.Stage1MinimumTradeCountChanged] = 8,
             [SettingsChangeType.StopLossMethodChanged] = 9,
             [SettingsChangeType.HighVolatilityChanged] = 10,
+            // #1407, IADR-0564 決定 4: 閉場前の統制とテーマの定義。
+            [SettingsChangeType.PreCloseControlsChanged] = 11,
+            [SettingsChangeType.ThemeConcentrationChanged] = 12,
         };
 
         Enum.GetValues<SettingsChangeType>().Should().BeEquivalentTo(expected.Keys, "メンバを足したらここへ値を足す（末尾へ）");

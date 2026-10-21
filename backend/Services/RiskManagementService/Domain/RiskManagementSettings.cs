@@ -81,4 +81,29 @@ public record RiskManagementSettings(
     /// </para>
     /// </summary>
     public StopLossExecutionMethod StopLossMethod { get; init; } = StopLossExecutionMethod.BrokerStopOrder;
+
+    /// <summary>
+    /// 🔴 FR-10, FR-19, SC-02, ADR-0070 決定 1・5, #1407, IADR-0564 決定 1・2: 画面（SC-02）で<b>保存した</b>閉場前の新規建ての締め切り N（市場ごと）。
+    /// <b>null＝保存していない</b>（構成 <c>PreCloseEntryCutoff:Minutes:&lt;Market&gt;</c> の値が効く）。効く値の解決は
+    /// <see cref="SessionAndThemeControlResolution.EffectivePreCloseEntryCutoff"/>。
+    /// </summary>
+    // PR #1408 のレビュー: `GET /risk-controls/settings` の応答には載せない（画面は専用の口 `/settings/pre-close`・`/theme-concentration` で読む。永続化は DTO を通す）。
+    [System.Text.Json.Serialization.JsonIgnore]
+    public PreCloseEntryCutoffSettings? PreCloseEntryCutoff { get; init; }
+
+    /// <summary>
+    /// 🔴 FR-10, FR-19, SC-02, ADR-0070 決定 2・5, #1407, IADR-0564 決定 1・2: 画面で保存した閉場前の手仕舞い（有効・無効と M）。
+    /// <b>null＝保存していない</b>（構成 <c>PreCloseFlatten:Enabled</c>・<c>PreCloseFlatten:Minutes:&lt;Market&gt;</c> の値が効く）。
+    /// </summary>
+    // PR #1408 のレビュー: `GET /risk-controls/settings` の応答には載せない（画面は専用の口 `/settings/pre-close`・`/theme-concentration` で読む。永続化は DTO を通す）。
+    [System.Text.Json.Serialization.JsonIgnore]
+    public PreCloseFlattenSettings? PreCloseFlatten { get; init; }
+
+    /// <summary>
+    /// 🔴 FR-10, FR-19, SC-02, ADR-0071 決定 1・2・5, #1407, IADR-0564 決定 1・2: 画面で保存したテーマの定義と上限（定義の全体。既定を丸ごと置き換える）。
+    /// <b>null＝保存していない</b>（構成 <c>ThemeConcentration:Themes</c>〔無ければ既定の 2 テーマ〕が効く）。
+    /// </summary>
+    // PR #1408 のレビュー: `GET /risk-controls/settings` の応答には載せない（画面は専用の口 `/settings/pre-close`・`/theme-concentration` で読む。永続化は DTO を通す）。
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ThemeConcentrationSettings? ThemeConcentration { get; init; }
 }

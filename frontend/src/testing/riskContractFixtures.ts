@@ -19,12 +19,16 @@ import statusJson from './contract-fixtures/risk-controls.status.json';
 import stageGateJson from './contract-fixtures/risk-controls.stage-gate.json';
 import settingsHistoryJson from './contract-fixtures/risk-controls.settings-history.json';
 import shortSellingJson from './contract-fixtures/risk-controls.short-selling.json';
+import preCloseJson from './contract-fixtures/risk-controls.settings-pre-close.json';
+import themeConcentrationJson from './contract-fixtures/risk-controls.settings-theme-concentration.json';
 import type {
+  PreCloseControlsView,
   RiskManagementSettings,
   RiskStatusView,
   SettingsChangeEntry,
   ShortSellingStatusView,
   StageGateStatus,
+  ThemeConcentrationControlView,
 } from '@ai-stock-trading/lib/risk/contracts';
 
 // ---- 契約型への代入（＝コンパイル時の突合。ここが赤くなることが本機構の第一の関門） ----
@@ -50,6 +54,12 @@ export const CONTRACT_SETTINGS_HISTORY: SettingsChangeEntry[] = settingsHistoryJ
  * 画面テストはこの形を土台にし、「未供給を未供給として描く」ことを検証する。
  */
 export const CONTRACT_SHORT_SELLING: ShortSellingStatusView = shortSellingJson;
+
+/** `GET /risk-controls/settings/pre-close` の実応答（構成と違う値を 1 回保存した後。保存値・食い違いの形を含む。#1407・IADR-0564）。 */
+export const CONTRACT_PRE_CLOSE_CONTROLS: PreCloseControlsView = preCloseJson;
+
+/** `GET /risk-controls/settings/theme-concentration` の実応答（定義を 1 回保存した後。#1407・IADR-0564）。 */
+export const CONTRACT_THEME_CONCENTRATION: ThemeConcentrationControlView = themeConcentrationJson;
 
 // ---- テスト用のヘルパ ----
 

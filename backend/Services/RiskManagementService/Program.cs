@@ -319,9 +319,17 @@ builder.Services.AddScoped(sp => new ShortSellContextSupplier(
     sp.GetRequiredService<IClock>(),
     sp.GetRequiredService<ILogger<ShortSellContextSupplier>>()));
 // 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: 閉場前の新規建ての締め切り。構築時に読む（範囲外・読めない値は起動を止める）。
-builder.Services.AddSingleton(PreCloseEntryCutoffLoader.FromConfiguration(builder.Configuration));
+var configuredPreCloseCutoff = PreCloseEntryCutoffLoader.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(configuredPreCloseCutoff);
 // 🔴 FR-10, FR-19, #1397, IADR-0562 決定 1: テーマごとの同時保有の上限の定義。構築時に読む（誤った定義は起動を止める）。
-builder.Services.AddSingleton(ThemeConcentrationLoader.FromConfiguration(builder.Configuration));
+var configuredThemes = ThemeConcentrationLoader.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(configuredThemes);
+// 🔴 FR-10, FR-19, SC-02, #1407, IADR-0564 決定 1・2: 構成の値（締め切り・手仕舞い・テーマの定義）。画面で保存した値が無い項目はこの値が効く。
+// 手仕舞いの構成（PreCloseFlatten:*）は IADR-0561 決定 3 の取引判断からここへ移した。構築時に読む（範囲外・読めない値は起動を止める）。
+builder.Services.AddSingleton(new RiskManagementService.Domain.ConfiguredSessionAndThemeControls(
+    configuredPreCloseCutoff,
+    PreCloseFlattenLoader.FromConfiguration(builder.Configuration),
+    configuredThemes));
 builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetRequiredService<IRiskSettingsStore>(),
     sp.GetRequiredService<PortfolioSnapshotBuilder>(),
@@ -336,10 +344,9 @@ builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetRequiredService<ShortSellContextSupplier>(),
     // 🔴 FR-10, #1319, IADR-0529 決定1・2: 新規建ての審査の直列化と予約（必須引数）。
     sp.GetRequiredService<IEntryReservationStore>(),
-    // 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: 閉場前の新規建ての締め切り（必須引数。構成 PreCloseEntryCutoff:Minutes:<Market>・既定 60 分）。
-    sp.GetRequiredService<RiskManagementService.Domain.PreCloseEntryCutoffSettings>(),
-    // 🔴 FR-10, FR-19, #1397, IADR-0562 決定 1・2: テーマごとの同時保有の上限の定義（必須引数。構成 ThemeConcentration:Themes・既定は暗号資産と AI・半導体の 2 つ）。
-    sp.GetRequiredService<RiskManagementService.Domain.ThemeConcentrationSettings>(),
+    // 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2 / #1397, IADR-0562 決定 1・2: 閉場前の新規建ての締め切りとテーマの定義の**構成の値**（必須引数）。
+    // #1407, IADR-0564 決定 2: 画面で保存した値（設定行）があればそちらが効く（審査のたびに設定を読んで解決する）。
+    sp.GetRequiredService<RiskManagementService.Domain.ConfiguredSessionAndThemeControls>(),
     sp.GetService<RiskManagementService.Domain.IManipulativeOrderPatternDetector>(),
     sp.GetRequiredService<ILogger<OrderScreeningService>>()));
 // FR-10, #331, IADR-0210 決定5: 損切りの機械執行（旧 StopLossExecutionService・IADR-0015）は撤去した。

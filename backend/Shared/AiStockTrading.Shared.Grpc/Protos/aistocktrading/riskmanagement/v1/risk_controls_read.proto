@@ -233,6 +233,19 @@ message HighVolatilityControls {
   repeated HighVolatilitySymbolRow designated_symbols = 2;
 }
 
+// FR-10, SC-02, ADR-0070, #1407 / IADR-0564: 市場ごとの分（閉場前の手仕舞いの M）。
+message MarketMinutesRow {
+  Market market = 1;
+  optional int32 minutes = 2;
+}
+
+// FR-10, SC-02, ADR-0070 決定 2・5, #1407 / IADR-0564: REST の PreCloseFlattenSettings と同じ形（閉場前の手仕舞いの効いている値）。
+// 🔴 メッセージ自体の欠落は「送り手が本項目を知らない」であり、受け手は既定（無効・15 分）で読む。
+message PreCloseFlattenControls {
+  optional bool enabled = 1;
+  repeated MarketMinutesRow minutes = 2;
+}
+
 // REST の SizingContextView と同じ形。
 message GetSizingContextResponse {
   // 🔴 欠落は「口座を照会できていない」（残枠も解決できない）。0 ではない。
@@ -245,6 +258,7 @@ message GetSizingContextResponse {
   RiskLimits limits = 7;
   StopLossExecutionMethod stop_loss_method = 8;
   HighVolatilityControls high_volatility = 9;
+  PreCloseFlattenControls pre_close_flatten = 10;
 }
 
 // ---- 新規建ての可否（#1113 / IADR-0463） ----
