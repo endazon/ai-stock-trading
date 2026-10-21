@@ -84,6 +84,13 @@ public static class OrderDispatchForgoneLifecycle
             // 自分の記録を残した後の判定は `TryReserve` の後・**ブローカーへの送信の前**で予約を Forgone へ移して `return` する
             // ——接続確立の失敗〔BrokerUnavailable〕と同じ位置づけ）。Open でしか起きないため決済の在庫解放は動かない。
             OrderDispatchForgoneReason.StopLossMethodConflict => true,
+            // 🔴 FR-10, ADR-0009, IADR-0565 決定 3: 新規建てを送る直前の停止状態の最終照会（成立・不明）。**送信前**である
+            // （`OrderExecutionAppService.ExecuteAsync` を実測: `TryReserve` の後・送信の直前の併存の判定の後で、予約を Forgone へ
+            // 移して `return` する——上の StopLossMethodConflict の後の端と同じ位置づけ）。照会はリスク管理への読み取りだけで、
+            // ブローカーへは 1 バイトも送らない。「不明」は***停止状態*の不明**であり***発注*の不明**ではない。Open でしか起きない。
+            OrderDispatchForgoneReason.KillSwitchActive => true,
+            OrderDispatchForgoneReason.TradingPaused => true,
+            OrderDispatchForgoneReason.TradingHaltStateUnknown => true,
             // 🔴 既定は「解放しない」。新しい理由を足す人は、それが確実に未発注かを**実測して**からここへ足す。
             //
             // 🔴 判定の基準は**理由の名前ではなく「ブローカーへ送信したか」**である。

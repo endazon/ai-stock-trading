@@ -47,6 +47,10 @@ namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 // 確認できた拒否）だけが従来どおり「建玉を持たない」へ進む。S0 / S3 の新規建ては送る前に承認時の保護の文脈を残し
 // （AwaitingEntry）、エントリーの送信結果が不明のまま突合で発注済みと確定したら、本クラスの ProtectAsync が承認時の手法で
 // 保護レグを張る（IReconciledEntryProtection）。
+//
+// 🔴 FR-10, ADR-0009 決定 3・4, NFR-04, IADR-0565: **新規建ては、ブローカーへ送る直前に kill switch・一時停止の状態をリスク管理へ最終照会し、
+// 成立中または不明なら送らない**（予約を Forgone へ移して見送る）。決済・損切りは照会しない＝止めない。照会元（tradingHalt）は
+// 本番の Program.cs が必ず渡す（照会先が未構成なら常に不明を返す実装。T-10-2971 が Program.cs そのもので固定する）。
 public sealed class OrderExecutionAppService(
     IBrokerAdapter broker,
     IExecutedOrderStore store,
@@ -55,7 +59,8 @@ public sealed class OrderExecutionAppService(
     IProtectiveStopOrderStore? protectiveStops = null,
     ILogger<OrderExecutionAppService>? logger = null,
     IBrokerPositionSource? brokerPositions = null,
-    IPositionQueryHealthReporter? positionQueryHealth = null) : IReconciledEntryProtection
+    IPositionQueryHealthReporter? positionQueryHealth = null,
+    ITradingHaltSource? tradingHalt = null) : IReconciledEntryProtection
 {
     // #820 の 8 巡目監査, IADR-0344 追記(8): 武装の前提条件（帰属不明の建玉が無いこと）を確かめるために
     // 見る Active 行の上限。保有建玉数上限（既定 3）に対して十分大きい。
@@ -394,6 +399,24 @@ public sealed class OrderExecutionAppService(
             return ForgoneIfRecorded(approved, OrderDispatchForgoneReason.StopLossMethodConflict, conflicted);
         }
 
+        // 🔴 FR-10, ADR-0009 決定 3・4, NFR-04, IADR-0565 決定 1・3: **送信の直前の最終照会**（新規建てだけ）。kill switch・一時停止が
+        // 成立中、または確かめられない（不明）なら送らない。審査（リスク管理）の承認の後に利用者が停止を入れた窓を、送信の手前で閉じる。
+        // 決済（Close）は照会しない——手仕舞い・損切りはどの停止でも止めない（ADR-0009 決定 4）。照会の失敗で止めてもいけない。
+        // 見送りの形は上の「送信の直前」の併存の判定と同じ（予約を Forgone へ移し、S1 の行・保護の文脈を閉じる＝確実に未発注）。
+        if (intent.PositionEffect != PositionEffect.Close
+            && tradingHalt is not null
+            && await FinalTradingHaltCheckAsync(approved, cancellationToken).ConfigureAwait(false) is { } haltReason)
+        {
+            var halted = reservations.MarkReservationForgone(approved.DecisionId, clock.UtcNow);
+            if (halted is ForgoneRecordOutcome.Recorded or ForgoneRecordOutcome.AlreadyForgone)
+            {
+                CompleteSoftwareStopWithoutPosition(approved, disposition);
+                CompleteAwaitingProtection(approved.DecisionId);
+            }
+
+            return ForgoneIfRecorded(approved, haltReason, halted);
+        }
+
         // 相3: ADR-0003: 承認済み注文のみ発注する。Close（owner 手仕舞い・自動縮小）も同一経路。
         // #141, IADR-0092: ブローカが client order id 伝播に対応していれば DecisionId を紐づけて発注する
         // （滞留 Reserved を後から DecisionId で照合＝実照会リコンサイルの前提）。非対応（paper 等）は従来経路。
@@ -628,6 +651,43 @@ public sealed class OrderExecutionAppService(
                     $"DecisionId={approved.DecisionId} は発注予約表で確定済み（または未知の状態 {recorded}）のため、"
                     + $"見送り（理由 {reason}）を主張しません。発注済みの注文を見送りと記録すると在庫の押さえが解けます。");
         }
+    }
+
+    // 🔴 FR-10, ADR-0009 決定 3, IADR-0565 決定 3: 停止の状態を見送りの理由へ写す（送ってよければ null）。
+    // 優先順位は kill switch ＞ 一時停止（ADR-0009 決定 3。日次損失ロックアウトは審査が止める）。不明は TradingHaltStateUnknown。
+    private async Task<OrderDispatchForgoneReason?> FinalTradingHaltCheckAsync(
+        OrderApproved approved, CancellationToken cancellationToken)
+    {
+        TradingHaltState? state;
+        try
+        {
+            state = await tradingHalt!.GetAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // 照会元の契約は「投げずに null」だが、投げても不明として見送る（予約を Reserved のまま残さない）。
+            _logger.LogError(ex, "停止の状態の照会元が例外を投げました。不明として扱います: DecisionId={DecisionId}", approved.DecisionId);
+            state = null;
+        }
+
+        OrderDispatchForgoneReason? reason = state switch
+        {
+            null => OrderDispatchForgoneReason.TradingHaltStateUnknown,
+            { KillSwitchEngaged: true } => OrderDispatchForgoneReason.KillSwitchActive,
+            { TradingPaused: true } => OrderDispatchForgoneReason.TradingPaused,
+            _ => null,
+        };
+
+        if (reason is { } r)
+        {
+            _logger.Log(
+                r == OrderDispatchForgoneReason.TradingHaltStateUnknown ? LogLevel.Error : LogLevel.Warning,
+                "新規建てを送る直前の停止状態の確認で送らないことにしました（予約は見送りとして記録します。決済・損切りは止めません）: "
+                + "DecisionId={DecisionId} 銘柄={Symbol} 数量={Quantity} 理由={Reason}",
+                approved.DecisionId, approved.Intent.Symbol, approved.Intent.Quantity, r);
+        }
+
+        return reason;
     }
 
     // 🔴 FR-10, ADR-0040 決定1, #1048, IADR-0481 決定1: 同じ銘柄・同じ方向に別の手法の有効な保護記録があるか（あればログを出して true）。

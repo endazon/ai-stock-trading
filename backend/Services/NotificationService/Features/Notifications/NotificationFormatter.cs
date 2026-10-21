@@ -460,6 +460,14 @@ public static class NotificationFormatter
         // FR-10, #1105, IADR-0461 決定2: 送れば証券会社に拒否されるだけの決済。対処は要らない（処理中の決済の結果を待つ）。
         OrderDispatchForgoneReason.InFlightCloseCoversPosition =>
             "同じ建玉を売る処理中の決済が、決済できる建玉をすべて覆っています（その決済が約定しなかった場合は、改めて手仕舞ってください）",
+        // 🔴 FR-10, ADR-0009, IADR-0565 決定 3: 送る直前の停止状態の最終照会。どれも新規建てだけであり、決済・損切りは止めていない。
+        OrderDispatchForgoneReason.KillSwitchActive =>
+            "送る直前の確認で全停止スイッチ（kill switch）が有効でした（新規建てを送りません。決済・損切りは止めていません）",
+        OrderDispatchForgoneReason.TradingPaused =>
+            "送る直前の確認で取引の一時停止中でした（新規建てを送りません。決済・損切りは止めていません）",
+        OrderDispatchForgoneReason.TradingHaltStateUnknown =>
+            "送る直前に全停止スイッチ・一時停止の状態を確かめられませんでした（不明のまま新規建てを送りません。"
+                + "決済・損切りは止めていません。発注執行からリスク管理への照会の設定と疎通を確認してください）",
         _ => reason.ToString(),
     };
 

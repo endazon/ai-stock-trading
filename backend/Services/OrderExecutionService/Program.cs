@@ -25,6 +25,7 @@ using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Operations;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Observability;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Grpc;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
@@ -169,6 +170,26 @@ builder.Services.AddScoped<IProtectiveStopOrderStore, EfProtectiveStopOrderStore
 // 🔴 FR-10, FR-05, ADR-0016, #864, IADR-0355: 決済（Close）の発注前に**ブローカーの実建玉と突き合わせる**ため、
 // 建玉照会（IBrokerPositionSource）を任意依存として渡す。**実装しない発注先（内蔵 paper）では null のまま**であり、
 // 突合そのものが起きない（従来どおり。下の moomoo 限定の登録と対になる構造的な非干渉）。
+// 🔴 FR-10, ADR-0009 決定 3・4, NFR-04, IADR-0565 決定 2・4: 新規建てを送る直前に読む停止の状態（kill switch・一時停止）。
+// 照会先はリスク管理の GET /risk-controls/trading-halt（OwnerOrService。s2s は ServiceAuth:*）。待ちの上限 3 秒・1 試行。
+// 🔴 **RiskManagement:BaseUrl が未設定・不正なら常に不明＝新規建てを送らない**（fail-closed。決済・損切りは照会しないので止まらない）。
+// 照会を省く構成の口は持たない。
+builder.Services.AddHttpClient("risk", c => c.Timeout = HttpTradingHaltSource.RequestTimeout)
+    .AddAiStockTradingServiceToken(builder.Configuration);
+builder.Services.AddScoped<ITradingHaltSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl)
+        || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)
+        || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+    {
+        return new UnconfiguredTradingHaltSource(sp.GetRequiredService<ILogger<UnconfiguredTradingHaltSource>>());
+    }
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk");
+    http.BaseAddress = uri;
+    return new HttpTradingHaltSource(http, sp.GetRequiredService<ILogger<HttpTradingHaltSource>>());
+});
 builder.Services.AddScoped(sp => new OrderExecutionAppService(
     sp.GetRequiredService<IBrokerAdapter>(),
     sp.GetRequiredService<IExecutedOrderStore>(),
@@ -178,7 +199,9 @@ builder.Services.AddScoped(sp => new OrderExecutionAppService(
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderExecutionAppService>(),
     sp.GetService<IBrokerPositionSource>(),
     // NFR, FR-10, #1092, IADR-0462: 決済のゲート・S1 の武装前の建玉照会の状態を台帳へ出す。
-    sp.GetRequiredService<IPositionQueryHealthReporter>()));
+    sp.GetRequiredService<IPositionQueryHealthReporter>(),
+    // 🔴 IADR-0565: 渡し忘れると照会が起きない（引数は省略可能）。T-10-2971 が Program.cs そのもので固定する。
+    sp.GetRequiredService<ITradingHaltSource>()));
 // 🔴 FR-10, FR-12, #853, IADR-0428 決定4: 突合で「発注済み」と確定したエントリーに保護レグを張る口。実体は発注執行そのもの
 // （平常の経路と同じ PlaceProtectiveStopAsync を通す）。下の突合（OrderReservationReconciler）へ渡す——渡し忘れると、
 // 引数は省略可能なのでコンパイルも単体の試験も通ったまま、突合で確定したエントリーは保護レグを持たないまま台帳へ載る
