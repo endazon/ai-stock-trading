@@ -200,9 +200,33 @@ opend:
     # 投入の流量制限（サービス全体で数える）。守っているのは moomoo の SMS 送信枠と総当たり耐性である。
     rateLimitMaxSubmissions: 5
     rateLimitWindowSeconds: 60
+    # NFR, IADR-0566: 呼び出し元（基盤の BFF）の検証に使う共有シークレット。Secret の volume としてサイドカーだけにマウントする
+    # （OpenD 本体にはマウントしない）。ファイルで渡すのは、値を回したときに OpenD の Pod を作り直さないため。
+    # 🔴 Secret が無い・値が 32 文字未満のあいだ、サイドカーの 4 本の口はすべて 503 を返す（fail-closed）。Pod の起動は止めない
+    #    （optional: true。止めると Service opend の endpoint から外れて発注経路まで止まる）。
+    #    ESO 所有（externalSecrets.enabled=true）では下記 externalSecrets.opendAuthCallerSecret が同期する。
+    #    送り手（基盤の BFF）は同じ値を env OpendAuth__CallerSecret で受ける（基盤の名前空間の Secret。基盤の側で配線する）。
+    callerSecret:
+      secretName: opend-auth-caller-secret
+      secretKey: caller-secret
+      mountPath: /var/run/opend-auth
+      defaultMode: 0440
     resources:
       requests: { cpu: 10m, memory: 32Mi }
       limits: { cpu: 200m, memory: 128Mi }
+  # NFR, IADR-0566: OpenD の Pod への到達の制限（templates/networkpolicy-opend.yaml・ingress だけ）。既定 true＝閉じる。
+  # opend.enabled=true のときだけ描く。届いてよい相手は 2 つ:
+  #   - API（apiPort）… 同じ namespace の発注執行（apiClientPodLabels）
+  #   - 認証サイドカー（authGateway.port）… 基盤の BFF（authGatewayClients。authGateway.enabled のときだけ規則を描く）
+  # 🔴 届く相手を足すときは、ここと呼び出し元の構成を同じ変更で揃える（ここだけ開けても、サイドカーは共有シークレットで拒む）。
+  networkPolicy:
+    enabled: true
+    apiClientPodLabels:
+      app: order-execution-service
+    authGatewayClients:
+      namespace: microservices-platform
+      podLabels:
+        app: bff-service
 
 # #132, IADR-0060 決定 4: 秘匿情報の External Secrets（Vault）**受け口**。既定 disabled = fail-safe。
 # ⚠️ **これは Vault 化の充足ではない**。ストア（Vault / External Secrets Operator）は #24 の管掌で本リポジトリには無く、
@@ -222,6 +246,12 @@ externalSecrets:
   moomooRsa:
     remoteKey: ai-stock-trading/moomoo-rsa
     property: opend_rsa.pem
+  # NFR, IADR-0566: 認証サイドカーの呼び出し元検証の共有シークレット。opend.enabled と opend.authGateway.enabled が
+  # どちらも true のときだけ描く。同期先は opend.authGateway.callerSecret.secretName / secretKey。
+  # 基盤の BFF も同じ Vault のキーを自分の名前空間へ同期する（両側で同じ値になる。値は Git に置かない）。
+  opendAuthCallerSecret:
+    remoteKey: ai-stock-trading/opend-auth
+    property: caller-secret
   # ADR-0006, IADR-0094 (#24): API 鍵群（Secret `ast-secrets`）の Vault 同期。既定 disabled = fail-safe
   # （現行の手動 k8s Secret 直運用を維持）。有効化には externalSecrets.enabled=true も要る。
   # ⚠️ 平文の鍵は置かない。Vault の単一 KV（remoteKey）に **Secret キー名と同名のプロパティ**で格納し

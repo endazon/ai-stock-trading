@@ -34,6 +34,17 @@ internal static class OpendAuthUpstream
     /// </summary>
     internal const string EgressStableKey = "OpendAuth:EgressStable";
 
+    /// <summary>
+    /// NFR, IADR-0566: 上流サイドカーへ呼び出し元として名乗る共有シークレット（ESO が供給する Secret から env で受ける）。
+    /// 🔴 <b>未構成なら上流を呼ばない</b>（＝「供給が無い」と宣言する）。上流は検証の無い要求を受け付けないため、
+    /// 呼んでも 401 / 503 にしかならず、利用者には「到達できない」としか見えない——未構成をそれと区別して名指す。
+    /// 値は<b>どこにも出さない</b>（ログ・応答・例外とも）。
+    /// </summary>
+    internal const string CallerSecretKey = "OpendAuth:CallerSecret";
+
+    /// <summary>共有シークレットを載せるヘッダー名（サイドカーの <c>CallerSecretFilter.HeaderName</c> と対）。</summary>
+    internal const string CallerSecretHeader = "X-Opend-Auth-Caller-Secret";
+
     // ---- 上流のパス ----
 
     internal const string StatePath = "/opend-auth/state";

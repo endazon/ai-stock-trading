@@ -1,0 +1,56 @@
+{{- /*
+  NFR, ADR-0002, IADR-0566: 常駐 OpenD の Pod への到達の制限（多層防御の 1 段。もう 1 段は認証サイドカーの共有シークレット）。
+  既定 opend.networkPolicy.enabled=true（opend.enabled=true のときだけ描く）。
+
+  - ingress だけを絞る（policyTypes: [Ingress]）。egress は絞らない —— OpenD は moomoo のサーバと DNS へ出る必要がある。
+  - API（opend.apiPort）へ届いてよいのは同じ namespace の発注執行（opend.networkPolicy.apiClientPodLabels）だけ。
+  - 認証サイドカー（opend.authGateway.port）へ届いてよいのは基盤の BFF（opend.networkPolicy.authGatewayClients）だけ。
+    authGateway が無効なら、その口の規則は描かない（＝どこからも届かない）。
+  - 既定拒否の外にあるもの（描かなくても落ちない）:
+      readinessProbe（tcpSocket）… kubelet がノードから打つ。k3s の組み込みの NetworkPolicy 制御はノード発の通信を通す。
+      kubectl attach / exec / port-forward … API サーバ → kubelet → コンテナランタイムの経路で、Pod 網を通らない。
+      Prometheus の scrape … OpenD とサイドカーは scrape の対象ではない（chart は scrape の注釈を描かない）。
+      ingress（エッジ）… OpenD は Ingress・NodePort を持たない。
+  🔴 NetworkPolicy を強制しない CNI では無害な宣言として残るだけである。そのとき呼び出し元を絞るのは共有シークレットの 1 段になる。
+*/ -}}
+{{- if and .Values.opend.enabled .Values.opend.networkPolicy.enabled }}
+{{- $o := .Values.opend }}
+{{- $np := $o.networkPolicy }}
+{{- if not $np.apiClientPodLabels }}
+{{- fail "opend.networkPolicy.enabled=true には opend.networkPolicy.apiClientPodLabels（OpenD の API へ届いてよい Pod のラベル。既定は発注執行）が要ります。空だと誰も OpenD へ届かず発注経路が止まります。" }}
+{{- end }}
+{{- if and $o.authGateway.enabled (or (not $np.authGatewayClients.namespace) (not $np.authGatewayClients.podLabels)) }}
+{{- fail "opend.authGateway.enabled=true かつ opend.networkPolicy.enabled=true には opend.networkPolicy.authGatewayClients.namespace と podLabels（認証サイドカーへ届いてよい BFF）が要ります。" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: opend-ingress
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: opend
+    app.kubernetes.io/part-of: ai-stock-trading
+spec:
+  podSelector:
+    matchLabels: { app: opend }
+  policyTypes: [Ingress]
+  ingress:
+    # OpenD の API（TCP）。発注執行だけ。
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml $np.apiClientPodLabels | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: {{ $o.apiPort }} }
+    {{- if $o.authGateway.enabled }}
+    # 認証サイドカー（HTTP）。基盤の BFF だけ（namespace と Pod の両方で絞る＝同じ 1 要素の中に並べる）。
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ $np.authGatewayClients.namespace | quote }} }
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.authGatewayClients.podLabels | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: {{ $o.authGateway.port }} }
+    {{- end }}
+{{- end }}
