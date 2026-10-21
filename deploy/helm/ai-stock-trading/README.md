@@ -25,6 +25,22 @@ scripts/k8s-local-deploy.sh              # build（Rancher=nerdctl/k3d=docker+im
 kubectl -n ai-stock-trading get pods
 ```
 
+### 機密クライアントの secret が開発用の値なら止まる（[IADR-0098](../../../.ai-context/adr/IADR-0098_owner-realm-client.md) 2026-10-22 追記）
+
+`scripts/k8s-local-deploy.sh` は、イメージを作る前（`[0/5]`）に AST の機密クライアント 5 件
+（svc・owner・kb-writer・kb-reader・llm-caller。`ast-secrets` の `*-client-secret`）が**開発用の値（リポジトリに公開されている値）でない**ことを確かめ、
+1 件でも開発用の値なら**止まる**（fail-closed）。確かめられない（ESO 所有で `ast-secrets` がまだ無い・読めない）ときも止まる。
+
+| 経路 | 見る値 |
+| --- | --- |
+| ESO 所有（既定） | 稼働中の `ast-secrets`（Vault から同期された値）。env は見ない |
+| 従来経路（`AST_ESO=0`） | 書き込む予定の値（env の明示 → 既存の値 → 既定値。`sync_ast_secrets` と同じ順） |
+
+- 対処: 開発用でない値を入れる（ESO 所有なら基盤の画面、従来経路なら env）。**認証基盤（Keycloak）の側も同じ値にする**（片側だけ変えると `invalid_client`）。
+- 使い捨ての dev のクラスタで開発用の値のまま動かすときだけ、明示の opt-in で通す（大きく警告する）:
+  `scripts/k8s-local-deploy.sh --allow-dev-client-secrets` か `ALLOW_DEV_CLIENT_SECRETS=1 scripts/k8s-local-deploy.sh`（`1` だけ。`true` 等は opt-in ではない）。
+- 値は表示しない。比べるのは base64 の表現どうしで、復号もしない。空（未設定）は開発用の値とみなさない（その s2s を使わないだけ）。
+
 ### 変わったサービスだけを作り直す（#1094 / [IADR-0457](../../../.ai-context/adr/IADR-0457_deploy-changed-services-selection.md)）
 
 既定の `scripts/k8s-local-deploy.sh` は 12 イメージ（Worker 11 本と opend-auth-gateway）を**すべて**作り直す（最大約 30 分）。
@@ -848,7 +864,7 @@ kubectl -n ai-stock-trading cp "$(kubectl -n ai-stock-trading get pod -l app=tra
 | `FINNHUB_API_KEY` | `finnhub-api-key` | information-collection | 空=NoOp（#81） |
 | `DISCORD_WEBHOOK_URL` | `discord-webhook-url` | notification | 空=NoOp（#15） |
 | `DISCORD_OWNERAUTH_CLIENTID` | `discord-owner-auth-client-id` | notification・report・risk-management・market-monitor・audit・configuration・cost-control | dev 既定 `ai-stock-trading-owner`（Bot 制御コマンドの OwnerAuth・#226 / IADR-0098）。**report も同じ鍵を `Reports__DelegatedActor__TrustedClientIds` として読む**（#774 / IADR-0240 決定11: Bot が確定要求で運ぶ「代理される利用者」を信じてよいクライアント。空=誰も信じない）。risk-management は `RiskControls__DelegatedActor__TrustedClientIds`（#868）、market-monitor は `Monitor__DelegatedActor__TrustedClientIds`（#1025 / IADR-0433: `/policy` の入れ替え案の適用の変更者）として同じ鍵を読む。gRPC 面を持つ 6 サービス（audit・configuration・cost-control・market-monitor・report・risk-management）は `Auth__GrpcOwnerClients__0` として読む（#1067 / IADR-0448: gRPC 面の所有者の門が許す呼び出し元のクライアント。鍵が無ければコード既定 `ai-stock-trading-owner`・空なら誰の所有者トークンも gRPC 面を通さない・1 つの値〔`Auth__GrpcOwnerClients`〕は起動時に例外） |
-| `DISCORD_OWNERAUTH_CLIENTSECRET` | `discord-owner-auth-client-secret` | notification | dev 既定 `dev-only-owner-secret`（realm-export.json と一致・本番は Secret/Vault） |
+| `DISCORD_OWNERAUTH_CLIENTSECRET` | `discord-owner-auth-client-secret` | notification | dev 既定（realm-export.json と一致・本番は Secret/Vault）。🔴 **開発用の値のままなら起動器が止まる**（下記「機密クライアントの secret が開発用の値なら止まる」） |
 | （chart 値）`Notifications__Discord__OwnerAuth__TokenEndpoint` | — | notification | AST レルム token エンドポイント（#226。空だと IsEnabled=false→401） |
 | （chart 値）`Broker__Provider` / `Broker__Environment` | — | order-execution | `paper`（実発注しない・#13。`broker.tier` で切替・IADR-0111） |
 | （chart 値）`LlmGateway__BaseUrl` | — | trade-decision | 空=Placeholder LLM（呼ばない＝常に Hold・#11） |

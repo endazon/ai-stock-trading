@@ -41,6 +41,8 @@ owner クライアントの dev secret は `dev-only-owner-secret`（`scripts/k8
 > （`docker compose rm -sfv keycloak` → `docker compose up -d keycloak` で `--import-realm` を再実行）。
 > k8s-local（MSP 連結・realm を ConfigMap で配る構成）は **ConfigMap 再作成 → keycloak Pod restart**（`kubectl rollout
 > restart`）後、`scripts/k8s-local-deploy.sh` を再実行して ast-secrets（owner-auth dev 既定）を更新する。
+> 🔴 起動器は機密クライアントの secret が開発用の値なら止まる（IADR-0098 2026-10-22 追記）。使い捨ての dev で開発用の値のまま
+> 動かすときだけ `--allow-dev-client-secrets`（または `ALLOW_DEV_CLIENT_SECRETS=1`）を付ける。
 
 ## otel/otel-collector-config.yaml
 
