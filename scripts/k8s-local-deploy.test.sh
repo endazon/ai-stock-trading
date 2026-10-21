@@ -59,7 +59,7 @@ case "${1:-} ${2:-}" in
     for a in "$@"; do
       case "$a" in
         # GHSA-pcf9: 1 キーの値（base64 のまま）。$S/data-<key> が無ければ空。
-        go-template={{index\ .data*)
+        go-template={{with\ index\ .data*)
           k="${a#*\"}"; k="${k%%\"*}"
           [ -f "$S/data-$k" ] && cat "$S/data-$k"
           exit 0 ;;
@@ -1173,6 +1173,16 @@ assert_contains 'T-pcf9-05 既存の開発用の値: llm-caller を名指す' "$
 given_data llm-auth-client-secret "$NONDEV"
 run_guard
 assert_eq 'T-pcf9-05 既存が開発用でない: 0' "$RC" "0"
+
+# T-pcf9-05b: 従来経路・Secret は在るがキーが無い（env なし）→ sync_ast_secrets は既定値（svc は開発用の値）を書くので止まる
+given_guard present
+given_data discord-owner-auth-client-secret "$NONDEV"
+run_guard
+assert_eq       'T-pcf9-05b キーなし・env なし: 非 0' "$RC" "1"
+assert_contains 'T-pcf9-05b キーなし・env なし: svc を名指す' "$ERR" 'service-auth-client-secret'
+assert_missing  'T-pcf9-05b キーなし・env なし: 値のある owner は名指さない' "$ERR" 'discord-owner-auth-client-secret'
+# 起動器が出す問い合わせは「キーが無ければ空」の形である（`index` 単独は `<no value>` を出し、すり抜ける）。
+assert_contains 'T-pcf9-05b 問い合わせ: with で包む' "$(declare -f ast_secret_data_b64)" '{{with index .data'
 
 # T-pcf9-06: ESO 所有・Secret が無い → 確かめられないので止まる（env は見ない）
 given_guard absent

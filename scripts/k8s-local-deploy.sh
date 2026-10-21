@@ -487,9 +487,10 @@ ast_dev_client_secret_value() {
   printf '%s-dev-secret-change-me' "$(ast_secret_key_field "$id_key" 3)"
 }
 
-# 稼働中の ast-secrets のキーの値を base64 のまま返す（復号しない）。Secret が読めなければ非 0。
+# 稼働中の ast-secrets のキーの値を base64 のまま返す（復号しない）。キーが無ければ空（`index` 単独だと `<no value>` を
+# 出すため `with` で包む）。Secret が読めなければ非 0。
 ast_secret_data_b64() {
-  kubectl get secret "$SECRET_NAME" -n "$NS" -o "go-template={{index .data \"$1\"}}" 2>/dev/null
+  kubectl get secret "$SECRET_NAME" -n "$NS" -o "go-template={{with index .data \"$1\"}}{{.}}{{end}}" 2>/dev/null
 }
 
 # ast_dev_client_secret_guard —— 1 件でも開発用の値・確かめられない値があれば、opt-in が無い限り 1 を返す。
