@@ -301,7 +301,7 @@ public class SessionAndThemeControlsTests(RiskWorkerWebApplicationFactory factor
                 "定時判断", at),
             TestContext.Current.CancellationToken);
 
-    // T-10-2950: 審査は保存値で締め切りを判定する（構成 60 分のままでも、保存した 90 分が効く）。保存値を消せば（null）構成の値へ戻る。
+    // T-10-2950: 審査は保存値で締め切りを判定する（構成 60 分のままでも、保存した 90 分が効く。再起動は要らない）。
     [Fact]
     public async Task T_10_2950_審査は保存した締め切りで判定する()
     {

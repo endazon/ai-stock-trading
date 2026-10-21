@@ -8,7 +8,7 @@ namespace RiskManagementService.Features.RiskManagement.GetSizingContext;
 //
 // 🔴 SC-02, #1407, IADR-0564 決定 1・2: 閉場前の手仕舞いの**効いている値**（保存値があれば保存値・無ければ構成の値）も載せる。
 // 手仕舞いを出す常駐（取引判断）はこの値で有効・無効と M を決める。configuredControls の省略は単体試験の直接組み立て用であり（既定＝無効・15 分）、
-// 本番の配線で構成の値が渡ることは SessionAndThemeControlsWiringTests が固定する。
+// 本番の配線で構成の値が渡ることは SessionAndThemeControlsTests（T-10-2952）が固定する。
 public sealed class SizingContextService(
     PortfolioSnapshotBuilder snapshotBuilder,
     IRiskSettingsStore settingsStore,
