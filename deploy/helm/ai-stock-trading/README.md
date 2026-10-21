@@ -1013,6 +1013,10 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 > やり直しになる恐れ**がある。実 OpenD でしか確かめられず、**#132 の実測フェーズで未検証**。切替時は既存 PVC の
 > `.com.moomoo.OpenD` を新 HOME へ移すか、再検証を覚悟すること。
 >
+> ⚠️ 認証サイドカー（`opend.authGateway.enabled=true`）の共有シークレットも同じく**グループ読み（0440）**で、非 root では
+> 上の `fsGroup` が要る（サイドカーは OpenD 本体と同じ uid で動く）。読めないとサイドカーは口を閉じたまま（503）になり、
+> ログに `理由=unreadable` が出る（値は出ない）。
+>
 > ⚠️ `rsaSecretDefaultMode` は **k8s のファイルモード（8 進を 10 進で表す整数）**。values ファイルでは `0400` / `0440`
 > と 8 進で書ける（YAML が解釈する）が、`--set` では **10 進**（`256` / `288`）で渡すこと。非 root では Secret の所有 uid が
 > root のままなので、`fsGroup` を付けたうえで**グループ読み（0440）**が要る。

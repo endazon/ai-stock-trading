@@ -73,6 +73,8 @@ related_specs:
   - シークレットが読めない・空・32 文字未満 → **503 `caller_auth_not_configured`**（fail-closed。未構成を「通す」に倒さない）。
   - ヘッダー `X-Opend-Auth-Caller-Secret` が無い・一致しない → **401 `unauthorized`**（どちらかは返さない）。
   - 比較は SHA-256 の要約どうしを `CryptographicOperations.FixedTimeEquals` で行う。値はログ・応答に出さない。
+  - 503 のときはログに理由だけを残す（`not_set` / `missing` / `unreadable` / `too_short`。`unreadable` は多くの場合、非 root 化で `fsGroup` が無い）。
+  - 値の正規化は送り手と同じ（前後の空白・改行を落とす。HTTP のヘッダーは前後の空白を運ばない）。
 - シークレットは **Secret の volume からファイルで読み、要求ごとに読み直す**（`OpendAuth:CallerSecretFile`）。kubelet が volume を差し替えるので、
   値を回しても OpenD の Pod を作り直さない。
 - volume は **サイドカーだけ**がマウントし（OpenD 本体は見ない）、`optional: true` にする。Secret が無いあいだも Pod は起動し、サイドカーが口を閉じるだけで
@@ -83,7 +85,8 @@ related_specs:
 
 - `OpendAuthUpstream.CallerSecretKey`＝構成キー `OpendAuth:CallerSecret`（env `OpendAuth__CallerSecret`）。上流への**全要求**を 1 つの補助（`UpstreamRequest`）で作り、ヘッダーを載せる。
 - **未構成なら上流を呼ばない。** 状態は「供給が無い（接続資格が構成されていません）」と宣言し、画像は 404、投入・再送は 503 にする。
-  上流の 401 / 503 は既存の写像どおり「到達できない」側へ倒す（上流の本文は透過しない）。
+  上流の 401 / 503 は既存の写像どおり「到達できない」側へ倒す（上流の本文は透過しない）。上流が 401 を返したときは
+  警告を 1 行残す（値は出さない）—— 画面には「到達できない」としか出ないため、両側の値の食い違いをログで追えるようにする。
 
 ### 決定 4: 供給（ESO）
 

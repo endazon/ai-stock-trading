@@ -161,10 +161,31 @@ public class CallerSecretFilterTests : IDisposable
     }
 
     [Fact]
-    public void ファイルのパスが空なら未構成()
+    public void 使えないシークレットは理由つきで未構成になる()
     {
-        CallerSecretFilter.ReadSecret("").Should().BeNull();
-        CallerSecretFilter.ReadSecret(null).Should().BeNull();
-        CallerSecretFilter.ReadSecret(Path.Combine(Path.GetTempPath(), "does-not-exist-" + Guid.NewGuid())).Should().BeNull();
+        CallerSecretFilter.ReadSecret("", out var r1).Should().BeNull();
+        r1.Should().Be("not_set");
+        CallerSecretFilter.ReadSecret(null, out var r2).Should().BeNull();
+        r2.Should().Be("not_set");
+        CallerSecretFilter.ReadSecret(Path.Combine(Path.GetTempPath(), "does-not-exist-" + Guid.NewGuid()), out var r3).Should().BeNull();
+        r3.Should().Be("missing");
+
+        var shortFile = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(shortFile, "short\n");
+            CallerSecretFilter.ReadSecret(shortFile, out var r4).Should().BeNull();
+            r4.Should().Be("too_short");
+
+            // 前後の空白・改行を落とす（HTTP のヘッダーは前後の空白を運ばない。送り手の BFF と同じ正規化）。
+            var spaced = " " + OpendAuthWebApplicationFactory.CallerSecret + " \r\n";
+            File.WriteAllText(shortFile, spaced);
+            CallerSecretFilter.ReadSecret(shortFile, out var r5).Should().Be(OpendAuthWebApplicationFactory.CallerSecret);
+            r5.Should().Be("ok");
+        }
+        finally
+        {
+            File.Delete(shortFile);
+        }
     }
 }

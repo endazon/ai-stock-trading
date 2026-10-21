@@ -452,6 +452,21 @@ public class OpendAuthBffTests
         (await state.Content.ReadAsStringAsync()).Should().NotContain(OpendAuthTestHost.CallerSecret);
         (await code.Content.ReadAsStringAsync()).Should().NotContain(OpendAuthTestHost.CallerSecret);
         host.Logs.Should().NotContain(l => l.Contains(OpendAuthTestHost.CallerSecret, StringComparison.Ordinal));
+        // 上流の 401 は配備の順序の誤りの手掛かりなので、警告を 1 行残す（値は出さない）。
+        host.Logs.Should().Contain(l => l.Contains("Warning", StringComparison.Ordinal) && l.Contains("401", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task 前後の空白と改行を落として載せる()
+    {
+        // サイドカー（CallerSecretFilter.ReadSecret）と同じ正規化。片側だけ落とすと一致しなくなる。
+        await using var host = await OpendAuthTestHost.StartAsync(callerSecret: " " + OpendAuthTestHost.CallerSecret + "\r\n");
+        host.Upstream.State = Waiting("phone");
+
+        (await host.SendAsync("GET", "/bff/opend-auth/state", roles: OpendAuthTestHost.OwnerRole)).EnsureSuccessStatusCode();
+
+        host.Upstream.Requests.Should().ContainSingle()
+            .Which.CallerSecret.Should().Be(OpendAuthTestHost.CallerSecret);
     }
 
     private static string Waiting(string prompt) =>

@@ -42,10 +42,12 @@ public sealed class CallerSecretFilter(IOptions<OpendAuthOptions> options, ILogg
     /// <inheritdoc />
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
-        var expected = ReadSecret(options.Value.CallerSecretFile);
+        var expected = ReadSecret(options.Value.CallerSecretFile, out var reason);
         if (expected is null)
         {
-            logger.LogWarning("opend-auth: 呼び出し元の検証に使うシークレットが構成されていないため、要求を受け付けない。何も書いていない。");
+            // 理由（未指定・ファイルが無い・読めない〔権限〕・短すぎる）だけを残す。値は出さない。
+            logger.LogWarning(
+                "opend-auth: 呼び出し元の検証に使うシークレットを使えないため、要求を受け付けない（理由={Reason}）。何も書いていない。", reason);
             return Results.Json(new OpendAuthError("caller_auth_not_configured"), statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
@@ -61,23 +63,43 @@ public sealed class CallerSecretFilter(IOptions<OpendAuthOptions> options, ILogg
 
     /// <summary>
     /// シークレットを読む。読めない・空・<see cref="MinimumSecretLength"/> 未満なら <c>null</c>（＝未構成）。
-    /// 末尾の改行は落とす（<c>kubectl create secret --from-file</c> で入りやすい）。
+    /// 前後の空白・改行を落とす（<c>kubectl create secret --from-file</c> で末尾の改行が入りやすい。HTTP のヘッダーも
+    /// 値の前後の空白を運ばないので、送り手の BFF も同じ正規化にそろえる）。
+    /// <paramref name="reason"/> は <c>null</c> のときの理由（<c>not_set</c> / <c>missing</c> / <c>unreadable</c> / <c>too_short</c>）。
+    /// <c>unreadable</c> は多くの場合ファイルの権限である（非 root 化したのに <c>fsGroup</c> が無い等）。
     /// </summary>
-    public static string? ReadSecret(string? path)
+    public static string? ReadSecret(string? path, out string reason)
     {
-        if (string.IsNullOrWhiteSpace(path)) return null;
+        reason = "ok";
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            reason = "not_set";
+            return null;
+        }
+
         string raw;
         try
         {
             raw = File.ReadAllText(path);
         }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            reason = "missing";
+            return null;
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            reason = "unreadable";
             return null;
         }
 
-        var value = raw.TrimEnd('\r', '\n');
-        return value.Length >= MinimumSecretLength ? value : null;
+        var value = raw.Trim();
+        if (value.Length < MinimumSecretLength)
+        {
+            reason = "too_short";
+            return null;
+        }
+        return value;
     }
 
     /// <summary>一定時間で比べる。空の提示は常に不一致。</summary>

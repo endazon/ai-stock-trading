@@ -1381,6 +1381,7 @@ jobs:
             | awk '/^kind: Service/{f=1} f' | sed -n 's/.*port: \([0-9]*\), targetPort.*/\1/p' | sort -u)"
           np_ports="$(grep -oE 'port: [0-9]+ }' <<<"$all" | grep -oE '[0-9]+' | sort -u)"
           [ -n "$svc_ports" ] || fail "Service opend のポートを読めない（検査の空振り）"
+          [ -n "$np_ports" ] || fail "NetworkPolicy のポートを読めない（検査の空振り。規則の書式を変えたらここの抽出も直す）"
           [ "$svc_ports" = "$np_ports" ] || fail "Service opend のポート（$(echo $svc_ports)）と NetworkPolicy のポート（$(echo $np_ports)）が一致しない"
           # 無効化は明示の値でだけ（既定は閉じる）。
           if helm template ast "$CHART" --set opend.enabled=true --set opend.networkPolicy.enabled=false | grep -q '^kind: NetworkPolicy'; then
