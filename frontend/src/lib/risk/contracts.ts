@@ -1108,3 +1108,175 @@ export function highVolatilityLoosenings(
   }
   return loosenings;
 }
+
+// ---- 🔴 FR-10, FR-19, SC-02, UC-06, ADR-0070 決定 5, ADR-0071 決定 2・5, #1407, IADR-0564: 閉場前の統制とテーマの定義（画面側の即時提示） ----
+//
+// **実効はサーバ側（`SessionAndThemeControlValidation`・`PreCloseFlattenSettings.Violations`）である。** 値域はサーバの応答
+// （`cutoffMaxMinutes`・`flattenMaxMinutes`）から受け取り、画面に定数を二重に持たない。
+
+/** 分（N または M）の入力を検証する。空欄・整数でない・値域外は文言、妥当なら null。 */
+export function validateMinutesInput(text: string, label: string, max: number): string | null {
+  if (text.trim() === '') return `${label} を入力してください。`;
+  if (!/^\d+$/.test(text.trim())) return `${label} は整数（分）で入力してください。`;
+  const minutes = Number(text.trim());
+  if (minutes < 1 || minutes > max) return `${label} は 1〜${max} 分で入力してください。`;
+  return null;
+}
+
+/** 市場ごとの分の一覧から、その市場の値（無ければ null）。 */
+export function minutesOf(rows: readonly MarketMinutesView[], market: number): number | null {
+  return rows.find((r) => r.market === market)?.minutes ?? null;
+}
+
+/** 閉場前の統制の下書き（市場 → 分の文字列、有効・無効）。 */
+export interface PreCloseDraft {
+  cutoff: Record<number, string>;
+  flattenEnabled: boolean;
+  flatten: Record<number, string>;
+}
+
+/**
+ * 効いている値に対して統制を**緩める**変更を列挙する（締め切り N を縮める・手仕舞いを無効にする・M を縮める）。空なら緩める変更なし。
+ * 🔴 手仕舞いの M を縮めると手仕舞いの開始が閉場に近づく（持ち越しの危険が増える）ため緩める側に数える。
+ */
+export function preCloseLoosenings(view: PreCloseControlsView, draft: PreCloseDraft): string[] {
+  const loosenings: string[] = [];
+  for (const row of view.effectiveCutoff.minutes) {
+    const next = Number(draft.cutoff[row.market]);
+    if (Number.isFinite(next) && next < row.minutes) {
+      loosenings.push(`${marketLabel(row.market)}の締め切り N を ${row.minutes} 分から ${next} 分へ縮める`);
+    }
+  }
+  if (view.effectiveFlatten.enabled && !draft.flattenEnabled) {
+    loosenings.push('閉場前の手仕舞いを無効にする');
+  }
+  if (draft.flattenEnabled) {
+    for (const row of view.effectiveFlatten.minutes) {
+      const next = Number(draft.flatten[row.market]);
+      if (Number.isFinite(next) && next < row.minutes) {
+        loosenings.push(`${marketLabel(row.market)}の手仕舞いの M を ${row.minutes} 分から ${next} 分へ縮める`);
+      }
+    }
+  }
+  return loosenings;
+}
+
+/** テーマの名前の照合キー（前後の空白を落とす。サーバの正規化と同じ）。 */
+function themeNameKey(name: string): string {
+  return name.trim();
+}
+
+/** テーマの定義の下書きの検証（サーバの値域と同じ。ADR-0071 決定 2）。妥当なら空の一覧。 */
+export function themeDraftErrors(themes: readonly ThemeView[]): string[] {
+  const errors: string[] = [];
+  const names = new Set<string>();
+  themes.forEach((t, i) => {
+    const name = themeNameKey(t.name);
+    const label = name === '' ? `${i + 1} 番目のテーマ` : `テーマ「${name}」`;
+    if (name === '') errors.push(`${label}の名前を入力してください。`);
+    else if (names.has(name)) errors.push(`${label}の名前が重複しています。`);
+    names.add(name);
+    if (t.symbols.length === 0) errors.push(`${label}に銘柄を 1 つ以上追加してください。`);
+    if (!Number.isInteger(t.maxPositions) || t.maxPositions < 1) errors.push(`${label}の上限は 1 以上の整数で入力してください。`);
+  });
+  return errors;
+}
+
+/**
+ * 効いている定義に対して統制を**緩める**変更を列挙する（テーマを外す・銘柄を外す・上限を上げる・市場を変える）。空なら緩める変更なし。
+ * テーマは名前で突き合わせる（名前を変えたテーマは「外して足した」として数える）。
+ */
+export function themeLoosenings(current: readonly ThemeView[], next: readonly ThemeView[]): string[] {
+  const loosenings: string[] = [];
+  const nextByName = new Map(next.map((t) => [themeNameKey(t.name), t]));
+  for (const theme of current) {
+    const name = themeNameKey(theme.name);
+    const target = nextByName.get(name);
+    if (target === undefined) {
+      loosenings.push(`テーマ「${name}」を外す`);
+      continue;
+    }
+    if (target.market !== theme.market) {
+      loosenings.push(`テーマ「${name}」の市場を${marketLabel(theme.market)}から${marketLabel(target.market)}へ変える`);
+    }
+    const remaining = new Set(target.symbols.map(normalizeDesignatedSymbol));
+    const removed = theme.symbols.filter((s) => !remaining.has(normalizeDesignatedSymbol(s)));
+    if (removed.length > 0) loosenings.push(`テーマ「${name}」から銘柄を外す（${removed.join('、')}）`);
+    if (target.maxPositions > theme.maxPositions) {
+      loosenings.push(`テーマ「${name}」の上限を ${theme.maxPositions} から ${target.maxPositions} へ上げる`);
+    }
+  }
+  return loosenings;
+}
+
+/** 2 つのテーマの定義が値の上で同じか（名前・市場・上限・銘柄の集合。並び順は比べない。サーバの比較と同じ）。 */
+export function sameThemes(a: readonly ThemeView[], b: readonly ThemeView[]): boolean {
+  const key = (t: ThemeView) =>
+    `${themeNameKey(t.name)}|${t.market}|${t.maxPositions}|${[...new Set(t.symbols.map(normalizeDesignatedSymbol))].sort().join(',')}`;
+  if (a.length !== b.length) return false;
+  const left = a.map(key).sort();
+  const right = b.map(key).sort();
+  return left.every((k, i) => k === right[i]);
+}
+
+function isMinutesRows(value: unknown): value is MarketMinutesView[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (r) => typeof r === 'object' && r !== null && typeof (r as MarketMinutesView).market === 'number' && typeof (r as MarketMinutesView).minutes === 'number',
+    )
+  );
+}
+
+/** `GET /risk-controls/settings/pre-close` の応答の形か（想定外の形を既定値で埋めて描かないための検査）。 */
+export function isPreCloseControlsView(value: unknown): value is PreCloseControlsView {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Partial<PreCloseControlsView>;
+  const flattenOk = (f: unknown) =>
+    typeof f === 'object' && f !== null && typeof (f as PreCloseFlattenValues).enabled === 'boolean' && isMinutesRows((f as PreCloseFlattenValues).minutes);
+  const cutoffOk = (c: unknown) => typeof c === 'object' && c !== null && isMinutesRows((c as PreCloseEntryCutoffValues).minutes);
+  return (
+    cutoffOk(v.effectiveCutoff) &&
+    cutoffOk(v.configuredCutoff) &&
+    (v.savedCutoff === null || cutoffOk(v.savedCutoff)) &&
+    flattenOk(v.effectiveFlatten) &&
+    flattenOk(v.configuredFlatten) &&
+    (v.savedFlatten === null || flattenOk(v.savedFlatten)) &&
+    typeof v.cutoffSource === 'number' &&
+    typeof v.flattenSource === 'number' &&
+    typeof v.cutoffDrift === 'boolean' &&
+    typeof v.flattenDrift === 'boolean' &&
+    isMinutesRows(v.cutoffMaxMinutes) &&
+    typeof v.flattenMaxMinutes === 'number'
+  );
+}
+
+function isThemeRows(value: unknown): value is ThemeView[] {
+  return (
+    Array.isArray(value) &&
+    value.every((t) => {
+      if (typeof t !== 'object' || t === null) return false;
+      const theme = t as ThemeView;
+      return (
+        typeof theme.name === 'string' &&
+        typeof theme.market === 'number' &&
+        typeof theme.maxPositions === 'number' &&
+        Array.isArray(theme.symbols) &&
+        theme.symbols.every((s) => typeof s === 'string')
+      );
+    })
+  );
+}
+
+/** `GET /risk-controls/settings/theme-concentration` の応答の形か。 */
+export function isThemeConcentrationControlView(value: unknown): value is ThemeConcentrationControlView {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Partial<ThemeConcentrationControlView>;
+  return (
+    isThemeRows(v.effective) &&
+    isThemeRows(v.configured) &&
+    (v.saved === null || isThemeRows(v.saved)) &&
+    typeof v.source === 'number' &&
+    typeof v.drift === 'boolean'
+  );
+}

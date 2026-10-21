@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@foundation/api/apiClient';
 import type {
+  PreCloseControlsView,
   RiskManagementSettings,
   RiskStatusView,
   SettingsChangeEntry,
   ShortSellingStatusView,
   StageGateStatus,
+  ThemeConcentrationControlView,
 } from './contracts';
+import { isPreCloseControlsView, isThemeConcentrationControlView } from './contracts';
 
 // SC-02, SC-03, FR-10, FR-13, FR-19, FR-20, IADR-0288: RiskManagementService（BFF `/bff/risk-controls/*`）の
 // サーバー状態。
@@ -164,4 +167,50 @@ export function useSaveHighVolatility() {
     designatedSymbols: { symbol: string; market: number }[];
     reason: string;
   }>('/risk-controls/settings/high-volatility');
+}
+
+/**
+ * 🔴 FR-10, FR-19, SC-02, ADR-0070 決定 5, #1407, IADR-0564 決定 3: 閉場前の統制（締め切り N・手仕舞いの有効と M）の
+ * 効いている値・構成の値・保存値・食い違い。キーは `settings` の配下（設定の保存で一緒に無効化される）。
+ */
+export function usePreCloseControls() {
+  return useQuery({
+    queryKey: [...riskQueryKeys.settings, 'pre-close'] as const,
+    queryFn: async () => {
+      const data = await apiFetch<PreCloseControlsView>('/risk-controls/settings/pre-close');
+      // 🔴 想定外の形（旧い後段・BFF 未結線の別応答）を既定値で埋めて描かない。失敗として扱い、区画は「取得できません」に縮退する。
+      if (!isPreCloseControlsView(data)) throw new TypeError('閉場前の統制の応答の形が想定と違います。');
+      return data;
+    },
+  });
+}
+
+/** 🔴 FR-10, FR-19, SC-02, ADR-0071 決定 5, #1407, IADR-0564 決定 3: テーマの定義の効いている値・構成の値・保存値・食い違い。 */
+export function useThemeConcentration() {
+  return useQuery({
+    queryKey: [...riskQueryKeys.settings, 'theme-concentration'] as const,
+    queryFn: async () => {
+      const data = await apiFetch<ThemeConcentrationControlView>('/risk-controls/settings/theme-concentration');
+      if (!isThemeConcentrationControlView(data)) throw new TypeError('テーマの定義の応答の形が想定と違います。');
+      return data;
+    },
+  });
+}
+
+/** 閉場前の統制の保存（締め切り・手仕舞いを一度に置き換える。利用者のみ・理由必須・値域外は 400）。 */
+export function useSavePreCloseControls() {
+  return useRiskSettingsMutation<{
+    cutoffMinutes: { market: number; minutes: number }[];
+    flattenEnabled: boolean;
+    flattenMinutes: { market: number; minutes: number }[];
+    reason: string;
+  }>('/risk-controls/settings/pre-close');
+}
+
+/** テーマの定義の保存（定義の全体を置き換える。利用者のみ・理由必須・値域外は 400）。 */
+export function useSaveThemeConcentration() {
+  return useRiskSettingsMutation<{
+    themes: { name: string; market: number; symbols: string[]; maxPositions: number }[];
+    reason: string;
+  }>('/risk-controls/settings/theme-concentration');
 }

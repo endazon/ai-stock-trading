@@ -85,6 +85,25 @@ public static class RiskControlsBffEndpoints
             ProxyAsync(httpFactory, http, HttpMethod.Put, "/risk-controls/settings/high-volatility", ct))
             .WithName("BffRiskControlsSettingsHighVolatilityPut");
 
+        // AST #1407, FR-10, FR-19, SC-02, UC-06, AST/ADR-0070 決定 5, AST/ADR-0071 決定 5, AST/IADR-0564:
+        // 閉場前の統制（締め切り N・手仕舞いの有効と M）とテーマの定義の表示（効いている値・構成の値・保存値・食い違い）と保存。SC-02 だけが持つ操作である。
+        // **利用者のみ・理由必須・値域外は 400・履歴は後段が実効する**（BFF は素通し。統制を BFF へ持たせない）。
+        g.MapGet("/settings/pre-close", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
+            ProxyAsync(httpFactory, http, HttpMethod.Get, "/risk-controls/settings/pre-close", ct))
+            .WithName("BffRiskControlsSettingsPreCloseGet");
+
+        g.MapPut("/settings/pre-close", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
+            ProxyAsync(httpFactory, http, HttpMethod.Put, "/risk-controls/settings/pre-close", ct))
+            .WithName("BffRiskControlsSettingsPreClosePut");
+
+        g.MapGet("/settings/theme-concentration", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
+            ProxyAsync(httpFactory, http, HttpMethod.Get, "/risk-controls/settings/theme-concentration", ct))
+            .WithName("BffRiskControlsSettingsThemeConcentrationGet");
+
+        g.MapPut("/settings/theme-concentration", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
+            ProxyAsync(httpFactory, http, HttpMethod.Put, "/risk-controls/settings/theme-concentration", ct))
+            .WithName("BffRiskControlsSettingsThemeConcentrationPut");
+
         // SC-03 統制状態参照（表示専用）: 稼働状態の集約・段階ゲートの現況。いずれも後段 OwnerOnly。
         g.MapGet("/status", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
             ProxyAsync(httpFactory, http, HttpMethod.Get, "/risk-controls/status", ct))

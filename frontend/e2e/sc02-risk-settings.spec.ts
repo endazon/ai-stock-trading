@@ -5,7 +5,9 @@ import {
   installBff,
   pathWithRoles,
   MONITOR_SETTINGS,
+  PRE_CLOSE_CONTROLS,
   RISK_SETTINGS,
+  THEME_CONCENTRATION,
   WATCHLIST,
 } from './fixtures';
 
@@ -543,5 +545,52 @@ test.describe('SC-02 高ボラティリティ銘柄（#1291）', () => {
       designatedSymbols: [{ symbol: 'AAPL', market: 1 }],
       reason: '値動きの大きい銘柄を区分に入れる',
     });
+  });
+});
+
+// T-10-2964, SC-02, FR-10, FR-19, UC-06, ADR-0070 決定 5, ADR-0071 決定 5, #1407, IADR-0564 決定 6: 閉場前の統制とテーマの定義。
+// 実ブラウザで「保存値が構成と食い違うことを示す → 値を変えて保存すると BFF の `/bff/risk-controls/settings/pre-close` を叩く」を固定する（BFF の経路の追認）。
+test.describe('SC-02 閉場前の統制とテーマの上限（#1407）', () => {
+  test('食い違いを示し、閉場前の統制を保存する。テーマの定義も表示する', async ({ page }) => {
+    let putPath: string | null = null;
+    let putBody: unknown = null;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /risk-controls/settings/pre-close': (route) => {
+        putPath = new URL(route.request().url()).pathname;
+        putBody = route.request().postDataJSON();
+        return { status: 200, body: PRE_CLOSE_CONTROLS };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = page.getByRole('form', { name: '閉場前の統制の変更' });
+    await expect(form.getByLabel('米国の締め切り N（分）')).toHaveValue('90');
+    await expect(page.getByText(/締め切りの保存値が構成の値と食い違っています/)).toBeVisible();
+    await expect(page.getByText(/手仕舞いの保存値が構成の値と食い違っています/)).toBeVisible();
+
+    await form.getByLabel('米国の締め切り N（分）').fill('120');
+    await form.getByLabel('閉場前の統制の変更理由').fill('締め切りを早める');
+    const save = form.getByRole('button', { name: '閉場前の統制を保存' });
+    await expect(save).toBeEnabled();
+    await save.click();
+
+    await expect(form.getByText('閉場前の統制を保存しました。')).toBeVisible();
+    expect(putPath).toBe('/bff/risk-controls/settings/pre-close');
+    expect(putBody).toEqual({
+      cutoffMinutes: [
+        { market: 0, minutes: 60 },
+        { market: 1, minutes: 120 },
+      ],
+      flattenEnabled: true,
+      flattenMinutes: [
+        { market: 0, minutes: 15 },
+        { market: 1, minutes: 15 },
+      ],
+      reason: '締め切りを早める',
+    });
+
+    const themes = page.getByRole('form', { name: 'テーマの定義の変更' });
+    await expect(themes.getByLabel('テーマの名前')).toHaveValue(THEME_CONCENTRATION.effective[0]!.name);
+    await expect(page.getByText(/保存した定義が構成の定義と食い違っています/)).toBeVisible();
   });
 });

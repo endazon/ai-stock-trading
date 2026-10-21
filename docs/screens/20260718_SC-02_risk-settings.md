@@ -3,15 +3,15 @@ title: 画面仕様書（素案） — SC-02 リスク設定画面（リスク�
 type: screen
 status: Draft
 created: 2026-07-18
-updated: 2026-10-13
+updated: 2026-10-21
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-03, FR-10, FR-11, FR-12, FR-13, FR-19, FR-20, SC-02, UC-06]
-adrs: [ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0040, ADR-0042, ADR-0043, ADR-0063, ADR-0066]
-iadrs: [IADR-0084, IADR-0086, IADR-0090, IADR-0095, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0164, IADR-0338, IADR-0339, IADR-0342, IADR-0422, IADR-0433, IADR-0437, IADR-0475, IADR-0527, IADR-0530]
-specs: [20260718_106_frontend-risk-settings-and-controls, 20260718_196_frontend-watchlist-ui, 20260718_SC-01_settings, 20260805_334_broker-provider-axis, 20260805_362_sc02-ratio-input, 20260806_340_screens-reimplementation, 20260807_422_broker-provider-default-paper, 20260807_423_sc01-section2-removal-and-sc02-relocation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0086_frontend-guard-edit-ui, IADR-0090_frontend-watchlist-ui, IADR-0130_equity-ratio-risk-limits, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0151_risk-limit-percent-input-and-bounds, IADR-0155_sc01-collection-parameters-supply, IADR-0161_broker-provider-allow-list-resolution, IADR-0162_unsupplied-metric-display-convention-all-screens, IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation, 20260925_823_stop-method-ui-and-daily-report, 20260926_1025_policy-watchlist-apply, 20260926_1030_finnhub-cycle-fit-control, 20261001_1134_watchlist-no-fallback]
-issues: [#1291, #20, #165, #188, #196, #209, #329, #334, #340, #362, #364, #389, #408, #409, #410, #422, #423, #424, #819, #823, #1025, #1030, #1134, planning#31, planning#33]
+adrs: [ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0040, ADR-0042, ADR-0043, ADR-0063, ADR-0066, ADR-0070, ADR-0071]
+iadrs: [IADR-0084, IADR-0086, IADR-0090, IADR-0095, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0164, IADR-0338, IADR-0339, IADR-0342, IADR-0422, IADR-0433, IADR-0437, IADR-0475, IADR-0527, IADR-0530, IADR-0564]
+specs: [20260718_106_frontend-risk-settings-and-controls, 20260718_196_frontend-watchlist-ui, 20260718_SC-01_settings, 20260805_334_broker-provider-axis, 20260805_362_sc02-ratio-input, 20260806_340_screens-reimplementation, 20260807_422_broker-provider-default-paper, 20260807_423_sc01-section2-removal-and-sc02-relocation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0086_frontend-guard-edit-ui, IADR-0090_frontend-watchlist-ui, IADR-0130_equity-ratio-risk-limits, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0151_risk-limit-percent-input-and-bounds, IADR-0155_sc01-collection-parameters-supply, IADR-0161_broker-provider-allow-list-resolution, IADR-0162_unsupplied-metric-display-convention-all-screens, IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation, 20260925_823_stop-method-ui-and-daily-report, 20260926_1025_policy-watchlist-apply, 20260926_1030_finnhub-cycle-fit-control, 20261001_1134_watchlist-no-fallback, 20261021_1407_sc02-pre-close-and-theme-settings]
+issues: [#1407, #1291, #20, #165, #188, #196, #209, #329, #334, #340, #362, #364, #389, #408, #409, #410, #422, #423, #424, #819, #823, #1025, #1030, #1134, planning#31, planning#33]
 -->
 
 
@@ -218,6 +218,24 @@ platform SPA 認証済みレイアウト配下に feature `sc02-risk-settings` �
      確認後に緩める変更が増えたら確認を外す）。締める変更（上限を下げる・指定を足す）は確認を求めない。
    - **明示指定は厳しい側へだけ効く**（ATR で区分に入る銘柄は、指定を外しても区分から出ない）ことを画面に明記する。
 
+9. **閉場前の統制（変更可・2026-10-21 追加・#1407）**: 閉場前の新規建ての締め切り N（市場ごと）と、閉場前の手仕舞いの有効・無効と M（市場ごと）を表示し、設定する。
+   **手続きは他の統制値と同じ**（利用者のみ・理由必須・値域外は拒否・履歴）。置き場は高ボラティリティ銘柄の直後（新規建ての統制）。保存単位は分ける。
+   - **効いている値を表示する。** 効いている値は「画面で保存した値があれば保存値、無ければ構成の値」であり、締め切り・手仕舞いのそれぞれに
+     どちらが効いているか（「構成の値が効いています」／「画面で保存した値が効いています」）を示す。
+   - 🔴 **保存値が構成の値と食い違えば、その旨と構成の値を並べて示す**（保存した後に構成を変えても、その項目には効かない。それを読めるようにする）。
+   - 市場ごとの行に N（1〜場中の長さ。米国 390・日本 330。上限はサーバの応答から受け取る）と M（1〜60）を入力する。米国・日本の両方を送る。
+   - 🔴 **手仕舞いは画面で無効にしても、確定した方針に「閉場前の手仕舞い: 有効」の行があれば有効になる**（方針で無効にはできない）ことを明記する。
+   - **統制を緩める変更**（N・M を縮める・手仕舞いを無効にする）は列挙して確認を求める。
+   - 取得に失敗したら入力欄を出さず「取得できません。効いている値が分からないため、変更できません」と示す（既定値で埋めて保存させない）。
+
+10. **テーマごとの同時保有の上限（変更可・2026-10-21 追加・#1407）**: テーマ（相関の高い銘柄の集まり）の定義（名前・市場・銘柄の一覧）と上限を表示し、設定する。
+    手続きは他の統制値と同じ。保存は定義の全体を置き換える（テーマを足す・外す・名前と市場と上限を変える・銘柄を足す・外す）。
+    - 効いている定義・出どころ・**構成の定義との食い違い**（構成の定義を並べる）を示す。比較は名前・市場・上限・銘柄の集合で行い、並び順は比べない。
+    - 🔴 **銘柄コードの誤記を防ぐ**（誤記した銘柄はどのテーマにも属さず、上限が黙って効かない）: 高ボラティリティ銘柄と同じ 3 段
+      （テーマの市場の監視銘柄から選ぶ／手入力は書式で拒み、監視銘柄に無ければ確認の印を付けるまで足せない／一覧の各銘柄に照合の印）。
+    - 名前が空・重複、銘柄なし、上限が 1 未満は保存できない（実効はサーバ）。
+    - **統制を緩める変更**（テーマ・銘柄を外す・上限を上げる・市場を変える。名前の変更は外して足すとして数える）は列挙して確認を求める。
+
 ## データ取得・更新（BFF `/bff/*` 経由・`apiFetch`）
 
 | 操作 | 呼び出し | 応答/エラー |
@@ -228,6 +246,10 @@ platform SPA 認証済みレイアウト配下に feature `sc02-risk-settings` �
 | 発注先の変更 | `PUT /risk-controls/settings/broker-provider`（`{provider, reason, acknowledgedLiveTrading, acknowledgement}`） | 成功=再取得＋段階ゲート飛ばしの警告。**実弾は同意と「REAL」の入力の両方が無ければ 400**（サーバ側も同じ関門）。理由が空も 400 |
 | 損切りの実行機構の変更 | `PUT /risk-controls/settings/stop-loss-method`（`{method, reason}`。`method` は 0〜3） | 成功=再取得。**400=発注先が実弾の間の S0 以外／未知の手法／理由欠如**（`details` を表示）。自動再試行しない |
 | 高ボラティリティ銘柄の変更 | `PUT /risk-controls/settings/high-volatility`（`{maxOrderAmountRatio, designatedSymbols: [{symbol, market}], reason}`・全置換。比率は equity 比） | 成功=再取得。**400=値域外（0.01 未満・0.25 超）／空の銘柄コード／未知の市場／理由欠如／項目の省略**（`details` を表示）、403=所有者以外、409=競合。自動再試行しない。照合に使う監視銘柄は下の `GET /monitor/watchlist`（失敗しても本フォームは描き、照合できないことを示す） |
+| 閉場前の統制の表示 | `GET /risk-controls/settings/pre-close` | `PreCloseControlsView`（効いている値・構成の値・保存値・出どころ・食い違い・値域の上限）。失敗・想定外の形は区画だけ縮退（入力欄を出さない） |
+| 閉場前の統制の変更 | `PUT /risk-controls/settings/pre-close`（`{cutoffMinutes: [{market, minutes}], flattenEnabled, flattenMinutes: [{market, minutes}], reason}`） | 成功=再取得。**400=値域外／市場の欠け・重複／理由欠如／項目の省略**（`details` を表示）、403=所有者以外。自動再試行しない |
+| テーマの定義の表示 | `GET /risk-controls/settings/theme-concentration` | `ThemeConcentrationControlView`（効いている定義・構成の定義・保存した定義・出どころ・食い違い）。失敗は区画だけ縮退 |
+| テーマの定義の変更 | `PUT /risk-controls/settings/theme-concentration`（`{themes: [{name, market, symbols, maxPositions}], reason}`・全置換） | 成功=再取得。**400=名前の空・重複／銘柄なし・空のコード／上限 1 未満／未知の市場／理由欠如**、403=所有者以外。照合に使う監視銘柄は `GET /monitor/watchlist` |
 | equity・統制値の実額（モーダル③） | `GET /risk-controls/status` | `RiskStatusView`（`capital` / `maxOrderAmount` / `maxDailyOrderAmount` / `maxOpenPositions`）。失敗時は**実弾への切替を許さない** |
 | ガード保存 | `PUT /risk-controls/settings/guard`（`{enabledProductTypes, enabledMarkets, bannedSymbols, preventSameDayReentry, prohibitManipulativeOrderPatterns, reason}`・全置換） | 成功=再取得。危険な緩和は確認必須。400=検証、409=競合＋再取得を促す |
 | 監視銘柄 一覧 | `GET /monitor/watchlist`（別サービス MarketMonitor・OwnerOrService） | `MonitoredSymbol[]`。404/失敗=独立縮退（「監視銘柄設定は利用できません。」） |

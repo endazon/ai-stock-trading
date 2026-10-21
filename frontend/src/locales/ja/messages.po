@@ -106,6 +106,7 @@ msgid "（設定サービスの値を一度も解決できていません）。"
 msgstr "（設定サービスの値を一度も解決できていません）。"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "（選択してください）"
 msgstr "（選択してください）"
 
@@ -385,6 +386,10 @@ msgstr "ゲートウェイへ到達できず、再送を要求できませんで
 msgid "ゲートウェイへ到達できず、送信できませんでした。"
 msgstr "ゲートウェイへ到達できず、送信できませんでした。"
 
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "ここで無効にしても、確定した方針に「閉場前の手仕舞い: 有効」の行があれば手仕舞いは有効になります（方針で無効にはできません）。"
+msgstr "ここで無効にしても、確定した方針に「閉場前の手仕舞い: 有効」の行があれば手仕舞いは有効になります（方針で無効にはできません）。"
+
 #: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
 msgid "この値は Stage 1（moomoo SIMULATE）の全期間にわたって表示できません。これは不具合ではなく、供給が無いという事実の表示です。"
 msgstr "この値は Stage 1（moomoo SIMULATE）の全期間にわたって表示できません。これは不具合ではなく、供給が無いという事実の表示です。"
@@ -408,6 +413,10 @@ msgstr "この統制は現在まったく働いていません。"
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 msgid "この銘柄と市場は既に明示指定されています。"
 msgstr "この銘柄と市場は既に明示指定されています。"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "この銘柄は既にこのテーマにあります。"
+msgstr "この銘柄は既にこのテーマにあります。"
 
 #: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
 msgid "コマンド"
@@ -452,6 +461,66 @@ msgstr "ショート"
 #: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
 msgid "だけを記録します。"
 msgstr "だけを記録します。"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "テーマ"
+msgstr "テーマ"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "テーマごとの同時保有の上限（変更）"
+msgstr "テーマごとの同時保有の上限（変更）"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "テーマごとの同時保有の上限を取得できません。効いている値が分からないため、変更できません。"
+msgstr "テーマごとの同時保有の上限を取得できません。効いている値が分からないため、変更できません。"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "テーマごとの同時保有の上限を読み込み中…"
+msgstr "テーマごとの同時保有の上限を読み込み中…"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "テーマなし"
+msgstr "テーマなし"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "テーマの名前"
+msgstr "テーマの名前"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "テーマの定義の変更"
+msgstr "テーマの定義の変更"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "テーマの定義の変更理由"
+msgstr "テーマの定義の変更理由"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "テーマの定義を保存"
+msgstr "テーマの定義を保存"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "テーマの定義を保存しました。"
+msgstr "テーマの定義を保存しました。"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "テーマの定義を保存中…"
+msgstr "テーマの定義を保存中…"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "テーマの市場"
+msgstr "テーマの市場"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "テーマはありません（上限は掛かりません）。"
+msgstr "テーマはありません（上限は掛かりません）。"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "テーマを外す"
+msgstr "テーマを外す"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "テーマを足す"
+msgstr "テーマを足す"
 
 #: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
 msgid "であり、保有建玉のうち最も厳しいものが口座へ適用されます。回復目標は"
@@ -513,9 +582,21 @@ msgstr "のため、実弾（moomoo REAL）へ切り替えられません。先�
 msgid "の使用率"
 msgstr "の使用率"
 
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "の手仕舞いの M（分）"
+msgstr "の手仕舞いの M（分）"
+
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 msgid "の明示指定を外す"
 msgstr "の明示指定を外す"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "の締め切り N（分）"
+msgstr "の締め切り N（分）"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "の銘柄の一覧"
+msgstr "の銘柄の一覧"
 
 #: src/features/sc01-settings/components/SettingsPage.tsx
 msgid "は「リスク設定」画面（SC-02）で扱います。"
@@ -557,9 +638,17 @@ msgstr "リスク設定は利用できません。"
 msgid "ロング"
 msgstr "ロング"
 
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "をテーマから外す"
+msgstr "をテーマから外す"
+
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 msgid "を併記します（基準通貨＝米ドル建て。統制の判定はすべて自己資金の USD 建てで行います）。"
 msgstr "を併記します（基準通貨＝米ドル建て。統制の判定はすべて自己資金の USD 建てで行います）。"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "を外す"
+msgstr "を外す"
 
 #: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
 msgid "を持ちます。取引の統制操作（昇格承認・一時停止/再開・緊急停止）は Discord からのみ行えます。"
@@ -582,9 +671,12 @@ msgid "上記の危険な変更を確認しました"
 msgstr "上記の危険な変更を確認しました"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "上記の緩める変更を確認しました"
 msgstr "上記の緩める変更を確認しました"
 
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "上限"
 msgstr "上限"
@@ -643,6 +735,10 @@ msgstr "供給が無い値の表示規約"
 msgid "保存"
 msgstr "保存"
 
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "保存した定義が構成の定義と食い違っています（画面で保存した定義が効いています）。構成の定義:"
+msgstr "保存した定義が構成の定義と食い違っています（画面で保存した定義が効いています）。構成の定義:"
+
 #: src/features/sc01-settings/components/SettingsPage.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 msgid "保存しました。"
@@ -651,9 +747,11 @@ msgstr "保存しました。"
 #: src/features/sc01-settings/components/SettingsPage.tsx
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
 #: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "保存に失敗しました。"
 msgstr "保存に失敗しました。"
 
@@ -721,9 +819,11 @@ msgstr "入力できない値があります:"
 #: src/features/sc01-settings/components/SettingsPage.tsx
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
 #: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 #: src/features/sc02-risk-settings/components/WatchlistForm.tsx
 msgid "入力内容に誤りがあります。"
 msgstr "入力内容に誤りがあります。"
@@ -779,6 +879,10 @@ msgstr "最小取引件数を保存中…"
 #: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
 msgid "最終ログイン成功"
 msgstr "最終ログイン成功"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "分"
+msgstr "分"
 
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "利用者（Discord）"
@@ -877,6 +981,10 @@ msgstr "可"
 msgid "合計"
 msgstr "合計"
 
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "同じテーマの銘柄は、保有中と未約定の新規建てを合わせて上限の数までしか持てません（同じ銘柄の買い増しは数を増やしません）。どのテーマにも属さない銘柄には掛かりません。方針の文では変えられません。"
+msgstr "同じテーマの銘柄は、保有中と未約定の新規建てを合わせて上限の数までしか持てません（同じ銘柄の買い増しは数を増やしません）。どのテーマにも属さない銘柄には掛かりません。方針の文では変えられません。"
+
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
 msgid "同一銘柄の再トリガーを抑制する時間です（0 は抑制なし）。許容範囲:"
 msgstr "同一銘柄の再トリガーを抑制する時間です（0 は抑制なし）。許容範囲:"
@@ -888,6 +996,10 @@ msgstr "同日再エントリー禁止"
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 msgid "同日再エントリー禁止を無効化"
 msgstr "同日再エントリー禁止を無効化"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "同時保有の上限（銘柄数）"
+msgstr "同時保有の上限（銘柄数）"
 
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "含み"
@@ -940,9 +1052,11 @@ msgstr "変動閾値を保存中…"
 #: src/features/sc01-settings/components/SettingsPage.tsx
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
 #: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 #: src/features/sc02-risk-settings/components/WatchlistForm.tsx
 msgid "変更する権限がありません。"
 msgstr "変更する権限がありません。"
@@ -996,6 +1110,7 @@ msgid "変更者"
 msgstr "変更者"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "外す"
 msgstr "外す"
 
@@ -1046,6 +1161,7 @@ msgid "履歴を確認中…"
 msgstr "履歴を確認中…"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/WatchlistForm.tsx
 #: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
@@ -1055,6 +1171,10 @@ msgstr "市場"
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 msgid "市場（手入力）"
 msgstr "市場（手入力）"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "市場ごとの閉場前の統制"
+msgstr "市場ごとの閉場前の統制"
 
 #: src/features/sc01-settings/components/SettingsPage.tsx
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
@@ -1133,7 +1253,20 @@ msgstr "必要証拠金が最も大きい建玉から"
 msgid "成立中で最優先の統制:"
 msgstr "成立中で最優先の統制:"
 
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "手仕舞い:"
+msgstr "手仕舞い:"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "手仕舞いの M（閉場の何分前から手仕舞うか）"
+msgstr "手仕舞いの M（閉場の何分前から手仕舞うか）"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "手仕舞いの保存値が構成の値と食い違っています（画面で保存した値が効いています）。構成の値:"
+msgstr "手仕舞いの保存値が構成の値と食い違っています（画面で保存した値が効いています）。構成の値:"
+
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "手入力の銘柄を追加"
 msgstr "手入力の銘柄を追加"
 
@@ -1196,6 +1329,7 @@ msgstr "撤退評価"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 #: src/features/sc02-risk-settings/components/WatchlistForm.tsx
 msgid "操作"
 msgstr "操作"
@@ -1284,6 +1418,7 @@ msgstr "暫定値・算定根拠が無く実測待ち"
 msgid "月次費用上限"
 msgstr "月次費用上限"
 
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "有効"
 msgstr "有効"
@@ -1356,9 +1491,25 @@ msgstr "検証コードを送信しました。"
 msgid "楽観排他: 表示中の版と現行版が一致する場合のみ保存します。競合したときは再読込を促します（自動では上書きしません）。"
 msgstr "楽観排他: 表示中の版と現行版が一致する場合のみ保存します。競合したときは再読込を促します（自動では上書きしません）。"
 
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "構成の値が効いています"
+msgstr "構成の値が効いています"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "構成の定義が効いています"
+msgstr "構成の定義が効いています"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "次の変更はテーマの上限を緩めます。内容を確認してください:"
+msgstr "次の変更はテーマの上限を緩めます。内容を確認してください:"
+
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 msgid "次の変更は取引ガードを緩めます。内容を確認してください:"
 msgstr "次の変更は取引ガードを緩めます。内容を確認してください:"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "次の変更は閉場前の統制を緩めます。内容を確認してください:"
+msgstr "次の変更は閉場前の統制を緩めます。内容を確認してください:"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 msgid "次の変更は高ボラティリティ銘柄の統制を緩めます。内容を確認してください:"
@@ -1410,11 +1561,13 @@ msgstr "決済前の維持率"
 msgid "決済後の維持率"
 msgstr "決済後の維持率"
 
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "無効"
 msgstr "無効"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "照合中"
 msgstr "照合中"
 
@@ -1520,6 +1673,14 @@ msgstr "理由不明"
 msgid "画面から"
 msgstr "画面から"
 
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "画面で保存した値が効いています"
+msgstr "画面で保存した値が効いています"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "画面で保存した定義が効いています"
+msgstr "画面で保存した定義が効いています"
+
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "発動主体"
 msgstr "発動主体"
@@ -1611,6 +1772,7 @@ msgid "監視銘柄"
 msgstr "監視銘柄"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "監視銘柄から追加"
 msgstr "監視銘柄から追加"
 
@@ -1619,22 +1781,27 @@ msgid "監視銘柄コード"
 msgstr "監視銘柄コード"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "監視銘柄では市場が違います"
 msgstr "監視銘柄では市場が違います"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "監視銘柄との照合"
 msgstr "監視銘柄との照合"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "監視銘柄と照合できません"
 msgstr "監視銘柄と照合できません"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "監視銘柄にあります"
 msgstr "監視銘柄にあります"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "監視銘柄にありません"
 msgstr "監視銘柄にありません"
 
@@ -1671,6 +1838,7 @@ msgid "監視銘柄をどれだけ動いたら判断へ回すか（変動閾値�
 msgstr "監視銘柄をどれだけ動いたら判断へ回すか（変動閾値）と、同一銘柄の再トリガーをどれだけ抑制するか（クールダウン）を設定します（FR-03/FR-13）。変更は利用者のみが行え、理由が必須です。"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "監視銘柄を取得できないため、銘柄コードを監視銘柄と照合できません。手入力の追加には確認が要ります。"
 msgstr "監視銘柄を取得できないため、銘柄コードを監視銘柄と照合できません。手入力の追加には確認が要ります。"
 
@@ -1760,9 +1928,11 @@ msgstr "空欄/非数値は保存無効化（黙って 0 を送らない）。�
 #: src/features/sc01-settings/components/SettingsPage.tsx
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
 #: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 #: src/features/sc02-risk-settings/components/WatchlistForm.tsx
 msgid "競合が発生しました。最新を取得して再試行してください。"
 msgstr "競合が発生しました。最新を取得して再試行してください。"
@@ -1840,6 +2010,10 @@ msgstr "維持率割れによる自動縮小（動かす統制）"
 msgid "維持率割れ自動縮小の発動履歴"
 msgstr "維持率割れ自動縮小の発動履歴"
 
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "綴りと市場を確かめた（監視銘柄に無い銘柄としてテーマに入れる）"
+msgstr "綴りと市場を確かめた（監視銘柄に無い銘柄としてテーマに入れる）"
+
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 msgid "綴りと市場を確かめた（監視銘柄に無い銘柄として指定する）"
 msgstr "綴りと市場を確かめた（監視銘柄に無い銘柄として指定する）"
@@ -1847,6 +2021,18 @@ msgstr "綴りと市場を確かめた（監視銘柄に無い銘柄として指
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "緊急停止（kill switch）"
 msgstr "緊急停止（kill switch）"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "締め切り N（閉場の何分前から新規建てを拒否するか）"
+msgstr "締め切り N（閉場の何分前から新規建てを拒否するか）"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "締め切り:"
+msgstr "締め切り:"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "締め切りの保存値が構成の値と食い違っています（画面で保存した値が効いています）。構成の値:"
+msgstr "締め切りの保存値が構成の値と食い違っています（画面で保存した値が効いています）。構成の値:"
 
 #: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
 msgid "縮小の対象は"
@@ -2012,6 +2198,7 @@ msgid "遷移履歴はありません。"
 msgstr "遷移履歴はありません。"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "選んだ監視銘柄を追加"
 msgstr "選んだ監視銘柄を追加"
 
@@ -2025,17 +2212,67 @@ msgstr "配備までの唯一の経路である "
 msgid "銘柄"
 msgstr "銘柄"
 
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "銘柄がありません。"
+msgstr "銘柄がありません。"
+
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "銘柄コード"
 msgstr "銘柄コード"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "銘柄コード（手入力）"
 msgstr "銘柄コード（手入力）"
+
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "銘柄コードを誤記すると、その銘柄はどのテーマにも属さず、上限が黙って効きません。綴りと市場を確かめてください。"
+msgstr "銘柄コードを誤記すると、その銘柄はどのテーマにも属さず、上限が黙って効きません。綴りと市場を確かめてください。"
 
 #: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 msgid "銘柄コードを誤記すると、指定はどの注文にも一致せず黙って効きません。綴りと市場を確かめてください。"
 msgstr "銘柄コードを誤記すると、指定はどの注文にも一致せず黙って効きません。綴りと市場を確かめてください。"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "閉場の N 分前以降の新規建て（買い増し・売り増しを含む）は審査で拒否します。閉場前の手仕舞いが有効なら、閉場の M 分前以降に保有の全量を成行で手仕舞います（方針の「持ち越し可:」の行の銘柄は残します）。手仕舞いと損切りは止めません。"
+msgstr "閉場の N 分前以降の新規建て（買い増し・売り増しを含む）は審査で拒否します。閉場前の手仕舞いが有効なら、閉場の M 分前以降に保有の全量を成行で手仕舞います（方針の「持ち越し可:」の行の銘柄は残します）。手仕舞いと損切りは止めません。"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "閉場前の手仕舞いを有効にする（設定）"
+msgstr "閉場前の手仕舞いを有効にする（設定）"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "閉場前の統制（変更）"
+msgstr "閉場前の統制（変更）"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "閉場前の統制の変更"
+msgstr "閉場前の統制の変更"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "閉場前の統制の変更理由"
+msgstr "閉場前の統制の変更理由"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "閉場前の統制を保存"
+msgstr "閉場前の統制を保存"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "閉場前の統制を保存しました。"
+msgstr "閉場前の統制を保存しました。"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "閉場前の統制を保存中…"
+msgstr "閉場前の統制を保存中…"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "閉場前の統制を取得できません。効いている値が分からないため、変更できません。"
+msgstr "閉場前の統制を取得できません。効いている値が分からないため、変更できません。"
+
+#: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
+msgid "閉場前の統制を読み込み中…"
+msgstr "閉場前の統制を読み込み中…"
 
 #: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
 msgid "閾値"
