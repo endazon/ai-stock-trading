@@ -24,8 +24,18 @@ public sealed class Stage0EvaluationOptions
     /// <summary>巡回間隔（秒）。既定 86,400＝日次。60 未満は 60 へクランプする（過去データ源を叩き続けないため）。</summary>
     public int IntervalSeconds { get; set; } = 86_400;
 
-    /// <summary>評価期間の遡り日数（当日から遡る暦日）。既定 365。1 未満は 1 へクランプする。</summary>
-    public int LookbackDays { get; set; } = 365;
+    /// <summary>
+    /// FR-15, ADR-0069 決定1, #1307, IADR-0563: 評価の窓の長さの**計画の値**（365 暦日）。
+    /// <para>
+    /// 🔴 **本値の正本は計画（ADR-0069 決定1・05_trading-assumptions §6.1）である。実装の構成だけで変えない。**
+    /// 変更が要るなら計画へ環流する。判定用の構成（開発用・本番）はこの値と一致しなければならない
+    /// （<c>Stage0EvaluationWindowPlanValueTests</c> が突き合わせる）。PoC の経路の確認用の構成（values-local の 24 日）は判定用ではなく、対象外である（ADR-0069 決定5）。
+    /// </para>
+    /// </summary>
+    public const int LookbackDaysPlanValue = 365;
+
+    /// <summary>評価期間の遡り日数（当日から遡る暦日）。既定は計画の値 365（<see cref="LookbackDaysPlanValue"/>）。1 未満は 1 へクランプする。</summary>
+    public int LookbackDays { get; set; } = LookbackDaysPlanValue;
 
     /// <summary>
     /// LLM 学習カットオフ日（`YYYY-MM-DD`）。**未設定・解釈不能は「未充足」として扱う**

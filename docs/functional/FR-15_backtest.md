@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）機能仕様書
 type: functional-spec
 status: draft
 created: 2026-07-11
-updated: 2026-10-17
+updated: 2026-10-21
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-15, FR-17, FR-20, UC-06, FR-04, FR-13, FR-10]
-adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0011, ADR-0016, ADR-0018, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0054, ADR-0014, ADR-0064]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498, IADR-0507, IADR-0495, IADR-0524, IADR-0528, IADR-0537, IADR-0554]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20261007_1196_stage0-two-tier-recording, 20261008_1209_stage0-replay-min-notional-and-decision-exit, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage, 20261013_1308_stage0-asof-base-input, 20261014_1342_stage0-recorder-idempotent, 20261017_1381_trial-ledger-per-period-sharpe]
-issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049, #1196, #1209, #1295, #1296, #1308, #1342, #1381, planning#783]
+adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0011, ADR-0016, ADR-0018, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0054, ADR-0014, ADR-0064, ADR-0069]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498, IADR-0507, IADR-0495, IADR-0524, IADR-0528, IADR-0537, IADR-0554, IADR-0563]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20261007_1196_stage0-two-tier-recording, 20261008_1209_stage0-replay-min-notional-and-decision-exit, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage, 20261013_1308_stage0-asof-base-input, 20261014_1342_stage0-recorder-idempotent, 20261017_1381_trial-ledger-per-period-sharpe, 20261021_1307_stage0-window-plan-values]
+issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049, #1196, #1209, #1295, #1296, #1308, #1307, #1342, #1381, #1405, planning#783, planning#806]
 -->
 
 
@@ -120,7 +120,7 @@ issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1
 | 駆動の形 | 常駐（`Hosted/Stage0EvaluationService`）。構成 `Backtest:Stage0`。HTTP の起動口は持たない |
 | 既定 | 🔴 **無効**（`Backtest:Stage0:Enabled=false`）。無効なら巡回もデータ取得も発行も起きない。**有効化はローカル/SIMULATE の有効化プロファイルだけで行う**（本番既定は無効のまま。下記） |
 | 巡回間隔 | `IntervalSeconds`（既定 86,400＝日次・下限 60 秒） |
-| 評価期間 | 当日から `LookbackDays`（既定 365・下限 1 日）遡った範囲 |
+| 評価期間 | 当日から `LookbackDays`（既定 365・下限 1 日）遡った範囲。🔴 **365 暦日は計画の値である**（窓の長さを変えるときは計画を改める。構成だけで変えない）。判定用の構成（開発用の appsettings・本番の Helm の構成）はこの値と試験で突き合わせる。PoC の経路の確認用の構成（values-local の 24 日）は判定用ではなく、その評価の結果を合格の根拠にしない。カットオフ 2026-06-30 のもとでは、窓が届くのは終端 2027-07-01（252 営業日）であり、届くまで汚染対策の覆る条件を判定しない |
 | 取得 | 実過去データ源から**1 回だけ**取得しスナップショットへ固定する（決定性の保全） |
 | 評価対象 | `Backtest:Stage0:Strategy`（既定はプレースホルダ＝不合格固定。下記） |
 | 発行 | `BacktestEvaluated`。共通ヘルパの配線のみを用い、キュー名・再試行・DLQ をサービス側で選ばない |
@@ -294,7 +294,7 @@ LLM 学習カットオフ日（`Backtest:Stage0:LlmTrainingCutoff`）は、ど�
 
 | 判定 | 条件 | 既定閾値 |
 | --- | --- | --- |
-| エッジ有意 | DSR 補正後もエッジが正 | DSR ≥ 0.95（真 SR>0 の確率） |
+| エッジ有意 | DSR 補正後もエッジが正 | DSR ≥ 0.95（真 SR>0 の確率。**計画の基準の値**であり、実装で動かさない。構成の口は無い。日次の Sharpe で比べる） |
 | 過剰適合 | PBO が閾値以下 | PBO ≤ 0.5。🔴 **PBO を評価した場合にだけ効く**（評価不能なら合否の根拠から外れる。「満たした」と数えるのではない） |
 | 最大 DD | ≤ 10% | **≤ 10%**（0.15 → 0.10 へ厳格化し、運用の DD 停止ラインとの同値性をテストで固定した。リスク統制既定値の計画 ADR §4／全体前提条件 §5 の DD 上限と同値。**本行は 2026-08-06 に是正した**——旧記述「既定 15%＝前提条件の DD 上限」は二重に誤りで、15% は前提条件の値ではなく旧レンジ上限側からの逆算だった） |
 | コスト頑健性 | **コスト 2 倍でも期待値が正** | 2x リターン > 0 |
