@@ -369,7 +369,7 @@ public class BuyInInferenceTests
         return new OrderScreeningService(
             settingsStore, builder, new InMemoryLockoutStore(), new FixedClock(),
             new WeekendBusinessCalendar(), buyInInferences: store, ledger: new InMemoryPortfolioLedgerStore(),
-            shortSellContexts: TestShortSellContexts.Unavailable(new FixedClock()), entryReservations: new InMemoryEntryReservationStore(), preCloseCutoff: TradingDefaults.CreatePreCloseEntryCutoff(), themes: TradingDefaults.CreateThemeConcentration(),
+            shortSellContexts: TestShortSellContexts.Unavailable(new FixedClock()), entryReservations: new InMemoryEntryReservationStore(), configuredControls: ConfiguredSessionAndThemeControls.Default,
             patternDetector: null);
     }
 

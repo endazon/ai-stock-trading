@@ -1,10 +1,21 @@
+using RiskManagementService.Domain;
+
 
 namespace RiskManagementService.Features.RiskManagement.GetSizingContext;
 
 // FR-04, FR-10, IADR-0029: 取引判断へ供給するサイジング文脈を、設定（IRiskSettingsStore）とポートフォリオ状態
 // （PortfolioSnapshotBuilder＝#63 台帳の実データ）から導出する。取引判断は本文脈を同期 API で照会する。
-public sealed class SizingContextService(PortfolioSnapshotBuilder snapshotBuilder, IRiskSettingsStore settingsStore)
+//
+// 🔴 SC-02, #1407, IADR-0564 決定 1・2: 閉場前の手仕舞いの**効いている値**（保存値があれば保存値・無ければ構成の値）も載せる。
+// 手仕舞いを出す常駐（取引判断）はこの値で有効・無効と M を決める。configuredControls の省略は単体試験の直接組み立て用であり（既定＝無効・15 分）、
+// 本番の配線で構成の値が渡ることは SessionAndThemeControlsWiringTests が固定する。
+public sealed class SizingContextService(
+    PortfolioSnapshotBuilder snapshotBuilder,
+    IRiskSettingsStore settingsStore,
+    ConfiguredSessionAndThemeControls? configuredControls = null)
 {
+    private readonly ConfiguredSessionAndThemeControls _configuredControls = configuredControls ?? ConfiguredSessionAndThemeControls.Default;
+
     public SizingContextView Build()
     {
         var snapshot = snapshotBuilder.Build();
@@ -35,6 +46,8 @@ public sealed class SizingContextService(PortfolioSnapshotBuilder snapshotBuilde
             // #854, IADR-0351 決定1: 損切りの実行機構の設定を判断プロンプトの「保護の状態」へ供給する。
             StopLossMethod: settings.StopLossMethod,
             // #1291, IADR-0527 決定3: 審査と同じ区分・上限をサイジングと LLM の前の見送りへ渡す。
-            HighVolatility: settings.HighVolatility);
+            HighVolatility: settings.HighVolatility,
+            // #1407, IADR-0564 決定 1: 閉場前の手仕舞いの効いている値（取引判断の常駐が使う）。
+            PreCloseFlatten: SessionAndThemeControlResolution.EffectivePreCloseFlatten(settings, _configuredControls));
     }
 }

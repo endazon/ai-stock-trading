@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-04, FR-10, FR-19, UC-01, UC-06, ADR-0003, ADR-0009, IADR-0163, IADR-0346, IADR-0351, IADR-0529, IADR-0561]
 author: claude (Claude Code)
 created: 2026-10-20
-updated: 2026-10-20
+updated: 2026-10-21
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md（FR-10・FR-19・FR-04）
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md（§5。本件の行は反映待ち）
@@ -73,3 +73,14 @@ MARA の保有中に COIN を判断しても AI は MARA を知らない。10-16
 - 残余リスク: 定義を変えるのは構成（再起動）であり、画面からは変えられない。上限に当たる新規建ても判断の LLM は呼ばれる（結論は審査で拒否）。
   リスク管理の射影が知らない保有（台帳の外の売買で取り込み前のもの）は数えない（台帳の乖離の取り込みに従う）。
 - 計画との差異: なし（裁定どおり）。**計画 §5 へ行の反映が要る**（未反映。PR 本文に「計画 §5 の反映待ち」と書く）。
+
+## ［2026-10-21 追記 / #1407］計画 ADR-0071 が起きた・「SC-02 は今回は不採用」を改めた
+
+- 本 IADR の裁定（planning#809）は、計画 ADR-0071（planning#813・2026-10-21・Accepted）として計画に記録された。決定 1〜4 は本 IADR の決定 1〜4 と同じ内容である。
+  「計画 §5 へ行の反映が要る（未反映）」は、同じ PR で 05_trading-assumptions §5 に反映された（計画側の作業）。
+- 🔴 **§検討した選択肢の「リスク設定（SC-02・永続化・変更理由・監査）に持つ｜今回は不採用」は、ADR-0071 決定 5 が改めた**（定義と上限は SC-02 からも表示・設定できるようにする）。
+  置き場・経路・構成との関係は [IADR-0564](IADR-0564_sc02-pre-close-and-theme-settings-saved-over-config.md) が決めた: リスク管理の設定行に保存し、保存した定義があれば構成の定義より優先して効く
+  （再起動は要らない）。保存した定義と構成の定義が違えば食い違いとして示す。
+- §結果の残余リスク「定義を変えるのは構成（再起動）であり、画面からは変えられない」は、IADR-0564 の段 A（サーバ）で保存の口ができ、段 B（画面）で画面から変えられるようになる。
+- 決定 2 の「`OrderScreeningService` は定義を必須の引数で受ける」は、構成の定義を `ConfiguredSessionAndThemeControls` の一部として必須の引数で受け、審査のたびに保存した定義と突き合わせる形になった。
+

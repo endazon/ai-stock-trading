@@ -2416,6 +2416,11 @@
               "type": "BrokerProvider",
               "label": "singular"
             },
+            "pre_close_flatten": {
+              "number": 10,
+              "type": "PreCloseFlattenControls",
+              "label": "singular"
+            },
             "stage_capital_remaining": {
               "number": 2,
               "type": "string",
@@ -2525,6 +2530,24 @@
             "symbol": {
               "number": 1,
               "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "MarketMinutesRow": {
+          "fields": {
+            "market": {
+              "number": 1,
+              "type": "Market",
+              "label": "singular"
+            },
+            "minutes": {
+              "number": 2,
+              "type": "int32",
               "label": "optional"
             }
           },
@@ -2726,6 +2749,24 @@
               "number": 1,
               "type": "string",
               "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "PreCloseFlattenControls": {
+          "fields": {
+            "enabled": {
+              "number": 1,
+              "type": "bool",
+              "label": "optional"
+            },
+            "minutes": {
+              "number": 2,
+              "type": "MarketMinutesRow",
+              "label": "repeated"
             }
           },
           "reserved": {

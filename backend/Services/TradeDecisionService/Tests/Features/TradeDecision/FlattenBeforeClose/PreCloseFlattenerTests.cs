@@ -13,7 +13,8 @@ using Xunit;
 
 namespace TradeDecisionService.Tests;
 
-// T-10-2927〜T-10-2931, T-10-2933, FR-10, FR-19, #1396, IADR-0561 決定 3・4: 閉場前の手仕舞い。既定は無効で、構成か方針の決まった書式の行で有効になり、
+// T-10-2927〜T-10-2931, T-10-2933, FR-10, FR-19, #1396, IADR-0561 決定 3・4: 閉場前の手仕舞い。既定は無効で、設定か方針の決まった書式の行で有効になり、
+// （#1407, IADR-0564 決定 1: 有効・無効と M はリスク管理の設定〔SC-02 の保存値か構成〕からサイジング文脈で受け取る。試験はサイジング文脈の偽物に載せる）
 // 閉場の M 分前以降の場中に保有の全量を成行で手仕舞う判断（Close・MarketOrder）を作る。「持ち越し可」に明記した銘柄は残す。
 // 閉場は本番と同じ市場カレンダー（MarketCalendar＝共有カーネルの MarketHours）で求め、休場日・半日取引日を固定する。
 public class PreCloseFlattenerTests
@@ -22,10 +23,10 @@ public class PreCloseFlattenerTests
     private static readonly DateTimeOffset InWindow = new(2026, 10, 19, 19, 50, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset BeforeWindow = new(2026, 10, 19, 19, 44, 0, TimeSpan.Zero);
 
-    private static readonly SizingContext Context =
-        new(100_000m, 50_000m, 20_000m, 0, 0m, BrokerProvider.MoomooSimulate, TradingDefaults.CreateRiskLimits());
+    private static SizingContext ContextWith(PreCloseFlattenSettings? flatten) =>
+        new(100_000m, 50_000m, 20_000m, 0, 0m, BrokerProvider.MoomooSimulate, TradingDefaults.CreateRiskLimits(), PreCloseFlatten: flatten);
 
-    private static PreCloseFlattenOptions Enabled => PreCloseFlattenOptions.Default with { Enabled = true };
+    private static PreCloseFlattenSettings Enabled => TradingDefaults.CreatePreCloseFlatten() with { Enabled = true };
 
     private sealed class Fixture
     {
@@ -41,12 +42,13 @@ public class PreCloseFlattenerTests
         public HashSet<string> AnyOrderBlocked { get; } = [];
         public decimal? Rate { get; set; } = 1m;
         public decimal? Current { get; set; } = 21m;
+        public PreCloseFlattenSettings? Flatten { get; set; }
+        public int SizingCalls { get; set; }
 
-        public PreCloseFlattener Build(PreCloseFlattenOptions? options = null) => new(
-            options ?? PreCloseFlattenOptions.Default,
+        public PreCloseFlattener Build() => new(
             new MarketCalendar(new Dictionary<Market, IReadOnlySet<DateOnly>>()),
             new PolicyStub(this), new HeldSymbolsStub(this), new PositionsStub(this), new InFlightStub(this), new BlockersStub(this),
-            new FxStub(this), new PriceStub(this), new SizingStub(), new ClockStub(this), NullLogger<PreCloseFlattener>.Instance);
+            new FxStub(this), new PriceStub(this), new SizingStub(this), new ClockStub(this), NullLogger<PreCloseFlattener>.Instance);
 
         private sealed class ClockStub(Fixture f) : IClock { public DateTimeOffset UtcNow => f.Now; }
 
@@ -103,25 +105,34 @@ public class PreCloseFlattenerTests
                 Task.FromResult(f.Current is { } p ? new CurrentPriceReading(p, IntradayPriceContext.Unknown) : null);
         }
 
-        private sealed class SizingStub : ISizingContextProvider
+        private sealed class SizingStub(Fixture f) : ISizingContextProvider
         {
-            public Task<SizingContext> GetContextAsync(CancellationToken ct = default) => Task.FromResult(Context);
+            public Task<SizingContext> GetContextAsync(CancellationToken ct = default)
+            {
+                f.SizingCalls++;
+                return Task.FromResult(ContextWith(f.Flatten));
+            }
         }
     }
 
-    private static Task<IReadOnlyList<AiStockTrading.Shared.Contracts.Events.TradeDecisionMade>> Run(Fixture f, PreCloseFlattenOptions? options = null) =>
-        f.Build(options).FlattenAsync(TestContext.Current.CancellationToken);
+    private static Task<IReadOnlyList<AiStockTrading.Shared.Contracts.Events.TradeDecisionMade>> Run(Fixture f, PreCloseFlattenSettings? flatten = null)
+    {
+        if (flatten is not null)
+            f.Flatten = flatten;
+        return f.Build().FlattenAsync(TestContext.Current.CancellationToken);
+    }
 
     [Fact]
     public async Task T_10_2927_既定は無効で窓の中でも手仕舞わない()
     {
-        PreCloseFlattenOptions.Default.Enabled.Should().BeFalse();
+        TradingDefaults.CreatePreCloseFlatten().Enabled.Should().BeFalse();
 
-        (await Run(new Fixture())).Should().BeEmpty();
+        (await Run(new Fixture())).Should().BeEmpty("設定が未供給（旧応答・照会の失敗）なら既定の無効");
+        (await Run(new Fixture(), TradingDefaults.CreatePreCloseFlatten())).Should().BeEmpty("設定で無効");
     }
 
     [Fact]
-    public async Task T_10_2928_構成で有効なら閉場の15分前以降に全建玉を成行で全量手仕舞う()
+    public async Task T_10_2928_設定で有効なら閉場の15分前以降に全建玉を成行で全量手仕舞う()
     {
         var decisions = await Run(new Fixture(), Enabled);
 
@@ -166,7 +177,7 @@ public class PreCloseFlattenerTests
 
     // 方針が読めない（未確定）ときは、構成で有効なら持ち越しの指定を確かめられないので全建玉を手仕舞う。
     [Fact]
-    public async Task T_10_2930_方針が無くても構成で有効なら全建玉を手仕舞う()
+    public async Task T_10_2930_方針が無くても設定で有効なら全建玉を手仕舞う()
     {
         (await Run(new Fixture { PolicyText = null }, Enabled)).Should().HaveCount(2);
     }
@@ -271,36 +282,55 @@ public class PreCloseFlattenerTests
     }
 
     [Fact]
-    public async Task T_10_2933_分数は市場ごとの構成を使う()
+    public async Task T_10_2933_分数は市場ごとの設定を使う()
     {
-        var options = Enabled with { Minutes = new Dictionary<Market, int> { [Market.UnitedStates] = 5, [Market.Japan] = 15 } };
+        var flatten = Enabled with { Minutes = new Dictionary<Market, int> { [Market.UnitedStates] = 5, [Market.Japan] = 15 } };
 
-        (await Run(new Fixture(), options)).Should().BeEmpty("閉場の 10 分前は 5 分の構成では窓の外");
+        (await Run(new Fixture(), flatten)).Should().BeEmpty("閉場の 10 分前は 5 分の設定では窓の外");
+
+        var wide = Enabled with { Minutes = new Dictionary<Market, int> { [Market.UnitedStates] = 60, [Market.Japan] = 15 } };
+        (await Run(new Fixture { Now = new DateTimeOffset(2026, 10, 19, 19, 1, 0, TimeSpan.Zero) }, wide))
+            .Should().HaveCount(2, "閉場の 59 分前は 60 分の設定では窓の中");
+    }
+
+    // 🔴 #1407, IADR-0564 決定 1: M の上限（60 分）より前は設定も方針も照会しない（巡回ごとにリスク管理を叩かない）。
+    [Fact]
+    public async Task T_10_2933_閉場の60分より前はサイジング文脈を照会しない()
+    {
+        var f = new Fixture { Now = new DateTimeOffset(2026, 10, 19, 18, 59, 0, TimeSpan.Zero) }; // 14:59 ET（閉場の 61 分前）
+
+        (await Run(f, Enabled)).Should().BeEmpty();
+        f.SizingCalls.Should().Be(0);
+
+        f.Now = InWindow;
+        (await Run(f, Enabled)).Should().HaveCount(2);
+        f.SizingCalls.Should().Be(1, "1 巡回で 1 回だけ照会する（銘柄ごとに照会しない）");
     }
 
     [Fact]
     public void T_10_2933_構成の既定と読み取り()
     {
         var defaults = PreCloseFlattenOptionsLoader.FromConfiguration(new ConfigurationBuilder().Build());
-        defaults.Enabled.Should().BeFalse();
-        defaults.MinutesFor(Market.UnitedStates).Should().Be(15);
-        defaults.MinutesFor(Market.Japan).Should().Be(15);
         defaults.IntervalSeconds.Should().Be(60);
 
-        var configured = PreCloseFlattenOptionsLoader.FromConfiguration(Config(
-            ("Enabled", "true"), ("Minutes:UnitedStates", "10"), ("IntervalSeconds", "30")));
-        configured.Enabled.Should().BeTrue();
-        configured.MinutesFor(Market.UnitedStates).Should().Be(10);
-        configured.MinutesFor(Market.Japan).Should().Be(15);
-        configured.IntervalSeconds.Should().Be(30);
+        PreCloseFlattenOptionsLoader.FromConfiguration(Config(("IntervalSeconds", "30"))).IntervalSeconds.Should().Be(30);
+    }
+
+    // 🔴 #1407, IADR-0564 決定 1: 有効・無効と M はリスク管理へ移した。取引判断の構成に残っていれば起動を止める（黙って効かなくしない）。
+    [Theory]
+    [InlineData("Enabled", "true")]
+    [InlineData("Enabled", "false")]
+    [InlineData("Minutes:UnitedStates", "10")]
+    [InlineData("Minutes:Japan", "15")]
+    public void T_10_2933_有効化と分数の構成が取引判断に残っていれば起動を止める(string key, string value)
+    {
+        var act = () => PreCloseFlattenOptionsLoader.FromConfiguration(Config((key, value)));
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*リスク管理*");
     }
 
     [Theory]
-    [InlineData("Enabled", "yes")]
-    [InlineData("Minutes:UnitedStates", "0")]
-    [InlineData("Minutes:UnitedStates", "61")]
-    [InlineData("Minutes:Japan", "x")]
-    [InlineData("Minutes:Europe", "15")]
+    [InlineData("IntervalSeconds", "x")]
     [InlineData("IntervalSeconds", "5")]
     [InlineData("IntervalSeconds", "301")]
     public void T_10_2933_範囲外や読めない値は起動を止める(string key, string value)

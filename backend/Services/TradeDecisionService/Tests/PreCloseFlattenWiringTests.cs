@@ -1,5 +1,4 @@
 using System.Reflection;
-using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -25,8 +24,7 @@ public class PreCloseFlattenWiringTests
         _ = factory.CreateClient();
 
         var options = factory.Services.GetRequiredService<PreCloseFlattenOptions>();
-        options.Enabled.Should().BeFalse();
-        options.MinutesFor(Market.UnitedStates).Should().Be(15);
+        options.IntervalSeconds.Should().Be(60);
         factory.Services.GetServices<IHostedService>().Should().ContainSingle(s => s is PreCloseFlattenService);
 
         using var scope = factory.Services.CreateScope();
@@ -36,20 +34,15 @@ public class PreCloseFlattenWiringTests
             .GetValue(app).Should().BeSameAs(factory.Services.GetRequiredService<IMarketCalendar>());
     }
 
+    // 🔴 #1407, IADR-0564 決定 1: 有効化と分数の構成はリスク管理へ移した。取引判断の構成に書けば起動が止まる（黙って読まないにしない）。
     [Fact]
-    public void T_10_2933_本番構成は構成の有効化と分数を読む()
+    public void T_10_2933_本番構成は取引判断に残った有効化の構成で起動を止める()
     {
-        using var factory = new Factory(new Dictionary<string, string?>
-        {
-            ["PreCloseFlatten:Enabled"] = "true",
-            ["PreCloseFlatten:Minutes:Japan"] = "10",
-        });
-        _ = factory.CreateClient();
+        using var factory = new Factory(new Dictionary<string, string?> { ["PreCloseFlatten:Enabled"] = "true" });
 
-        var options = factory.Services.GetRequiredService<PreCloseFlattenOptions>();
-        options.Enabled.Should().BeTrue();
-        options.MinutesFor(Market.Japan).Should().Be(10);
-        options.MinutesFor(Market.UnitedStates).Should().Be(15);
+        var act = () => factory.CreateClient();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*リスク管理*");
     }
 
     private sealed class Factory(IDictionary<string, string?> settings) : WebApplicationFactory<Program>

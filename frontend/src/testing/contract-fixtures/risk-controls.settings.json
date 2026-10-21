@@ -63,5 +63,8 @@
     "maxOrderAmountRatio": 0.05,
     "designatedSymbols": []
   },
-  "stopLossMethod": 0
+  "stopLossMethod": 0,
+  "preCloseEntryCutoff": null,
+  "preCloseFlatten": null,
+  "themeConcentration": null
 }

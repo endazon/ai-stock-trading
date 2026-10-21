@@ -1,0 +1,52 @@
+{
+  "effective": [
+    {
+      "name": "暗号資産",
+      "market": 1,
+      "symbols": [
+        "COIN",
+        "MARA",
+        "MSTR",
+        "HOOD"
+      ],
+      "maxPositions": 1
+    }
+  ],
+  "configured": [
+    {
+      "name": "暗号資産",
+      "market": 1,
+      "symbols": [
+        "COIN",
+        "MARA",
+        "MSTR",
+        "HOOD"
+      ],
+      "maxPositions": 1
+    },
+    {
+      "name": "AI・半導体",
+      "market": 1,
+      "symbols": [
+        "NVDA",
+        "SMCI"
+      ],
+      "maxPositions": 1
+    }
+  ],
+  "saved": [
+    {
+      "name": "暗号資産",
+      "market": 1,
+      "symbols": [
+        "COIN",
+        "MARA",
+        "MSTR",
+        "HOOD"
+      ],
+      "maxPositions": 1
+    }
+  ],
+  "source": 1,
+  "drift": true
+}

@@ -52,6 +52,11 @@ public sealed record ThemeConcentrationSettings(IReadOnlyList<ThemeLimit> Themes
         return exceeded;
     }
 
+    // FR-11, #1407, IADR-0564: 変更履歴の前後値に中身を残す（既定の ToString は一覧の型名しか出さない）。
+    public override string ToString() =>
+        "ThemeConcentrationSettings { Themes = [" + string.Join(", ", Themes.Select(t =>
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{t.Name}({t.Market}; 上限 {t.MaxPositions}; {string.Join("/", t.Symbols)})"))) + "] }";
+
     private static bool SameSymbol(string a, Market marketA, string b, Market marketB) =>
         marketA == marketB && string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
 }

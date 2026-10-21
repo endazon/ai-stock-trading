@@ -222,6 +222,31 @@ public class HttpSizingContextProviderTests
         legacy.EffectiveHighVolatility.Should().Be(TradingDefaults.CreateHighVolatilitySettings());
     }
 
+    // T-10-2953, FR-10, SC-02, ADR-0070, #1407, IADR-0564 決定 1: 既定の経路（REST）で、送り手の型の閉場前の手仕舞いの効いている値を同じ値で読む
+    // （市場ごとの M は市場名のキーの辞書で往復する）。項目の無い旧応答と値域の外は null（既定＝無効・15 分）。
+    [Fact]
+    public async Task T_10_2953_RESTで閉場前の手仕舞いの値を同じ値で読む()
+    {
+        var flatten = new PreCloseFlattenSettings(true, new Dictionary<Market, int> { [Market.UnitedStates] = 20, [Market.Japan] = 10 });
+        var view = new SizingContextView(
+            120_000m, 45_000m, 22_000m, 0, 0m, BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits(),
+            StopLossExecutionMethod.BrokerStopOrder, TradingDefaults.CreateHighVolatilitySettings(), flatten);
+        var body = JsonSerializer.Serialize(view, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        body.Should().Contain("\"preCloseFlatten\":{");
+        var legacyBody = body[..body.IndexOf(",\"preCloseFlatten\"", StringComparison.Ordinal)] + "}";
+        var outOfRange = body.Replace("\"UnitedStates\":20", "\"UnitedStates\":61", StringComparison.Ordinal);
+
+        var context = await Provider(new StubHandler(HttpStatusCode.OK, body)).GetContextAsync();
+        var legacy = await Provider(new StubHandler(HttpStatusCode.OK, legacyBody)).GetContextAsync();
+        var invalid = await Provider(new StubHandler(HttpStatusCode.OK, outOfRange)).GetContextAsync();
+
+        context.PreCloseFlatten!.SameAs(flatten).Should().BeTrue();
+        legacy.PreCloseFlatten.Should().BeNull();
+        legacy.EffectivePreCloseFlatten.Enabled.Should().BeFalse();
+        invalid.PreCloseFlatten.Should().BeNull("値域の外は効かせない");
+        invalid.Capital.Should().Be(120_000m, "他の項目は読める");
+    }
+
     // T-10-2566, IADR-0527 決定3: 統制値を逆シリアル化できない応答（型の食い違い）は、統制値だけを落とすのではなく応答全体を
     // 安全既定（残枠 0・資金は未供給）へ倒す。統制値が緩い形で読まれて新規建てへ進むことはない。
     [Theory]

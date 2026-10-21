@@ -168,7 +168,7 @@ public sealed class EntryScreeningSerializationE2ETests : IAsyncLifetime
         return new OrderScreeningService(
             new InMemoryRiskSettingsStore(settings), snapshots, new InMemoryLockoutStore(), clock,
             new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(), ledger, shortSell,
-            new EfEntryReservationStore(db), TradingDefaults.CreatePreCloseEntryCutoff(), TradingDefaults.CreateThemeConcentration());
+            new EfEntryReservationStore(db), ConfiguredSessionAndThemeControls.Default);
     }
 
     private static TradeDecisionMade Decision(string symbol, int quantity = 10, decimal price = 10m) =>

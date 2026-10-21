@@ -669,8 +669,9 @@ builder.Services.AddScoped(sp => new Stage0DecisionRecorder(
     sp.GetRequiredService<MinimumEntryNotionalOptions>()));
 builder.Services.AddHostedService<Stage0RecordingService>();
 
-// 🔴 FR-10, FR-19, #1396, IADR-0561 決定 3・4: 閉場前の手仕舞い（既定は無効。PreCloseFlatten:Enabled か方針の「閉場前の手仕舞い: 有効」の行で有効）。
-// 構成は構築時に読む（範囲外・読めない値は起動を止める）。常駐は常に登録する（方針の行で有効になるため。窓の外では照会もしない）。
+// 🔴 FR-10, FR-19, #1396, IADR-0561 決定 3・4: 閉場前の手仕舞い（既定は無効。設定か方針の「閉場前の手仕舞い: 有効」の行で有効）。
+// #1407, IADR-0564 決定 1: 有効・無効と M はリスク管理の設定（SC-02 の保存値か構成）からサイジング文脈で受け取る。ここで読むのは巡回の間隔だけ
+// （PreCloseFlatten:Enabled / Minutes が取引判断の構成に残っていれば起動を止める）。構成は構築時に読む（範囲外・読めない値は起動を止める）。常駐は常に登録する（方針の行で有効になるため。窓の外では照会もしない）。
 builder.Services.AddSingleton(PreCloseFlattenOptionsLoader.FromConfiguration(builder.Configuration));
 builder.Services.AddScoped<TradeDecisionService.Features.TradeDecision.FlattenBeforeClose.PreCloseFlattener>();
 builder.Services.AddHostedService<PreCloseFlattenService>();

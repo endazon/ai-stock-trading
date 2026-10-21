@@ -32,8 +32,14 @@ public record SizingContext(
     // 🔴 FR-10, ADR-0063 決定1・決定2, #1291, IADR-0527 決定3: 高ボラティリティ銘柄の統制値（区分の上限・利用者の明示指定。リスク管理の設定）。
     // **null＝未供給**（項目を持たない旧応答・照会失敗の安全既定）。読む側は既定（上限 5%・明示指定なし）で効かせる（EffectiveHighVolatility）
     // ——不在を「区分の上限なし」にしない。明示指定が分からない間も審査は自分の設定で判定する（ここがずれても審査が止める）。
-    HighVolatilitySettings? HighVolatility = null)
+    HighVolatilitySettings? HighVolatility = null,
+    // 🔴 FR-10, FR-19, SC-02, ADR-0070 決定 2・5, #1407, IADR-0564 決定 1: 閉場前の手仕舞いの**効いている値**（リスク管理の保存値か構成の値）。
+    // **null＝未供給**（旧応答・照会失敗の安全既定）。読む側は既定（無効・15 分）で効かせる（EffectivePreCloseFlatten）。方針の行による有効化は別に効く。
+    PreCloseFlattenSettings? PreCloseFlatten = null)
 {
+    /// <summary>FR-10, #1407, IADR-0564 決定 1: 効かせる閉場前の手仕舞いの値（未供給は既定＝無効・JP/US とも 15 分）。</summary>
+    public PreCloseFlattenSettings EffectivePreCloseFlatten => PreCloseFlatten ?? TradingDefaults.CreatePreCloseFlatten();
+
     /// <summary>FR-10, #1291, IADR-0527 決定3: 効かせる高ボラティリティ銘柄の統制値（未供給は既定＝上限 5%・明示指定なし）。</summary>
     public HighVolatilitySettings EffectiveHighVolatility => HighVolatility ?? TradingDefaults.CreateHighVolatilitySettings();
 }

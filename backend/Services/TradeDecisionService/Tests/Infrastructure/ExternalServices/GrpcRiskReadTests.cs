@@ -400,4 +400,36 @@ public class GrpcRiskReadTests
         unknownMarket.HighVolatility!.DesignatedSymbols.Should().BeEmpty();
         unknownMarket.HighVolatility.MaxOrderAmountRatio.Should().Be(0.05m, "比率の欠落は既定（区分の上限を外さない）");
     }
+
+    // T-10-2953, FR-10, SC-02, ADR-0070, #1407, IADR-0564 決定 1: 閉場前の手仕舞いの効いている値は送り手の型から受け手へ同じ値で届く。
+    // 項目を持たない応答（旧い送り手）・有効の欠落は null（読む側が既定＝無効・15 分）。分の欠けた市場は既定の 15 分。値域の外は null。
+    [Fact]
+    public async Task T_10_2953_閉場前の手仕舞いの値を受け手が同じ値で読む()
+    {
+        var flatten = new PreCloseFlattenSettings(true, new Dictionary<Market, int> { [Market.UnitedStates] = 20, [Market.Japan] = 10 });
+
+        var context = await ReadSizingAsync(RiskReadWireMapping.ToProto(new SizingContextView(
+            10000m, 2000m, 3000m, 0, 0m, BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits(),
+            StopLossExecutionMethod.BrokerStopOrder, TradingDefaults.CreateHighVolatilitySettings(), flatten)));
+        var legacy = await ReadSizingAsync(SizingProto());
+        var noEnabled = await ReadSizingAsync(SizingProto(r => r.PreCloseFlatten = new Proto.PreCloseFlattenControls()));
+        var partial = await ReadSizingAsync(SizingProto(r => r.PreCloseFlatten = new Proto.PreCloseFlattenControls
+        {
+            Enabled = true,
+            Minutes = { new Proto.MarketMinutesRow { Market = Proto.Market.UnitedStates, Minutes = 30 }, new Proto.MarketMinutesRow { Minutes = 5 } },
+        }));
+        var outOfRange = await ReadSizingAsync(SizingProto(r => r.PreCloseFlatten = new Proto.PreCloseFlattenControls
+        {
+            Enabled = true,
+            Minutes = { new Proto.MarketMinutesRow { Market = Proto.Market.UnitedStates, Minutes = 61 } },
+        }));
+
+        context.PreCloseFlatten!.SameAs(flatten).Should().BeTrue();
+        legacy.PreCloseFlatten.Should().BeNull();
+        legacy.EffectivePreCloseFlatten.Enabled.Should().BeFalse("未供給は既定の無効");
+        noEnabled.PreCloseFlatten.Should().BeNull();
+        partial.PreCloseFlatten!.MinutesFor(Market.UnitedStates).Should().Be(30);
+        partial.PreCloseFlatten.MinutesFor(Market.Japan).Should().Be(15, "市場が未指定の行は落とし、その市場は既定");
+        outOfRange.PreCloseFlatten.Should().BeNull();
+    }
 }

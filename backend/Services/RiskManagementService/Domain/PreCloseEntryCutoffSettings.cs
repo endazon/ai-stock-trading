@@ -30,6 +30,9 @@ public sealed record PreCloseEntryCutoffSettings(IReadOnlyDictionary<Market, int
 
         return this;
     }
+
+    // FR-11, #1407, IADR-0564: 変更履歴の前後値に中身を残す（既定の ToString は辞書の型名しか出さない）。
+    public override string ToString() => $"PreCloseEntryCutoffSettings {{ Minutes = {ControlFormatting.Minutes(Minutes)} }}";
 }
 
 /// <summary>

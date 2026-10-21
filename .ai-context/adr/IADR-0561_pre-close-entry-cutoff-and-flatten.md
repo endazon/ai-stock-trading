@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-04, FR-10, FR-19, UC-01, UC-06, ADR-0003, ADR-0009, ADR-0040, IADR-0163, IADR-0357, IADR-0380, IADR-0470, IADR-0515, IADR-0529, IADR-0535, IADR-0558]
 author: claude (Claude Code)
 created: 2026-10-20
-updated: 2026-10-20
+updated: 2026-10-21
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md（FR-10・FR-19・FR-04）
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md（§5。本件の 2 行は反映待ち）
@@ -102,3 +102,15 @@ MARA を閉場の約 1 時間前に新規建て、NVDA・MARA を夜間に持ち
     空売り・信用の建玉の手仕舞いもこの形で正しく扱われる（決済の種別を将来読むようにするときは、3 つの決済の経路をそろえて変える）。
   - S1 が同じ建玉を損切りすると、S1 が判断の決済（出どころ TradeDecision）を取り消して自分の決済を出す（IADR-0515。損切りが優先し二重決済しない）。
 - 計画との差異: なし（裁定どおり）。**計画 §5 へ 2 行（締め切り・手仕舞い）の反映が要る**（未反映。PR 本文に「計画 §5 の反映待ち」と書く）。
+
+## ［2026-10-21 追記 / #1407］計画 ADR-0070 が起きた・手仕舞いの構成の置き場を改めた
+
+- 本 IADR の裁定（planning#808）は、計画 ADR-0070（planning#813・2026-10-21・Accepted）として計画に記録された。決定 1〜4 は本 IADR の決定 2〜5 と同じ内容である。
+  「計画 §5 へ 2 行の反映が要る（未反映）」は、同じ PR で 05_trading-assumptions §5 に反映された（計画側の作業）。
+- ADR-0070 決定 5 は、N（市場ごと）・M（市場ごと）・手仕舞いの有効・無効を SC-02 からも表示・設定できるようにすると定め、保存の置き場と構成との関係を実装に任せた。
+  これを [IADR-0564](IADR-0564_sc02-pre-close-and-theme-settings-saved-over-config.md) が決めた: 置き場はリスク管理の設定行、効く値は保存値があれば保存値・無ければ構成の値。
+- 🔴 **決定 3 の構成のうち `PreCloseFlatten:Enabled`・`PreCloseFlatten:Minutes:<Market>` はリスク管理の構成へ移した**（IADR-0564 決定 1）。取引判断に残るのは `PreCloseFlatten:IntervalSeconds` だけであり、
+  取引判断の構成に両キーが残っていれば起動を止める。手仕舞いの常駐は効いている値をサイジング文脈で受け取る。
+- 決定 2 の「`OrderScreeningService` は構成 `PreCloseEntryCutoffSettings` を必須の引数で受ける」は、構成の値をまとめた `ConfiguredSessionAndThemeControls` を必須の引数で受け、
+  審査のたびに保存値と突き合わせて効く値を解決する形になった（必須依存であることは変わらない）。
+

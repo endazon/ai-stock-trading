@@ -1,8 +1,11 @@
+extern alias RiskManagementWorker;
+
 using System.Globalization;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using Microsoft.Extensions.Logging;
+using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Common.Abstractions;
 
 namespace TradeDecisionService.Features.TradeDecision.FlattenBeforeClose;
@@ -10,7 +13,8 @@ namespace TradeDecisionService.Features.TradeDecision.FlattenBeforeClose;
 // 🔴 FR-10, FR-19, #1396, IADR-0561 決定 3・4: **閉場前の手仕舞い**（利用者裁定 2026-10-20・planning#808）。閉場の M 分前（既定 15 分・市場ごと）以降の
 // 場中に、保有中の建玉を**成行で全量**手仕舞う判断（TradeDecisionMade・Close・MarketOrder）を作る。LLM は呼ばない（統制であり判断ではない）。
 //
-//   - 既定は**無効**。構成（PreCloseFlatten:Enabled）か方針の決まった書式の行（「閉場前の手仕舞い: 有効」）のどちらかで有効になる。
+//   - 既定は**無効**。設定（リスク管理の SC-02 の保存値か構成 PreCloseFlatten:Enabled。#1407・IADR-0564 決定 1 でサイジング文脈から受け取る）か
+//     方針の決まった書式の行（「閉場前の手仕舞い: 有効」）のどちらかで有効になる。M（市場ごと）も同じ設定から受け取る。
 //   - 有効時の既定は**全建玉**。方針の「持ち越し可: …」行に明記した銘柄だけを残す（自由文は読まない。PolicyPreCloseLines）。
 //   - 🔴 **決済の経路は既存のものを使う**（新しい発注の経路を作らない）: 判断の決済と同じく TradeDecisionMade を発行し、リスク管理の審査
 //     （決済は統制で止めない＝ADR-0009）→ OrderApproved（出どころ TradeDecision）→ 発注執行の成行の口（IADR-0357）へ流れる。
@@ -21,7 +25,6 @@ namespace TradeDecisionService.Features.TradeDecision.FlattenBeforeClose;
 // ソフトウェア逆指値（S1）との関係: S1 は判断の手仕舞い（出どころ TradeDecision）を損切りの前に取り消して自分の決済を出す（IADR-0515）。
 // 本決済もその対象であり、損切りが優先する（同じ建玉を二重に決済しない）。夜間は S1 が保護しない（IADR-0380）ため、本統制は持ち越しを減らす側にだけ働く。
 public sealed class PreCloseFlattener(
-    PreCloseFlattenOptions options,
     IMarketCalendar calendar,
     IDailyPolicyProvider policyProvider,
     IHeldSymbolsProvider heldSymbols,
@@ -34,6 +37,9 @@ public sealed class PreCloseFlattener(
     IClock clock,
     ILogger<PreCloseFlattener> logger)
 {
+    /// <summary>手仕舞いの対象の市場（日本株は無効だが〔ADR-0062〕、再有効化に備えて見る。審査が市場の無効で止める前に AnyOrder で見送る）。</summary>
+    private static readonly Market[] Markets = [Market.UnitedStates, Market.Japan];
+
     /// <summary>手仕舞いの判断の根拠文の頭（監査・通知で本統制の決済を見分ける）。</summary>
     public const string RationalePrefix = "閉場前の手仕舞い（統制）";
 
@@ -45,22 +51,32 @@ public sealed class PreCloseFlattener(
     {
         var now = clock.UtcNow;
 
-        // 手元の値だけで決まる「閉場の M 分前以降の場中か」を先に見る（窓の外では方針も保有も照会しない）。
-        var closes = new Dictionary<Market, DateTimeOffset>();
-        foreach (var market in options.Markets)
+        // 手元の値だけで決まる「閉場の 60 分前（M の上限）以降の場中か」を先に見る（その外では設定も方針も保有も照会しない）。
+        var candidates = new Dictionary<Market, DateTimeOffset>();
+        foreach (var market in Markets)
         {
             if (!calendar.IsOpen(market, now))
                 continue;
-            if (calendar.SessionClose(market, now) is { } close && PreCloseWindow.IsAtOrAfter(now, close, options.MinutesFor(market)))
-                closes[market] = close;
+            if (calendar.SessionClose(market, now) is { } close && PreCloseWindow.IsAtOrAfter(now, close, PreCloseFlattenSettings.MaxMinutes))
+                candidates[market] = close;
         }
 
+        if (candidates.Count == 0)
+            return [];
+
+        // #1407, IADR-0564 決定 1: 効いている有効・無効と M（リスク管理の保存値か構成の値）。照会に失敗すれば安全既定（null）＝既定の無効・15 分
+        // （方針の行による有効化は別に効く）。
+        var context = await sizingProvider.GetContextAsync(cancellationToken).ConfigureAwait(false);
+        var settings = context.EffectivePreCloseFlatten;
+        var closes = candidates
+            .Where(kv => PreCloseWindow.IsAtOrAfter(now, kv.Value, settings.MinutesFor(kv.Key)))
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
         if (closes.Count == 0)
             return [];
 
         var policy = await GetPolicySafeAsync(cancellationToken).ConfigureAwait(false);
         var enabledByPolicy = PolicyPreCloseLines.FlattenEnabled(policy?.Summary);
-        if (!options.Enabled && !enabledByPolicy)
+        if (!settings.Enabled && !enabledByPolicy)
             return [];
 
         var keep = PolicyPreCloseLines.OvernightAllowed(policy?.Summary);
@@ -86,7 +102,7 @@ public sealed class PreCloseFlattener(
 
             try
             {
-                if (await FlattenOneAsync(target, close, now, policy, cancellationToken).ConfigureAwait(false) is { } decision)
+                if (await FlattenOneAsync(target, close, now, policy, context, settings.MinutesFor(target.Market), cancellationToken).ConfigureAwait(false) is { } decision)
                     decisions.Add(decision);
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -99,7 +115,8 @@ public sealed class PreCloseFlattener(
     }
 
     private async Task<TradeDecisionMade?> FlattenOneAsync(
-        WatchedSymbol target, DateTimeOffset close, DateTimeOffset now, DailyPolicy? policy, CancellationToken cancellationToken)
+        WatchedSymbol target, DateTimeOffset close, DateTimeOffset now, DailyPolicy? policy, SizingContext context, int minutes,
+        CancellationToken cancellationToken)
     {
         var position = await heldPositions.GetPositionAsync(target.Symbol, target.Market, cancellationToken).ConfigureAwait(false);
         if (position is null)
@@ -147,7 +164,6 @@ public sealed class PreCloseFlattener(
             return null;
         }
 
-        var context = await sizingProvider.GetContextAsync(cancellationToken).ConfigureAwait(false);
         var quantity = Math.Abs(position.SignedQuantity);
         var intent = new OrderIntent(
             target.Symbol,
@@ -168,7 +184,7 @@ public sealed class PreCloseFlattener(
         var localClose = TimeZoneInfo.ConvertTime(close, MarketHours.ZoneOf(target.Market));
         var rationale = string.Create(
             CultureInfo.InvariantCulture,
-            $"{RationalePrefix}: 閉場 {localClose:HH:mm}（現地）の {options.MinutesFor(target.Market)} 分前以降のため、保有の全量 {quantity} 株を成行で手仕舞う（方針の「持ち越し可」に無い銘柄）。");
+            $"{RationalePrefix}: 閉場 {localClose:HH:mm}（現地）の {minutes} 分前以降のため、保有の全量 {quantity} 株を成行で手仕舞う（方針の「持ち越し可」に無い銘柄）。");
         logger.LogWarning(
             "閉場前の手仕舞い: {Symbol} {Side} 数量={Quantity} 成行（閉場 {Close:O}）", target.Symbol, closeSide, quantity, close);
 
