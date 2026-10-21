@@ -26,7 +26,7 @@ public class OrderDispatchForgoneLifecycleTests
     [InlineData(OrderDispatchForgoneReason.InFlightCloseCoversPosition)]
     // T-10-2102, #1048, IADR-0481 決定1: 別の手法の有効な記録がある新規建て（予約の前・送信の直前のどちらも送信前）。
     [InlineData(OrderDispatchForgoneReason.StopLossMethodConflict)]
-    // T-10-2972, FR-10, ADR-0009, IADR-0565 決定 3: 送る直前の停止状態の最終照会（予約を Forgone へ移して送信の前に return）。
+    // T-10-2972, FR-10, ADR-0009, IADR-0567 決定 3: 送る直前の停止状態の最終照会（予約を Forgone へ移して送信の前に return）。
     [InlineData(OrderDispatchForgoneReason.KillSwitchActive)]
     [InlineData(OrderDispatchForgoneReason.TradingPaused)]
     [InlineData(OrderDispatchForgoneReason.TradingHaltStateUnknown)]
@@ -63,7 +63,7 @@ public class OrderDispatchForgoneLifecycleTests
     //     （建玉照会と処理中の決済の読み取り＝読み取りだけの後で `return`・`TryReserve` と送信はいずれも後）。
     //   - #1048（IADR-0481）が `StopLossMethodConflict` を足して **8 → 9**（対応済み）。分類は `true`＝確実に未発注
     //     （予約の前の判定は保護記録の読み取りだけの後で `return`、送信の直前の判定は予約を Forgone へ移して送信の前に `return`）。
-    //   - IADR-0565 が `KillSwitchActive` / `TradingPaused` / `TradingHaltStateUnknown` を足して **9 → 12**（対応済み）。分類は `true`＝確実に未発注
+    //   - IADR-0567 が `KillSwitchActive` / `TradingPaused` / `TradingHaltStateUnknown` を足して **9 → 12**（対応済み）。分類は `true`＝確実に未発注
     //     （送信の直前の停止状態の最終照会。リスク管理への読み取りの後で予約を Forgone へ移し、ブローカーへの送信の前に `return`）。
     // 赤くなった側がやること:
     //

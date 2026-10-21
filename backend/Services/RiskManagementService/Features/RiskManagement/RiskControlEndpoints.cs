@@ -89,7 +89,7 @@ internal static class RiskControlEndpoints
         read.MapGetOpeningInventory();
         read.MapGetBuyInInferences();
         read.MapGetSessionUptime();
-        // 🔴 FR-10, ADR-0009, IADR-0565 決定 2: kill switch・一時停止の成立の有無だけ（発注執行が新規建てを送る直前に読む）。
+        // 🔴 FR-10, ADR-0009, IADR-0567 決定 2: kill switch・一時停止の成立の有無だけ（発注執行が新規建てを送る直前に読む）。
         read.MapGetTradingHalt();
 
         // ---- 利用者のみ（kill switch は ADR-0003・ガード設定は ADR-0007・段階は ADR-0008／OwnerOnly）: kill switch・設定変更。サービスには許可しない ----

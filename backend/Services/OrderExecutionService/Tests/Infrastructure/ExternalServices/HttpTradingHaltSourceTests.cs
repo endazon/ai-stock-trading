@@ -11,7 +11,7 @@ using Xunit;
 
 namespace OrderExecutionService.Tests;
 
-// 🔴 T-10-2967・T-10-2970, FR-10, ADR-0009, NFR-04, IADR-0565 決定 2, IADR-0420: 停止の状態の照会（受け手）。
+// 🔴 T-10-2967・T-10-2970, FR-10, ADR-0009, NFR-04, IADR-0567 決定 2, IADR-0420: 停止の状態の照会（受け手）。
 // 送り手の本物の型（TradingHaltView）を web 既定で直列化した本文を読める（契約）。失敗・タイムアウト・解釈できない本文・
 // 項目の欠落は **null（不明）**——欠落を false（停止していない）と読む向きの誤りを必ず不明へ倒す。
 public class HttpTradingHaltSourceTests
@@ -114,7 +114,7 @@ public class HttpTradingHaltSourceTests
         (await Source(new StubHandler(HttpStatusCode.OK, body)).GetAsync(cts.Token)).Should().BeNull();
     }
 
-    // IADR-0565 決定 4: 待ちの上限（記録した値と同じ）。
+    // IADR-0567 決定 4: 待ちの上限（記録した値と同じ）。
     [Fact]
     public void 待ちの上限は3秒()
     {

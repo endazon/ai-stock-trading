@@ -2,7 +2,7 @@
 title: 発注執行が新規建てをブローカーへ送る直前に kill switch と一時停止の状態を最終照会し、状態が不明なら送らない（多層防御）
 type: spec
 status: done
-related_ids: [FR-10, FR-05, FR-14, UC-06, NFR-04, ADR-0003, ADR-0009, IADR-0565, IADR-0051, IADR-0420, IADR-0211, IADR-0398, IADR-0356, IADR-0481, IADR-0284]
+related_ids: [FR-10, FR-05, FR-14, UC-06, NFR-04, ADR-0003, ADR-0009, IADR-0567, IADR-0051, IADR-0420, IADR-0211, IADR-0398, IADR-0356, IADR-0481, IADR-0284]
 author: claude (Claude Code)
 created: 2026-10-21
 updated: 2026-10-21
@@ -21,7 +21,7 @@ plan_refs:
 
 - 機能要求: **FR-10**（kill switch・一時停止）、FR-05（発注執行）、FR-14（操作の窓口）。UC-06。NFR-04（障害時は新規発注を止める）。
 - 関連 ADR: **ADR-0009 決定 3・4**（優先順位 kill switch ＞ 日次損失ロックアウト ＞ 一時停止。**3 統制とも新規建てのみを止め、手仕舞い・損切りは止めない**）、ADR-0003（統制は決定的なコードで強制）。
-- 新規 IADR: **IADR-0565**
+- 新規 IADR: **IADR-0567**
 
 ## 現状（調査の結果）
 
@@ -33,7 +33,7 @@ plan_refs:
 | 発注の経路 | `OrderApprovedHandler.Handle` → `OrderExecutionAppService.ExecuteAsync`（相 1 完了の照合 → 見送り済みの照合 → 決済の建玉照合 → 手法の解決・新規建ての前提の判定 → 相 2 予約 → 保護の文脈の記録 → 送信の直前の手法の併存の判定 → **相 3 送信**）。新規建てを送るのはこの 1 か所だけ（他の送信は保護レグ・成行の手仕舞い・S1 の決済＝すべて決済方向） |
 | 発注執行 → リスク管理の同期照会 | **無い**（発注執行は今まで承認イベントだけを受けていた） |
 
-## 方針（IADR-0565 の要約）
+## 方針（IADR-0567 の要約）
 
 1. **新規建て（`PositionEffect != Close`）だけ**を、予約を取った後・**ブローカーへ送る直前**に照会する。決済・損切り（保護レグ・成行手仕舞い・S1 の決済）は照会しない＝止めない（ADR-0009 決定 4）。
 2. リスク管理に OwnerOrService の読み取り口 `GET /risk-controls/trading-halt` を足す（`{ killSwitchEngaged, tradingPaused }` の 2 値だけ。操作者・理由は返さない＝最小限の露出）。値は審査と同じストアから読む。
@@ -73,7 +73,7 @@ plan_refs:
 | T-10-2971 | 本番の組み立て（Program.cs）で、照会先が未構成なら新規建てを送らない／構成済みなら照会元が Http になる | `TradingHaltWiringTests` |
 | T-10-2972 | 見送り理由の序数 9・10・11 と、在庫解放の allowlist（確実に未発注） | `StopLossMethodContractTests`・`OrderDispatchForgoneLifecycleTests` |
 
-変異: (M1) 判定を外す・(M2) 決済も照会する・(M3) 不明を「通す」へ倒す・(M4) kill switch と一時停止の順を入れ替える・(M5) 項目の欠落を false と読む・(M6) Program.cs で照会元を渡さない。各 1 本ずつ当てて赤を確かめる（結果は IADR-0565 に記録）。
+変異: (M1) 判定を外す・(M2) 決済も照会する・(M3) 不明を「通す」へ倒す・(M4) kill switch と一時停止の順を入れ替える・(M5) 項目の欠落を false と読む・(M6) Program.cs で照会元を渡さない。各 1 本ずつ当てて赤を確かめる（結果は IADR-0567 に記録）。
 
 ## 配備への影響
 

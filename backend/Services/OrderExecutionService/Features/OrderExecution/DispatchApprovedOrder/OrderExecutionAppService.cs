@@ -48,7 +48,7 @@ namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 // （AwaitingEntry）、エントリーの送信結果が不明のまま突合で発注済みと確定したら、本クラスの ProtectAsync が承認時の手法で
 // 保護レグを張る（IReconciledEntryProtection）。
 //
-// 🔴 FR-10, ADR-0009 決定 3・4, NFR-04, IADR-0565: **新規建ては、ブローカーへ送る直前に kill switch・一時停止の状態をリスク管理へ最終照会し、
+// 🔴 FR-10, ADR-0009 決定 3・4, NFR-04, IADR-0567: **新規建ては、ブローカーへ送る直前に kill switch・一時停止の状態をリスク管理へ最終照会し、
 // 成立中または不明なら送らない**（予約を Forgone へ移して見送る）。決済・損切りは照会しない＝止めない。照会元（tradingHalt）は
 // 本番の Program.cs が必ず渡す（照会先が未構成なら常に不明を返す実装。T-10-2971 が Program.cs そのもので固定する）。
 public sealed class OrderExecutionAppService(
@@ -399,7 +399,7 @@ public sealed class OrderExecutionAppService(
             return ForgoneIfRecorded(approved, OrderDispatchForgoneReason.StopLossMethodConflict, conflicted);
         }
 
-        // 🔴 FR-10, ADR-0009 決定 3・4, NFR-04, IADR-0565 決定 1・3: **送信の直前の最終照会**（新規建てだけ）。kill switch・一時停止が
+        // 🔴 FR-10, ADR-0009 決定 3・4, NFR-04, IADR-0567 決定 1・3: **送信の直前の最終照会**（新規建てだけ）。kill switch・一時停止が
         // 成立中、または確かめられない（不明）なら送らない。審査（リスク管理）の承認の後に利用者が停止を入れた窓を、送信の手前で閉じる。
         // 決済（Close）は照会しない——手仕舞い・損切りはどの停止でも止めない（ADR-0009 決定 4）。照会の失敗で止めてもいけない。
         // 見送りの形は上の「送信の直前」の併存の判定と同じ（予約を Forgone へ移し、S1 の行・保護の文脈を閉じる＝確実に未発注）。
@@ -653,7 +653,7 @@ public sealed class OrderExecutionAppService(
         }
     }
 
-    // 🔴 FR-10, ADR-0009 決定 3, IADR-0565 決定 3: 停止の状態を見送りの理由へ写す（送ってよければ null）。
+    // 🔴 FR-10, ADR-0009 決定 3, IADR-0567 決定 3: 停止の状態を見送りの理由へ写す（送ってよければ null）。
     // 優先順位は kill switch ＞ 一時停止（ADR-0009 決定 3。日次損失ロックアウトは審査が止める）。不明は TradingHaltStateUnknown。
     private async Task<OrderDispatchForgoneReason?> FinalTradingHaltCheckAsync(
         OrderApproved approved, CancellationToken cancellationToken)

@@ -15,7 +15,7 @@ using Xunit;
 
 namespace OrderExecutionService.Tests;
 
-// 🔴 T-10-2971, FR-10, ADR-0009, NFR-04, IADR-0565 決定 2: **本番の組み立て（Program.cs）**で、送る直前の停止状態の照会が
+// 🔴 T-10-2971, FR-10, ADR-0009, NFR-04, IADR-0567 決定 2: **本番の組み立て（Program.cs）**で、送る直前の停止状態の照会が
 // 発注執行へ渡っていることを固定する（引数は省略可能なので、渡し忘れてもコンパイルも単体の試験も通る）。
 //   - 照会先（RiskManagement:BaseUrl）が未構成 → 常に不明 → 新規建ては送られない（fail-closed）。
 //   - 構成済み → "risk" HttpClient で照会し、停止中なら送られず、停止していなければ送られる。

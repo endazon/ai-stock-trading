@@ -10,7 +10,7 @@ using Xunit;
 
 namespace RiskManagementService.Tests;
 
-// 🔴 T-10-2970, FR-10, ADR-0009, IADR-0565 決定 2, IADR-0420 決定 2: 停止の状態の口（GET /risk-controls/trading-halt）を
+// 🔴 T-10-2970, FR-10, ADR-0009, IADR-0567 決定 2, IADR-0420 決定 2: 停止の状態の口（GET /risk-controls/trading-halt）を
 // **本物の Program.cs**（RiskWorkerWebApplicationFactory。InMemory DB・TestAuthHandler だけを差し替え）で固定する。
 // 発注執行が s2s（trading-service）で読む。本文は応答型を web 既定で直列化したものと同じで、操作者・理由は出さない。
 public class TradingHaltEndpointTests

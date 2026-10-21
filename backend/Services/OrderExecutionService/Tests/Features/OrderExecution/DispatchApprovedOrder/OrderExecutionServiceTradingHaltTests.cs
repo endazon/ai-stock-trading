@@ -12,7 +12,7 @@ using AppSvc = OrderExecutionService.Features.OrderExecution.DispatchApprovedOrd
 
 namespace OrderExecutionService.Tests;
 
-// 🔴 T-10-2965〜T-10-2969, FR-10, ADR-0009 決定 3・4, NFR-04, IADR-0565: 新規建てを送る直前の停止状態の最終照会。
+// 🔴 T-10-2965〜T-10-2969, FR-10, ADR-0009 決定 3・4, NFR-04, IADR-0567: 新規建てを送る直前の停止状態の最終照会。
 // kill switch・一時停止が成立中、または状態が不明なら新規建ては送らない（予約は Forgone・S1 の行と保護の文脈は閉じる）。
 // 決済（Close）は照会せずに送る（ADR-0009 決定 4: どの停止でも手仕舞い・損切りは止めない）。
 public class OrderExecutionServiceTradingHaltTests

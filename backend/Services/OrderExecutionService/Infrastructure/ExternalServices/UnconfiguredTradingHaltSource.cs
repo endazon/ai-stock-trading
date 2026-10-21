@@ -3,7 +3,7 @@ using OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 
 namespace OrderExecutionService.Infrastructure.ExternalServices;
 
-// 🔴 FR-10, NFR-04, IADR-0565 決定 2: 照会先（RiskManagement:BaseUrl）が構成されていないときの停止の状態。**常に不明**であり、
+// 🔴 FR-10, NFR-04, IADR-0567 決定 2: 照会先（RiskManagement:BaseUrl）が構成されていないときの停止の状態。**常に不明**であり、
 // 新規建ては送られない（fail-closed）。決済・損切りは照会しないので影響を受けない。照会を省く既定・構成の口は持たない。
 public sealed class UnconfiguredTradingHaltSource(ILogger<UnconfiguredTradingHaltSource> logger) : ITradingHaltSource
 {

@@ -1,6 +1,6 @@
 namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 
-// 🔴 FR-10, ADR-0009 決定 3・4, NFR-04, IADR-0565 決定 1・2: 新規建てを送る直前に読む、利用者の 2 つの停止（kill switch・一時停止）の
+// 🔴 FR-10, ADR-0009 決定 3・4, NFR-04, IADR-0567 決定 1・2: 新規建てを送る直前に読む、利用者の 2 つの停止（kill switch・一時停止）の
 // 現在の状態。持ち主はリスク管理であり、発注執行は読むだけである（規則〔新規建てだけを止める〕は発注執行の判定が持つ）。
 public interface ITradingHaltSource
 {

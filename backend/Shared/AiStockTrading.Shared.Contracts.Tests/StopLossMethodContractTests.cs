@@ -153,7 +153,7 @@ public class StopLossMethodContractTests
         // T-10-2102, FR-10, #1048, IADR-0481 決定1: 同じ銘柄に別の手法の有効な記録がある新規建ての見送りも**末尾**である。
         ((int)OrderDispatchForgoneReason.StopLossMethodConflict).Should().Be(8);
 
-        // T-10-2972, FR-10, ADR-0009, IADR-0565 決定 3: 送る直前の停止状態の最終照会の 3 値も**末尾**である。
+        // T-10-2972, FR-10, ADR-0009, IADR-0567 決定 3: 送る直前の停止状態の最終照会の 3 値も**末尾**である。
         ((int)OrderDispatchForgoneReason.KillSwitchActive).Should().Be(9);
         ((int)OrderDispatchForgoneReason.TradingPaused).Should().Be(10);
         ((int)OrderDispatchForgoneReason.TradingHaltStateUnknown).Should().Be(11);

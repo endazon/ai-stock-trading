@@ -1,5 +1,5 @@
 ---
-title: IADR-0565 発注執行は新規建てをブローカーへ送る直前に kill switch・一時停止の状態をリスク管理へ最終照会し、成立中または不明なら送らない（fail-closed）。決済・損切りは照会しない。照会は REST 1 試行・待ち 3 秒
+title: IADR-0567 発注執行は新規建てをブローカーへ送る直前に kill switch・一時停止の状態をリスク管理へ最終照会し、成立中または不明なら送らない（fail-closed）。決済・損切りは照会しない。照会は REST 1 試行・待ち 3 秒
 type: impl-adr
 status: Accepted
 related_ids: [FR-10, FR-05, FR-14, UC-06, NFR-04, NFR-01, ADR-0003, ADR-0009, IADR-0051, IADR-0057, IADR-0211, IADR-0356, IADR-0398, IADR-0420, IADR-0428, IADR-0481, IADR-0284, IADR-0557]
@@ -14,7 +14,7 @@ related_specs:
   - ../specs/20261021_order-dispatch-final-halt-check.md
 ---
 
-# IADR-0565: 発注直前の停止状態の最終照会（fail-closed）
+# IADR-0567: 発注直前の停止状態の最終照会（fail-closed）
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 
