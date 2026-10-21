@@ -28,7 +28,10 @@ public class PreCloseFlattenWiringTests
         factory.Services.GetServices<IHostedService>().Should().ContainSingle(s => s is PreCloseFlattenService);
 
         using var scope = factory.Services.CreateScope();
-        scope.ServiceProvider.GetRequiredService<PreCloseFlattener>().Should().NotBeNull();
+        var flattener = scope.ServiceProvider.GetRequiredService<PreCloseFlattener>();
+        // #1407（PR #1408 のレビュー）: 直近の値の記憶は singleton が渡る（巡回ごとに新しい記憶にならない）。
+        typeof(PreCloseFlattener).GetField("_lastKnown", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(flattener).Should().BeSameAs(factory.Services.GetRequiredService<PreCloseFlattenLastKnown>());
         var app = scope.ServiceProvider.GetRequiredService<TradeDecisionAppService>();
         typeof(TradeDecisionAppService).GetField("_marketCalendar", BindingFlags.NonPublic | BindingFlags.Instance)!
             .GetValue(app).Should().BeSameAs(factory.Services.GetRequiredService<IMarketCalendar>());

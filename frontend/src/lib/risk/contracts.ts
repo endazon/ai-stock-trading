@@ -72,12 +72,8 @@ export interface RiskManagementSettings {
   // FR-10, UC-06, ADR-0063, ADR-0066 決定2, #1291: **高ボラティリティ銘柄の統制値**（区分の 1 注文上限＝equity 比・既定 0.05 と、利用者の明示指定）。
   // 変更は `PUT /risk-controls/settings/high-volatility`（利用者のみ）。SC-02 の表示・入力は `HighVolatilityForm`（IADR-0530）。
   highVolatility: HighVolatilitySettings;
-  // FR-10, SC-02, ADR-0070 決定 5・ADR-0071 決定 5, #1407, IADR-0564: 画面で**保存した**閉場前の統制・テーマの定義（null＝保存していない）。
-  // 🔴 画面はここを読まない。効いている値・構成の値・食い違いは `GET /risk-controls/settings/pre-close`（PreCloseControlsView）と
-  // `GET /risk-controls/settings/theme-concentration`（ThemeConcentrationControlView）が返す（市場の表し方もそちらが画面の規約に揃える）。
-  preCloseEntryCutoff?: unknown;
-  preCloseFlatten?: unknown;
-  themeConcentration?: unknown;
+  // FR-10, SC-02, #1407, IADR-0564: 閉場前の統制とテーマの定義は**この応答に載らない**。効いている値・構成の値・保存値・食い違いは
+  // `GET /risk-controls/settings/pre-close`（PreCloseControlsView）と `GET /risk-controls/settings/theme-concentration`（ThemeConcentrationControlView）が返す。
 }
 
 // ---- 閉場前の統制とテーマの上限（FR-10, FR-19, SC-02, ADR-0070 決定 5, ADR-0071 決定 5, #1407, IADR-0564） ----

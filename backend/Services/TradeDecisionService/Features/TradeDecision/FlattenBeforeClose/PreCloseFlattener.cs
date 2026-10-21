@@ -35,8 +35,12 @@ public sealed class PreCloseFlattener(
     ICurrentPriceProvider currentPrice,
     ISizingContextProvider sizingProvider,
     IClock clock,
-    ILogger<PreCloseFlattener> logger)
+    ILogger<PreCloseFlattener> logger,
+    PreCloseFlattenLastKnown? lastKnown = null)
 {
+    // 省略は単体試験の直接組み立て用（巡回ごとに新しい記憶＝直近の値を持たない）。本番の配線で singleton が渡ることは PreCloseFlattenWiringTests が固定する。
+    private readonly PreCloseFlattenLastKnown _lastKnown = lastKnown ?? new PreCloseFlattenLastKnown();
+
     /// <summary>手仕舞いの対象の市場（日本株は無効だが〔ADR-0062〕、再有効化に備えて見る。審査が市場の無効で止める前に AnyOrder で見送る）。</summary>
     private static readonly Market[] Markets = [Market.UnitedStates, Market.Japan];
 
@@ -64,10 +68,19 @@ public sealed class PreCloseFlattener(
         if (candidates.Count == 0)
             return [];
 
-        // #1407, IADR-0564 決定 1: 効いている有効・無効と M（リスク管理の保存値か構成の値）。照会に失敗すれば安全既定（null）＝既定の無効・15 分
-        // （方針の行による有効化は別に効く）。
+        // #1407, IADR-0564 決定 1: 効いている有効・無効と M（リスク管理の保存値か構成の値）。
+        // 🔴 PR #1408 のレビュー: 照会の失敗（安全既定）・旧応答で値が無いときは、既定へ倒さず直近に取れた値で判定する（無効・短い M へ倒すと統制が緩む）。
         var context = await sizingProvider.GetContextAsync(cancellationToken).ConfigureAwait(false);
-        var settings = context.EffectivePreCloseFlatten;
+        _lastKnown.Remember(context.PreCloseFlatten);
+        var settings = context.PreCloseFlatten ?? _lastKnown.Value ?? TradingDefaults.CreatePreCloseFlatten();
+        if (context.PreCloseFlatten is null)
+        {
+            logger.LogWarning(
+                _lastKnown.Value is null
+                    ? "閉場前の手仕舞い: 設定（有効・無効と M）をサイジング文脈から受け取れず、起動から一度も受け取っていないため既定（無効・15 分）で判定します。"
+                    : "閉場前の手仕舞い: 設定（有効・無効と M）をサイジング文脈から受け取れないため、直近に受け取った値で判定します。");
+        }
+
         var closes = candidates
             .Where(kv => PreCloseWindow.IsAtOrAfter(now, kv.Value, settings.MinutesFor(kv.Key)))
             .ToDictionary(kv => kv.Key, kv => kv.Value);

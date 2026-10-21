@@ -44,11 +44,12 @@ public class PreCloseFlattenerTests
         public decimal? Current { get; set; } = 21m;
         public PreCloseFlattenSettings? Flatten { get; set; }
         public int SizingCalls { get; set; }
+        public PreCloseFlattenLastKnown LastKnown { get; } = new();
 
         public PreCloseFlattener Build() => new(
             new MarketCalendar(new Dictionary<Market, IReadOnlySet<DateOnly>>()),
             new PolicyStub(this), new HeldSymbolsStub(this), new PositionsStub(this), new InFlightStub(this), new BlockersStub(this),
-            new FxStub(this), new PriceStub(this), new SizingStub(this), new ClockStub(this), NullLogger<PreCloseFlattener>.Instance);
+            new FxStub(this), new PriceStub(this), new SizingStub(this), new ClockStub(this), NullLogger<PreCloseFlattener>.Instance, LastKnown);
 
         private sealed class ClockStub(Fixture f) : IClock { public DateTimeOffset UtcNow => f.Now; }
 
@@ -305,6 +306,22 @@ public class PreCloseFlattenerTests
         f.Now = InWindow;
         (await Run(f, Enabled)).Should().HaveCount(2);
         f.SizingCalls.Should().Be(1, "1 巡回で 1 回だけ照会する（銘柄ごとに照会しない）");
+    }
+
+    // 🔴 T-10-2955, #1407（PR #1408 のレビュー）: サイジング文脈の照会に失敗した巡回（安全既定＝手仕舞いの値なし）は、既定（無効・15 分）へ倒さず
+    // 直近に受け取った値で判定する（有効のまま・延ばした M のまま）。起動から一度も受け取っていなければ既定（無効）。
+    [Fact]
+    public async Task T_10_2955_照会に失敗した巡回は直近に受け取った値で判定する()
+    {
+        var f = new Fixture { Now = new DateTimeOffset(2026, 10, 19, 19, 30, 0, TimeSpan.Zero) }; // 閉場の 30 分前
+        var wide = Enabled with { Minutes = new Dictionary<Market, int> { [Market.UnitedStates] = 45, [Market.Japan] = 15 } };
+
+        (await Run(f)).Should().BeEmpty("起動から一度も受け取っていなければ既定（無効）");
+
+        (await Run(f, wide)).Should().HaveCount(2, "45 分・有効を受け取った");
+
+        f.Flatten = null; // 照会の失敗（安全既定）
+        (await Run(f)).Should().HaveCount(2, "直近の値（有効・45 分）で判定する。既定の無効・15 分へ倒さない");
     }
 
     [Fact]
