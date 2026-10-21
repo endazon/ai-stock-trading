@@ -69,7 +69,7 @@ plan_refs:
 | T-10-2967 | 照会の失敗・タイムアウト・不正な本文・項目の欠落・照会先の未構成 → 送らない（`TradingHaltStateUnknown`）。理由をログに残す | `HttpTradingHaltSourceTests`・`OrderExecutionServiceTradingHaltTests` |
 | T-10-2968 | 正常（どちらも成立していない）→ 送る | `OrderExecutionServiceTradingHaltTests` |
 | T-10-2969 | 両方成立 → kill switch を理由にする（優先順位） | 同上 |
-| T-10-2970 | 受け手が送り手の本物の型（`TradingHaltView`）を web 既定で直列化した本文を読める（契約）。送り手の本物の Program.cs が同じ本文を出す（wire format）。口は OwnerOrService | `HttpTradingHaltSourceTests`・`ReadContractWireFormatTests`・`TradingHaltEndpointTests` |
+| T-10-2970 | 受け手が送り手の本物の型（`TradingHaltView`）を web 既定で直列化した本文を読める（契約）。送り手の本物の Program.cs が同じ本文を出す（wire format）。口は OwnerOrService | `HttpTradingHaltSourceTests`・`TradingHaltEndpointTests`（送り手の wire format は本物の Program.cs で `JsonNode.DeepEquals`） |
 | T-10-2971 | 本番の組み立て（Program.cs）で、照会先が未構成なら新規建てを送らない／構成済みなら照会元が Http になる | `TradingHaltWiringTests` |
 | T-10-2972 | 見送り理由の序数 9・10・11 と、在庫解放の allowlist（確実に未発注） | `StopLossMethodContractTests`・`OrderDispatchForgoneLifecycleTests` |
 
