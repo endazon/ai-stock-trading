@@ -13,6 +13,15 @@ MSP 側で `platform-infra` と AST 用 DB（user `ai`・`*_svc`）・Keycloak r
 起動済みであること。MSP リポの `scripts/k8s-local-up.sh` がこれを用意する
 （AST realm は submodule 検出時に同梱 import される）。
 
+🔴 **ブローカ（RabbitMQ）へはサービスごとのユーザーで接続する**（[IADR-0568](../../../.ai-context/adr/IADR-0568_rabbitmq-per-service-credentials.md)）。
+全 Worker は `ast-<サービス名>` のユーザーで、パスワードを Secret `ast-rabbitmq-users`（キー = ユーザー名）から**非 optional** に読む。
+ユーザーと権限は基盤が作る（MSP の `deploy/local/rabbitmq-setup/users.txt`・`reconcile-users.sh`。基盤側の段 1）。
+
+- ESO 所有（既定の経路）: chart の ExternalSecret `ast-rabbitmq-users` が Vault `ai-stock-trading/rabbitmq-users`（種は基盤の bootstrap が乱数で入れる）を同期する。
+- 従来経路（`AST_ESO=0`）: 起動器は Secret を作らない。基盤のブローカのユーザーと同じ値で先に作る（無ければ起動器が helm の前で止まる）。
+- 既定のユーザー（`guest`）は使わない。旧キー `global.rabbitmqConnectionString` は廃止で、与えると描画で止まる。
+- Secret が無い・値が違うと、新しい Pod が起動しない（旧 Pod は残る）。
+
 ## デプロイ
 
 k8s ランタイムは MSP 側と同じく **Rancher Desktop（内蔵 k3s・推奨）** か **Docker Desktop + k3d**。

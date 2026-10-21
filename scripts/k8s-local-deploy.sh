@@ -141,7 +141,10 @@ AST_PROFILE_VALUES_DEFAULT="$ROOT/deploy/helm/ai-stock-trading/values-local.yaml
 # 基盤 BFF はこの名前で force-sync する。描画との一致は .github/workflows/helm.yml の #795 ステップが検査する）。
 # NFR, IADR-0566: opend-auth-caller-secret（認証サイドカーの呼び出し元検証）も ESO が所有する（画面の契約の外。
 # 値は Vault の ai-stock-trading/opend-auth へ入れる）。管理外の同名 Secret があれば同じく名前を挙げて止める。
-AST_ESO_TARGET_SECRETS=("$SECRET_NAME" moomoo-credentials moomoo-rsa opend-auth-caller-secret)
+# NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: ast-rabbitmq-users（ブローカのサービスごとの資格情報。Vault ai-stock-trading/rabbitmq-users）も
+# ESO が所有する。種は基盤の bootstrap が乱数で入れ、ブローカへのユーザーの作成は基盤の reconcile-users.sh が行う。
+AST_RABBITMQ_SECRET="ast-rabbitmq-users"
+AST_ESO_TARGET_SECRETS=("$SECRET_NAME" moomoo-credentials moomoo-rsa opend-auth-caller-secret "$AST_RABBITMQ_SECRET")
 
 # ast-secrets のキー定義: <Secret キー>|<環境変数>|<既定値>。
 # 既定値は「env 未設定 **かつ** 既存 Secret にも値が無い」場合にだけ使う（＝新規環境の後方互換）。
@@ -551,6 +554,18 @@ ast_dev_client_secret_guard() {
   return 1
 }
 
+# NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: 従来経路（ESO なし）では、ブローカの資格情報の Secret を本スクリプトは作らない
+# （開発用の既定値を持たない）。無ければ helm の前で止める（全 Worker が非 optional に読むため、無いまま進めると新しい Pod が起動しない）。
+ast_require_rabbitmq_secret() {
+  kubectl get secret "$AST_RABBITMQ_SECRET" -n "$NS" >/dev/null 2>&1 && return 0
+  {
+    echo "ERROR: ${NS} に Secret ${AST_RABBITMQ_SECRET}（ブローカのサービスごとの資格情報。キー = ast-<サービス名>）がありません（IADR-0568）。"
+    echo "       ESO の無い経路では、基盤のブローカに作ったユーザーと同じ値で、この Secret を先に作ってください（値は表示しません）。"
+    echo "       ESO 所有の経路（AST_ESO=1）なら、基盤の bootstrap が Vault ai-stock-trading/rabbitmq-users に種を入れ、chart が同期します。"
+  } >&2
+  return 1
+}
+
 # #795, IADR-0341: 経路に応じて Secret を用意する。ESO 所有なら作らず（事前確認・管理外 Secret の検査・警告）、従来経路なら同期する。
 ast_prepare_secrets() {
   if [ "${AST_ESO_MODE:-0}" = "1" ]; then
@@ -560,6 +575,7 @@ ast_prepare_secrets() {
     ast_check_unmanaged_eso_targets || return 1
     return 0
   fi
+  ast_require_rabbitmq_secret || return 1
   sync_ast_secrets
 }
 
@@ -847,6 +863,7 @@ if [ "${AST_ESO_MODE:-0}" = "1" ]; then
   echo "  kubectl -n $NS get externalsecret   # ast-secrets / moomoo-credentials / moomoo-rsa が SecretSynced であること"
   echo "  OpenD（opend.enabled=true）は moomoo-credentials / moomoo-rsa が Vault に入り同期されるまで起動を待つ（画面で入力・生成する）"
   echo "  認証サイドカーは opend-auth-caller-secret（Vault ai-stock-trading/opend-auth）が同期されるまで全口 503（基盤の BFF も同じ値を要る。IADR-0566）"
+  echo "  ast-rabbitmq-users（Vault ai-stock-trading/rabbitmq-users）が同期されるまで新しい Worker の Pod は起動しない（旧 Pod が残る。IADR-0568）"
 fi
 echo "#121（CronJob）を有効化する場合: helm ... --set tradingCycle.cronjob.enabled=true"
 echo "  （run-once エンドポイント実装が前提。既定は in-process ポーリング維持=fail-safe）"
