@@ -23,6 +23,7 @@ using RiskManagementService.Features.RiskManagement.GetShortSellingStatus;
 using RiskManagementService.Features.RiskManagement.GetSizingContext;
 using RiskManagementService.Features.RiskManagement.GetStageGate;
 using RiskManagementService.Features.RiskManagement.GetStageGateHistory;
+using RiskManagementService.Features.RiskManagement.GetTradingHalt;
 using RiskManagementService.Features.RiskManagement.GetWorkingEntryOrders;
 using RiskManagementService.Features.RiskManagement.PauseTrading;
 using RiskManagementService.Features.RiskManagement.RequestStageTransition;
@@ -88,6 +89,8 @@ internal static class RiskControlEndpoints
         read.MapGetOpeningInventory();
         read.MapGetBuyInInferences();
         read.MapGetSessionUptime();
+        // 🔴 FR-10, ADR-0009, IADR-0567 決定 2: kill switch・一時停止の成立の有無だけ（発注執行が新規建てを送る直前に読む）。
+        read.MapGetTradingHalt();
 
         // ---- 利用者のみ（kill switch は ADR-0003・ガード設定は ADR-0007・段階は ADR-0008／OwnerOnly）: kill switch・設定変更。サービスには許可しない ----
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);

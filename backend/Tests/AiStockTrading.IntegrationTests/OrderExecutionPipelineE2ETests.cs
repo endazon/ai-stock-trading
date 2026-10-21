@@ -1,4 +1,5 @@
 using OrderExecutionService.Features.OrderExecution;
+using OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -6,6 +7,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.PostgreSql;
 using Testcontainers.RabbitMq;
@@ -83,9 +85,21 @@ public sealed class OrderExecutionPipelineE2ETests : IAsyncLifetime
         Environment.SetEnvironmentVariable("Broker__Provider", "paper");
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
             // env=Testing は WebApplicationFactory 準拠テストが InMemory 化に使うため避け、実基盤結線用の
             // 独自環境名を用いる（appsettings.Development.json のプレースホルダも読み込まない）。
-            builder.UseEnvironment("IntegrationTest"));
+            builder.UseEnvironment("IntegrationTest");
+            // FR-10, IADR-0567: 送る直前の停止状態の照会先（リスク管理）は本 E2E に居ない。未構成のままだと新規建ては
+            // 見送られる（fail-closed）ため、照会元だけを「停止していない」と答える差し替えにする（照会の配線は T-10-2971 が固定する）。
+            builder.ConfigureTestServices(services =>
+                services.AddScoped<ITradingHaltSource>(_ => new NotHaltedSource()));
+        });
+    }
+
+    private sealed class NotHaltedSource : ITradingHaltSource
+    {
+        public Task<TradingHaltState?> GetAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<TradingHaltState?>(new TradingHaltState(KillSwitchEngaged: false, TradingPaused: false));
     }
 
     public async ValueTask DisposeAsync()

@@ -107,4 +107,24 @@ public enum OrderDispatchForgoneReason
     /// </para>
     /// </summary>
     StopLossMethodConflict,
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0009 決定 3・4, IADR-0567 決定 3: 新規建て（Open）を送る直前の最終照会で、<b>全停止スイッチ（kill switch）が成立していた</b>。
+    /// 決済（Close）・損切りには効かない（照会もしない）。予約の後・<b>送信の前</b>に予約を Forgone へ移して見送る（確実に未発注）。
+    /// <b>末尾へ追加する</b>（序数 9。メトリクスのタグ・監査 payload の整数が往来する）。
+    /// </summary>
+    KillSwitchActive,
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0009 決定 3・4, IADR-0567 決定 3: 同上の最終照会で、<b>取引の一時停止（pause）が成立していた</b>（kill switch は成立していない）。
+    /// 決済・損切りには効かない。<b>末尾へ追加する</b>（序数 10）。
+    /// </summary>
+    TradingPaused,
+
+    /// <summary>
+    /// 🔴 FR-10, NFR-04, IADR-0567 決定 2・3: 同上の最終照会で、<b>停止の状態を確かめられなかった</b>（照会の失敗・タイムアウト・
+    /// 解釈できない応答・照会先の未構成）。不明は送らない側へ倒す（fail-closed）。決済・損切りには効かない。
+    /// <b>末尾へ追加する</b>（序数 11）。
+    /// </summary>
+    TradingHaltStateUnknown,
 }

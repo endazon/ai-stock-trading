@@ -571,6 +571,33 @@ jobs:
           assert_reconciliation "moomoo-sim" "$(helm template ast "$CHART" --set broker.tier=moomoo-sim)"
           assert_reconciliation "values-local" "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
           echo "ok: 突合は 3 描画とも有効で、解放の門は閉じている（BatchSize も pin 済み）"
+      # 🔴 T-10-2973, FR-10, ADR-0009, IADR-0567: 発注執行が新規建てを送る直前に kill switch・一時停止を照会する宛先と s2s の資格情報。
+      #    これが描画されないと照会は常に「不明」になり、新規建てが全件見送られる（fail-closed。決済・損切りは止まらない）。
+      #    既定・moomoo-sim・values-local の 3 描画で、宛先が描画された risk-management の Service を指し、資格情報が ast-secrets の
+      #    契約キーを secretKeyRef で読み、token エンドポイントが描かれることを固定する。
+      - name: Assert order-execution is wired to the trading-halt query (IADR-0567)
+        run: |
+          set -eu
+          assert_halt_query() {
+            label="$1"; out="$2"
+            doc="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: order-execution-service/')"
+            [ -n "$doc" ] || { echo "::error::[$label] order-execution の Deployment が描画されない。"; exit 1; }
+            printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Service/ && /name: risk-management-service/' | grep -q 'port: 8080' \
+              || { echo "::error::[$label] risk-management-service の 8080 が描画されない（宛先が実在しない）。"; exit 1; }
+            printf '%s' "$doc" | grep -A1 'name: RiskManagement__BaseUrl$' | grep -q 'value: "http://risk-management-service:8080"' \
+              || { echo "::error::[$label] order-execution の RiskManagement__BaseUrl が risk-management-service:8080 を指さない（新規建てが全件見送られる・IADR-0567）。"; exit 1; }
+            for pair in "ServiceAuth__ClientId service-auth-client-id" "ServiceAuth__ClientSecret service-auth-client-secret"; do
+              key="${pair%% *}"; ref="${pair##* }"
+              printf '%s' "$doc" | grep -A4 "name: ${key}$" | grep -q "key: ${ref}$" \
+                || { echo "::error::[$label] order-execution の ${key} が ast-secrets の ${ref} を secretKeyRef で読まない（照会が 401 → 不明）。"; exit 1; }
+            done
+            printf '%s' "$doc" | grep -q 'name: ServiceAuth__TokenEndpoint$' \
+              || { echo "::error::[$label] order-execution に ServiceAuth__TokenEndpoint が描画されない（s2s トークンを取れない）。"; exit 1; }
+          }
+          assert_halt_query "既定描画" "$(helm template ast "$CHART")"
+          assert_halt_query "moomoo-sim" "$(helm template ast "$CHART" --set broker.tier=moomoo-sim)"
+          assert_halt_query "values-local" "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          echo "ok: 発注執行は 3 描画とも停止状態の照会先と s2s の資格情報を持つ"
       # #842, IADR-0347 追記: moomoo の調整値は「空（""）・未設定（null）＝アダプタ既定＝env を注入しない」。
       #    `{{- with }}` は数値の 0 を空と同じに扱い、`--set moomoo.stopLimitOffsetRatio=0` が既定 1% へ黙って戻っていた
       #    （replyTimeoutSeconds=0 は起動時に停止するはずが 15 秒へ戻っていた）。0 が値として届き、空は届かないことを固定する。
