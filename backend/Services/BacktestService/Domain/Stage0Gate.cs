@@ -135,6 +135,16 @@ public sealed record Stage0GateCriteria(
     /// </summary>
     public const int MinTrialsDefault = 20;
 
+    /// <summary>
+    /// FR-15, ADR-0069 決定2, #1307, IADR-0563: DSR の合格の閾値（**0.95**）。日次の Sharpe で比べる（IADR-0554）。
+    /// <para>
+    /// 🔴 **本値の正本は計画（ADR-0069 決定2・05_trading-assumptions §6.1）である。実装で動かさない。** 変更が要るなら計画へ環流する。
+    /// 値の根拠は IADR-0110 の較正（標本長 252 営業日で名目 5% 水準と実測整合。単一試行の偽陽性率 5.06%）であり、
+    /// 窓の長さ 365 暦日（<c>Stage0EvaluationOptions.LookbackDaysPlanValue</c>）と対で 1 つの物差しである。
+    /// </para>
+    /// </summary>
+    public const double MinDeflatedSharpeDefault = 0.95;
+
     // 既定閾値（DSR 0.95・PBO 0.5・最大DD 0.10・最小試行数 20）。
     //
     // #208, IADR-0110: MinTrials を暫定値 1 から 20 へ較正した。1 では ExpectedMaxSharpe が 0 を返し
@@ -145,7 +155,7 @@ public sealed record Stage0GateCriteria(
     // 落とすため見送り）。
     // 実市場データによる水準確認は #382（ADR-0023・米国株の日足 OHLC 履歴源が未確定）に残置する。
     public static Stage0GateCriteria Default => new(
-        MinDeflatedSharpe: 0.95,
+        MinDeflatedSharpe: MinDeflatedSharpeDefault,
         MaxProbabilityOfOverfitting: 0.50,
         MaxDrawdownTolerance: MaxDrawdownToleranceDefault,
         MinTrials: MinTrialsDefault);
