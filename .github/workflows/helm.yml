@@ -1335,6 +1335,92 @@ jobs:
           if printf '%s' "$out" | grep -qE 'kind: (Ingress|Gateway|VirtualService)'; then fail "Ingress/Route を作っている"; fi
           if printf '%s' "$out" | grep -q 'nodePort'; then fail "NodePort を作っている"; fi
           echo "ok: opend-auth サイドカーは PVC を見ず、クラスタ外への口も持たない"
+      # NFR, IADR-0566: OpenD の Pod への到達の制限（NetworkPolicy）と、認証サイドカーの呼び出し元検証（共有シークレット）。
+      # 描画の形を期待値と**丸ごと**突き合わせる（規則の足し忘れ・緩め・セレクタの取り違えのどれでも赤）。
+      # 陰性対照: 既定（opend 無効）では描かない／authGateway 無効では 8080 の規則を描かない／届く相手が空なら描画で止まる。
+      - name: Assert opend NetworkPolicy and caller secret (IADR-0566)
+        run: |
+          fail() { echo "::error::OpenD の到達の制限・呼び出し元の検証（IADR-0566）: $1"; exit 1; }
+          # NetworkPolicy の spec だけを取り出す（コメント行は落とす）。
+          np_spec() { awk '/^kind: NetworkPolicy/{f=1} f&&/^spec:/{p=1} p&&/^---/{exit} p' | grep -v '^[[:space:]]*#'; }
+          if helm template ast "$CHART" | grep -q '^kind: NetworkPolicy'; then fail "既定（opend 無効）で NetworkPolicy が描かれた"; fi
+          if helm template ast "$CHART" -f "$CHART/values-local.yaml" | grep -q '^kind: NetworkPolicy'; then
+            fail "values-local（opend は起動器が --set で有効化する）だけで NetworkPolicy が描かれた"
+          fi
+          want_api='spec:
+            podSelector:
+              matchLabels: { app: opend }
+            policyTypes: [Ingress]
+            ingress:
+              - from:
+                  - podSelector:
+                      matchLabels:
+                        app: order-execution-service
+                ports:
+                  - { protocol: TCP, port: 11111 }'
+          want_auth="${want_api}"'
+              - from:
+                  - namespaceSelector:
+                      matchLabels: { kubernetes.io/metadata.name: "microservices-platform" }
+                    podSelector:
+                      matchLabels:
+                        app: bff-service
+                ports:
+                  - { protocol: TCP, port: 8080 }'
+          got="$(helm template ast "$CHART" --set opend.enabled=true -s templates/networkpolicy-opend.yaml | np_spec)"
+          diff <(printf '%s\n' "$want_api") <(printf '%s\n' "$got") \
+            || fail "opend.enabled=true の NetworkPolicy が期待（API は発注執行からだけ・サイドカーの口なし）と違う"
+          got="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set opend.enabled=true -s templates/networkpolicy-opend.yaml | np_spec)"
+          diff <(printf '%s\n' "$want_auth") <(printf '%s\n' "$got") \
+            || fail "経路B（authGateway 有効）の NetworkPolicy が期待（API は発注執行・サイドカーは基盤の BFF からだけ）と違う"
+          # egress は絞らない（OpenD は moomoo と DNS へ出る）。ipBlock・空の from（＝全許可）も描かない。
+          all="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set opend.enabled=true -s templates/networkpolicy-opend.yaml)"
+          if grep -qE 'Egress|ipBlock|from: \[\]|- \{\}' <<<"$all"; then fail "Egress・ipBlock・空の from のどれかが描かれた"; fi
+          # Service opend の全ポートが規則のどれかに入っている（口を足したのに規則を足し忘れると、その口は誰からも届かない）。
+          svc_ports="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set opend.enabled=true -s templates/opend.yaml \
+            | awk '/^kind: Service/{f=1} f' | sed -n 's/.*port: \([0-9]*\), targetPort.*/\1/p' | sort -u)"
+          np_ports="$(grep -oE 'port: [0-9]+ }' <<<"$all" | grep -oE '[0-9]+' | sort -u)"
+          [ -n "$svc_ports" ] || fail "Service opend のポートを読めない（検査の空振り）"
+          [ -n "$np_ports" ] || fail "NetworkPolicy のポートを読めない（検査の空振り。規則の書式を変えたらここの抽出も直す）"
+          [ "$svc_ports" = "$np_ports" ] || fail "Service opend のポート（$(echo $svc_ports)）と NetworkPolicy のポート（$(echo $np_ports)）が一致しない"
+          # 無効化は明示の値でだけ（既定は閉じる）。
+          if helm template ast "$CHART" --set opend.enabled=true --set opend.networkPolicy.enabled=false | grep -q '^kind: NetworkPolicy'; then
+            fail "opend.networkPolicy.enabled=false でも描かれた"
+          fi
+          must_fail() {
+            local label="$1" want="$2"; shift 2
+            local out
+            if out="$(helm template ast "$CHART" "$@" 2>&1)"; then fail "描画が通ってしまった: $label"; fi
+            grep -qF "$want" <<<"$out" || { echo "::error::$label: 期待した理由（$want）で止まっていない:"; printf '%s\n' "$out" | tail -3; exit 1; }
+          }
+          must_fail "API の届く相手が空" "apiClientPodLabels" --set opend.enabled=true --set opend.networkPolicy.apiClientPodLabels=null
+          must_fail "サイドカーの届く相手の namespace が空" "authGatewayClients.namespace" \
+            --set opend.enabled=true --set opend.authGateway.enabled=true --set opend.networkPolicy.authGatewayClients.namespace=""
+          must_fail "呼び出し元検証の Secret 名が空" "callerSecret.secretName" \
+            --set opend.enabled=true --set opend.authGateway.enabled=true --set opend.authGateway.callerSecret.secretName=""
+          # 呼び出し元検証: Secret はサイドカーだけがマウントし（OpenD 本体は見ない）、optional（無くても Pod は起動する）。
+          od="$(helm template ast "$CHART" --set opend.enabled=true --set opend.authGateway.enabled=true -s templates/opend.yaml)"
+          main="$(printf '%s\n' "$od" | awk '/- name: opend$/,/- name: opend-auth$/')"
+          side="$(printf '%s\n' "$od" | awk '/- name: opend-auth$/,/^      volumes:/')"
+          vols="$(printf '%s\n' "$od" | awk '/^      volumes:/,0')"
+          if grep -q 'caller-secret' <<<"$main"; then fail "OpenD 本体のコンテナが呼び出し元検証の Secret を見ている"; fi
+          grep -q 'name: OpendAuth__CallerSecretFile' <<<"$side" || fail "サイドカーに OpendAuth__CallerSecretFile が無い"
+          grep -A1 'name: OpendAuth__CallerSecretFile' <<<"$side" | grep -q 'value: "/var/run/opend-auth/caller-secret"' \
+            || fail "OpendAuth__CallerSecretFile がマウント先の下を指していない"
+          if grep -q 'OpendAuth__CallerSecret$' <<<"$side"; then fail "値を env で渡している（回すたびに Pod を作り直すことになる）"; fi
+          grep -A2 'name: caller-secret$' <<<"$vols" | grep -q 'secretName: opend-auth-caller-secret' || fail "Secret の volume が無い"
+          grep -A4 'name: caller-secret$' <<<"$vols" | grep -q 'optional: true' || fail "Secret の volume が optional でない（無いと Pod が起動せず発注経路まで止まる）"
+          if helm template ast "$CHART" --set opend.enabled=true -s templates/opend.yaml | grep -q 'caller-secret'; then
+            fail "authGateway 無効でも呼び出し元検証の Secret を描いた"
+          fi
+          # ESO: opend と authGateway が有効なときだけ同期する。
+          es="$(helm template ast "$CHART" --set opend.enabled=true --set opend.authGateway.enabled=true --set externalSecrets.enabled=true -s templates/external-secrets.yaml)"
+          grep -q 'name: opend-auth-caller-secret' <<<"$es" || fail "ExternalSecret opend-auth-caller-secret が描かれない"
+          grep -q 'key: "ai-stock-trading/opend-auth"' <<<"$es" || fail "ExternalSecret の Vault のキーが違う"
+          if helm template ast "$CHART" --set opend.enabled=true --set externalSecrets.enabled=true -s templates/external-secrets.yaml | grep -q 'opend-auth-caller-secret'; then
+            fail "authGateway 無効でも ExternalSecret を描いた"
+          fi
+          echo "ok: OpenD への到達は発注執行と基盤の BFF だけ・呼び出し元検証の Secret はサイドカーだけが optional でマウントする"
       # #132 / IADR-0060: 誤配備を描画時に止めるゲートが**実際に落ちる**ことを検査する（ゲートの空振り防止）。
       - name: Assert misconfiguration gates fail
         run: |

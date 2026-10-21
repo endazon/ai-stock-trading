@@ -975,6 +975,25 @@ PersistentVolumeClaim `opend-persist` には `helm.sh/resource-policy: keep` を
 - **明示的に消す場合は手動で `kubectl delete pvc opend-persist -n ai-stock-trading` を実行する**（Helm には削除させない）。
 - デバイス信頼をリセットしたい（再認証からやり直したい）場合以外は消さないこと。
 
+### 到達の制限と認証サイドカーの呼び出し元検証（[IADR-0566](../../../.ai-context/adr/IADR-0566_opend-ingress-networkpolicy-and-caller-secret.md)）
+
+多層防御として 2 段を置く。片方の設定を誤っても、もう片方が残る。
+
+| 段 | 何を | 既定 | 設定点 |
+| --- | --- | --- | --- |
+| NetworkPolicy `opend-ingress`（ingress だけ） | API（`opend.apiPort`）へは同じ namespace の発注執行だけ、認証サイドカー（`opend.authGateway.port`）へは基盤の BFF（`microservices-platform` の `app: bff-service`）だけ | `opend.enabled=true` なら描く | `opend.networkPolicy.*` |
+| 共有シークレット | 認証サイドカーはヘッダーの値を Secret `opend-auth-caller-secret`（キー `caller-secret`）と比べる。無い・32 文字未満なら 4 本の口すべて 503、違えば 401 | `opend.authGateway.enabled=true` なら必須 | `opend.authGateway.callerSecret.*`・`externalSecrets.opendAuthCallerSecret` |
+
+- **Pod の起動は止めない。** Secret の volume は `optional: true` で、無いあいだはサイドカーが口を閉じるだけである（OpenD の API と発注経路は動く）。
+- **値を回しても OpenD の Pod を作り直さない。** サイドカーは要求ごとにファイルを読む（kubelet が Secret の volume を差し替える）。
+- **送り手（基盤の BFF）は同じ値を env `OpendAuth__CallerSecret` で受ける**（基盤の名前空間の Secret。基盤の構成で配線する）。未構成なら BFF は上流を呼ばず、画面は「接続資格が構成されていません」と示す。
+- ESO 所有（`externalSecrets.enabled=true`）では、Vault の `ai-stock-trading/opend-auth`（プロパティ `caller-secret`）を同期する。値は Git に置かない。
+- egress は絞らない（OpenD は moomoo のサーバと DNS へ出る）。readinessProbe（kubelet）・`kubectl attach` / `exec` / `port-forward` は Pod 網を通らないため影響を受けない。
+  NetworkPolicy を強制しない CNI では宣言が残るだけで、呼び出し元を絞るのは共有シークレットの 1 段になる。
+  k3s（k3d）は上流の既定で組み込みの制御（kube-router 由来）を有効にする（`--disable-network-policy` で外せる。基盤の起動器は付けていない）。
+  稼働クラスタで強制されているかは、許可していない Pod から接続して時間切れになることで確かめる（IADR-0566 の確認手順）。
+- dev の生 manifest の経路は `deploy/opend/k8s/networkpolicy.yaml` を併せて適用する。
+
 ### 非 root 実行へ切り替える（既定は root・**未検証**）
 
 OpenD はデバイス信頼を `$HOME/.com.moomoo.OpenD` に書くため、非 root 化は **HOME の再調整とセット**で行う。
@@ -993,6 +1012,10 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 > ⚠️ **既定 ON にしていない理由**（IADR-0060 決定 2）: HOME が変わると**確立済みのデバイス信頼を失い、有人検証から
 > やり直しになる恐れ**がある。実 OpenD でしか確かめられず、**#132 の実測フェーズで未検証**。切替時は既存 PVC の
 > `.com.moomoo.OpenD` を新 HOME へ移すか、再検証を覚悟すること。
+>
+> ⚠️ 認証サイドカー（`opend.authGateway.enabled=true`）の共有シークレットも同じく**グループ読み（0440）**で、非 root では
+> 上の `fsGroup` が要る（サイドカーは OpenD 本体と同じ uid で動く）。読めないとサイドカーは口を閉じたまま（503）になり、
+> ログに `理由=unreadable` が出る（値は出ない）。
 >
 > ⚠️ `rsaSecretDefaultMode` は **k8s のファイルモード（8 進を 10 進で表す整数）**。values ファイルでは `0400` / `0440`
 > と 8 進で書ける（YAML が解釈する）が、`--set` では **10 進**（`256` / `288`）で渡すこと。非 root では Secret の所有 uid が
