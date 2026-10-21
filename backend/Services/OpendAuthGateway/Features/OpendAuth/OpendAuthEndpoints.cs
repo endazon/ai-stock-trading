@@ -20,9 +20,9 @@ namespace OpendAuthGateway.Features.OpendAuth;
 ///   <item><c>POST /opend-auth/resend</c>  … SMS の再送要求（本文なし）</item>
 /// </list>
 /// <para>
-/// ⚠️ <b>本サービス自身は認証を持たない。</b> Ingress を持たず Pod 網にしか bind せず、
-/// 呼び出し元はクラスタ内の BFF だけである（利用者認証は BFF の手前で済んでいる）。
-/// 入力面の安全は認証ではなく <see cref="OpendConsoleCommand"/> の allowlist が担う。
+/// Ingress を持たず Pod 網にしか bind せず、呼び出し元はクラスタ内の BFF だけである（利用者認証は BFF の手前で済んでいる）。
+/// 呼び出し元は 2 段で絞る —— 共有シークレット（<see cref="CallerSecretFilter"/>・IADR-0566）と NetworkPolicy（chart）。
+/// 入力面の安全は別に <see cref="OpendConsoleCommand"/> の allowlist が担う。
 /// </para>
 /// </summary>
 public static class OpendAuthEndpoints
@@ -35,7 +35,8 @@ public static class OpendAuthEndpoints
     /// <summary>4 本のエンドポイントを登録する。</summary>
     public static IEndpointRouteBuilder MapOpendAuthEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/opend-auth");
+        // IADR-0566: 呼び出し元の検証はグループのフィルタ 1 つで 4 本すべてに掛ける（本文を読む前に判定する）。
+        var group = app.MapGroup("/opend-auth").AddEndpointFilter<CallerSecretFilter>();
         group.MapGet("/state", GetState);
         group.MapGet("/captcha", GetCaptcha);
         group.MapPost("/verify", PostVerifyAsync);

@@ -3,13 +3,13 @@ title: 画面仕様書 — SC-04 OpenD 認証操作画面
 type: screen
 status: Draft
 created: 2026-09-09
-updated: 2026-09-12
+updated: 2026-10-22
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-09, FR-11, SC-04, UC-06, NFR-03, NFR-05, NFR-06]
 adrs: [ADR-0002, ADR-0024]
-iadrs: [IADR-0009, IADR-0091, IADR-0154, IADR-0162, IADR-0321, IADR-0338, IADR-0339]
+iadrs: [IADR-0009, IADR-0091, IADR-0154, IADR-0162, IADR-0321, IADR-0338, IADR-0339, IADR-0566]
 specs: [20260909_SC-04_opend-auth-screen, 20260912_frontend-platform-ui-and-lingui, IADR-0321_opend-auth-bff-sole-authorization-point]
 issues: [#722, planning#594]
 -->
@@ -45,8 +45,8 @@ platform SPA 認証済みレイアウト配下に feature `sc04-opend-auth` と�
 - 利用者（`trading-owner`）限定。`RequireRole anyOf=['trading-owner']`・権限外は `NotFound`（存在秘匿）。
 - 🔴 **権限外では認証 API を呼ばない**（存在を推測させない）。
 - **実効認可は BFF が持つ。** 既存 3 画面は後段のドメインサービス（`OwnerOnly`）へ認可を委譲するが、
-  本画面の上流（OpenD 認証サイドカー）は**設計上まったく認証を持たない**ため、
-  **BFF が唯一の認可点である**。権限外は **404**（403 ではない）で、**上流を 1 度も呼ばない**。
+  本画面の上流（OpenD 認証サイドカー）は**利用者の身元を見ない**（呼び出し元が BFF であることだけを
+  共有シークレットで確かめる）ため、**BFF が唯一の認可点である**。権限外は **404**（403 ではない）で、**上流を 1 度も呼ばない**。
 
 ## 構成要素
 

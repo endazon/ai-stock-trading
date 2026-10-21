@@ -138,6 +138,7 @@ kubectl -n ai-stock-trading delete pod opend-bootstrap   # 確認後に片付け
 ```bash
 kubectl apply -f deploy/opend/k8s/pvc.yaml
 kubectl apply -f deploy/opend/k8s/opend.yaml           # Deployment + Service（opend:11111）
+kubectl apply -f deploy/opend/k8s/networkpolicy.yaml   # 到達の制限（API は発注執行・認証サイドカーは基盤の BFF だけ。IADR-0566）
 kubectl -n ai-stock-trading attach -it deploy/opend    # `>>>` に input_pic_verify_code / input_phone_verify_code
 kubectl -n ai-stock-trading logs deploy/opend | grep -i "Login successful"
 ```

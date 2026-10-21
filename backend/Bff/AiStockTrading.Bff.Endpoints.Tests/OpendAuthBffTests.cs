@@ -392,6 +392,68 @@ public class OpendAuthBffTests
         host.Upstream.Requests.Should().BeEmpty();
     }
 
+    // ---- NFR, IADR-0566: 呼び出し元の共有シークレット ----
+
+    [Fact]
+    public async Task 上流への全要求に呼び出し元のシークレットを載せる()
+    {
+        await using var host = await OpendAuthTestHost.StartAsync();
+        host.Upstream.State = Waiting("phone");
+
+        (await host.SendAsync("GET", "/bff/opend-auth/state", roles: OpendAuthTestHost.OwnerRole)).EnsureSuccessStatusCode();
+        (await host.SendAsync("GET", "/bff/opend-auth/captcha", roles: OpendAuthTestHost.OwnerRole)).EnsureSuccessStatusCode();
+        (await host.SendAsync(
+            "POST", "/bff/opend-auth/code", roles: OpendAuthTestHost.OwnerRole, body: """{"code":"123456"}""")).EnsureSuccessStatusCode();
+        (await host.SendAsync("POST", "/bff/opend-auth/resend", roles: OpendAuthTestHost.OwnerRole)).EnsureSuccessStatusCode();
+
+        // state・captcha・（code の前の）state・verify・resend の 5 本。どれも同じ値を 1 つだけ載せる。
+        host.Upstream.Requests.Should().HaveCount(5)
+            .And.OnlyContain(r => r.CallerSecret == OpendAuthTestHost.CallerSecret);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task シークレットが未構成なら上流を呼ばずに供給が無いと宣言する(string? secret)
+    {
+        await using var host = await OpendAuthTestHost.StartAsync(callerSecret: secret);
+        host.Upstream.State = Waiting("phone");
+
+        var state = await host.SendAsync("GET", "/bff/opend-auth/state", roles: OpendAuthTestHost.OwnerRole);
+        var captcha = await host.SendAsync("GET", "/bff/opend-auth/captcha", roles: OpendAuthTestHost.OwnerRole);
+        var code = await host.SendAsync(
+            "POST", "/bff/opend-auth/code", roles: OpendAuthTestHost.OwnerRole, body: """{"code":"123456"}""");
+        var resend = await host.SendAsync("POST", "/bff/opend-auth/resend", roles: OpendAuthTestHost.OwnerRole);
+
+        state.StatusCode.Should().Be(HttpStatusCode.OK);
+        var view = await ReadStateAsync(state);
+        view.GetProperty("promptAvailability").GetInt32().Should().Be(1);
+        view.GetProperty("detail").GetString().Should().Contain("接続資格");
+        captcha.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        code.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        resend.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        host.Upstream.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task シークレットの値をログにも応答にも出さない()
+    {
+        await using var host = await OpendAuthTestHost.StartAsync();
+        host.Upstream.State = Waiting("phone");
+        host.Upstream.VerifyStatus = HttpStatusCode.Unauthorized;
+
+        var state = await host.SendAsync("GET", "/bff/opend-auth/state", roles: OpendAuthTestHost.OwnerRole);
+        var code = await host.SendAsync(
+            "POST", "/bff/opend-auth/code", roles: OpendAuthTestHost.OwnerRole, body: """{"code":"123456"}""");
+
+        // 上流が 401 を返したときは「到達できない」側へ倒す（上流の本文は透過しない）。
+        code.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        (await state.Content.ReadAsStringAsync()).Should().NotContain(OpendAuthTestHost.CallerSecret);
+        (await code.Content.ReadAsStringAsync()).Should().NotContain(OpendAuthTestHost.CallerSecret);
+        host.Logs.Should().NotContain(l => l.Contains(OpendAuthTestHost.CallerSecret, StringComparison.Ordinal));
+    }
+
     private static string Waiting(string prompt) =>
         $$"""{"status":"waiting","prompt":"{{prompt}}","captchaAvailable":true,"lastLoginAt":"2026-09-09T21:02:00Z","detail":null}""";
 
@@ -414,10 +476,14 @@ internal sealed class OpendAuthTestHost : IAsyncDisposable
     /// <summary>収集したログ行（本文・引数を文字列化したもの）。</summary>
     public IReadOnlyCollection<string> Logs => LogSink.Lines;
 
+    /// <summary>IADR-0566: 試験用の呼び出し元シークレット（既定で構成する）。</summary>
+    internal const string CallerSecret = "bff-test-caller-secret-0123456789abcdef";
+
     public static async Task<OpendAuthTestHost> StartAsync(
         string? baseUrl = "http://opend-auth.test",
         string? deviceTrust = null,
-        string? egressStable = null)
+        string? egressStable = null,
+        string? callerSecret = CallerSecret)
     {
         var upstream = new OpendAuthStubHandler();
         var logSink = new CapturingLoggerProvider();
@@ -426,6 +492,7 @@ internal sealed class OpendAuthTestHost : IAsyncDisposable
         builder.WebHost.UseTestServer();
 
         var settings = new Dictionary<string, string?> { ["OpendAuth:BaseUrl"] = baseUrl };
+        if (callerSecret is not null) settings["OpendAuth:CallerSecret"] = callerSecret;
         if (deviceTrust is not null) settings["OpendAuth:DeviceTrustPersisted"] = deviceTrust;
         if (egressStable is not null) settings["OpendAuth:EgressStable"] = egressStable;
         builder.Configuration.AddInMemoryCollection(settings);
@@ -480,7 +547,7 @@ internal sealed class OpendAuthTestHost : IAsyncDisposable
 // 上流サイドカーのスタブ。パスごとに応答を出し分け、届いた要求（パス・本文）を捕捉する。
 internal sealed class OpendAuthStubHandler : HttpMessageHandler
 {
-    public sealed record Captured(string Path, string? Body);
+    public sealed record Captured(string Path, string? Body, string? CallerSecret);
 
     public ConcurrentQueue<Captured> Captures { get; } = new();
     public IReadOnlyCollection<Captured> Requests => Captures.ToArray();
@@ -499,7 +566,10 @@ internal sealed class OpendAuthStubHandler : HttpMessageHandler
         var path = request.RequestUri!.AbsolutePath;
         string? body = null;
         if (request.Content is not null) body = await request.Content.ReadAsStringAsync(cancellationToken);
-        Captures.Enqueue(new Captured(path, body));
+        var callerSecret = request.Headers.TryGetValues("X-Opend-Auth-Caller-Secret", out var values)
+            ? string.Join(",", values)
+            : null;
+        Captures.Enqueue(new Captured(path, body, callerSecret));
 
         if (Throw) throw new HttpRequestException("upstream unreachable");
 

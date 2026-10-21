@@ -17,6 +17,9 @@
 {{- if not $o.rsaSecretName }}
 {{- fail "opend.enabled=true には opend.rsaSecretName（RSA 秘密鍵の Secret 名）が要ります。cross-network の trade 接続には暗号化が必須（#13）。" }}
 {{- end }}
+{{- if and $o.authGateway.enabled (or (not $o.authGateway.callerSecret.secretName) (not $o.authGateway.callerSecret.secretKey)) }}
+{{- fail "opend.authGateway.enabled=true には opend.authGateway.callerSecret.secretName / secretKey（呼び出し元の検証に使う共有シークレット）が要ります。IADR-0566。" }}
+{{- end }}
 {{- if not $o.home }}
 {{- fail "opend.home が空です（OpenD はデバイス信頼を $HOME/.com.moomoo.OpenD に書くため必須）。既定は /root。" }}
 {{- end }}
@@ -165,7 +168,8 @@ spec:
              サイドカーが読むのは OpenD 本体が emptyDir へ複製した写しだけである。
 
           🔴 Ingress も Route も TLS も持たない。呼び出し元はクラスタ内の BFF だけで、利用者認証はその手前で
-             済んでいる。書ける行は閉じた 3 コマンド（input_phone_verify_code / input_pic_verify_code /
+             済んでいる。呼び出し元は共有シークレット（callerSecret）と NetworkPolicy（networkpolicy-opend.yaml）の
+             2 段で絞る（IADR-0566）。書ける行は閉じた 3 コマンド（input_phone_verify_code / input_pic_verify_code /
              req_phone_verify_code）に限られる。
 
           securityContext は OpenD 本体と**同じ値**を与える。共有 emptyDir 上のファイルは OpenD 本体が
@@ -189,9 +193,15 @@ spec:
               value: {{ $o.authGateway.rateLimitMaxSubmissions | quote }}
             - name: OpendAuth__RateLimitWindowSeconds
               value: {{ $o.authGateway.rateLimitWindowSeconds | quote }}
+            {{- /* NFR, IADR-0566: 呼び出し元の検証。値ではなくファイルの場所を渡す（Secret を回しても Pod を作り直さない）。 */}}
+            - name: OpendAuth__CallerSecretFile
+              value: {{ printf "%s/%s" $o.authGateway.callerSecret.mountPath $o.authGateway.callerSecret.secretKey | quote }}
           volumeMounts:
             - name: runtime
               mountPath: {{ $o.authGateway.runtimeDirectory | quote }}
+            - name: caller-secret
+              mountPath: {{ $o.authGateway.callerSecret.mountPath | quote }}
+              readOnly: true
           resources:
             {{- toYaml $o.authGateway.resources | nindent 12 }}
         {{- end }}
@@ -205,6 +215,17 @@ spec:
         - name: runtime
           emptyDir:
             sizeLimit: {{ $o.authGateway.runtimeSizeLimit | quote }}
+        {{- if $o.authGateway.enabled }}
+        {{- /* NFR, IADR-0566: サイドカーだけがマウントする。optional: true ＝ Secret が無くても Pod は起動する
+               （サイドカーは未構成として全口 503 を返す＝fail-closed。OpenD の API と発注経路は止めない）。 */}}
+        - name: caller-secret
+          secret:
+            secretName: {{ $o.authGateway.callerSecret.secretName }}
+            optional: true
+            defaultMode: {{ $o.authGateway.callerSecret.defaultMode }}
+            items:
+              - { key: {{ $o.authGateway.callerSecret.secretKey }}, path: {{ $o.authGateway.callerSecret.secretKey }} }
+        {{- end }}
         - name: rsa
           secret:
             secretName: {{ $o.rsaSecretName }}

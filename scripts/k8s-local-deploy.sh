@@ -130,7 +130,9 @@ AST_CHART_VALUES="$ROOT/deploy/helm/ai-stock-trading/values.yaml"
 AST_PROFILE_VALUES_DEFAULT="$ROOT/deploy/helm/ai-stock-trading/values-local.yaml"
 # #795, IADR-0341: ESO が所有する Secret（MSP#1477 と共有する契約の同期先名。ExternalSecret 名も同一で、
 # 基盤 BFF はこの名前で force-sync する。描画との一致は .github/workflows/helm.yml の #795 ステップが検査する）。
-AST_ESO_TARGET_SECRETS=("$SECRET_NAME" moomoo-credentials moomoo-rsa)
+# NFR, IADR-0566: opend-auth-caller-secret（認証サイドカーの呼び出し元検証）も ESO が所有する（画面の契約の外。
+# 値は Vault の ai-stock-trading/opend-auth へ入れる）。管理外の同名 Secret があれば同じく名前を挙げて止める。
+AST_ESO_TARGET_SECRETS=("$SECRET_NAME" moomoo-credentials moomoo-rsa opend-auth-caller-secret)
 
 # ast-secrets のキー定義: <Secret キー>|<環境変数>|<既定値>。
 # 既定値は「env 未設定 **かつ** 既存 Secret にも値が無い」場合にだけ使う（＝新規環境の後方互換）。
@@ -737,6 +739,7 @@ echo "  kubectl -n $NS get pods"
 if [ "${AST_ESO_MODE:-0}" = "1" ]; then
   echo "  kubectl -n $NS get externalsecret   # ast-secrets / moomoo-credentials / moomoo-rsa が SecretSynced であること"
   echo "  OpenD（opend.enabled=true）は moomoo-credentials / moomoo-rsa が Vault に入り同期されるまで起動を待つ（画面で入力・生成する）"
+  echo "  認証サイドカーは opend-auth-caller-secret（Vault ai-stock-trading/opend-auth）が同期されるまで全口 503（基盤の BFF も同じ値を要る。IADR-0566）"
 fi
 echo "#121（CronJob）を有効化する場合: helm ... --set tradingCycle.cronjob.enabled=true"
 echo "  （run-once エンドポイント実装が前提。既定は in-process ポーリング維持=fail-safe）"
