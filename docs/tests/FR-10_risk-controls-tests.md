@@ -7323,9 +7323,10 @@ T-10-2942・T-10-2943 は `PortfolioInPromptTests`・`PortfolioHoldingsWiringTes
 | **T-10-2970** | 送り手の本物の型の本文・本物の構成 | 受け手が読む／口へ要求する | 読める。口はサービスと所有者に開き、本文は 2 項目だけ。操作の口と現況はサービスに閉じたまま | 契約・最小限の露出 | 自動 |
 | **T-10-2971** | 本番の構成（`Program.cs`）・照会先なし／あり | 新規建てを執行する | なし: 送らない（不明）。あり: HTTP で照会し状態に従う | 照会の渡し忘れを検知する | 自動 |
 | **T-10-2972** | 見送り理由の列挙 | 序数・在庫解放の分類を見る | 3 値は序数 9〜11・確実に未発注 | 序数は不変 | 自動 |
+| **T-10-2973** | 配備の既定・SIMULATE・ローカルの 3 描画 | helm で描画する | 発注執行に照会先（リスク管理の Service の 8080）・s2s の資格情報（共有の機密の契約キー）・token エンドポイントが出る | 値の欠落で新規建てが全件止まらない | 自動 |
 
 試験の置き場所: T-10-2965〜T-10-2969 は `OrderExecutionServiceTradingHaltTests`、T-10-2967・T-10-2970 は `HttpTradingHaltSourceTests`（発注執行）と `TradingHaltEndpointTests`（リスク管理）、
-T-10-2971 は `TradingHaltWiringTests`、T-10-2972 は `StopLossMethodContractTests`・`OrderDispatchForgoneLifecycleTests`。
+T-10-2971 は `TradingHaltWiringTests`、T-10-2973 は helm の描画検査、T-10-2972 は `StopLossMethodContractTests`・`OrderDispatchForgoneLifecycleTests`。
 
 **変異で確かめたこと**（1 本ずつ当てて戻した）:
 
@@ -7341,5 +7342,5 @@ T-10-2971 は `TradingHaltWiringTests`、T-10-2972 は `StopLossMethodContractTe
 
 🔴 **本節が固定していない残余リスク**:
 - 照会の後・送信までのごく短いあいだに入った停止は見ない（審査と送る直前の 2 段で窓を狭めたが 0 ではない）。
-- 照会先と資格情報を発注執行へ与えるまで、新規建ては全件見送られる（決済・損切りは動く）。
+- 照会先と資格情報は配備の既定に入れた（T-10-2973）。値を外す・リスク管理へ届かない・資格情報が無効だと新規建ては全件見送られる（決済・損切りは動く）。
 - 日次損失のロックアウトは本確認の対象外（審査が止める）。

@@ -79,3 +79,8 @@ plan_refs:
 
 - 照会先（`RiskManagement:BaseUrl`）と s2s の資格情報（`ServiceAuth:*`）を発注執行へ与えるまで、**新規建ては全件見送られる**（fail-closed）。決済・損切りは影響を受けない。
 - 手順（helm の値・ネットワークの許可）は PR 本文に書く（本 PR は `backend/` と記録だけを変える）。
+
+［2026-10-22 追記］配備の値を同じ PR に足した（オーナー・調整役の指示）: helm `values.yaml` の発注執行の `extraEnv` に `RiskManagement__BaseUrl`（`http://risk-management-service:8080`）と
+`ServiceAuth__ClientId` / `ServiceAuth__ClientSecret`（`ast-secrets` の `service-auth-client-id` / `-secret`）、`docker-compose.yml` に同じ値と token エンドポイント。
+`values-local.yaml` は発注執行の `extraEnv` を上書きしていないため既定を継ぐ（写すと Helm のリスト置換で既定の env を落とす危険が増えるだけ）。描画は T-10-2973（`helm.yml`）で固定した。
+試験の写像の訂正: T-10-2970 は `TradingHaltEndpointTests` / `HttpTradingHaltSourceTests`（`ReadContractWireFormatTests` は変更していない）。

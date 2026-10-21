@@ -647,6 +647,15 @@ services:
       # NFR-06, IADR-0448, IADR-0559, #1391: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # 🔴 FR-10, ADR-0009, IADR-0567: 新規建てを送る直前に kill switch・一時停止の状態を照会する宛先（GET /risk-controls/trading-halt・OwnerOrService）。
+      #    **空・未設定・照会の失敗は「不明」＝新規建てを送らない**（fail-closed。決済・損切りは照会しない＝止まらない）。
+      #    s2s は下の ServiceAuth__*（trading-service。token エンドポイントは auth: true の Authority から導く）。
+      #    将来リスク管理に NetworkPolicy を置くときは、発注執行（order-execution-service）からの 8080 を許可すること。
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
   report:
     image: ai-stock-trading/report-service
     # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0328 決定 3, IADR-0446, #1061: east-west gRPC（h2c）の提供側ポート。
