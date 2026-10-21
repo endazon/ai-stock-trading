@@ -571,11 +571,11 @@ jobs:
           assert_reconciliation "moomoo-sim" "$(helm template ast "$CHART" --set broker.tier=moomoo-sim)"
           assert_reconciliation "values-local" "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
           echo "ok: 突合は 3 描画とも有効で、解放の門は閉じている（BatchSize も pin 済み）"
-      # 🔴 T-10-2973, FR-10, ADR-0009, IADR-0567: 発注執行が新規建てを送る直前に kill switch・一時停止を照会する宛先と s2s の資格情報。
+      # 🔴 T-10-2973, FR-10, ADR-0009, IADR-0568: 発注執行が新規建てを送る直前に kill switch・一時停止を照会する宛先と s2s の資格情報。
       #    これが描画されないと照会は常に「不明」になり、新規建てが全件見送られる（fail-closed。決済・損切りは止まらない）。
       #    既定・moomoo-sim・values-local の 3 描画で、宛先が描画された risk-management の Service を指し、資格情報が ast-secrets の
       #    契約キーを secretKeyRef で読み、token エンドポイントが描かれることを固定する。
-      - name: Assert order-execution is wired to the trading-halt query (IADR-0567)
+      - name: Assert order-execution is wired to the trading-halt query (IADR-0568)
         run: |
           set -eu
           assert_halt_query() {
@@ -585,7 +585,7 @@ jobs:
             printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Service/ && /name: risk-management-service/' | grep -q 'port: 8080' \
               || { echo "::error::[$label] risk-management-service の 8080 が描画されない（宛先が実在しない）。"; exit 1; }
             printf '%s' "$doc" | grep -A1 'name: RiskManagement__BaseUrl$' | grep -q 'value: "http://risk-management-service:8080"' \
-              || { echo "::error::[$label] order-execution の RiskManagement__BaseUrl が risk-management-service:8080 を指さない（新規建てが全件見送られる・IADR-0567）。"; exit 1; }
+              || { echo "::error::[$label] order-execution の RiskManagement__BaseUrl が risk-management-service:8080 を指さない（新規建てが全件見送られる・IADR-0568）。"; exit 1; }
             for pair in "ServiceAuth__ClientId service-auth-client-id" "ServiceAuth__ClientSecret service-auth-client-secret"; do
               key="${pair%% *}"; ref="${pair##* }"
               printf '%s' "$doc" | grep -A4 "name: ${key}$" | grep -q "key: ${ref}$" \
@@ -1233,8 +1233,9 @@ jobs:
           # ② values-local 描画の ExternalSecret（契約の表と 1 対 1）。
           local_out="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
           names="$(printf '%s' "$local_out" | awk 'BEGIN{RS="---"} index($0, "\nkind: ExternalSecret\n") { if (match($0, /\n  name: [a-z-]+/)) print substr($0, RSTART+9, RLENGTH-9) }' | sort | tr '\n' ' ')"
-          [ "$names" = "ast-secrets moomoo-credentials moomoo-rsa " ] || fail "values-local の ExternalSecret が契約の 3 件でない（実測: 「$names」）。"
-          for n in ast-secrets moomoo-credentials moomoo-rsa; do
+          # IADR-0568: ast-rabbitmq-users（ブローカのサービスごとの資格情報）は画面の契約の外だが、ESO 所有では同じ形で同期する。
+          [ "$names" = "ast-rabbitmq-users ast-secrets moomoo-credentials moomoo-rsa " ] || fail "values-local の ExternalSecret が契約の 3 件＋ブローカの資格情報でない（実測: 「$names」）。"
+          for n in ast-secrets moomoo-credentials moomoo-rsa ast-rabbitmq-users; do
             d="$(doc_of "$local_out" ExternalSecret "$n")"
             printf '%s\n' "$d" | grep -qx 'apiVersion: external-secrets.io/v1' || fail "ExternalSecret $n が external-secrets.io/v1 でない（基盤の ESO は v1beta1 を提供しない）。"
             printf '%s\n' "$d" | grep -q 'name: vault-backend' || fail "ExternalSecret $n の store が vault-backend でない。"
@@ -1448,6 +1449,43 @@ jobs:
             fail "authGateway 無効でも ExternalSecret を描いた"
           fi
           echo "ok: OpenD への到達は発注執行と基盤の BFF だけ・呼び出し元検証の Secret はサイドカーだけが optional でマウントする"
+      # NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: 全 Worker はブローカへサービスごとのユーザーで接続する。既定のユーザーの痕跡が無い。
+      - name: Assert per-service broker credentials (IADR-0568)
+        run: |
+          fail() { echo "::error::ブローカのサービスごとの資格情報（IADR-0568）: $1"; exit 1; }
+          for prof in default local; do
+            if [ "$prof" = local ]; then out="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"; else out="$(helm template ast "$CHART")"; fi
+            if grep -q 'guest' <<<"$out"; then fail "$prof: 描画に guest が現れた"; fi
+            n=0
+            for d in $(awk 'BEGIN{RS="---"} index($0, "\nkind: Deployment\n") { if (match($0, /\n  name: [a-z0-9-]+-service\n/)) print substr($0, RSTART+9, RLENGTH-10) }' <<<"$out"); do
+              svc="${d%-service}"
+              doc="$(awk -v n="$d" 'BEGIN{RS="---"} index($0, "\nkind: Deployment\n") && index($0, "\n  name: " n "\n")' <<<"$out")"
+              grep -A4 'name: RABBITMQ_PASSWORD$' <<<"$doc" | grep -q "key: ast-${svc}\$" || fail "$prof: $d のパスワードのキーが ast-${svc} でない"
+              grep -A4 'name: RABBITMQ_PASSWORD$' <<<"$doc" | grep -q 'name: ast-rabbitmq-users$' || fail "$prof: $d のパスワードの Secret が ast-rabbitmq-users でない"
+              if grep -A5 'name: RABBITMQ_PASSWORD$' <<<"$doc" | grep -q 'optional: true'; then fail "$prof: $d のパスワードが optional（無いときに別の資格情報へ戻る経路になる）"; fi
+              grep -A1 'name: RabbitMq__ConnectionString$' <<<"$doc" | grep -qF "value: \"amqp://ast-${svc}:\$(RABBITMQ_PASSWORD)@rabbitmq:5672\"" \
+                || fail "$prof: $d の接続文字列がサービスごとのユーザーでない"
+              # 補間は先に定義した env だけを参照できる（順序を崩すと $(RABBITMQ_PASSWORD) が文字のまま渡る）。
+              p="$(grep -n 'name: RABBITMQ_PASSWORD$' <<<"$doc" | cut -d: -f1)"; c="$(grep -n 'name: RabbitMq__ConnectionString$' <<<"$doc" | cut -d: -f1)"
+              [ "$p" -lt "$c" ] || fail "$prof: $d で RABBITMQ_PASSWORD が接続文字列より後にある"
+              n=$((n + 1))
+            done
+            [ "$n" -ge 11 ] || fail "$prof: Worker を ${n} 件しか読めない（抽出の空振り）"
+          done
+          # Reloader の注釈（経路B）に ast-rabbitmq-users が入る（値を回したら作り直す）。
+          loc="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml)"
+          c="$(grep -c 'secret.reloader.stakater.com/reload: ".*ast-rabbitmq-users' <<<"$loc" || true)"
+          [ "$c" -ge 11 ] || fail "Reloader の注釈に ast-rabbitmq-users が入る Deployment が ${c} 件しかない"
+          # 旧キーは描画で止める。設定点の欠落も止める。
+          must_fail() {
+            local label="$1" want="$2"; shift 2
+            local out
+            if out="$(helm template ast "$CHART" "$@" 2>&1)"; then fail "描画が通ってしまった: $label"; fi
+            grep -qF "$want" <<<"$out" || { echo "::error::$label: 期待した理由（$want）で止まっていない:"; printf '%s\n' "$out" | tail -3; exit 1; }
+          }
+          must_fail "旧キー rabbitmqConnectionString" "global.rabbitmqConnectionString は廃止" --set global.rabbitmqConnectionString=amqp://x@rabbitmq:5672
+          must_fail "Secret 名が空" "credentialsSecretName" --set global.rabbitmq.credentialsSecretName=""
+          echo "ok: 全 Worker がサービスごとのユーザーで接続し、既定のユーザーの痕跡は無い"
       # #132 / IADR-0060: 誤配備を描画時に止めるゲートが**実際に落ちる**ことを検査する（ゲートの空振り防止）。
       - name: Assert misconfiguration gates fail
         run: |

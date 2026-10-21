@@ -965,6 +965,7 @@ assert_contains 'T-795-09 ESO: 使わない旨を警告する' "$ERR" 'discord.b
 # T-795-10: AST_ESO=0 → 従来どおり ast-secrets を同期し、discord.bot.* を引き継ぐ
 given_secret "absent"
 AST_ESO=0; export AST_ESO
+: > "$STATE/exists-ast-rabbitmq-users"   # IADR-0568: 従来経路ではブローカの資格情報の Secret を先に作っておく前提
 run_prepare
 assert_eq   'T-795-10 非 ESO: 正常終了する' "$RC" "0"
 [ -f "$STATE/created" ] && ok 'T-795-10 非 ESO: Secret を作成する' || ng 'T-795-10 非 ESO: Secret を作成する' 'create secret が呼ばれていない'
@@ -974,6 +975,17 @@ given_release_values 'discord:
     guildId: "111111111111111111"'
 run_resolve_with_mode
 assert_contains 'T-795-10 非 ESO: discord.bot.guildId を引き継ぐ' "$OVERRIDES" 'discord.bot.guildId=111111111111111111'
+
+# T-pvmh-01（IADR-0568・Refs GHSA-pvmh-cvmf-pvcp）: 従来経路でブローカの資格情報の Secret が無ければ、ast-secrets に触れる前に止まる
+given_secret "absent"
+AST_ESO=0; export AST_ESO
+run_prepare
+assert_eq       'T-pvmh-01 非 ESO・ブローカの Secret なし: 非 0' "$RC" "1"
+assert_contains 'T-pvmh-01 非 ESO・ブローカの Secret なし: 名指す' "$ERR" 'ast-rabbitmq-users'
+[ -f "$STATE/created" ] && ng 'T-pvmh-01 非 ESO: ast-secrets を作らない' '止まる前に create secret が呼ばれた' || ok 'T-pvmh-01 非 ESO: ast-secrets を作らない'
+# T-pvmh-02: ESO 所有では、管理外の同名 Secret を名指して止める（ESO が所有しにいく対象に入っている）
+assert_contains 'T-pvmh-02 ESO 所有の対象に入る' "${AST_ESO_TARGET_SECRETS[*]}" 'ast-rabbitmq-users'
+unset AST_ESO
 
 # ---- #1351: Recreate へ移る Deployment に残る rollingUpdate を upgrade の前に外す ----------
 printf '\nk8s-local-deploy.sh: Recreate への移行（#1351）\n'

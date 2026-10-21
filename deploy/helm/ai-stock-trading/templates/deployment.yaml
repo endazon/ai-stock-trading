@@ -19,6 +19,15 @@
 {{- fail (printf "未知の broker.tier %q。'paper'（内蔵擬似）または 'moomoo-sim'（OpenD 経由 SIMULATE）を指定してください（IADR-0111）。" $tier) -}}
 {{- end -}}
 {{- $broker := get $brokerTiers $tier -}}
+{{- /* NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: ブローカへはサービスごとのユーザー（<usernamePrefix><サービス名>）で接続する。
+       旧キー global.rabbitmqConnectionString（全サービス共通の 1 組・資格情報を値に含む）は廃止し、与えられたら止める。 */ -}}
+{{- if $g.rabbitmqConnectionString -}}
+{{- fail "global.rabbitmqConnectionString は廃止しました。ブローカへはサービスごとのユーザーで接続します（global.rabbitmq.* と Secret global.rabbitmq.credentialsSecretName。IADR-0568）。" -}}
+{{- end -}}
+{{- $mq := $g.rabbitmq | default dict -}}
+{{- if or (not $mq.host) (not $mq.port) (not $mq.credentialsSecretName) (not $mq.usernamePrefix) -}}
+{{- fail "global.rabbitmq.host / port / credentialsSecretName / usernamePrefix が要ります（ブローカのサービスごとの資格情報。IADR-0568）。" -}}
+{{- end -}}
 {{- range $name, $svc := .Values.services }}
 {{- /* FR-09/14, #245, IADR-0102: Discord Bot の環境固有 ID（非機密）を values（discord.bot.*）から与える設定点。
        env を**追加**せず extraEnv の**値を上書き**する（同名 env の二重定義を作らない）。空既定では 1 つも
@@ -81,6 +90,8 @@
 {{- range $e := $svc.extraEnv }}{{- if $e.secretKeyRef }}{{- $reloadSecrets = append $reloadSecrets $e.secretKeyRef.name -}}{{- end }}{{- end -}}
 {{- if $envSecretRefs }}{{- $reloadSecrets = append $reloadSecrets $es.appSecrets.targetName -}}{{- end -}}
 {{- if and (eq $name "order-execution") (eq $broker.provider "moomoo") }}{{- $reloadSecrets = append $reloadSecrets $.Values.moomoo.opend.rsaSecretName -}}{{- end }}
+{{- /* IADR-0568: ブローカの資格情報を回したら（基盤の reconcile-users.sh が合わせた後に ESO が同期）、作り直して新しい値で接続する。 */ -}}
+{{- $reloadSecrets = append $reloadSecrets $mq.credentialsSecretName -}}
 {{- /* FR-15, NFR（費用）, ADR-0033 決定5, #1342, IADR-0537 決定5: Stage 0 の記録器の永続ボリューム（trade-decision だけ）。
        有効なら PVC（templates/pvc-stage0-recording.yaml）を mount し、状態の置き場 Stage0Recording__StateDirectory を
        <mountPath>/state として注入し、更新方式を Recreate にする。既定（無効）では何も描かない＝既定描画はバイト等価。
@@ -245,8 +256,16 @@ spec:
             - name: Grpc__Port
               value: {{ $svc.grpcPort | quote }}
             {{- end }}
+            {{- /* NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: サービスごとのユーザーで接続する。パスワードは Secret（キー = ユーザー名）から
+                   RABBITMQ_PASSWORD として入れ、接続文字列は k8s の $(VAR) 補間で組む（env の値に平文を描かない。基盤の chart と同じ形）。
+                   🔴 optional にしない: 値が無いまま既定のユーザーへ戻る経路を作らない（新しい Pod が起動せず、旧 Pod が残る）。 */}}
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $mq.credentialsSecretName }}
+                  key: {{ printf "%s%s" $mq.usernamePrefix $name }}
             - name: RabbitMq__ConnectionString
-              value: {{ $g.rabbitmqConnectionString | quote }}
+              value: {{ printf "amqp://%s%s:$(RABBITMQ_PASSWORD)@%s:%v" $mq.usernamePrefix $name $mq.host $mq.port | quote }}
             - name: Otlp__Endpoint
               value: {{ $g.otlpEndpoint | quote }}
             {{- /* ADR-0001, IADR-0077, #22: 宣言的バインディング（pipeline.json）のマウント先。

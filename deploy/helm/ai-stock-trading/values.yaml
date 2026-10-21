@@ -13,7 +13,16 @@ global:
     pullPolicy: IfNotPresent
   # 共有インフラ（MSP platform-infra）への接続既定。ExternalName エイリアス（下記 infraAliases）で
   # 素のサービス名を platform-infra の FQDN へ解決する。
-  rabbitmqConnectionString: amqp://guest:guest@rabbitmq:5672
+  # NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: ブローカ（基盤 platform-infra の RabbitMQ）への接続。**サービスごとのユーザー**
+  # （<usernamePrefix><サービス名>。例 ast-trade-decision）で接続する。ユーザーと権限は基盤が作る（MSP の
+  # deploy/local/rabbitmq-setup/users.txt・reconcile-users.sh）。パスワードは Secret credentialsSecretName（キー = ユーザー名）から読む。
+  # ESO 所有（externalSecrets.enabled=true）では templates/external-secrets.yaml が Vault ai-stock-trading/rabbitmq-users を同期する。
+  # 🔴 既定のユーザー（guest）は使わない。旧キー rabbitmqConnectionString は廃止（与えると描画で止める）。
+  rabbitmq:
+    host: rabbitmq
+    port: 5672
+    credentialsSecretName: ast-rabbitmq-users
+    usernamePrefix: "ast-"
   otlpEndpoint: http://otel-collector:4317
   authAuthority: http://keycloak:8080/realms/ai-stock-trading
   # #22 受け入れ基準③: 実効構成バージョン（適用中の構成の Git コミット等）。GitOps（ArgoCD）で注入する。
@@ -246,6 +255,10 @@ externalSecrets:
   moomooRsa:
     remoteKey: ai-stock-trading/moomoo-rsa
     property: opend_rsa.pem
+  # NFR, IADR-0568: ブローカのサービスごとのユーザーのパスワード（プロパティ名 = ユーザー名）。externalSecrets.enabled のとき同期する。
+  # 種は基盤の bootstrap（MSP deploy/local/vault/eso/bootstrap.sh）が乱数で入れる。同期先は global.rabbitmq.credentialsSecretName。
+  rabbitmqUsers:
+    remoteKey: ai-stock-trading/rabbitmq-users
   # NFR, IADR-0566: 認証サイドカーの呼び出し元検証の共有シークレット。opend.enabled と opend.authGateway.enabled が
   # どちらも true のときだけ描く。同期先は opend.authGateway.callerSecret.secretName / secretKey。
   # 基盤の BFF も同じ Vault のキーを自分の名前空間へ同期する（両側で同じ値になる。値は Git に置かない）。
@@ -647,7 +660,7 @@ services:
       # NFR-06, IADR-0448, IADR-0559, #1391: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
-      # 🔴 FR-10, ADR-0009, IADR-0567: 新規建てを送る直前に kill switch・一時停止の状態を照会する宛先（GET /risk-controls/trading-halt・OwnerOrService）。
+      # 🔴 FR-10, ADR-0009, IADR-0568: 新規建てを送る直前に kill switch・一時停止の状態を照会する宛先（GET /risk-controls/trading-halt・OwnerOrService）。
       #    **空・未設定・照会の失敗は「不明」＝新規建てを送らない**（fail-closed。決済・損切りは照会しない＝止まらない）。
       #    s2s は下の ServiceAuth__*（trading-service。token エンドポイントは auth: true の Authority から導く）。
       #    将来リスク管理に NetworkPolicy を置くときは、発注執行（order-execution-service）からの 8080 を許可すること。
