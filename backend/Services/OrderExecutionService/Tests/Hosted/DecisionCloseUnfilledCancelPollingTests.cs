@@ -10,6 +10,7 @@ using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
 using OrderExecutionService.Hosted;
 using OrderExecutionService.Infrastructure.ExternalServices;
+using AiStockTrading.TestSupport.Composition;
 using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
@@ -209,24 +210,37 @@ public class DecisionCloseUnfilledCancelPollingTests
     }
 
     // T-10-2675（起動）: 本番の組み立て（Program.cs）で、有効時の N ≦ 検知の窓は起動で止まる。無効なら同じ値でも起動する。
+    // NFR, #1437, IADR-0571: 起動の検証の例外は StartupValidationProbe で読む。factory.Services の例外の型は、アプリ側の
+    // ホスト破棄と試験側の問い合わせの走る順で OptionsValidationException にも ObjectDisposedException にもなる（CI で後者が出た）。
     [Theory]
     [InlineData("true", "5", false)]
     [InlineData("true", "6", true)]
     [InlineData("false", "5", true)]
     public void T_10_2675_有効時のNが検知の窓以下なら起動で止まる(string enabled, string minutes, bool starts)
     {
-        using var factory = new ExecutionWorkerWebApplicationFactory().WithWebHostBuilder(b =>
-            b.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(new Dictionary<string, string?>
+        using var factory = new ExecutionWorkerWebApplicationFactory();
+        DecisionCloseUnfilledCancelOptions? resolved = null;
+
+        var outcome = factory.ProbeStartupValidation(
+            b => b.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["DecisionCloseUnfilledCancel:Enabled"] = enabled,
                 ["DecisionCloseUnfilledCancel:UnfilledMinutes"] = minutes,
-            })));
+            })),
+            services => resolved = services.GetRequiredService<IOptions<DecisionCloseUnfilledCancelOptions>>().Value);
 
-        var act = () => factory.Services.GetRequiredService<IOptions<DecisionCloseUnfilledCancelOptions>>().Value;
-
+        outcome.ValidatorPresent.Should().BeTrue("Program.cs は起動時の検証（ValidateOnStart）を登録する");
         if (starts)
-            act.Should().NotThrow();
+        {
+            outcome.ValidationFailure.Should().BeNull();
+            outcome.StartFailure.Should().BeNull();
+            resolved.Should().NotBeNull();
+        }
         else
-            act.Should().Throw<OptionsValidationException>().Which.Message.Should().Contain("相場操縦の検知の窓");
+        {
+            outcome.ValidationFailure.Should().BeOfType<OptionsValidationException>()
+                .Which.Message.Should().Contain("相場操縦の検知の窓");
+            outcome.StartFailure.Should().NotBeNull("起動の検証の失敗で起動は止まる");
+        }
     }
 }
