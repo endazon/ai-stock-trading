@@ -77,12 +77,14 @@ public sealed class HttpInFlightCloseProvider(
             return null;
         }
 
+        // 🔴 #1434, IADR-0572 決定2: ブローカーの決済方向の建玉。負（契約外）は不明（null）へ倒す——0 と読むと LLM を省く向きへ誤る。
+        int? closable = dto.ClosableQuantity is >= 0 ? dto.ClosableQuantity : null;
         switch (status)
         {
             case StatusCovered when dto is { InFlightQuantity: > 0 and var quantity, OrderIds: { } orderIds }:
-                return new InFlightCloseCoverage(true, quantity, [.. orderIds.Where(id => id is not null).Select(id => id!)]);
+                return new InFlightCloseCoverage(true, quantity, [.. orderIds.Where(id => id is not null).Select(id => id!)], closable);
             case StatusNotCovered:
-                return new InFlightCloseCoverage(false, dto.InFlightQuantity ?? 0, []);
+                return new InFlightCloseCoverage(false, dto.InFlightQuantity ?? 0, [], closable);
             default:
                 // Unknown（0）・未知の状態・覆うのに処理中の株数や注文 ID が欠けた応答。
                 logger.LogInformation(
@@ -91,7 +93,8 @@ public sealed class HttpInFlightCloseProvider(
         }
     }
 
-    // 送り手 InFlightClosesView の受け皿。欠落を既定値と区別するため全項目 nullable。ClosableQuantity・DecisionIds は判定に使わない。
+    // 送り手 InFlightClosesView の受け皿。欠落を既定値と区別するため全項目 nullable。DecisionIds は判定に使わない。
+    // #1434, IADR-0572 決定2: ClosableQuantity（ブローカーの決済方向の建玉）は読む。
     internal sealed record InFlightClosesDto(
         string? Symbol, Market? Market, TradeSide? CloseSide, int? Status, string? UnknownReason,
         int? ClosableQuantity, int? InFlightQuantity, IReadOnlyList<string?>? OrderIds, IReadOnlyList<Guid?>? DecisionIds);

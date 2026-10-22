@@ -132,9 +132,26 @@ public class InFlightCloseBeforeLlmTests
     private static SizingContext Context(decimal? stageRemaining = 50_000m, decimal? dailyRemaining = 50_000m) =>
         new(Equity, stageRemaining, dailyRemaining, 0, 0m, BrokerProvider.MoomooSimulate, TradingDefaults.CreateRiskLimits());
 
+    // 🔴 #1434, IADR-0572 決定2: 台帳（リスク管理の open-positions）が約定の射影より遅れている状態。巡回の冒頭（プロンプト）は保有中を返し、
+    // LLM の後の読み直し（Sell の関所）は追いついた 0 を返す（HOOD 2026-10-21 の時系列）。
+    private sealed class LaggingLedgerHeld(int before) : IHeldPositionProvider
+    {
+        public bool IsEnabled => true;
+
+        public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default) =>
+            Task.FromResult<int?>(0);
+
+        public Task<HeldPosition?> GetPositionAsync(string symbol, Market market, CancellationToken ct = default) =>
+            Task.FromResult<HeldPosition?>(new HeldPosition(before, 330m, 320m));
+
+        public Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(string symbol, Market market, CancellationToken ct = default) =>
+            Task.FromResult<WorkingEntryOrders?>(WorkingEntryOrders.None);
+    }
+
     private static Probe Create(
         FakeInFlight inFlight, int held = 13, IEntryBlockersProvider? blockers = null, SizingContext? context = null,
-        bool workingUnknown = false, IFxRateProvider? fx = null, string llmOutput = AaplSellJson)
+        bool workingUnknown = false, IFxRateProvider? fx = null, string llmOutput = AaplSellJson,
+        IHeldPositionProvider? heldPosition = null)
     {
         var llm = new FixedLlm(llmOutput);
         var forgone = new RecordingForgone();
@@ -142,7 +159,7 @@ public class InFlightCloseBeforeLlmTests
         var service = new AppSvc(
             llm, new FakePolicy(), new FakeSizing(context ?? Context()), new FakeClock(), NullLogger<AppSvc>.Instance,
             options: new DecisionOrchestrationOptions { EnableScreening = true },
-            currentPrice: new FakeCurrentPrice(AaplPrice), heldPosition: new FakeHeld(held, workingUnknown), fxRate: fx,
+            currentPrice: new FakeCurrentPrice(AaplPrice), heldPosition: heldPosition ?? new FakeHeld(held, workingUnknown), fxRate: fx,
             skipReporter: skips, forgoneReporter: forgone, entryBlockers: blockers, inFlightCloses: inFlight);
         return new Probe(service, llm, inFlight, forgone, skips);
     }
@@ -247,5 +264,55 @@ public class InFlightCloseBeforeLlmTests
 
         probe.InFlight.Calls.Should().BeEmpty();
         probe.Forgone.Reports.Should().BeEmpty();
+    }
+
+    // 🔴 T-10-2991, FR-04, FR-10, #1434, IADR-0572 決定2: **判断由来の決済が約定した直後の巡回**（台帳はまだ保有中・発注執行はブローカーの決済方向の
+    // 建玉 0 を観測し NotCovered）では、出口の判断の LLM を呼ばない。買い増しは当日の判断由来の決済で必ず拒否される（DecisionExitSameDay）。
+    // 是正前は LLM（一次・二次）を呼び、LLM の後の関所で台帳が追いついた held=0 により NakedShortOpen で見送っていた。
+    [Fact]
+    public async Task T_10_2991_決済の約定直後で建玉0の銘柄は出口の判断のLLMを呼ばない()
+    {
+        var probe = Create(
+            new FakeInFlight(new InFlightCloseCoverage(false, 0, [], BrokerClosableQuantity: 0)),
+            blockers: new FakeBlockers(RejectionReason.DecisionExitSameDay),
+            heldPosition: new LaggingLedgerHeld(2339));
+
+        var decision = await probe.Service.DecideAsync(Trigger(), TestContext.Current.CancellationToken);
+
+        decision.Should().BeNull();
+        probe.Llm.Calls.Should().Be(0, "どの結論も発注にならない（決済は発注執行の決済のゲートが建玉なしで見送る）");
+        probe.Forgone.Reports.Should().ContainSingle()
+            .Which.Reason.Should().Be(DecisionForgoneBeforeLlmReason.BrokerPositionClosed);
+        probe.Skips.Reasons.Should().Equal(DecisionSkipReason.BrokerPositionClosed);
+        probe.InFlight.Calls.Should().Equal([("AAPL", TradeSide.Sell)]);
+    }
+
+    // 🔴 T-10-2992, FR-04, FR-10, #1434, IADR-0572 決定2: 建玉が正（決済が出せる）・建玉が不明（照会していない・旧い送り手）なら従来どおり LLM を呼ぶ
+    // （決済〔損切り〕の判断を止める向きへは倒さない）。買い増しが発注になり得るなら照会もしない（建玉 0 を返す照会口でも LLM を呼ぶ）。
+    [Theory]
+    [InlineData("closable-positive")]
+    [InlineData("closable-unknown")]
+    [InlineData("add-on-possible")]
+    public async Task T_10_2992_建玉が正か不明か買い増しが発注になり得るならLLMを呼ぶ(string shape)
+    {
+        var probe = shape switch
+        {
+            "closable-positive" => Create(
+                new FakeInFlight(new InFlightCloseCoverage(false, 0, [], BrokerClosableQuantity: 13)),
+                blockers: new FakeBlockers(RejectionReason.DecisionExitSameDay)),
+            "closable-unknown" => Create(
+                new FakeInFlight(new InFlightCloseCoverage(false, 0, [], BrokerClosableQuantity: null)),
+                blockers: new FakeBlockers(RejectionReason.DecisionExitSameDay)),
+            _ => Create(
+                new FakeInFlight(new InFlightCloseCoverage(false, 0, [], BrokerClosableQuantity: 0)),
+                blockers: new FakeBlockers()),
+        };
+
+        await probe.Service.DecideAsync(Trigger(), TestContext.Current.CancellationToken);
+
+        probe.Llm.Calls.Should().BeGreaterThan(0, shape);
+        probe.Forgone.Reports.Should().BeEmpty();
+        if (shape == "add-on-possible")
+            probe.InFlight.Calls.Should().BeEmpty("買い増しの判定が成り立たなければ照会しない（IADR-0535 の前段は不変）");
     }
 }

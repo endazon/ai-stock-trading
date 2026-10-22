@@ -163,6 +163,9 @@ public static class OrderExecutionReadWireMapping
         };
         if (view.UnknownReason is { } reason)
             response.UnknownReason = reason;
+        // #1434, IADR-0572 決定2: ブローカーの決済方向の建玉（照会したときだけ。null は欠落＝不明）。
+        if (view.ClosableQuantity is { } closable)
+            response.ClosableQuantity = closable;
         response.OrderIds.AddRange(view.OrderIds);
         return response;
     }

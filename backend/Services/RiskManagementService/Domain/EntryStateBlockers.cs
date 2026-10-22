@@ -9,7 +9,9 @@ namespace RiskManagementService.Domain;
 //
 // 対象は「新規建てだけを拒否し、注文の数量・価格・商品種別に依存せず、状態が既知」の 8 理由である
 // （#1113 の 7 理由。母集合と除外の理由は作業仕様書 20260930_1113_entry-blockers-before-llm。
-// ［2026-10-07 / #1176・IADR-0495 決定3］判断由来の決済の後の同日・同方向〔DecisionExitSameDay〕を足して 7 → 8 理由）。
+// ［2026-10-07 / #1176・IADR-0495 決定3］判断由来の決済の後の同日・同方向〔DecisionExitSameDay〕を足して 7 → 8 理由。
+// ［2026-10-23 / #1433・IADR-0572 決定1］閉場前の新規建ての締め切り〔PreCloseEntryCutoff〕とテーマの同時保有の上限〔ThemeConcentrationExceeded〕を
+// 足して 8 → 10 理由。どちらも銘柄・市場・時刻・状態だけで決まり、数量・価格・商品種別・方向に依らない）。
 // 🔴 **不明は返さない**（裁定 3）。StopOutStatusUnknown・資金の未供給・口座種別の未確認・縮退の不明・GFV 件数の未供給は
 // 審査では止まるが、口は「確定した」とは答えない —— 判断側は LLM を呼ぶ側へ倒れる（審査が止める）。
 public static class EntryStateBlockers
@@ -21,6 +23,8 @@ public static class EntryStateBlockers
         RejectionReason.TradingPaused,
         RejectionReason.StoppedOutSameDay,
         RejectionReason.DecisionExitSameDay,
+        RejectionReason.PreCloseEntryCutoff,
+        RejectionReason.ThemeConcentrationExceeded,
         RejectionReason.GoodFaithViolationLimitReached,
         RejectionReason.MaxPositionsExceeded,
         RejectionReason.DailyLossLimitReached,
@@ -52,6 +56,20 @@ public static class EntryStateBlockers
     public static bool DecisionExit(DecisionExitReentrySupply decisionExits, TradeSide entrySide) =>
         decisionExits.ForEntry(entrySide);
 
+    /// <summary>
+    /// 🔴 FR-10, FR-19, ADR-0070, #1396, IADR-0561 決定 2 / #1433, IADR-0572 決定1: 閉場前の新規建ての締め切りの区間か。供給が無い（null＝この呼び出し元は
+    /// 供給していない）なら偽。供給は <see cref="PreCloseEntryCutoffSupply.For"/>（審査と口が同じ組み立てを使う）。
+    /// </summary>
+    public static bool PreCloseCutoff(PreCloseEntryCutoffSupply? preCloseCutoff) => preCloseCutoff is { IsWithinCutoff: true };
+
+    /// <summary>
+    /// 🔴 FR-10, FR-19, ADR-0071, #1397, IADR-0562 決定 2 / #1433, IADR-0572 決定1: 新規建ての銘柄が属する集まりで、ほかの銘柄を上限の数だけ
+    /// 保有している（保有中 ∪ 未約定の新規建て・予約。<see cref="PortfolioSnapshot.HeldOrPendingSymbols"/>）か。定義が無い（null）なら偽。
+    /// </summary>
+    public static bool ThemeConcentration(
+        ThemeConcentrationSettings? themes, string symbol, Market market, PortfolioSnapshot snapshot) =>
+        themes is not null && themes.Exceeded(symbol, market, snapshot.HeldOrPendingSymbols).Count > 0;
+
     /// <summary>保有建玉数の上限（ADR-0016 決定 9。未約定の新規建てを含めて数える＝IADR-0346）。</summary>
     public static bool MaxPositions(RiskManagementSettings settings, PortfolioSnapshot snapshot) =>
         snapshot.OpenPositionCount >= settings.Limits.MaxOpenPositions;
@@ -70,6 +88,11 @@ public static class EntryStateBlockers
     /// <summary>
     /// 状態から**確定する**新規建ての拒否理由（審査と同じ述語・同じ並び）。<paramref name="lockedOut"/> は当日の日次損失の
     /// ロックアウト（審査のサービスが保持する。<c>OrderScreeningService.IsLockoutActive</c>）。
+    /// <para>
+    /// #1433, IADR-0572 決定1: <paramref name="preCloseCutoff"/>（閉場前の締め切りの供給）と <paramref name="themes"/>（テーマの定義。
+    /// <paramref name="symbol"/>・<paramref name="market"/> と組で渡す）は省略できる（省略すればその理由は判定しない＝審査の判定コアと同じ規律）。
+    /// 本番の口（EntryBlockersService）は審査と同じ解決（保存値＞構成）の値を**常に**渡す。
+    /// </para>
     /// </summary>
     public static IReadOnlyList<RejectionReason> Determine(
         TradeSide entrySide,
@@ -77,12 +100,18 @@ public static class EntryStateBlockers
         PortfolioSnapshot snapshot,
         StopOutReentrySupply stopOuts,
         DecisionExitReentrySupply decisionExits,
-        bool lockedOut)
+        bool lockedOut,
+        PreCloseEntryCutoffSupply? preCloseCutoff = null,
+        ThemeConcentrationSettings? themes = null,
+        string? symbol = null,
+        Market market = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(stopOuts);
         ArgumentNullException.ThrowIfNull(decisionExits);
+        if (themes is not null)
+            ArgumentException.ThrowIfNullOrWhiteSpace(symbol);
 
         var reasons = new List<RejectionReason>();
         if (KillSwitch(snapshot))
@@ -98,6 +127,13 @@ public static class EntryStateBlockers
         // #1176, IADR-0495 決定3: 判断由来の決済の後の同日・同方向（審査と同じ位置）。
         if (DecisionExit(decisionExits, entrySide))
             reasons.Add(RejectionReason.DecisionExitSameDay);
+
+        // 🔴 #1433, IADR-0572 決定1: 閉場前の締め切り・テーマの上限（審査と同じ位置・同じ述語。方向は問わない）。
+        if (PreCloseCutoff(preCloseCutoff))
+            reasons.Add(RejectionReason.PreCloseEntryCutoff);
+
+        if (themes is not null && ThemeConcentration(themes, symbol!, market, snapshot))
+            reasons.Add(RejectionReason.ThemeConcentrationExceeded);
 
         // 🔴 GFV は**件数が既知**のときだけ（審査は未供給〔null〕でも止めるが、それは不明である）。
         // 口座種別は審査と同じく照会結果で見る（現金口座でのみ加わる統制）。

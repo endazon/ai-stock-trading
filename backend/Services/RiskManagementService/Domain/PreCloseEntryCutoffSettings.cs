@@ -43,4 +43,15 @@ public sealed record PreCloseEntryCutoffSupply(DateTimeOffset Now, DateTimeOffse
 {
     /// <summary>閉場の <see cref="Minutes"/> 分前以降か（<see cref="PreCloseWindow.IsAtOrAfter"/>）。</summary>
     public bool IsWithinCutoff => PreCloseWindow.IsAtOrAfter(Now, SessionClose, Minutes);
+
+    /// <summary>
+    /// 🔴 #1433, IADR-0572 決定1: 効いている締め切り（<paramref name="cutoff"/>。<c>SessionAndThemeControlResolution.EffectivePreCloseEntryCutoff</c> の結果）から、
+    /// その市場の <paramref name="now"/> の供給を組む。閉場は <c>MarketHours.SessionCloseOn</c>（休場日は null）。**審査（OrderScreeningService）と
+    /// 新規建ての可否の口（EntryBlockersService）が同じこの関数を呼ぶ**（組み立てを 2 か所に書かない）。
+    /// </summary>
+    public static PreCloseEntryCutoffSupply For(PreCloseEntryCutoffSettings cutoff, Market market, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(cutoff);
+        return new(now, MarketHours.SessionCloseOn(market, now), cutoff.MinutesFor(market));
+    }
 }

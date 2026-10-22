@@ -6,7 +6,9 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Grpc.Core;
 using Grpc.Net.Client;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using RiskManagementService.Common.Abstractions;
 using RiskManagementService.Domain;
 using RiskManagementService.Features.RiskManagement;
 using RiskManagementService.Features.RiskManagement.GetEntryBlockers;
@@ -24,7 +26,16 @@ public class EntryBlockersEndpointTests
     private const string Path = "/risk-controls/entry-blockers?symbol=AAPL&market=1";
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
-    private static HttpClient Client(RiskWorkerWebApplicationFactory factory, string? roles)
+    // 🔴 #1433, IADR-0572 決定1: 口は閉場前の締め切りを返すようになったので、状態を確かめる試験は時計を場中に固定する
+    // （実時刻のままだと米国の閉場の 60 分前〜日の終わり〔JST の早朝〕に走ると PreCloseEntryCutoff が加わって赤になる）。
+    // 2026-09-23 10:00 EDT（米国の取引日の中・締め切りの窓の外）。
+    private static readonly DateTimeOffset InSession = new(2026, 9, 23, 14, 0, 0, TimeSpan.Zero);
+
+    private static WebApplicationFactory<Program> InSessionHost(RiskWorkerWebApplicationFactory factory) =>
+        factory.WithWebHostBuilder(b => b.ConfigureServices(services =>
+            services.AddSingleton<IClock>(new FakeClock(InSession, TradingDay.Of(InSession)))));
+
+    private static HttpClient Client(WebApplicationFactory<Program> factory, string? roles)
     {
         var client = factory.CreateClient();
         if (roles is not null)
@@ -32,7 +43,7 @@ public class EntryBlockersEndpointTests
         return client;
     }
 
-    private static GrpcChannel Channel(RiskWorkerWebApplicationFactory factory) =>
+    private static GrpcChannel Channel(WebApplicationFactory<Program> factory) =>
         GrpcChannel.ForAddress(factory.Server.BaseAddress, new GrpcChannelOptions
         {
             HttpHandler = new Roles(factory.Server.CreateHandler()),
@@ -47,7 +58,7 @@ public class EntryBlockersEndpointTests
         }
     }
 
-    private static void EngageKillSwitch(RiskWorkerWebApplicationFactory factory)
+    private static void EngageKillSwitch(WebApplicationFactory<Program> factory)
     {
         using var scope = factory.Services.CreateScope();
         scope.ServiceProvider.GetRequiredService<IKillSwitchStore>()
@@ -76,7 +87,8 @@ public class EntryBlockersEndpointTests
     [Fact]
     public async Task T_10_1787_本番の配線で状態が口に出て本文は応答型の_web_既定の直列化と同じ()
     {
-        await using var factory = new RiskWorkerWebApplicationFactory();
+        await using var host = new RiskWorkerWebApplicationFactory { CapitalBaselineSeedNow = InSession };
+        await using var factory = InSessionHost(host);
         var service = Client(factory, Service);
 
         var clear = await service.GetFromJsonAsync<EntryBlockersView>(Path, Web);
@@ -99,7 +111,8 @@ public class EntryBlockersEndpointTests
     [Fact]
     public async Task T_10_1786_gRPC_は_REST_と同じ値を返し欠落は_INVALID_ARGUMENT()
     {
-        await using var factory = new RiskWorkerWebApplicationFactory();
+        await using var host = new RiskWorkerWebApplicationFactory { CapitalBaselineSeedNow = InSession };
+        await using var factory = InSessionHost(host);
         EngageKillSwitch(factory);
         var rest = await Client(factory, Service).GetFromJsonAsync<EntryBlockersView>(Path, Web);
         using var channel = Channel(factory);

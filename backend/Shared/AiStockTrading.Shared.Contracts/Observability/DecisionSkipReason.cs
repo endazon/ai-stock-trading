@@ -144,4 +144,14 @@ public enum DecisionSkipReason
     /// </para>
     /// </summary>
     InFlightCloseCoversPosition,
+
+    /// <summary>
+    /// FR-04, FR-10, #1434, IADR-0572 決定2: <b>LLM を呼ぶ前</b>の見送り。保有中（台帳）の銘柄で、発注執行がブローカーの決済方向の建玉を 0 と答え
+    /// （判断由来の決済の約定の直後。台帳は約定の射影がまだ届いていない）、買い増し・売り増しも LLM の後で必ず見送られると分かっている。
+    /// <para>
+    /// 🔴 計器の移動: 是正前は同じ判断が LLM を呼び、結論の Sell が LLM の後の関所（台帳が追いついた保有 0）で <see cref="NakedShortOpen"/> に、
+    /// Hold が <see cref="LlmHold"/> になっていた（HOOD 2026-10-21）。その一部がこの値へ移る。<c>TradeDecisionForgoneBeforeLlm</c> の同名の値と一致させる。
+    /// </para>
+    /// </summary>
+    BrokerPositionClosed,
 }
