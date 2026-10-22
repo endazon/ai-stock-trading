@@ -2,6 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TradeDecisionService.Features.TradeDecision;
@@ -18,6 +19,7 @@ namespace TradeDecisionService.Tests;
 // **本番の Program.cs の組み立て**で、`Reports:Grpc` / `MarketMonitor:Grpc` の有無が日報の方針・監視銘柄・当時の監視銘柄の実装を
 // 切り替え、**既定は REST** であることを固定する。🔴 型を見るだけでなく、組み立てた実装で**実際に呼び**、偽の提供側の rpc ごとの
 // 呼ばれた回数が**呼んだ分だけ増える**ことまで見る（常駐の巡回が起動直後に呼び得るため、絶対値ではなく差分で数える）。
+// 差分でも、閉場前の手仕舞いの常駐が窓（閉場の M 分前以降）で方針を照会すると並行して混ざる（2026-10-22T06:21Z に実測）。そのため時計を休場の時刻へ固定する。
 public class Stage4GrpcWiringTests
 {
     [Fact]
@@ -125,6 +127,8 @@ public class Stage4GrpcWiringTests
                 cfg.AddInMemoryCollection(settings);
             });
             builder.ConfigureServices(services => services.DisableAllExternalWolverineTransports());
+            // NFR, FR-10, FR-19, IADR-0561 決定 3: 閉場前の手仕舞いの常駐が実時刻の窓で偽の提供側を照会しないよう、時計を休場の時刻へ固定する（TestHostClock）。
+            builder.ConfigureTestServices(services => services.UseFixedClock(TestHostClock.OutsideMarketHours));
         }
     }
 }
