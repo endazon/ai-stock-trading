@@ -59,3 +59,7 @@ updated: 2026-10-22
 ## 残余
 
 - 根本原因（何が止まるか）は未確定。次のハングで成果物のダンプ（`dotnet-dump analyze` の `clrstack -all`）から特定する。
+- ハングで testhost を止めると TRX が途中までになり、後続の skip 検査も赤になり得る（`!cancelled()` で走るため）。
+  **赤の一次の理由はテストの step のログ（`The test running when the crash occurred:` の試験名）で読む**。skip 検査の赤はその従属であり、
+  ハング時に skip 検査を黙らせる分岐は入れない（TRX の欠けを見逃す穴になる）。
+- ダンプは mini で 1 本約 57MB（testhost）＋約 29MB（dotnet ホスト）。成果物はハングした run にだけ出て、保持は 7 日。
