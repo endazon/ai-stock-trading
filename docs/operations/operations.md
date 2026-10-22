@@ -3,7 +3,7 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-10-20
+updated: 2026-10-21
 author: endazon (with Claude Code)
 ---
 <!-- trace:
@@ -696,8 +696,10 @@ WRN が出続け、**当日中にその建玉を判断し直させたい**とき
 発注から N 分たっても約定しない判断由来の決済の指値を、約定追跡の常駐が巡回ごとに**取り消すだけ**の機構である。
 取り消した後は何も出さない（置き直し・訂正・成行への切り替えはしない）。次の巡回の判断に任せる。
 
-🔴 **既定は無効であり、配備（Helm values）にも有効化を書いていない。** 有効にするのは、保護逆指値の有効期限（GTC）の
+🔴 **既定は無効であり、本番の配備（`values.yaml`）にも有効化を書いていない。** 本番で有効にするのは、保護逆指値の有効期限（GTC）の
 実弾確認（#1214。[ブロック中のタスク](../blocked-tasks.md) の A-19）と有効化の PoC が済んだ後で、**利用者が決める**。
+**PoC の経路（ローカル SIMULATE の `values-local.yaml`）では、利用者の裁定（2026-10-21）で有効にした**（N は暫定値の 15 分のまま。
+2 晩続けて判断由来の決済の指値が未約定のまま残ったため）。
 値の変更は他の統制値と同じ手続き（方針確定プロセスまたは利用者の設定変更）であり、**生成 AI と自動処理は変えない**。
 
 ```yaml
@@ -713,7 +715,7 @@ DecisionCloseUnfilledCancel:
   例: `UnfilledMinutes=5` なら `OptionsValidationException`（「相場操縦の検知の窓」）で起動しない。
 - **一部約定の決済も残りを取り消す。** 印（`executed_orders.UnfilledCancelRequestedAt`）を取消の前に書き、
   取消が失敗しても**再試行しない**（注文は DAY で失効する）。前の取引日以前に発注した非終端の記録は対象にしない。
-- **入れ方**: order-execution の `extraEnv` の配列（`deploy/helm/ai-stock-trading/values.yaml`）へ
+- **入れ方**: order-execution の `extraEnv` の配列（本番は `deploy/helm/ai-stock-trading/values.yaml`、PoC の経路は同じ階層の `values-local.yaml`。後者は既に有効）へ
   `- { name: DecisionCloseUnfilledCancel__Enabled, value: "true" }` を足し、通常の配備（`helm upgrade`）を行う。
   N・回数を既定から変えるときも同じ配列へ足す。配列は values の上書きで丸ごと置き換わるため、
   **別の values ファイルや `--set` で足さない**。`kubectl set env` も使わない（次の `helm upgrade` が所有権の競合で落ちる）。
