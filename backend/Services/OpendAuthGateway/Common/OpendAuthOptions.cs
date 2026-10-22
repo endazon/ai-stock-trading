@@ -55,6 +55,13 @@ public sealed class OpendAuthOptions
     /// </summary>
     public int RateLimitMaxSubmissions { get; set; } = 5;
 
+    /// <summary>
+    /// NFR, IADR-0566: 呼び出し元の検証に使う共有シークレットの<b>ファイル</b>（Secret の volume のマウント先）。
+    /// 空・読めない・短すぎる値は「未構成」であり、4 本の口はすべて 503 を返す（fail-closed）。
+    /// 値を環境変数で受けないのは、Secret の差し替えを OpenD の Pod の再起動なしに効かせるためである。
+    /// </summary>
+    public string CallerSecretFile { get; set; } = string.Empty;
+
     /// <summary>OpenD の標準入力 FIFO の絶対パス。</summary>
     public string StdinFifoPath => Path.Combine(RuntimeDirectory, StdinFifoFileName);
 

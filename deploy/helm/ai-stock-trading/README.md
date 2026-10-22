@@ -13,6 +13,15 @@ MSP 側で `platform-infra` と AST 用 DB（user `ai`・`*_svc`）・Keycloak r
 起動済みであること。MSP リポの `scripts/k8s-local-up.sh` がこれを用意する
 （AST realm は submodule 検出時に同梱 import される）。
 
+🔴 **ブローカ（RabbitMQ）へはサービスごとのユーザーで接続する**（[IADR-0568](../../../.ai-context/adr/IADR-0568_rabbitmq-per-service-credentials.md)）。
+全 Worker は `ast-<サービス名>` のユーザーで、パスワードを Secret `ast-rabbitmq-users`（キー = ユーザー名）から**非 optional** に読む。
+ユーザーと権限は基盤が作る（MSP の `deploy/local/rabbitmq-setup/users.txt`・`reconcile-users.sh`。基盤側の段 1）。
+
+- ESO 所有（既定の経路）: chart の ExternalSecret `ast-rabbitmq-users` が Vault `ai-stock-trading/rabbitmq-users`（種は基盤の bootstrap が乱数で入れる）を同期する。
+- 従来経路（`AST_ESO=0`）: 起動器は Secret を作らない。基盤のブローカのユーザーと同じ値で先に作る（無ければ起動器が helm の前で止まる）。
+- 既定のユーザー（`guest`）は使わない。旧キー `global.rabbitmqConnectionString` は廃止で、与えると描画で止まる。
+- Secret が無い・値が違うと、新しい Pod が起動しない（旧 Pod は残る）。
+
 ## デプロイ
 
 k8s ランタイムは MSP 側と同じく **Rancher Desktop（内蔵 k3s・推奨）** か **Docker Desktop + k3d**。
@@ -24,6 +33,22 @@ k8s ランタイムは MSP 側と同じく **Rancher Desktop（内蔵 k3s・推�
 scripts/k8s-local-deploy.sh              # build（Rancher=nerdctl/k3d=docker+import）→ secret 供給（ESO 所有＝作らない / AST_ESO=0＝ast-secrets 同期）→ helm install（-f values-local.yaml）→ rollout restart
 kubectl -n ai-stock-trading get pods
 ```
+
+### 機密クライアントの secret が開発用の値なら止まる（[IADR-0098](../../../.ai-context/adr/IADR-0098_owner-realm-client.md) 2026-10-22 追記）
+
+`scripts/k8s-local-deploy.sh` は、イメージを作る前（`[0/5]`）に AST の機密クライアント 5 件
+（svc・owner・kb-writer・kb-reader・llm-caller。`ast-secrets` の `*-client-secret`）が**開発用の値（リポジトリに公開されている値）でない**ことを確かめ、
+1 件でも開発用の値なら**止まる**（fail-closed）。確かめられない（ESO 所有で `ast-secrets` がまだ無い・読めない）ときも止まる。
+
+| 経路 | 見る値 |
+| --- | --- |
+| ESO 所有（既定） | 稼働中の `ast-secrets`（Vault から同期された値）。env は見ない |
+| 従来経路（`AST_ESO=0`） | 書き込む予定の値（env の明示 → 既存の値 → 既定値。`sync_ast_secrets` と同じ順） |
+
+- 対処: 開発用でない値を入れる（ESO 所有なら基盤の画面、従来経路なら env）。**認証基盤（Keycloak）の側も同じ値にする**（片側だけ変えると `invalid_client`）。
+- 使い捨ての dev のクラスタで開発用の値のまま動かすときだけ、明示の opt-in で通す（大きく警告する）:
+  `scripts/k8s-local-deploy.sh --allow-dev-client-secrets` か `ALLOW_DEV_CLIENT_SECRETS=1 scripts/k8s-local-deploy.sh`（`1` だけ。`true` 等は opt-in ではない）。
+- 値は表示しない。比べるのは base64 の表現どうしで、復号もしない。空（未設定）は開発用の値とみなさない（その s2s を使わないだけ）。
 
 ### 変わったサービスだけを作り直す（#1094 / [IADR-0457](../../../.ai-context/adr/IADR-0457_deploy-changed-services-selection.md)）
 
@@ -848,7 +873,7 @@ kubectl -n ai-stock-trading cp "$(kubectl -n ai-stock-trading get pod -l app=tra
 | `FINNHUB_API_KEY` | `finnhub-api-key` | information-collection | 空=NoOp（#81） |
 | `DISCORD_WEBHOOK_URL` | `discord-webhook-url` | notification | 空=NoOp（#15） |
 | `DISCORD_OWNERAUTH_CLIENTID` | `discord-owner-auth-client-id` | notification・report・risk-management・market-monitor・audit・configuration・cost-control | dev 既定 `ai-stock-trading-owner`（Bot 制御コマンドの OwnerAuth・#226 / IADR-0098）。**report も同じ鍵を `Reports__DelegatedActor__TrustedClientIds` として読む**（#774 / IADR-0240 決定11: Bot が確定要求で運ぶ「代理される利用者」を信じてよいクライアント。空=誰も信じない）。risk-management は `RiskControls__DelegatedActor__TrustedClientIds`（#868）、market-monitor は `Monitor__DelegatedActor__TrustedClientIds`（#1025 / IADR-0433: `/policy` の入れ替え案の適用の変更者）として同じ鍵を読む。gRPC 面を持つ 6 サービス（audit・configuration・cost-control・market-monitor・report・risk-management）は `Auth__GrpcOwnerClients__0` として読む（#1067 / IADR-0448: gRPC 面の所有者の門が許す呼び出し元のクライアント。鍵が無ければコード既定 `ai-stock-trading-owner`・空なら誰の所有者トークンも gRPC 面を通さない・1 つの値〔`Auth__GrpcOwnerClients`〕は起動時に例外） |
-| `DISCORD_OWNERAUTH_CLIENTSECRET` | `discord-owner-auth-client-secret` | notification | dev 既定 `dev-only-owner-secret`（realm-export.json と一致・本番は Secret/Vault） |
+| `DISCORD_OWNERAUTH_CLIENTSECRET` | `discord-owner-auth-client-secret` | notification | dev 既定（realm-export.json と一致・本番は Secret/Vault）。🔴 **開発用の値のままなら起動器が止まる**（下記「機密クライアントの secret が開発用の値なら止まる」） |
 | （chart 値）`Notifications__Discord__OwnerAuth__TokenEndpoint` | — | notification | AST レルム token エンドポイント（#226。空だと IsEnabled=false→401） |
 | （chart 値）`Broker__Provider` / `Broker__Environment` | — | order-execution | `paper`（実発注しない・#13。`broker.tier` で切替・IADR-0111） |
 | （chart 値）`LlmGateway__BaseUrl` | — | trade-decision | 空=Placeholder LLM（呼ばない＝常に Hold・#11） |
@@ -975,6 +1000,25 @@ PersistentVolumeClaim `opend-persist` には `helm.sh/resource-policy: keep` を
 - **明示的に消す場合は手動で `kubectl delete pvc opend-persist -n ai-stock-trading` を実行する**（Helm には削除させない）。
 - デバイス信頼をリセットしたい（再認証からやり直したい）場合以外は消さないこと。
 
+### 到達の制限と認証サイドカーの呼び出し元検証（[IADR-0566](../../../.ai-context/adr/IADR-0566_opend-ingress-networkpolicy-and-caller-secret.md)）
+
+多層防御として 2 段を置く。片方の設定を誤っても、もう片方が残る。
+
+| 段 | 何を | 既定 | 設定点 |
+| --- | --- | --- | --- |
+| NetworkPolicy `opend-ingress`（ingress だけ） | API（`opend.apiPort`）へは同じ namespace の発注執行だけ、認証サイドカー（`opend.authGateway.port`）へは基盤の BFF（`microservices-platform` の `app: bff-service`）だけ | `opend.enabled=true` なら描く | `opend.networkPolicy.*` |
+| 共有シークレット | 認証サイドカーはヘッダーの値を Secret `opend-auth-caller-secret`（キー `caller-secret`）と比べる。無い・32 文字未満なら 4 本の口すべて 503、違えば 401 | `opend.authGateway.enabled=true` なら必須 | `opend.authGateway.callerSecret.*`・`externalSecrets.opendAuthCallerSecret` |
+
+- **Pod の起動は止めない。** Secret の volume は `optional: true` で、無いあいだはサイドカーが口を閉じるだけである（OpenD の API と発注経路は動く）。
+- **値を回しても OpenD の Pod を作り直さない。** サイドカーは要求ごとにファイルを読む（kubelet が Secret の volume を差し替える）。
+- **送り手（基盤の BFF）は同じ値を env `OpendAuth__CallerSecret` で受ける**（基盤の名前空間の Secret。基盤の構成で配線する）。未構成なら BFF は上流を呼ばず、画面は「接続資格が構成されていません」と示す。
+- ESO 所有（`externalSecrets.enabled=true`）では、Vault の `ai-stock-trading/opend-auth`（プロパティ `caller-secret`）を同期する。値は Git に置かない。
+- egress は絞らない（OpenD は moomoo のサーバと DNS へ出る）。readinessProbe（kubelet）・`kubectl attach` / `exec` / `port-forward` は Pod 網を通らないため影響を受けない。
+  NetworkPolicy を強制しない CNI では宣言が残るだけで、呼び出し元を絞るのは共有シークレットの 1 段になる。
+  k3s（k3d）は上流の既定で組み込みの制御（kube-router 由来）を有効にする（`--disable-network-policy` で外せる。基盤の起動器は付けていない）。
+  稼働クラスタで強制されているかは、許可していない Pod から接続して時間切れになることで確かめる（IADR-0566 の確認手順）。
+- dev の生 manifest の経路は `deploy/opend/k8s/networkpolicy.yaml` を併せて適用する。
+
 ### 非 root 実行へ切り替える（既定は root・**未検証**）
 
 OpenD はデバイス信頼を `$HOME/.com.moomoo.OpenD` に書くため、非 root 化は **HOME の再調整とセット**で行う。
@@ -993,6 +1037,10 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 > ⚠️ **既定 ON にしていない理由**（IADR-0060 決定 2）: HOME が変わると**確立済みのデバイス信頼を失い、有人検証から
 > やり直しになる恐れ**がある。実 OpenD でしか確かめられず、**#132 の実測フェーズで未検証**。切替時は既存 PVC の
 > `.com.moomoo.OpenD` を新 HOME へ移すか、再検証を覚悟すること。
+>
+> ⚠️ 認証サイドカー（`opend.authGateway.enabled=true`）の共有シークレットも同じく**グループ読み（0440）**で、非 root では
+> 上の `fsGroup` が要る（サイドカーは OpenD 本体と同じ uid で動く）。読めないとサイドカーは口を閉じたまま（503）になり、
+> ログに `理由=unreadable` が出る（値は出ない）。
 >
 > ⚠️ `rsaSecretDefaultMode` は **k8s のファイルモード（8 進を 10 進で表す整数）**。values ファイルでは `0400` / `0440`
 > と 8 進で書ける（YAML が解釈する）が、`--set` では **10 進**（`256` / `288`）で渡すこと。非 root では Secret の所有 uid が

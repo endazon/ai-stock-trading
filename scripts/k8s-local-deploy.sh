@@ -6,7 +6,14 @@
 #   （platform）で行う。realm `ai-stock-trading` の import は単体 E2E（IADR-0050）用に残るだけで、本スクリプトの経路では使わない。
 #
 #   scripts/k8s-local-deploy.sh [--force-empty-secrets] [--force-empty-values] [--adopt-existing-secrets]
-#                               [--changed-since <ref>] [cluster-name]
+#                               [--allow-dev-client-secrets] [--changed-since <ref>] [cluster-name]
+#
+# NFR, IADR-0098（2026-10-22 追記・Refs GHSA-pcf9-8mh4-8wgh）: **機密クライアント 5 件の secret が開発用の値なら止める（fail-closed）**。
+#   対象は svc / owner / kb-writer / kb-reader / llm-caller の client secret（ast-secrets のキー）。経路を問わず、
+#   イメージを作る前（[0/5]）に確かめる。開発用の値で動かしてよいと分かっているときだけ、明示の opt-in
+#   （--allow-dev-client-secrets か ALLOW_DEV_CLIENT_SECRETS=1。`1` だけ）で通す（大きく警告する）。
+#   ESO 所有の経路では稼働中の ast-secrets を、従来経路では書き込む予定の値（env → 既存値 → 既定）を見る。
+#   確かめられない（Secret が無い・読めない）ときも止める。値は表示しない（比べるのは base64 どうしで、復号もしない）。
 #
 # #1094, IADR-0457: **作り直すイメージを絞れる**（既定は従来どおり 12 本すべて・約 30 分）。
 #   SERVICES=a,b scripts/k8s-local-deploy.sh           # MAPPING の名前で指定（未知の名前は何も作らずに exit 2）
@@ -93,6 +100,7 @@ set -euo pipefail
 FORCE_EMPTY=0
 FORCE_EMPTY_VALUES=0
 ADOPT_EXISTING=0
+ALLOW_DEV_CLIENT_SECRETS_FLAG=0
 CHANGED_SINCE=""
 CLUSTER=""
 while [ $# -gt 0 ]; do
@@ -101,6 +109,7 @@ while [ $# -gt 0 ]; do
     --force-empty-secrets) FORCE_EMPTY=1 ;;
     --force-empty-values) FORCE_EMPTY_VALUES=1 ;;
     --adopt-existing-secrets) ADOPT_EXISTING=1 ;;
+    --allow-dev-client-secrets) ALLOW_DEV_CLIENT_SECRETS_FLAG=1 ;;
     # #1094: 値を取る唯一のオプション。値の欠落・`-` 始まりの値（次のオプションを食う誤り）は exit 2。
     --changed-since)
       if [ $# -lt 2 ] || [ -z "$2" ] || [ "${2#-}" != "$2" ]; then
@@ -130,7 +139,12 @@ AST_CHART_VALUES="$ROOT/deploy/helm/ai-stock-trading/values.yaml"
 AST_PROFILE_VALUES_DEFAULT="$ROOT/deploy/helm/ai-stock-trading/values-local.yaml"
 # #795, IADR-0341: ESO が所有する Secret（MSP#1477 と共有する契約の同期先名。ExternalSecret 名も同一で、
 # 基盤 BFF はこの名前で force-sync する。描画との一致は .github/workflows/helm.yml の #795 ステップが検査する）。
-AST_ESO_TARGET_SECRETS=("$SECRET_NAME" moomoo-credentials moomoo-rsa)
+# NFR, IADR-0566: opend-auth-caller-secret（認証サイドカーの呼び出し元検証）も ESO が所有する（画面の契約の外。
+# 値は Vault の ai-stock-trading/opend-auth へ入れる）。管理外の同名 Secret があれば同じく名前を挙げて止める。
+# NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: ast-rabbitmq-users（ブローカのサービスごとの資格情報。Vault ai-stock-trading/rabbitmq-users）も
+# ESO が所有する。種は基盤の bootstrap が乱数で入れ、ブローカへのユーザーの作成は基盤の reconcile-users.sh が行う。
+AST_RABBITMQ_SECRET="ast-rabbitmq-users"
+AST_ESO_TARGET_SECRETS=("$SECRET_NAME" moomoo-credentials moomoo-rsa opend-auth-caller-secret "$AST_RABBITMQ_SECRET")
 
 # ast-secrets のキー定義: <Secret キー>|<環境変数>|<既定値>。
 # 既定値は「env 未設定 **かつ** 既存 Secret にも値が無い」場合にだけ使う（＝新規環境の後方互換）。
@@ -155,6 +169,17 @@ AST_SECRET_KEYS=(
   "llm-auth-client-secret|LLM_AUTH_CLIENTSECRET|"
   "discord-owner-auth-client-id|DISCORD_OWNERAUTH_CLIENTID|ai-stock-trading-owner"
   "discord-owner-auth-client-secret|DISCORD_OWNERAUTH_CLIENTSECRET|dev-only-owner-secret"
+)
+
+# NFR, IADR-0098（2026-10-22 追記・Refs GHSA-pcf9-8mh4-8wgh）: 開発用の値で動かさない機密クライアント（ast-secrets の
+# <secret のキー>|<client id のキー>）。開発用の値は宣言から導く —— svc / owner は上の既定値、kb-writer / kb-reader /
+# llm-caller は「<client id の既定>-dev-secret-change-me」（基盤の realm の宣言と同じ規則）。値をここへ複写しない。
+AST_DEV_GUARDED_CLIENT_SECRETS=(
+  "service-auth-client-secret|service-auth-client-id"
+  "discord-owner-auth-client-secret|discord-owner-auth-client-id"
+  "kb-auth-client-secret|kb-auth-client-id"
+  "kb-reader-auth-client-secret|kb-reader-auth-client-id"
+  "llm-auth-client-secret|llm-auth-client-id"
 )
 
 AST_PATCH_DIR=""
@@ -446,6 +471,101 @@ ast_warn_ignored_secret_env() {
   return 0
 }
 
+# ---- NFR, IADR-0098（2026-10-22 追記・Refs GHSA-pcf9-8mh4-8wgh）: 機密クライアントの secret の fail-closed ----
+
+# AST_SECRET_KEYS から <Secret キー> の行の欄を返す（$2: 2=環境変数 / 3=既定値）。
+ast_secret_key_field() {
+  local spec
+  for spec in "${AST_SECRET_KEYS[@]}"; do
+    [ "${spec%%|*}" = "$1" ] || continue
+    printf '%s' "$spec" | cut -d'|' -f"$2"
+    return 0
+  done
+  return 1
+}
+
+# 開発用の値（宣言から導く。上の AST_DEV_GUARDED_CLIENT_SECRETS の注記）。出力は比較にだけ使い、表示しない。
+ast_dev_client_secret_value() {
+  local secret_key="$1" id_key="$2" v
+  v="$(ast_secret_key_field "$secret_key" 3)"
+  if [ -n "$v" ]; then printf '%s' "$v"; return 0; fi
+  printf '%s-dev-secret-change-me' "$(ast_secret_key_field "$id_key" 3)"
+}
+
+# 稼働中の ast-secrets のキーの値を base64 のまま返す（復号しない）。キーが無ければ空（`index` 単独だと `<no value>` を
+# 出すため `with` で包む）。Secret が読めなければ非 0。
+ast_secret_data_b64() {
+  kubectl get secret "$SECRET_NAME" -n "$NS" -o "go-template={{with index .data \"$1\"}}{{.}}{{end}}" 2>/dev/null
+}
+
+# ast_dev_client_secret_guard —— 1 件でも開発用の値・確かめられない値があれば、opt-in が無い限り 1 を返す。
+#   ESO 所有（AST_ESO_MODE=1）: 稼働中の ast-secrets の値を見る（env は使われないので見ない）。
+#   従来経路: sync_ast_secrets が書く値と同じ順で決める —— env の明示 → 既存の値 → 既定値。
+#   空（未設定）は開発用の値ではない（その s2s を使わないだけ）。
+ast_dev_client_secret_guard() {
+  local spec secret_key id_key var dev_b64 cur hits='' unknown='' allow=0
+  if [ "${ALLOW_DEV_CLIENT_SECRETS_FLAG:-0}" = "1" ] || [ "${ALLOW_DEV_CLIENT_SECRETS:-}" = "1" ]; then allow=1; fi
+  for spec in "${AST_DEV_GUARDED_CLIENT_SECRETS[@]}"; do
+    secret_key="${spec%%|*}"; id_key="${spec#*|}"
+    var="$(ast_secret_key_field "$secret_key" 2)"
+    dev_b64="$(ast_b64 "$(ast_dev_client_secret_value "$secret_key" "$id_key")")"
+    if [ "${AST_ESO_MODE:-0}" != "1" ] && [ -n "${!var+set}" ]; then
+      cur="$(ast_b64 "${!var}")"
+    elif cur="$(ast_secret_data_b64 "$secret_key")"; then
+      if [ -z "$cur" ] && [ "${AST_ESO_MODE:-0}" != "1" ]; then
+        cur="$(ast_b64 "$(ast_secret_key_field "$secret_key" 3)")"
+      fi
+    elif [ "${AST_ESO_MODE:-0}" != "1" ]; then
+      # 従来経路の新規環境（Secret が無い）: 書き込む予定の既定値で判断する。
+      cur="$(ast_b64 "$(ast_secret_key_field "$secret_key" 3)")"
+    else
+      unknown="${unknown}${secret_key}
+"
+      continue
+    fi
+    if [ -n "$cur" ] && [ "$cur" = "$dev_b64" ]; then
+      hits="${hits}${secret_key} (\$${var})
+"
+    fi
+  done
+  [ -z "$hits" ] && [ -z "$unknown" ] && { echo "  機密クライアントの secret: 開発用の値は無い（値は表示しません）"; return 0; }
+  if [ "$allow" = "1" ]; then
+    {
+      echo "!!! WARNING: 明示の opt-in（--allow-dev-client-secrets / ALLOW_DEV_CLIENT_SECRETS=1）により、開発用の値で進めます:"
+      [ -n "$hits" ] && printf '%s' "$hits" | sed 's/^/!!!          - /'
+      [ -n "$unknown" ] && printf '%s' "$unknown" | sed 's/^/!!!          - （確かめられない）/'
+      echo "!!!          開発用の値はリポジトリに公開されています。共有のクラスタでは使わないこと（値は表示しません）。"
+    } >&2
+    return 0
+  fi
+  {
+    echo "ERROR: 機密クライアントの secret を確かめた結果、このまま進めません（fail-closed。値は表示しません）:"
+    [ -n "$hits" ] && { echo "       開発用の値（リポジトリに公開されている値）と同じ:"; printf '%s' "$hits" | sed 's/^/         - /'; }
+    [ -n "$unknown" ] && { echo "       確かめられない（$NS の $SECRET_NAME が無い・読めない）:"; printf '%s' "$unknown" | sed 's/^/         - /'; }
+    if [ "${AST_ESO_MODE:-0}" = "1" ]; then
+      echo "       対処: 基盤の画面（秘密情報・接続設定の管理）で開発用でない値を入れ、認証基盤（Keycloak）の側も同じ値にする。"
+      echo "             ESO の初回（Secret がまだ無い）は、値を入れたうえで opt-in で 1 回通し、次の実行から確かめられる。"
+    else
+      echo "       対処: 上の環境変数に開発用でない値を与えて再実行する（認証基盤〔Keycloak〕の側も同じ値にする）。"
+    fi
+    echo "       開発用の値で動かしてよい（使い捨ての dev のクラスタである）と分かっているときだけ、"
+    echo "       --allow-dev-client-secrets か ALLOW_DEV_CLIENT_SECRETS=1 を付けて再実行する。"
+  } >&2
+  return 1
+}
+
+# NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: 従来経路（ESO なし）では、ブローカの資格情報の Secret を本スクリプトは作らない
+# （開発用の既定値を持たない）。無ければ helm の前で止める（全 Worker が非 optional に読むため、無いまま進めると新しい Pod が起動しない）。
+ast_require_rabbitmq_secret() {
+  kubectl get secret "$AST_RABBITMQ_SECRET" -n "$NS" >/dev/null 2>&1 && return 0
+  {
+    echo "ERROR: ${NS} に Secret ${AST_RABBITMQ_SECRET}（ブローカのサービスごとの資格情報。キー = ast-<サービス名>）がありません（IADR-0568）。"
+    echo "       ESO の無い経路では、基盤のブローカに作ったユーザーと同じ値で、この Secret を先に作ってください（値は表示しません）。"
+    echo "       ESO 所有の経路（AST_ESO=1）なら、基盤の bootstrap が Vault ai-stock-trading/rabbitmq-users に種を入れ、chart が同期します。"
+  } >&2
+  return 1
+}
+
 # #795, IADR-0341: 経路に応じて Secret を用意する。ESO 所有なら作らず（事前確認・管理外 Secret の検査・警告）、従来経路なら同期する。
 ast_prepare_secrets() {
   if [ "${AST_ESO_MODE:-0}" = "1" ]; then
@@ -455,6 +575,7 @@ ast_prepare_secrets() {
     ast_check_unmanaged_eso_targets || return 1
     return 0
   fi
+  ast_require_rabbitmq_secret || return 1
   sync_ast_secrets
 }
 
@@ -695,6 +816,10 @@ if [ "${AST_DEPLOY_LIB:-}" = "1" ]; then
   return 0 2>/dev/null || exit 0
 fi
 
+echo "==> [0/5] 事前確認: 機密クライアントの secret が開発用の値でないこと（fail-closed・IADR-0098 2026-10-22 追記）"
+resolve_ast_eso_mode
+ast_dev_client_secret_guard || exit 1
+
 echo "==> [1/5] build & import AST images（絞り込み: SERVICES / --changed-since・#1094 / IADR-0457）"
 resolve_ast_image_selection
 AST_BUILT_DIR="$(mktemp -d)"
@@ -702,7 +827,7 @@ K8S_BUILT_FILE="$AST_BUILT_DIR/built" "$ROOT/scripts/k8s-local-images.sh" "$CLUS
 
 echo "==> [2/5] namespace & secret 供給（ESO 所有＝作らない / 従来経路＝ast-secrets を差分同期・#795 / IADR-0341）"
 kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
-resolve_ast_eso_mode
+# 供給経路は [0/5] で決めた（resolve_ast_eso_mode）。
 ast_prepare_secrets
 
 echo "==> [3/5] broker.tier / opend.enabled / discord.bot.* (前回リリースの値を引き継ぐ・#626 / IADR-0283 / #673。ESO 所有では discord.bot.* を渡さない)"
@@ -737,6 +862,8 @@ echo "  kubectl -n $NS get pods"
 if [ "${AST_ESO_MODE:-0}" = "1" ]; then
   echo "  kubectl -n $NS get externalsecret   # ast-secrets / moomoo-credentials / moomoo-rsa が SecretSynced であること"
   echo "  OpenD（opend.enabled=true）は moomoo-credentials / moomoo-rsa が Vault に入り同期されるまで起動を待つ（画面で入力・生成する）"
+  echo "  認証サイドカーは opend-auth-caller-secret（Vault ai-stock-trading/opend-auth）が同期されるまで全口 503（基盤の BFF も同じ値を要る。IADR-0566）"
+  echo "  ast-rabbitmq-users（Vault ai-stock-trading/rabbitmq-users）が同期されるまで新しい Worker の Pod は起動しない（旧 Pod が残る。IADR-0568）"
 fi
 echo "#121（CronJob）を有効化する場合: helm ... --set tradingCycle.cronjob.enabled=true"
 echo "  （run-once エンドポイント実装が前提。既定は in-process ポーリング維持=fail-safe）"

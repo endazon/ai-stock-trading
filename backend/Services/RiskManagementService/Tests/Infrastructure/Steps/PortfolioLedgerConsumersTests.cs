@@ -412,6 +412,9 @@ public class PortfolioLedgerConsumersTests
     [InlineData(OrderDispatchForgoneReason.UnattributedPosition)]
     [InlineData(OrderDispatchForgoneReason.InFlightCloseCoversPosition)] // T-10-1766, #1105, IADR-0461
     [InlineData(OrderDispatchForgoneReason.StopLossMethodConflict)] // T-10-2102, #1048, IADR-0481
+    [InlineData(OrderDispatchForgoneReason.KillSwitchActive)] // T-10-2972, IADR-0567
+    [InlineData(OrderDispatchForgoneReason.TradingPaused)] // T-10-2972, IADR-0567
+    [InlineData(OrderDispatchForgoneReason.TradingHaltStateUnknown)] // T-10-2972, IADR-0567
     public async Task 現行の見送り理由はいずれも処理中から外れる(OrderDispatchForgoneReason reason)
     {
         var ledger = new InMemoryPortfolioLedgerStore();

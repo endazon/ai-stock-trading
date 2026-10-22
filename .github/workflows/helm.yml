@@ -571,6 +571,33 @@ jobs:
           assert_reconciliation "moomoo-sim" "$(helm template ast "$CHART" --set broker.tier=moomoo-sim)"
           assert_reconciliation "values-local" "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
           echo "ok: 突合は 3 描画とも有効で、解放の門は閉じている（BatchSize も pin 済み）"
+      # 🔴 T-10-2973, FR-10, ADR-0009, IADR-0567: 発注執行が新規建てを送る直前に kill switch・一時停止を照会する宛先と s2s の資格情報。
+      #    これが描画されないと照会は常に「不明」になり、新規建てが全件見送られる（fail-closed。決済・損切りは止まらない）。
+      #    既定・moomoo-sim・values-local の 3 描画で、宛先が描画された risk-management の Service を指し、資格情報が ast-secrets の
+      #    契約キーを secretKeyRef で読み、token エンドポイントが描かれることを固定する。
+      - name: Assert order-execution is wired to the trading-halt query (IADR-0567)
+        run: |
+          set -eu
+          assert_halt_query() {
+            label="$1"; out="$2"
+            doc="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: order-execution-service/')"
+            [ -n "$doc" ] || { echo "::error::[$label] order-execution の Deployment が描画されない。"; exit 1; }
+            printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Service/ && /name: risk-management-service/' | grep -q 'port: 8080' \
+              || { echo "::error::[$label] risk-management-service の 8080 が描画されない（宛先が実在しない）。"; exit 1; }
+            printf '%s' "$doc" | grep -A1 'name: RiskManagement__BaseUrl$' | grep -q 'value: "http://risk-management-service:8080"' \
+              || { echo "::error::[$label] order-execution の RiskManagement__BaseUrl が risk-management-service:8080 を指さない（新規建てが全件見送られる・IADR-0567）。"; exit 1; }
+            for pair in "ServiceAuth__ClientId service-auth-client-id" "ServiceAuth__ClientSecret service-auth-client-secret"; do
+              key="${pair%% *}"; ref="${pair##* }"
+              printf '%s' "$doc" | grep -A4 "name: ${key}$" | grep -q "key: ${ref}$" \
+                || { echo "::error::[$label] order-execution の ${key} が ast-secrets の ${ref} を secretKeyRef で読まない（照会が 401 → 不明）。"; exit 1; }
+            done
+            printf '%s' "$doc" | grep -q 'name: ServiceAuth__TokenEndpoint$' \
+              || { echo "::error::[$label] order-execution に ServiceAuth__TokenEndpoint が描画されない（s2s トークンを取れない）。"; exit 1; }
+          }
+          assert_halt_query "既定描画" "$(helm template ast "$CHART")"
+          assert_halt_query "moomoo-sim" "$(helm template ast "$CHART" --set broker.tier=moomoo-sim)"
+          assert_halt_query "values-local" "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          echo "ok: 発注執行は 3 描画とも停止状態の照会先と s2s の資格情報を持つ"
       # #842, IADR-0347 追記: moomoo の調整値は「空（""）・未設定（null）＝アダプタ既定＝env を注入しない」。
       #    `{{- with }}` は数値の 0 を空と同じに扱い、`--set moomoo.stopLimitOffsetRatio=0` が既定 1% へ黙って戻っていた
       #    （replyTimeoutSeconds=0 は起動時に停止するはずが 15 秒へ戻っていた）。0 が値として届き、空は届かないことを固定する。
@@ -1206,8 +1233,9 @@ jobs:
           # ② values-local 描画の ExternalSecret（契約の表と 1 対 1）。
           local_out="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
           names="$(printf '%s' "$local_out" | awk 'BEGIN{RS="---"} index($0, "\nkind: ExternalSecret\n") { if (match($0, /\n  name: [a-z-]+/)) print substr($0, RSTART+9, RLENGTH-9) }' | sort | tr '\n' ' ')"
-          [ "$names" = "ast-secrets moomoo-credentials moomoo-rsa " ] || fail "values-local の ExternalSecret が契約の 3 件でない（実測: 「$names」）。"
-          for n in ast-secrets moomoo-credentials moomoo-rsa; do
+          # IADR-0568: ast-rabbitmq-users（ブローカのサービスごとの資格情報）は画面の契約の外だが、ESO 所有では同じ形で同期する。
+          [ "$names" = "ast-rabbitmq-users ast-secrets moomoo-credentials moomoo-rsa " ] || fail "values-local の ExternalSecret が契約の 3 件＋ブローカの資格情報でない（実測: 「$names」）。"
+          for n in ast-secrets moomoo-credentials moomoo-rsa ast-rabbitmq-users; do
             d="$(doc_of "$local_out" ExternalSecret "$n")"
             printf '%s\n' "$d" | grep -qx 'apiVersion: external-secrets.io/v1' || fail "ExternalSecret $n が external-secrets.io/v1 でない（基盤の ESO は v1beta1 を提供しない）。"
             printf '%s\n' "$d" | grep -q 'name: vault-backend' || fail "ExternalSecret $n の store が vault-backend でない。"
@@ -1335,6 +1363,129 @@ jobs:
           if printf '%s' "$out" | grep -qE 'kind: (Ingress|Gateway|VirtualService)'; then fail "Ingress/Route を作っている"; fi
           if printf '%s' "$out" | grep -q 'nodePort'; then fail "NodePort を作っている"; fi
           echo "ok: opend-auth サイドカーは PVC を見ず、クラスタ外への口も持たない"
+      # NFR, IADR-0566: OpenD の Pod への到達の制限（NetworkPolicy）と、認証サイドカーの呼び出し元検証（共有シークレット）。
+      # 描画の形を期待値と**丸ごと**突き合わせる（規則の足し忘れ・緩め・セレクタの取り違えのどれでも赤）。
+      # 陰性対照: 既定（opend 無効）では描かない／authGateway 無効では 8080 の規則を描かない／届く相手が空なら描画で止まる。
+      - name: Assert opend NetworkPolicy and caller secret (IADR-0566)
+        run: |
+          fail() { echo "::error::OpenD の到達の制限・呼び出し元の検証（IADR-0566）: $1"; exit 1; }
+          # NetworkPolicy の spec だけを取り出す（コメント行は落とす）。
+          np_spec() { awk '/^kind: NetworkPolicy/{f=1} f&&/^spec:/{p=1} p&&/^---/{exit} p' | grep -v '^[[:space:]]*#'; }
+          if helm template ast "$CHART" | grep -q '^kind: NetworkPolicy'; then fail "既定（opend 無効）で NetworkPolicy が描かれた"; fi
+          if helm template ast "$CHART" -f "$CHART/values-local.yaml" | grep -q '^kind: NetworkPolicy'; then
+            fail "values-local（opend は起動器が --set で有効化する）だけで NetworkPolicy が描かれた"
+          fi
+          want_api='spec:
+            podSelector:
+              matchLabels: { app: opend }
+            policyTypes: [Ingress]
+            ingress:
+              - from:
+                  - podSelector:
+                      matchLabels:
+                        app: order-execution-service
+                ports:
+                  - { protocol: TCP, port: 11111 }'
+          want_auth="${want_api}"'
+              - from:
+                  - namespaceSelector:
+                      matchLabels: { kubernetes.io/metadata.name: "microservices-platform" }
+                    podSelector:
+                      matchLabels:
+                        app: bff-service
+                ports:
+                  - { protocol: TCP, port: 8080 }'
+          got="$(helm template ast "$CHART" --set opend.enabled=true -s templates/networkpolicy-opend.yaml | np_spec)"
+          diff <(printf '%s\n' "$want_api") <(printf '%s\n' "$got") \
+            || fail "opend.enabled=true の NetworkPolicy が期待（API は発注執行からだけ・サイドカーの口なし）と違う"
+          got="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set opend.enabled=true -s templates/networkpolicy-opend.yaml | np_spec)"
+          diff <(printf '%s\n' "$want_auth") <(printf '%s\n' "$got") \
+            || fail "経路B（authGateway 有効）の NetworkPolicy が期待（API は発注執行・サイドカーは基盤の BFF からだけ）と違う"
+          # egress は絞らない（OpenD は moomoo と DNS へ出る）。ipBlock・空の from（＝全許可）も描かない。
+          all="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set opend.enabled=true -s templates/networkpolicy-opend.yaml)"
+          if grep -qE 'Egress|ipBlock|from: \[\]|- \{\}' <<<"$all"; then fail "Egress・ipBlock・空の from のどれかが描かれた"; fi
+          # Service opend の全ポートが規則のどれかに入っている（口を足したのに規則を足し忘れると、その口は誰からも届かない）。
+          svc_ports="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set opend.enabled=true -s templates/opend.yaml \
+            | awk '/^kind: Service/{f=1} f' | sed -n 's/.*port: \([0-9]*\), targetPort.*/\1/p' | sort -u)"
+          np_ports="$(grep -oE 'port: [0-9]+ }' <<<"$all" | grep -oE '[0-9]+' | sort -u)"
+          [ -n "$svc_ports" ] || fail "Service opend のポートを読めない（検査の空振り）"
+          [ -n "$np_ports" ] || fail "NetworkPolicy のポートを読めない（検査の空振り。規則の書式を変えたらここの抽出も直す）"
+          [ "$svc_ports" = "$np_ports" ] || fail "Service opend のポート（$(echo $svc_ports)）と NetworkPolicy のポート（$(echo $np_ports)）が一致しない"
+          # 無効化は明示の値でだけ（既定は閉じる）。
+          if helm template ast "$CHART" --set opend.enabled=true --set opend.networkPolicy.enabled=false | grep -q '^kind: NetworkPolicy'; then
+            fail "opend.networkPolicy.enabled=false でも描かれた"
+          fi
+          must_fail() {
+            local label="$1" want="$2"; shift 2
+            local out
+            if out="$(helm template ast "$CHART" "$@" 2>&1)"; then fail "描画が通ってしまった: $label"; fi
+            grep -qF "$want" <<<"$out" || { echo "::error::$label: 期待した理由（$want）で止まっていない:"; printf '%s\n' "$out" | tail -3; exit 1; }
+          }
+          must_fail "API の届く相手が空" "apiClientPodLabels" --set opend.enabled=true --set opend.networkPolicy.apiClientPodLabels=null
+          must_fail "サイドカーの届く相手の namespace が空" "authGatewayClients.namespace" \
+            --set opend.enabled=true --set opend.authGateway.enabled=true --set opend.networkPolicy.authGatewayClients.namespace=""
+          must_fail "呼び出し元検証の Secret 名が空" "callerSecret.secretName" \
+            --set opend.enabled=true --set opend.authGateway.enabled=true --set opend.authGateway.callerSecret.secretName=""
+          # 呼び出し元検証: Secret はサイドカーだけがマウントし（OpenD 本体は見ない）、optional（無くても Pod は起動する）。
+          od="$(helm template ast "$CHART" --set opend.enabled=true --set opend.authGateway.enabled=true -s templates/opend.yaml)"
+          main="$(printf '%s\n' "$od" | awk '/- name: opend$/,/- name: opend-auth$/')"
+          side="$(printf '%s\n' "$od" | awk '/- name: opend-auth$/,/^      volumes:/')"
+          vols="$(printf '%s\n' "$od" | awk '/^      volumes:/,0')"
+          if grep -q 'caller-secret' <<<"$main"; then fail "OpenD 本体のコンテナが呼び出し元検証の Secret を見ている"; fi
+          grep -q 'name: OpendAuth__CallerSecretFile' <<<"$side" || fail "サイドカーに OpendAuth__CallerSecretFile が無い"
+          grep -A1 'name: OpendAuth__CallerSecretFile' <<<"$side" | grep -q 'value: "/var/run/opend-auth/caller-secret"' \
+            || fail "OpendAuth__CallerSecretFile がマウント先の下を指していない"
+          if grep -q 'OpendAuth__CallerSecret$' <<<"$side"; then fail "値を env で渡している（回すたびに Pod を作り直すことになる）"; fi
+          grep -A2 'name: caller-secret$' <<<"$vols" | grep -q 'secretName: opend-auth-caller-secret' || fail "Secret の volume が無い"
+          grep -A4 'name: caller-secret$' <<<"$vols" | grep -q 'optional: true' || fail "Secret の volume が optional でない（無いと Pod が起動せず発注経路まで止まる）"
+          if helm template ast "$CHART" --set opend.enabled=true -s templates/opend.yaml | grep -q 'caller-secret'; then
+            fail "authGateway 無効でも呼び出し元検証の Secret を描いた"
+          fi
+          # ESO: opend と authGateway が有効なときだけ同期する。
+          es="$(helm template ast "$CHART" --set opend.enabled=true --set opend.authGateway.enabled=true --set externalSecrets.enabled=true -s templates/external-secrets.yaml)"
+          grep -q 'name: opend-auth-caller-secret' <<<"$es" || fail "ExternalSecret opend-auth-caller-secret が描かれない"
+          grep -q 'key: "ai-stock-trading/opend-auth"' <<<"$es" || fail "ExternalSecret の Vault のキーが違う"
+          if helm template ast "$CHART" --set opend.enabled=true --set externalSecrets.enabled=true -s templates/external-secrets.yaml | grep -q 'opend-auth-caller-secret'; then
+            fail "authGateway 無効でも ExternalSecret を描いた"
+          fi
+          echo "ok: OpenD への到達は発注執行と基盤の BFF だけ・呼び出し元検証の Secret はサイドカーだけが optional でマウントする"
+      # NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: 全 Worker はブローカへサービスごとのユーザーで接続する。既定のユーザーの痕跡が無い。
+      - name: Assert per-service broker credentials (IADR-0568)
+        run: |
+          fail() { echo "::error::ブローカのサービスごとの資格情報（IADR-0568）: $1"; exit 1; }
+          for prof in default local; do
+            if [ "$prof" = local ]; then out="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"; else out="$(helm template ast "$CHART")"; fi
+            if grep -q 'guest' <<<"$out"; then fail "$prof: 描画に guest が現れた"; fi
+            n=0
+            for d in $(awk 'BEGIN{RS="---"} index($0, "\nkind: Deployment\n") { if (match($0, /\n  name: [a-z0-9-]+-service\n/)) print substr($0, RSTART+9, RLENGTH-10) }' <<<"$out"); do
+              svc="${d%-service}"
+              doc="$(awk -v n="$d" 'BEGIN{RS="---"} index($0, "\nkind: Deployment\n") && index($0, "\n  name: " n "\n")' <<<"$out")"
+              grep -A4 'name: RABBITMQ_PASSWORD$' <<<"$doc" | grep -q "key: ast-${svc}\$" || fail "$prof: $d のパスワードのキーが ast-${svc} でない"
+              grep -A4 'name: RABBITMQ_PASSWORD$' <<<"$doc" | grep -q 'name: ast-rabbitmq-users$' || fail "$prof: $d のパスワードの Secret が ast-rabbitmq-users でない"
+              if grep -A5 'name: RABBITMQ_PASSWORD$' <<<"$doc" | grep -q 'optional: true'; then fail "$prof: $d のパスワードが optional（無いときに別の資格情報へ戻る経路になる）"; fi
+              grep -A1 'name: RabbitMq__ConnectionString$' <<<"$doc" | grep -qF "value: \"amqp://ast-${svc}:\$(RABBITMQ_PASSWORD)@rabbitmq:5672\"" \
+                || fail "$prof: $d の接続文字列がサービスごとのユーザーでない"
+              # 補間は先に定義した env だけを参照できる（順序を崩すと $(RABBITMQ_PASSWORD) が文字のまま渡る）。
+              p="$(grep -n 'name: RABBITMQ_PASSWORD$' <<<"$doc" | cut -d: -f1)"; c="$(grep -n 'name: RabbitMq__ConnectionString$' <<<"$doc" | cut -d: -f1)"
+              [ "$p" -lt "$c" ] || fail "$prof: $d で RABBITMQ_PASSWORD が接続文字列より後にある"
+              n=$((n + 1))
+            done
+            [ "$n" -ge 11 ] || fail "$prof: Worker を ${n} 件しか読めない（抽出の空振り）"
+          done
+          # Reloader の注釈（経路B）に ast-rabbitmq-users が入る（値を回したら作り直す）。
+          loc="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml)"
+          c="$(grep -c 'secret.reloader.stakater.com/reload: ".*ast-rabbitmq-users' <<<"$loc" || true)"
+          [ "$c" -ge 11 ] || fail "Reloader の注釈に ast-rabbitmq-users が入る Deployment が ${c} 件しかない"
+          # 旧キーは描画で止める。設定点の欠落も止める。
+          must_fail() {
+            local label="$1" want="$2"; shift 2
+            local out
+            if out="$(helm template ast "$CHART" "$@" 2>&1)"; then fail "描画が通ってしまった: $label"; fi
+            grep -qF "$want" <<<"$out" || { echo "::error::$label: 期待した理由（$want）で止まっていない:"; printf '%s\n' "$out" | tail -3; exit 1; }
+          }
+          must_fail "旧キー rabbitmqConnectionString" "global.rabbitmqConnectionString は廃止" --set global.rabbitmqConnectionString=amqp://x@rabbitmq:5672
+          must_fail "Secret 名が空" "credentialsSecretName" --set global.rabbitmq.credentialsSecretName=""
+          echo "ok: 全 Worker がサービスごとのユーザーで接続し、既定のユーザーの痕跡は無い"
       # #132 / IADR-0060: 誤配備を描画時に止めるゲートが**実際に落ちる**ことを検査する（ゲートの空振り防止）。
       - name: Assert misconfiguration gates fail
         run: |

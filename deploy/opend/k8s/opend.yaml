@@ -92,6 +92,8 @@ spec:
         #
         # 🔴 Ingress も Route も TLS も持たない。 呼び出し元はクラスタ内の BFF だけであり、
         #    利用者認証はその手前で済んでいる。書ける行は閉じた 3 コマンドに限られる（allowlist）。
+        # NFR, IADR-0566: 呼び出し元は 2 段で絞る —— 共有シークレット（Secret opend-auth-caller-secret をサイドカーだけに
+        #    マウント。無いあいだは全口 503 = fail-closed）と NetworkPolicy（deploy/opend/k8s/networkpolicy.yaml）。
         - name: opend-auth
           image: "k3d-local/ai-stock-trading/opend-auth-gateway:latest"
           imagePullPolicy: IfNotPresent
@@ -100,9 +102,15 @@ spec:
           env:
             - name: OpendAuth__RuntimeDirectory
               value: /run/opend
+            # IADR-0566: 値ではなくファイルの場所を渡す（Secret を回しても Pod を作り直さない）。
+            - name: OpendAuth__CallerSecretFile
+              value: /var/run/opend-auth/caller-secret
           volumeMounts:
             - name: runtime
               mountPath: /run/opend
+            - name: caller-secret
+              mountPath: /var/run/opend-auth
+              readOnly: true
           resources:
             requests: { cpu: 10m, memory: 32Mi }
             limits: { cpu: 200m, memory: 128Mi }
@@ -115,6 +123,14 @@ spec:
         - name: runtime
           emptyDir:
             sizeLimit: 16Mi
+        # IADR-0566: サイドカーだけがマウントする。optional ＝ Secret が無くても Pod は起動する（発注経路を止めない）。
+        - name: caller-secret
+          secret:
+            secretName: opend-auth-caller-secret
+            optional: true
+            defaultMode: 0440
+            items:
+              - { key: caller-secret, path: caller-secret }
         - name: rsa
           secret:
             secretName: moomoo-rsa

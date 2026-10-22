@@ -13,7 +13,16 @@ global:
     pullPolicy: IfNotPresent
   # 共有インフラ（MSP platform-infra）への接続既定。ExternalName エイリアス（下記 infraAliases）で
   # 素のサービス名を platform-infra の FQDN へ解決する。
-  rabbitmqConnectionString: amqp://guest:guest@rabbitmq:5672
+  # NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: ブローカ（基盤 platform-infra の RabbitMQ）への接続。**サービスごとのユーザー**
+  # （<usernamePrefix><サービス名>。例 ast-trade-decision）で接続する。ユーザーと権限は基盤が作る（MSP の
+  # deploy/local/rabbitmq-setup/users.txt・reconcile-users.sh）。パスワードは Secret credentialsSecretName（キー = ユーザー名）から読む。
+  # ESO 所有（externalSecrets.enabled=true）では templates/external-secrets.yaml が Vault ai-stock-trading/rabbitmq-users を同期する。
+  # 🔴 既定のユーザー（guest）は使わない。旧キー rabbitmqConnectionString は廃止（与えると描画で止める）。
+  rabbitmq:
+    host: rabbitmq
+    port: 5672
+    credentialsSecretName: ast-rabbitmq-users
+    usernamePrefix: "ast-"
   otlpEndpoint: http://otel-collector:4317
   authAuthority: http://keycloak:8080/realms/ai-stock-trading
   # #22 受け入れ基準③: 実効構成バージョン（適用中の構成の Git コミット等）。GitOps（ArgoCD）で注入する。
@@ -200,9 +209,33 @@ opend:
     # 投入の流量制限（サービス全体で数える）。守っているのは moomoo の SMS 送信枠と総当たり耐性である。
     rateLimitMaxSubmissions: 5
     rateLimitWindowSeconds: 60
+    # NFR, IADR-0566: 呼び出し元（基盤の BFF）の検証に使う共有シークレット。Secret の volume としてサイドカーだけにマウントする
+    # （OpenD 本体にはマウントしない）。ファイルで渡すのは、値を回したときに OpenD の Pod を作り直さないため。
+    # 🔴 Secret が無い・値が 32 文字未満のあいだ、サイドカーの 4 本の口はすべて 503 を返す（fail-closed）。Pod の起動は止めない
+    #    （optional: true。止めると Service opend の endpoint から外れて発注経路まで止まる）。
+    #    ESO 所有（externalSecrets.enabled=true）では下記 externalSecrets.opendAuthCallerSecret が同期する。
+    #    送り手（基盤の BFF）は同じ値を env OpendAuth__CallerSecret で受ける（基盤の名前空間の Secret。基盤の側で配線する）。
+    callerSecret:
+      secretName: opend-auth-caller-secret
+      secretKey: caller-secret
+      mountPath: /var/run/opend-auth
+      defaultMode: 0440
     resources:
       requests: { cpu: 10m, memory: 32Mi }
       limits: { cpu: 200m, memory: 128Mi }
+  # NFR, IADR-0566: OpenD の Pod への到達の制限（templates/networkpolicy-opend.yaml・ingress だけ）。既定 true＝閉じる。
+  # opend.enabled=true のときだけ描く。届いてよい相手は 2 つ:
+  #   - API（apiPort）… 同じ namespace の発注執行（apiClientPodLabels）
+  #   - 認証サイドカー（authGateway.port）… 基盤の BFF（authGatewayClients。authGateway.enabled のときだけ規則を描く）
+  # 🔴 届く相手を足すときは、ここと呼び出し元の構成を同じ変更で揃える（ここだけ開けても、サイドカーは共有シークレットで拒む）。
+  networkPolicy:
+    enabled: true
+    apiClientPodLabels:
+      app: order-execution-service
+    authGatewayClients:
+      namespace: microservices-platform
+      podLabels:
+        app: bff-service
 
 # #132, IADR-0060 決定 4: 秘匿情報の External Secrets（Vault）**受け口**。既定 disabled = fail-safe。
 # ⚠️ **これは Vault 化の充足ではない**。ストア（Vault / External Secrets Operator）は #24 の管掌で本リポジトリには無く、
@@ -222,6 +255,16 @@ externalSecrets:
   moomooRsa:
     remoteKey: ai-stock-trading/moomoo-rsa
     property: opend_rsa.pem
+  # NFR, IADR-0568: ブローカのサービスごとのユーザーのパスワード（プロパティ名 = ユーザー名）。externalSecrets.enabled のとき同期する。
+  # 種は基盤の bootstrap（MSP deploy/local/vault/eso/bootstrap.sh）が乱数で入れる。同期先は global.rabbitmq.credentialsSecretName。
+  rabbitmqUsers:
+    remoteKey: ai-stock-trading/rabbitmq-users
+  # NFR, IADR-0566: 認証サイドカーの呼び出し元検証の共有シークレット。opend.enabled と opend.authGateway.enabled が
+  # どちらも true のときだけ描く。同期先は opend.authGateway.callerSecret.secretName / secretKey。
+  # 基盤の BFF も同じ Vault のキーを自分の名前空間へ同期する（両側で同じ値になる。値は Git に置かない）。
+  opendAuthCallerSecret:
+    remoteKey: ai-stock-trading/opend-auth
+    property: caller-secret
   # ADR-0006, IADR-0094 (#24): API 鍵群（Secret `ast-secrets`）の Vault 同期。既定 disabled = fail-safe
   # （現行の手動 k8s Secret 直運用を維持）。有効化には externalSecrets.enabled=true も要る。
   # ⚠️ 平文の鍵は置かない。Vault の単一 KV（remoteKey）に **Secret キー名と同名のプロパティ**で格納し
@@ -617,6 +660,15 @@ services:
       # NFR-06, IADR-0448, IADR-0559, #1391: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # 🔴 FR-10, ADR-0009, IADR-0567: 新規建てを送る直前に kill switch・一時停止の状態を照会する宛先（GET /risk-controls/trading-halt・OwnerOrService）。
+      #    **空・未設定・照会の失敗は「不明」＝新規建てを送らない**（fail-closed。決済・損切りは照会しない＝止まらない）。
+      #    s2s は下の ServiceAuth__*（trading-service。token エンドポイントは auth: true の Authority から導く）。
+      #    将来リスク管理に NetworkPolicy を置くときは、発注執行（order-execution-service）からの 8080 を許可すること。
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
   report:
     image: ai-stock-trading/report-service
     # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0328 決定 3, IADR-0446, #1061: east-west gRPC（h2c）の提供側ポート。
