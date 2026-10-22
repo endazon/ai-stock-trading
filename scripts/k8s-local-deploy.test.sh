@@ -1451,5 +1451,16 @@ assert_contains 'T-mesh-11 順序: ラベルを扱う' "$main_body" 'ast_apply_m
 assert_contains 'T-mesh-11 順序: helm の値に載せる' "$main_body" '"${AST_MESH_OVERRIDES[@]}"'
 unset AST_MESH_INJECTION
 
+# T-mesh-12: helm upgrade が失敗したら、この回にラベルか値を変えたときだけ明示の再実行を案内する（本体は失敗で止まる）
+( AST_MESH_INJECTION_CHANGED=1; ast_mesh_upgrade_failure_hint ) > "$STATE/out" 2> "$STATE/err"
+ERR="$(cat "$STATE/err")"
+assert_contains 'T-mesh-12 失敗・変更あり: 1 で再実行を案内する' "$ERR" 'AST_MESH_INJECTION=1 scripts/k8s-local-deploy.sh'
+assert_contains 'T-mesh-12 失敗・変更あり: 0 で再実行を案内する' "$ERR" 'AST_MESH_INJECTION=0 scripts/k8s-local-deploy.sh'
+( AST_MESH_INJECTION_CHANGED=0; ast_mesh_upgrade_failure_hint ) > "$STATE/out" 2> "$STATE/err"
+assert_eq 'T-mesh-12 失敗・変更なし: 案内しない' "$(cat "$STATE/err")" ''
+upgrade_block="$(sed -n '/^if ! helm upgrade --install/,/^fi/p' "$ROOT_DIR/scripts/k8s-local-deploy.sh")"
+assert_contains 'T-mesh-12 本体: upgrade の失敗で案内してから止まる' "$upgrade_block" 'ast_mesh_upgrade_failure_hint'
+assert_contains 'T-mesh-12 本体: 失敗で止まる' "$upgrade_block" 'exit 1'
+
 printf '\n%d passed, %d failed\n' "$PASSED" "$FAILED"
 [ "$FAILED" -eq 0 ] || exit 1

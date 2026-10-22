@@ -767,6 +767,19 @@ ast_apply_mesh_namespace_label() {
   return 0
 }
 
+# NFR, IADR-0570: helm upgrade が失敗したときの案内。名前空間のラベルは upgrade の前に変えるため、失敗すると
+# 「ラベルは新しい状態・chart の値は前回のまま」が残り得る。この回にラベルか値を変えたときだけ、明示して再実行する手順を出す。
+ast_mesh_upgrade_failure_hint() {
+  [ "${AST_MESH_INJECTION_CHANGED:-0}" = "1" ] || return 0
+  {
+    echo "ERROR: helm upgrade が失敗しました。名前空間 $NS の istio-injection はこの回に変えてあり、chart の ${AST_MESH_KEY} は前回のままの可能性があります（IADR-0570）。"
+    echo "       原因を直してから、意図する側を明示して再実行してください（未指定だと前回の値を引き継ぎ、ラベルと食い違ったままになり得ます）:"
+    echo "         メッシュへ入れる: AST_MESH_INJECTION=1 scripts/k8s-local-deploy.sh"
+    echo "         メッシュから外す: AST_MESH_INJECTION=0 scripts/k8s-local-deploy.sh"
+  } >&2
+  return 0
+}
+
 # #1094, IADR-0457: 作り直すイメージの絞り込みを決める。SERVICES（env）と --changed-since（CHANGED_SINCE）を
 # k8s-local-images.sh の SERVICES へ中継し、絞り込みがあれば AST_IMAGE_SELECTION=1 にする（手順 5 の restart を絞る）。
 #   --changed-since: select-changed-services.js の出力が ALL → 絞り込みなし（SERVICES を unset＝全件・全 restart）/
@@ -974,7 +987,11 @@ AST_HELM_VALUE_ARGS=(
 )
 # #1351: Recreate へ移る Deployment に残る rollingUpdate を、upgrade の前に外す（SSA は消さない。関数の注記）。
 ast_migrate_recreate_strategy "${AST_HELM_VALUE_ARGS[@]}"
-helm upgrade --install "$RELEASE" deploy/helm/ai-stock-trading -n "$NS" "${AST_HELM_VALUE_ARGS[@]}"
+if ! helm upgrade --install "$RELEASE" deploy/helm/ai-stock-trading -n "$NS" "${AST_HELM_VALUE_ARGS[@]}"; then
+  # NFR, IADR-0570: ラベルは upgrade の前に変えている。失敗したら復旧の手順を案内する（ロールバックはしない）。
+  ast_mesh_upgrade_failure_hint
+  exit 1
+fi
 
 echo "==> [5/5] rollout restart (イメージ更新を Pod へ反映。OpenD は除外=SMS/画像認証セッションを維持・#673。絞り込み時は作り直した分だけ・#1094)"
 ast_restart_step "$AST_BUILT_DIR/built"

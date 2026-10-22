@@ -1112,6 +1112,8 @@ AST_MESH_INJECTION=0 scripts/k8s-local-deploy.sh      # メッシュから外す
 | 未指定・前回に宣言なし（新規・本変更より前の配備） | 何も足さない（chart 既定の無効。従来と同じ引数） | 触らない | 従来どおり |
 | それ以外（空・`yes` 等） | — | — | exit 2（何もしない） |
 
+- **helm upgrade が失敗したら、`AST_MESH_INJECTION=1` か `0` を明示して再実行する。** ラベルは upgrade の前に変えるため、失敗すると
+  「ラベルは新しい状態・chart の値は前回のまま」が残り得る（起動器は失敗時に同じ案内を出す。ロールバックはしない）。
 - **前回リリースの値が真偽値として読めないときは止まる**（黙って無効へ戻さない）。`AST_MESH_INJECTION` を明示すれば進む。
 - **OpenD は常に注入対象外**（作り直さない）。chart は `excludeOpend=true` なら **`enabled` に依らず** OpenD の Pod へ
   `sidecar.istio.io/inject: "false"` を描くので、注入の切り替えで OpenD の Pod テンプレートは変わらない（`helm.yml` の
