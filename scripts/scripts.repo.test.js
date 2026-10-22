@@ -3207,6 +3207,9 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       const yml = fsIs.readFileSync(pathIs.join(REPO_ROOT_IS, '.github', 'workflows', 'integration.yml'), 'utf8');
       // 🔴 TRX が出ていなければ検査は何も読めない（そのときは赤になるが、配線の欠落は先にここで止める）。
       assert.match(yml, /--logger trx --results-directory "\$PWD\/integration-results"/, 'TRX の出力先が integration.yml に無い');
+      // 🔴 NFR / MSP#2060: ハングを timeout-minutes まで無出力で待たせない（ジョブごと cancelled になり、どの試験かも残らない）。
+      assert.match(yml, /--logger trx --results-directory "\$PWD\/integration-results"\n\s+--blame-hang-timeout \d+m --blame-hang-dump-type mini\n/, 'テスト実行に --blame-hang-timeout が無い（ハングでジョブが cancelled になる）');
+      assert.match(yml, /integration-results\/\*\*\/\*\.dmp/, 'ハングのダンプを成果物に残していない');
       assert.match(yml, /check-integration-skips\.js --self-test/, '検査器の自己試験が integration.yml に無い');
       assert.match(yml, /check-integration-skips\.js integration-results/, '本検査が integration.yml に無い');
       // テストが赤くても評価する（skip と失敗は独立した観測）。`if:` が `success()` 既定へ戻ると赤の run で検査が消える。
