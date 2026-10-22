@@ -5,8 +5,10 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 using Testcontainers.PostgreSql;
 using Testcontainers.RabbitMq;
 using Xunit;
@@ -14,6 +16,7 @@ using RiskManagementDbContext = RiskManagementWorker::RiskManagementService.Infr
 using IInformationDegradationStore = RiskManagementWorker::RiskManagementService.Features.RiskManagement.IInformationDegradationStore;
 using ICapitalBaselineStore = RiskManagementWorker::RiskManagementService.Features.RiskManagement.ICapitalBaselineStore;
 using RiskTradingDefaults = RiskManagementWorker::RiskManagementService.Domain.TradingDefaults;
+using RiskClock = RiskManagementWorker::RiskManagementService.Common.Abstractions.IClock;
 
 namespace AiStockTrading.IntegrationTests;
 
@@ -81,10 +84,26 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
         Environment.SetEnvironmentVariable("Otlp__Endpoint", "http://localhost:4317");
         Environment.SetEnvironmentVariable("Broker__Provider", "paper");
 
+        // NFR, #1429, FR-10, #1396, IADR-0561: リスク管理の審査は閉場前の締め切り（閉場の 60 分前以降）に入った新規建てを拒否する。
+        // 本試験は実時計で米国株を買うため、締め切りの窓では TradeDecisionMade が拒否されて執行まで流れない（時刻依存の赤）。
+        // 締め切りの拒否は本試験の検証対象ではないので、審査の時計だけを締め切りの外へ戻す（EntryScreeningSerializationE2ETests と同じ時計）。
         _riskFactory = new WebApplicationFactory<RiskManagementWorker::Program>()
-            .WithWebHostBuilder(b => b.UseEnvironment("IntegrationTest"));
+            .WithWebHostBuilder(b =>
+            {
+                b.UseEnvironment("IntegrationTest");
+                b.ConfigureTestServices(services =>
+                    services.AddSingleton<RiskClock>(new EntryScreeningSerializationE2ETests.OutsidePreCloseCutoffClock()));
+            });
+        // NFR, #1429, FR-10, IADR-0567: 発注執行は送る直前に取引停止状態をリスク管理へ照会する。本 fixture では照会先を構成しておらず、
+        // 未構成は「不明」＝新規建てを見送る（fail-closed）ため、照会元だけを「停止していない」と答える差し替えにする
+        // （OrderExecutionPipelineE2ETests と同じ差し替え。照会の配線は T-10-2971 が固定する）。
         _executionFactory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(b => b.UseEnvironment("IntegrationTest"));
+            .WithWebHostBuilder(b =>
+            {
+                b.UseEnvironment("IntegrationTest");
+                b.ConfigureTestServices(services =>
+                    services.AddScoped<ITradingHaltSource>(_ => new OrderExecutionPipelineE2ETests.NotHaltedSource()));
+            });
     }
 
     public async ValueTask DisposeAsync()

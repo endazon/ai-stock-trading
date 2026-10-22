@@ -131,7 +131,8 @@ public sealed class EntryScreeningSerializationE2ETests : IAsyncLifetime
 
     // #1396, IADR-0561: 実時刻が米国の閉場前の新規建ての締め切り（閉場の 60 分前以降）に入っているときは、同じ市場ローカルの日のうち
     // 締め切りの 1 分前へ戻す（本試験は直列化を確かめるもので、締め切りの拒否を混ぜない。取引日は変わらない）。
-    private sealed class OutsidePreCloseCutoffClock : IClock
+    // NFR, #1429: TradeExecutionPipelineE2ETests のリスク管理ホストも同じ時計を使う（internal はそのため）。
+    internal sealed class OutsidePreCloseCutoffClock : IClock
     {
         public DateTimeOffset UtcNow
         {

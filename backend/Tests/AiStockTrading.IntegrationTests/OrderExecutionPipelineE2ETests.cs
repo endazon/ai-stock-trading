@@ -96,7 +96,8 @@ public sealed class OrderExecutionPipelineE2ETests : IAsyncLifetime
         });
     }
 
-    private sealed class NotHaltedSource : ITradingHaltSource
+    // NFR, #1429: TradeExecutionPipelineE2ETests の発注執行ホストも同じ差し替えを使う（internal はそのため）。
+    internal sealed class NotHaltedSource : ITradingHaltSource
     {
         public Task<TradingHaltState?> GetAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<TradingHaltState?>(new TradingHaltState(KillSwitchEngaged: false, TradingPaused: false));
