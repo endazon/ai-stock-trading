@@ -589,6 +589,9 @@ public static class AuditEntryFactory
                 // 「成立せず」の前置きは共通だが、実際には何も送っておらず何も取り消していない——要約でそう書く。
                 ProtectiveStopRemediation.EntryStateUnknown =>
                     "——**建玉 0 だがエントリー注文の状態が不明。逆指値の取消・記録の完了はせず据え置き（要人手確認）**",
+                // FR-10, #1422, IADR-0569 決定3: 取消は送ったが終端を確かめられていない。「取り消した」とは書かない。
+                ProtectiveStopRemediation.EntryCancelUnconfirmed =>
+                    "——**エントリーへ取消を送ったが未確認（取消の窓で約定し得る）。終端の観測で取消の確定か成行手仕舞いを行う**",
                 _ => string.Empty,
             }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);

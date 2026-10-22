@@ -228,6 +228,9 @@ public static class NotificationFormatter
             // 本文は「解消にも失敗しました」なのに件名だけ読むと解消済みと読め、逆指値なしの建玉が残る側を見落とす。
             ProtectiveStopRemediation.None =>
                 "リスク統制: 保護逆指値が成立せず、建玉の解消にも失敗",
+            // 🔴 FR-10, #1422, IADR-0569 決定3: 取消は送ったが確かめられていない。「解消」「取り消した」と読ませない。
+            ProtectiveStopRemediation.EntryCancelUnconfirmed =>
+                "リスク統制: 保護逆指値が成立せず、エントリーの取消を確認中",
             _ => "リスク統制: 保護逆指値が成立せず建玉を解消",
         },
         $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 逆指値が"
@@ -235,6 +238,12 @@ public static class NotificationFormatter
             + e.Remediation switch
             {
                 ProtectiveStopRemediation.EntryCancelled => "エントリー注文を取り消しました（建玉は生じていません）。",
+                // 🔴 FR-10, #1422, IADR-0569 決定3: 取消要求の後にも約定し得る。「建玉は生じていない」と断定しない。
+                ProtectiveStopRemediation.EntryCancelUnconfirmed =>
+                    "エントリー注文へ**取消を送りましたが、取り消せたことをまだ確認できていません**（取消の前後に約定することがあります）。"
+                    + "システムはエントリー注文の終了を約定追跡で確かめ、約定が無ければ取消の確定を、約定していれば約定数量の成行手仕舞いを"
+                    + "行い、その結果をもう 1 回通知します。**それまでのあいだ、約定した分は逆指値なしで残り得ます。**"
+                    + "結果の通知が届かない場合は、証券会社の画面で注文と建玉を確認してください。",
                 ProtectiveStopRemediation.PositionClosed => "建玉を成行で手仕舞いました（逆指値なしの建玉を持たない規律・FR-10）。",
                 ProtectiveStopRemediation.CloseDispatchIndeterminate =>
                     "建玉の成行手仕舞いを**送信しましたが、結果を確認できていません（届いたか不明）**。"

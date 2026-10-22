@@ -479,6 +479,23 @@ public class NotificationFormatterTests
         msg.Content.Should().NotContain("手仕舞いました").And.NotContain("解消にも失敗");
     }
 
+    // 🔴 T-10-2982, FR-10, UC-02, #1422, IADR-0569 決定3: 取消を送ったが確かめられていない（EntryCancelUnconfirmed）。「取り消しました」
+    // 「建玉は生じていません」「解消」と読ませない。取消の窓の約定が逆指値なしで残り得ることと、結果をもう 1 回知らせることを伝える。
+    [Fact]
+    public void エントリーの取消が未確認なら_取り消したと言わず約定が無保護で残り得ることを伝えるCriticalになる()
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, ProtectiveStopLossCause.RejectedAtEntry,
+            ProtectiveStopRemediation.EntryCancelUnconfirmed, 10, CloseDecisionId: null, CloseIntent: null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().Contain("取消を確認中").And.NotContain("建玉を解消");
+        msg.Content.Should().Contain("取り消せたことをまだ確認できていません").And.Contain("逆指値なしで残り得ます")
+            .And.Contain("もう 1 回通知").And.Contain("証券会社の画面");
+        msg.Content.Should().NotContain("エントリー注文を取り消しました").And.NotContain("建玉は生じていません")
+            .And.NotContain("解消にも失敗");
+    }
+
     // 🔴 T-10-640, FR-10, FR-11, UC-06, #857, IADR-0369: 成行手仕舞いが**確認できた拒否**で終わったとき、
     // 「手仕舞いました」とも「届いたか不明」とも言ってはならない。**建玉は残っており、成行は生きていない**
     // ——読んだ人が取るべき行動（証券会社の画面で建玉を確認し、手で手仕舞う）が読み取れること。

@@ -60,7 +60,7 @@ public sealed class OrderExecutionAppService(
     ILogger<OrderExecutionAppService>? logger = null,
     IBrokerPositionSource? brokerPositions = null,
     IPositionQueryHealthReporter? positionQueryHealth = null,
-    ITradingHaltSource? tradingHalt = null) : IReconciledEntryProtection
+    ITradingHaltSource? tradingHalt = null) : IReconciledEntryProtection, IUnconfirmedEntryCancelResolution
 {
     // #820 の 8 巡目監査, IADR-0344 追記(8): 武装の前提条件（帰属不明の建玉が無いこと）を確かめるために
     // 見る Active 行の上限。保有建玉数上限（既定 3）に対して十分大きい。
@@ -1081,7 +1081,8 @@ public sealed class OrderExecutionAppService(
             reservations.Release(stopDecisionId);
 
         // 未受理: 逆指値なしの建玉を持たない（業務フロー 02 の表）。事前に残した保護の文脈は閉じる（#853, IADR-0428 決定3）。
-        CompleteAwaitingProtection(approved.DecisionId);
+        // 🔴 #1422, IADR-0569: 閉じるのは建玉解消の行き先が確定した枝だけ（ResolveUnprotectedEntryAsync の中）。取消を送ったが結果を
+        // 確かめられない枝は閉じずに「取消の確認待ち」へ移す（閉じると取消の窓で約定した建玉が保護も手仕舞いも無く残る）。
         var coverageLost = await ResolveUnprotectedEntryAsync(approved, entryOrder, cancellationToken)
             .ConfigureAwait(false);
         return (null, coverageLost, attempted);
@@ -1382,11 +1383,11 @@ public sealed class OrderExecutionAppService(
             try
             {
                 await broker.CancelOrderAsync(entryOrder.OrderId, cancellationToken).ConfigureAwait(false);
-                return CoverageLost(approved, ProtectiveStopRemediation.EntryCancelled, intent.Quantity);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // 取消失敗＝その間に約定した可能性。ブローカ状態を照会して約定分を手仕舞いへ回す。
+                CompleteAwaitingProtection(approved.DecisionId);
                 var snapshot = await TryGetOrderAsync(entryOrder.OrderId, cancellationToken).ConfigureAwait(false);
                 filled = snapshot?.FilledQuantity ?? 0;
                 if (filled == 0)
@@ -1394,9 +1395,131 @@ public sealed class OrderExecutionAppService(
                     // 取消も照会もできない: 状態不明のまま自動で注文を重ねない（人手対応・Critical）。
                     return CoverageLost(approved, ProtectiveStopRemediation.None, intent.Quantity);
                 }
+
+                return await CloseUnprotectedPositionAsync(approved, filled, cancellationToken).ConfigureAwait(false);
             }
+
+            // 🔴 FR-10, UC-02, #1422, IADR-0569 決定1: **取消を送れた＝取り消せた、ではない。** 取消要求の後にも約定し得る
+            // （moomoo は Cancelling_* を経て約定し得る。OrderAmendmentService・SoftwareStopExecutor と同じ規律）。照会して終端を確かめる。
+            //   - 終端・約定 0 → 取消の確定（EntryCancelled）。
+            //   - 終端・約定 > 0（取消の窓で約定した）→ 約定数量を成行で手仕舞う（業務フロー 02 の表の 2 行目）。
+            //   - 非終端・不明 → 「取消済み」と主張せず、保護の文脈を「取消の確認待ち」で残す（約定追跡の終端化で後始末する）。
+            var after = await TryGetOrderAsync(entryOrder.OrderId, cancellationToken).ConfigureAwait(false);
+            if (after is null || !OrderStatusLifecycle.IsTerminal(after.Status))
+                return HoldUnconfirmedEntryCancel(approved, entryOrder, after);
+
+            CompleteAwaitingProtection(approved.DecisionId);
+            var finalFilled = Math.Min(Math.Max(filled, after.FilledQuantity), intent.Quantity);
+            if (finalFilled == 0)
+                return CoverageLost(approved, ProtectiveStopRemediation.EntryCancelled, intent.Quantity);
+
+            _logger.LogError(
+                "保護逆指値が未受理のため取り消したエントリーが、取消の前に約定していました（約定 {Filled}/{Quantity}・終端 {Status}）。"
+                + "約定数量を成行で手仕舞います: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} OrderId={OrderId}",
+                finalFilled, intent.Quantity, after.Status, approved.DecisionId, intent.Symbol, entryOrder.OrderId);
+            return await CloseUnprotectedPositionAsync(approved, finalFilled, cancellationToken).ConfigureAwait(false);
         }
 
+        CompleteAwaitingProtection(approved.DecisionId);
+        return await CloseUnprotectedPositionAsync(approved, filled, cancellationToken).ConfigureAwait(false);
+    }
+
+    // 🔴 FR-10, UC-02, #1422, IADR-0569 決定2・決定3: 取消を送ったが、終端を確かめられない（照会が非終端・不明）。
+    //   - 「取消済み」と主張しない（EntryCancelled は「建玉は生じていない」と読ませる）。EntryCancelUnconfirmed（Critical）を返す。
+    //   - 承認時の保護の文脈を閉じず「取消の確認待ち」（AwaitingEntryCancel）へ移す。約定追跡がエントリーの終端化を観測したら、
+    //     ResolveUnconfirmedEntryCancelAsync が約定 0 なら取消の確定、約定 > 0 なら約定数量の成行手仕舞いを行う。
+    //   - 成行も逆指値の再発注もここではしない（非終端のまま約定数で手仕舞うと、残りの約定がまた無保護で残る）。
+    private ProtectiveStopCoverageLost HoldUnconfirmedEntryCancel(
+        OrderApproved approved, BrokerOrder entryOrder, BrokerOrder? observed)
+    {
+        var intent = approved.Intent;
+        var now = clock.UtcNow;
+        var held = MarkAwaitingEntryCancel(approved, now);
+
+        _logger.LogError(
+            "保護逆指値が未受理のためエントリーへ取消を送りましたが、取消の結果を確認できていません（照会 {Observed}）。"
+            + "取消済みとは扱いません。取消の窓で約定した分は逆指値なしで残り得ます。"
+            + (held
+                ? "約定追跡がエントリーの終端を確認したら、約定 0 なら取消の確定を、約定があれば約定数量の成行手仕舞いを行います: "
+                : "**取消の確認待ちを記録できなかったため、システムはこのエントリーの後始末をしません。証券会社の画面で注文と建玉を確認してください**: ")
+            + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol} OrderId={OrderId} 数量={Quantity}",
+            observed is null ? "不明" : $"{observed.Status}・約定 {observed.FilledQuantity}",
+            approved.DecisionId, intent.Symbol, entryOrder.OrderId, intent.Quantity);
+
+        return CoverageLost(approved, ProtectiveStopRemediation.EntryCancelUnconfirmed, intent.Quantity);
+    }
+
+    // #1422, IADR-0569 決定2: 承認時の保護の文脈を「取消の確認待ち」へ移す。行が無ければ（事前記録の失敗）新しく残す。
+    // AwaitingEntry 以外（受理・据え置きで Active になった行・完了）には触らない。書けたかを返す（書けなければ後始末は起きない）。
+    private bool MarkAwaitingEntryCancel(OrderApproved approved, DateTimeOffset now)
+    {
+        if (protectiveStops is null)
+            return false;
+
+        var intent = approved.Intent;
+        try
+        {
+            switch (protectiveStops.Find(approved.DecisionId))
+            {
+                case null:
+                    protectiveStops.Save(new ProtectiveStopOrder(
+                        approved.DecisionId, ProtectiveStopIds.StopDecisionId(approved.DecisionId, attempt: 1),
+                        StopOrderId: string.Empty, intent.Symbol, intent.Market, intent.Side, intent.ProductType, intent.Mode,
+                        intent.Quantity, intent.StopLossPrice!.Value, intent.FxRateToBase, Attempt: 0,
+                        ProtectiveStopState.AwaitingEntryCancel, now, now,
+                        Mechanism: approved.StopLossMethod == StopLossExecutionMethod.AlternativeBrokerOrderType
+                            ? StopLossExecutionMethod.AlternativeBrokerOrderType
+                            : StopLossExecutionMethod.BrokerStopOrder));
+                    return true;
+                case { State: ProtectiveStopState.AwaitingEntry } awaiting:
+                    return protectiveStops.TrySave(
+                        awaiting with { State = ProtectiveStopState.AwaitingEntryCancel, UpdatedAt = now });
+                case { State: ProtectiveStopState.AwaitingEntryCancel }:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogCritical(ex,
+                "取消の確認待ちを保護記録へ残せませんでした: EntryDecisionId={EntryDecisionId}", approved.DecisionId);
+            return false;
+        }
+    }
+
+    // 🔴 FR-10, UC-02, #1422, IADR-0569 決定4: 約定追跡がエントリーの終端化を観測したときの後始末（IUnconfirmedEntryCancelResolution）。
+    // 確認待ちの行を楽観並行で Completed へ移せたときだけ進む（同じ終端化を 2 回処理しても成行は 1 本）。約定 0 なら取消の確定、
+    // 約定 > 0 なら約定数量（承認数量を上限）を成行で手仕舞う（平常の経路と同じ CloseUnprotectedPositionAsync＝3 相・拒否・不明の分岐）。
+    public async Task<ProtectiveStopCoverageLost?> ResolveUnconfirmedEntryCancelAsync(
+        ExecutionRecord terminalEntry, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(terminalEntry);
+
+        if (protectiveStops?.Find(terminalEntry.DecisionId) is not { State: ProtectiveStopState.AwaitingEntryCancel } row)
+            return null;
+        if (!OrderStatusLifecycle.IsTerminal(terminalEntry.Status))
+            return null;
+        if (!protectiveStops.TrySave(row with { State = ProtectiveStopState.Completed, UpdatedAt = clock.UtcNow }))
+            return null;
+
+        var intent = new OrderIntent(
+            row.Symbol, row.Market, row.EntrySide, row.ProductType, row.Mode, row.Quantity, terminalEntry.PlannedPrice,
+            PositionEffect.Open, row.TriggerPrice, row.FxRateToBase);
+        var approved = new OrderApproved(terminalEntry.DecisionId, intent, row.Quantity, terminalEntry.ExecutedAt);
+        var filled = Math.Min(terminalEntry.FilledQuantity, row.Quantity);
+        if (filled <= 0)
+        {
+            _logger.LogInformation(
+                "取消の確認待ちだったエントリーが約定 0 で終端しました（{Status}）。取消を確定します: EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+                terminalEntry.Status, terminalEntry.DecisionId, row.Symbol);
+            return CoverageLost(approved, ProtectiveStopRemediation.EntryCancelled, row.Quantity);
+        }
+
+        _logger.LogError(
+            "取消の確認待ちだったエントリーが約定して終端しました（約定 {Filled}/{Quantity}・{Status}）。保護逆指値は未受理のため、"
+            + "約定数量を成行で手仕舞います: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} OrderId={OrderId}",
+            filled, row.Quantity, terminalEntry.Status, terminalEntry.DecisionId, row.Symbol, terminalEntry.OrderId);
         return await CloseUnprotectedPositionAsync(approved, filled, cancellationToken).ConfigureAwait(false);
     }
 

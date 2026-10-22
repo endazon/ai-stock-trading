@@ -121,6 +121,11 @@ public sealed class OrderFillPollingService(
         foreach (var reArmed in result.SoftwareStopEvents ?? [])
             await bus.PublishAsync(reArmed).ConfigureAwait(false);
 
+        // 🔴 FR-10, UC-02, #1422, IADR-0569 決定4: 取消の確認待ちだった新規建ての後始末（取消の確定・約定数量の成行手仕舞い）を知らせる。
+        // OrderExecuted（エントリーの約定）の**後**に出す——台帳は約定で建玉を知ってから、手仕舞いレグの承認行を足す。
+        foreach (var resolved in result.EntryCancelResolutions ?? [])
+            await bus.PublishAsync(resolved).ConfigureAwait(false);
+
         // 🔴 FR-10, FR-11, #1048, IADR-0481 決定3: 追跡の打ち切りを監査へ残す。**発行の後に印を書く**——先に書くと、
         // 発行に失敗した打ち切りが二度と記録されない。印を書けずに次の巡回で再び発行しても、監査台帳は OrderId と
         // 追跡の起点から決定的に導いた Id で 1 件に畳む。
