@@ -5,7 +5,7 @@ status: Proposed
 related_ids: [NFR]
 author: endazon (with Claude Code)
 created: 2026-09-09
-updated: 2026-09-09
+updated: 2026-10-23
 plan_refs: []
 ---
 
@@ -147,6 +147,14 @@ HTTP 呼び出し（`trade-decision-service` の LlmGateway、`report-service`/`
   - 上記 1〜5 がすべて確認できた時点で、本 IADR の状態を **Accepted** へ更新し、
     `mesh.sidecarInjection.enabled` の本番既定を `true` へ変更する追加 IADR／PR を起票する
     （本 IADR 自体は「設定点の新設」の決定として Accepted 化してよいが、**既定値の反転は別決定**とする）。
+
+## ［2026-10-23 追記 / Refs GHSA-j4qv-2w99-xg5p］OpenD の注釈は `enabled` に依らず描く（決定 2 の描画条件の改め）
+
+[IADR-0570](IADR-0570_mesh-injection-deploy-handover.md) が決定 2 の描画条件を「`enabled` かつ `excludeOpend`」から
+「`excludeOpend`」へ改めた。連結ローカルの起動器（`namespace.create=false`）では注入を決めるのが名前空間のラベルであり、
+`enabled` に結ぶと注入の切り替えのたびに OpenD の Pod テンプレートが変わり作り直されるためである。起動器は
+`AST_MESH_INJECTION=1|0` で値を受け、未指定の再実行で現行の値を引き継ぎ、名前空間のラベルも扱う（決定 1 の
+「`namespace.create=false` のときは運用側で手動でラベルを付ける」は、起動器の経路では起動器が担う）。状態（Proposed）は変えない。
 
 ## 関連
 

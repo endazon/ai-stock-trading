@@ -1349,6 +1349,33 @@ jobs:
           # #722 / IADR-0322: 検証コードの投入面は既定で立てない（OpenD のコンソールへ書ける面を既定で開かない）。
           if printf '%s' "$out" | grep -q 'name: opend-auth'; then fail "authGateway が既定で有効になっている"; fi
           echo "ok: opend の既定描画は生 manifest と同等の不変条件を満たす"
+      # NFR, IADR-0570（Refs GHSA-j4qv-2w99-xg5p）: メッシュ参入の切り替えで OpenD の Pod テンプレートが変わらない
+      # （＝起動器が注入を有効・無効にしても OpenD は作り直されない）ことと、OpenD が常に注入対象外であることを固定する。
+      # 起動器と同じ形（values-local.yaml・namespace.create=false）で描き、注入の有無の 2 通りの OpenD を丸ごと突き合わせる。
+      # 陰性対照: excludeOpend=false なら注釈を描かない／namespace.create=false では名前空間のラベルを描かない
+      # （ラベルは起動器が貼る）／namespace.create=true かつ有効なときだけ chart がラベルを描く。
+      - name: Assert mesh sidecar injection toggle never changes the OpenD pod (IADR-0570)
+        run: |
+          fail() { echo "::error::メッシュ参入の切り替えの前提を満たさない: $1"; exit 1; }
+          common=(--set namespace.create=false --set opend.enabled=true -f "$CHART/values-local.yaml")
+          off="$(helm template ast "$CHART" "${common[@]}" -s templates/opend.yaml)"
+          on="$(helm template ast "$CHART" "${common[@]}" --set mesh.sidecarInjection.enabled=true --set mesh.sidecarInjection.excludeOpend=true -s templates/opend.yaml)"
+          [ "$off" = "$on" ] || { diff <(printf '%s\n' "$off") <(printf '%s\n' "$on") || true; fail "注入の有無で OpenD の描画が変わる（切り替えで OpenD が作り直される）"; }
+          pod="$(printf '%s\n' "$off" | awk '/^kind: Deployment/,0' | awk '/^  template:/,/^    spec:/')"
+          printf '%s' "$pod" | grep -q 'sidecar.istio.io/inject: "false"' || fail "OpenD の Pod に注入対象外の注釈が無い（無効のとき）"
+          printf '%s' "$on" | awk '/^kind: Deployment/,0' | awk '/^  template:/,/^    spec:/' | grep -q 'sidecar.istio.io/inject: "false"' \
+            || fail "OpenD の Pod に注入対象外の注釈が無い（有効のとき）"
+          # 陰性対照: excludeOpend=false なら注釈を描かない（検査が注釈の有無を見分けている）
+          neg="$(helm template ast "$CHART" "${common[@]}" --set mesh.sidecarInjection.enabled=true --set mesh.sidecarInjection.excludeOpend=false -s templates/opend.yaml)"
+          if printf '%s' "$neg" | grep -q 'sidecar.istio.io/inject'; then fail "excludeOpend=false でも注釈が描かれる"; fi
+          # 名前空間のラベル: 起動器の形（namespace.create=false）では描かない。chart が名前空間を持つときだけ描く。
+          if helm template ast "$CHART" --set namespace.create=false --set mesh.sidecarInjection.enabled=true | grep -q 'istio-injection'; then
+            fail "namespace.create=false で名前空間のラベルを描いている"
+          fi
+          helm template ast "$CHART" --set mesh.sidecarInjection.enabled=true -s templates/namespace.yaml | grep -q 'istio-injection: enabled' \
+            || fail "namespace.create=true かつ有効で名前空間のラベルが無い"
+          if helm template ast "$CHART" -s templates/namespace.yaml | grep -q 'istio-injection'; then fail "既定で名前空間のラベルを描いている"; fi
+          echo "ok: 注入の切り替えで OpenD の描画は変わらず、OpenD は常に注入対象外"
       # #722 / IADR-0322: サイドカーを有効にしたときの不変条件。**PVC を見せない**ことがいちばん重い
       # （PVC にはデバイス信頼の実体 Device.dat と OpenD.xml が入っている）。
       - name: Assert opend auth sidecar never mounts the PVC

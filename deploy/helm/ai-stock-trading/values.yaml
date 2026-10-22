@@ -59,6 +59,8 @@ mesh:
     # OpenD（独自プロトコル TCP 11111・常駐 1 セッション）は既定でサイドカー注入対象外にする。
     # HTTP でないためメッシュ mTLS/ルーティングの恩恵が無く、Envoy 傍受で常駐 TCP 接続の挙動が
     # 変わるリスクの方が上回る（IADR-0314 決定2）。
+    # IADR-0570: true なら enabled に依らず OpenD の Pod へ sidecar.istio.io/inject: "false" を描く
+    # （注入の切り替えで OpenD の Pod テンプレートが変わらず、作り直されない）。
     excludeOpend: true
     # #121 CronJob の Job 完了・起動順序に関する申告。ネイティブサイドカー（k8s 1.29+ の
     # initContainer restartPolicy: Always）前提ならメインコンテナ終了でサイドカーも自動終了し
