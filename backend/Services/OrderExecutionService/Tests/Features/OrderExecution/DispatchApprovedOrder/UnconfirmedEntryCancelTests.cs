@@ -236,6 +236,43 @@ public class UnconfirmedEntryCancelTests
         h.Stops.Find(approved.DecisionId)!.State.Should().Be(ProtectiveStopState.AwaitingEntryCancel);
     }
 
+    // T-10-2983
+    [Fact]
+    public async Task AC4_後始末の成行手仕舞いが例外で落ちても_無音にせず解消にも失敗を返す()
+    {
+        var broker = RejectingBroker();
+        broker.Orders["entry-1"] = null;
+        broker.Positions = [];
+        var store = new InMemoryExecutedOrderStore();
+        var stops = new InMemoryProtectiveStopOrderStore();
+        var approved = Approved();
+        // 成行手仕舞いのレグの予約だけが落ちる（DB 障害）。
+        var reservations = new ThrowingReserveStore(
+            new InMemoryOrderReservationStore(), ProtectiveStopIds.CloseDecisionId(approved.DecisionId, attempt: 1));
+        var service = new AppSvc(broker, store, reservations, new FakeClock(), stops, brokerPositions: broker);
+        await service.ExecuteAsync(approved);
+        broker.Orders["entry-1"] = EntryAt(OrderStatus.Filled, 10);
+        var poller = new OrderFillPoller(broker, store, new FakeClock(), protectiveStops: stops, entryCancelResolution: service);
+
+        var first = await poller.PollOnceAsync(TimeSpan.FromHours(24), batchSize: 100);
+
+        // (1) 保護喪失が発行される（Critical の None＝解消にも失敗。通知・監査の既存の経路に乗る）。
+        var resolved = first.EntryCancelResolutions.Should().ContainSingle().Subject;
+        resolved.Remediation.Should().Be(ProtectiveStopRemediation.None, "例外を投げ返すと保護喪失が 1 件も出ず無音になる");
+        resolved.Quantity.Should().Be(10);
+        // (2) 巡回は止まらない（エントリーの約定は発行される）。
+        first.Failed.Should().Be(0);
+        first.Executed.Should().ContainSingle(e => e.DecisionId == approved.DecisionId && e.Status == OrderStatus.Filled);
+        // (3) 二重に手仕舞いしない（行は Completed・同じ終端化をもう一度渡しても何もしない・次の巡回でも何もしない）。
+        broker.MarketCloseCount.Should().Be(0);
+        stops.Find(approved.DecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+        var terminal = store.FindByDecisionId(approved.DecisionId)!;
+        (await service.ResolveUnconfirmedEntryCancelAsync(terminal, CancellationToken.None)).Should().BeNull();
+        var second = await poller.PollOnceAsync(TimeSpan.FromHours(24), batchSize: 100);
+        (second.EntryCancelResolutions ?? []).Should().BeEmpty();
+        broker.MarketCloseCount.Should().Be(0);
+    }
+
     // T-10-2980
     [Fact]
     public async Task AC5_逆指値が受理されたエントリーの終端化では何もしない_否定形()

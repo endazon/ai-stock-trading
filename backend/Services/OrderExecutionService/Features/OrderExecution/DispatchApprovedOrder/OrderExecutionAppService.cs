@@ -1503,6 +1503,9 @@ public sealed class OrderExecutionAppService(
         if (!protectiveStops.TrySave(row with { State = ProtectiveStopState.Completed, UpdatedAt = clock.UtcNow }))
             return null;
 
+        // 承認は保護記録（承認時の銘柄・方向・数量・損切りライン）と終端化した記録から組み直す。DecisionId はエントリーのもの
+        // （成行手仕舞いの CloseDecisionId をここから導く＝平常の経路と同じ番号）。参照価格は承認時の価格（PlannedPrice）で、
+        // 成行の実約定はブローカー側で決まる。時刻は終端化の時刻（ExecutedAt）。
         var intent = new OrderIntent(
             row.Symbol, row.Market, row.EntrySide, row.ProductType, row.Mode, row.Quantity, terminalEntry.PlannedPrice,
             PositionEffect.Open, row.TriggerPrice, row.FxRateToBase);
@@ -1520,7 +1523,21 @@ public sealed class OrderExecutionAppService(
             "取消の確認待ちだったエントリーが約定して終端しました（約定 {Filled}/{Quantity}・{Status}）。保護逆指値は未受理のため、"
             + "約定数量を成行で手仕舞います: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} OrderId={OrderId}",
             filled, row.Quantity, terminalEntry.Status, terminalEntry.DecisionId, row.Symbol, terminalEntry.OrderId);
-        return await CloseUnprotectedPositionAsync(approved, filled, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await CloseUnprotectedPositionAsync(approved, filled, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 🔴 PR #1436 の AI レビュー: 行は Completed にした後で、終端化はこの 1 回しか観測できない。例外を投げ返すと
+            // 保護喪失が 1 件も出ず、約定した建玉が逆指値も手仕舞いも無いまま無音で残る。None（解消にも失敗・Critical）を返して
+            // 人へ知らせる（行を確認待ちへ戻しても、再び呼ばれる契機が無い）。
+            _logger.LogCritical(ex,
+                "取消の確認待ちだったエントリーの成行手仕舞いに失敗しました。**逆指値なしの建玉が残っている可能性があります。**"
+                + "証券会社の画面で建玉を確認してください: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 数量={Quantity}",
+                terminalEntry.DecisionId, row.Symbol, filled);
+            return CoverageLost(approved, ProtectiveStopRemediation.None, filled);
+        }
     }
 
     private async Task<ProtectiveStopCoverageLost> CloseUnprotectedPositionAsync(

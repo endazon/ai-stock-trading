@@ -86,3 +86,7 @@ updated: 2026-10-22
 ## 検証
 
 - `dotnet build backend/backend.slnx`、`dotnet test`（OrderExecutionService / NotificationService / AuditService）、`dotnet format --verify-no-changes`、文書系検査。
+
+［2026-10-22 追記 / PR #1436 の AI レビュー］後始末の成行手仕舞いが例外で落ちたら `None`（Critical）の保護喪失を返す（IADR-0569 決定 5）。
+試験 T-10-2983（保護喪失が出る・巡回は止まらない・二重に手仕舞わない）。変異 EC4（例外を投げ返す）で赤を確認。
+
