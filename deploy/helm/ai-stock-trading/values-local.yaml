@@ -130,11 +130,6 @@ services:
       # report の Reports__DelegatedActor__TrustedClientIds と同じ秘密鍵＝単一情報源。
       - name: RiskControls__DelegatedActor__TrustedClientIds
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
-      # 🔴 FR-10, FR-19, ADR-0070 決定 2, #1407, IADR-0564 決定 1: 閉場前の手仕舞いを経路B（PoC）の構成で有効にする（利用者裁定 2026-10-21）。
-      # 本番既定（values.yaml）は無効のまま（キーを置かない）。分数は既定の 15 分（JP・US とも）のままなので __Minutes__* は書かない。
-      # 🔴 trade-decision には書かない（書くと起動が止まる。IADR-0564 決定 1）。SC-02 で手仕舞いを保存済みなら、保存値が優先される
-      #    （構成は「保存するまでの値」。GET /risk-controls/settings/pre-close の flattenSource / flattenDrift で確かめる）。
-      - { name: PreCloseFlatten__Enabled, value: "true" }
       # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
@@ -158,6 +153,13 @@ services:
       # NFR-06, IADR-0448, IADR-0559, #1391: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # 🔴 FR-10, ADR-0009, IADR-0567, #1427: 新規建てを送る直前の停止状態の照会（values.yaml の同じ行の写し）。
+      #    写し忘れると照会が「不明」になり、新規建てが全件見送りになる。
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
 
   # ① 損切り検知の時価＋建玉源。FR-10, IADR-0066/0068。
   market-monitor:
