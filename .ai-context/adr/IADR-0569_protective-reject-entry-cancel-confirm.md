@@ -63,12 +63,16 @@ related_specs:
    行を `AwaitingEntryCancel` へ戻す案 B は採らない: (a) 再び呼ばれる契機が無い（エントリーの記録は終端化済みで約定追跡の対象から外れる）ので、戻しても再試行されず、
    黙って確認待ちに残るだけになる。(b) 例外の位置によっては成行が送られた後（予約の後・記録の前）であり得て、再試行は二重決済の危険がある
    （成行の 3 相の「届いたか不明」は `CloseUnprotectedPositionAsync` 自身が `CloseDispatchIndeterminate` で返す。ここへ来る例外は予約・記録の障害）。
+   ［2026-10-22 追記 / PR #1436 の AI 再レビュー］**Completed へ移した後の区間は取消トークンに依存させない**（`CancellationToken.None` で成行手仕舞いへ進む。
+   突合が確定後の保護レグに取消トークンを渡さないのと同じ）。ホストの停止で `OperationCanceledException` が抜けると、再び呼ばれる契機が無く無音になるため。
+   取消トークン以外の `OperationCanceledException`（通信のタイムアウト等）も握って `None` を返す。成行は従来どおり 1 回だけ送り、再試行はしないので、
+   二重発注の危険は増えない（予約は届いたか不明なら Reserved のまま残り、同じ CloseDecisionId では送り直さない）。
 
 ## 試験と変異
 
 `UnconfirmedEntryCancelTests`（受け入れ基準 AC1〜AC5）、`UnconfirmedEntryCancelCompositionTests`（Program.cs）、`NotificationFormatterTests`・`AuditEntryFactoryTests`（AC6）。
 既存の偽ブローカー（取消成功で照会は null）は、取消の後の照会で Cancelled を返すように直した（確認を前提にするのが本件の規律）。
-変異: 取消の後の照会を外す・Program.cs の口を落とす・後始末の状態の確認を外す・後始末の成行の例外を握らない——いずれも赤（テスト仕様書 FR-10 の EC1〜EC4）。
+変異: 取消の後の照会を外す・Program.cs の口を落とす・後始末の状態の確認を外す・後始末の成行の例外を握らない・Completed の後の成行へ取消トークンを渡す・`OperationCanceledException` を握らない——いずれも赤（テスト仕様書 FR-10 の EC1〜EC6）。
 
 ## 結果
 
@@ -83,3 +87,7 @@ related_specs:
 - 取消の後の照会（非終端）から確認待ちの保存までのごく短い窓で、約定追跡がエントリーの終端化を先に観測すると、後始末は起きない（行は確認待ちのまま残る。
   確認待ちの通知 `EntryCancelUnconfirmed` は出ているので無音ではないが、結果の通知が来ない＝人が確かめる。保存できなかった枝と同じ扱い）。
 - 後始末の成行手仕舞いが例外で落ちたとき（決定 5）は自動の再試行をしない。`None` の Critical 通知で人が手仕舞う。
+- **確認待ち（`AwaitingEntryCancel`）が残ると、同じ銘柄・同じ方向の別の手法の新規建てを併存の関門（`StopLossMethodCoexistenceGate`。`State != Completed`・
+  `Mechanism` が違う行を数える）が見送り続ける**（コードで確認。同じ手法の新規建て・決済は止めない）。自動では閉じない（エントリーが生きていれば約定し得るので、
+  見送る側に倒す）。解除は人の手順（運用の Runbook「エントリーの取消が未確認のまま残ったとき」：証券会社で注文と建玉を確かめてから、版を合わせて Completed にする）。
+  既存の `AwaitingEntry` の残留と同じ扱いであり、打ち切り時の自動解除は本 IADR の範囲に入れない。

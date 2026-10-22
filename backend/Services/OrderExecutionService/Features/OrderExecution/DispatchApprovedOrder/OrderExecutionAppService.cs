@@ -1525,10 +1525,14 @@ public sealed class OrderExecutionAppService(
             filled, row.Quantity, terminalEntry.Status, terminalEntry.DecisionId, row.Symbol, terminalEntry.OrderId);
         try
         {
-            return await CloseUnprotectedPositionAsync(approved, filled, cancellationToken).ConfigureAwait(false);
+            // 🔴 PR #1436 の AI 再レビュー, IADR-0569 決定5（追記）: 行を Completed にした後の区間は**取消トークンに依存させない**
+            // （OrderReservationReconciler が確定後の保護レグに渡さないのと同じ）。ホストの停止で抜けると、再び呼ばれる契機が無く、
+            // 約定した建玉が手仕舞いも通知も無いまま残る。成行は 1 回だけ送る点は変わらない（再試行はしない）。
+            return await CloseUnprotectedPositionAsync(approved, filled, CancellationToken.None).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex)
         {
+            // 取消トークン以外の OperationCanceledException（通信のタイムアウト等）も同じ扱い——握らずに投げ返すと無音になる。
             // 🔴 PR #1436 の AI レビュー: 行は Completed にした後で、終端化はこの 1 回しか観測できない。例外を投げ返すと
             // 保護喪失が 1 件も出ず、約定した建玉が逆指値も手仕舞いも無いまま無音で残る。None（解消にも失敗・Critical）を返して
             // 人へ知らせる（行を確認待ちへ戻しても、再び呼ばれる契機が無い）。

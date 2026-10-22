@@ -3,15 +3,15 @@ title: 発注経路の区別と識別 Runbook（paper 内蔵擬似約定 / moomo
 type: runbook
 status: draft
 created: 2026-07-29
-updated: 2026-10-17
+updated: 2026-10-22
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-05, FR-10, FR-11, FR-12, FR-20, NFR-09]
 adrs: [ADR-0002, ADR-0045]
-iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473, IADR-0476, IADR-0481, IADR-0362, IADR-0488, IADR-0346, IADR-0390, IADR-0463, IADR-0529, IADR-0538, IADR-0551]
+iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473, IADR-0476, IADR-0481, IADR-0362, IADR-0488, IADR-0346, IADR-0390, IADR-0463, IADR-0529, IADR-0538, IADR-0551, IADR-0569]
 specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260927_1051_release-gate-per-trading-env, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1148_redact-retmsg-account-id, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261003_856_indeterminate-dispatch-fault-injection, 20261006_1173_before-send-reservation-hold, 20261015_856_held-warning-throttle-and-ghost-s1, 20261017_1343_release-closes-entry-protection]
-issues: [#132, #268, #269, #270, #768, #847, #848, #853, #856, #1013, #1051, #1135, #1148, #1048, #1173, #1343, planning#676]
+issues: [#1422, #132, #268, #269, #270, #768, #847, #848, #853, #856, #1013, #1051, #1135, #1148, #1048, #1173, #1343, planning#676]
 -->
 
 
@@ -249,7 +249,7 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
 kubectl -n platform-infra exec -it deploy/postgres -- psql -U ai -d order_execution_svc
 ```
 
-列挙値: 予約の `State` 0=Reserved / 1=Completed / 2=Forgone。保護の `State` 0=Active / 1=Completed / 2=AwaitingEntry。
+列挙値: 予約の `State` 0=Reserved / 1=Completed / 2=Forgone。保護の `State` 0=Active / 1=Completed / 2=AwaitingEntry / 3=AwaitingEntryCancel（取消の確認待ち）。
 `Mechanism` 0=S0 / 1=S1 / 2=S2 / 3=S3。`BrokerProvider` 0=内蔵 paper / 1=moomoo REAL / 2=moomoo SIMULATE。
 
 1. **読み取りで確かめる**（`order_execution_svc`。どれか 1 つでも期待と違えば止める）:
@@ -535,6 +535,39 @@ ET の日付が変わる（**ET 0 時**）まで次の 3 つへ算入する:
    SELECT "DecisionId", "OrderId", "Status", "FilledQuantity", "ExecutedAt" FROM executed_orders
    WHERE "DecisionId" = '<通知の EntryDecisionId>';
    ```
+
+#### エントリーの取消が未確認のまま残ったとき（通知「保護逆指値が成立せず、エントリーの取消を確認中」）
+
+**対象**: 保護逆指値（S0 / S3）が未受理で、未約定のエントリーへ取消を送ったが、照会で終端を確かめられなかったもの。保護の記録は
+`State = 3`（取消の確認待ち）で残る。通常は約定の追跡がエントリーの終了を確かめた時点（約 30 秒ごとの巡回）で閉じ、結果の通知
+（「エントリー注文を取り消しました」または成行手仕舞いの結果）がもう 1 回届く。**結果の通知が届かない**ときにこの手順を使う
+（約定の追跡が 24 時間で打ち切られた・確認待ちの保存より前に終了を観測した・後始末に失敗した等）。
+
+- **残っている間に効いていること**: 常駐ガードの巡回の対象ではない（逆指値も成行も出ない）。**同じ銘柄・同じ方向の新規建てを、別の損切りの
+  手法（S0 の行なら S1・S2・S3）で出すと「別の損切りの実行機構の建玉が残っている」で見送る**（同じ手法なら見送らない）。それ以外の新規建て・
+  決済は止めない。**システムは自動で閉じない**（エントリーが生きていれば約定し得るため、見送る側に倒す）。
+
+1. 証券会社の画面でエントリー注文（`executed_orders."OrderId"`）と建玉を確かめる。注文がまだ生きていれば手で取り消し、終わるまで待つ。
+   約定して建玉が残っていれば、**手で逆指値を置くか手仕舞う**（システムはこの建玉を巡回しない）。
+2. 読み取りで確かめる（`order_execution_svc`。期待と違えば止める）:
+
+   ```sql
+   -- 保護の記録: 1 行・State=3。Version を控える
+   SELECT "EntryDecisionId", "Symbol", "Mechanism", "State", "Quantity", "Version", "UpdatedAt"
+   FROM protective_stop_orders WHERE "EntryDecisionId" = '<DecisionId>';
+   -- エントリーの発注記録: 1 行（Status と FilledQuantity を控える）
+   SELECT "OrderId", "Status", "FilledQuantity", "ExecutedAt" FROM executed_orders WHERE "DecisionId" = '<DecisionId>';
+   ```
+
+3. 手順 1 で注文が終わり、建玉の扱いが済んだと確かめてから閉じる（控えた Version と一致するときだけ書く）:
+
+   ```sql
+   UPDATE protective_stop_orders SET "State" = 1, "UpdatedAt" = now(), "Version" = "Version" + 1
+   WHERE "EntryDecisionId" = '<DecisionId>' AND "State" = 3 AND "Version" = <控えた Version>;
+   -- 1 行更新されたこと。0 行なら並行に閉じられている（何もしない）
+   ```
+
+- 版を戻すとき: 旧い版は `State = 3` を知らないが、未完了として数える（見送りは続く）だけで、巡回も後始末もしない。戻す前に上の手順で閉じておく。
 
 #### 「送信結果待ち」を扱う版を配備する・戻すとき（順序）
 

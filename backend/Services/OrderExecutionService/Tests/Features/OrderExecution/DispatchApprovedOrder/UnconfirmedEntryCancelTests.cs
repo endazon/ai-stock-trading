@@ -273,6 +273,87 @@ public class UnconfirmedEntryCancelTests
         broker.MarketCloseCount.Should().Be(0);
     }
 
+    // T-10-2984
+    [Fact]
+    public async Task AC4_取消トークンが取り消されても_Completedにした後の成行手仕舞いは最後まで行う()
+    {
+        // 行を Completed にした後で取消（ホストの停止）が抜けると、再び呼ばれる契機が無く、建玉が手仕舞いも通知も無いまま残る。
+        var (scripted, store, stops, reservations, approved) = await AwaitingCancelAsync();
+        var broker = new CancellationObservingBroker(scripted);
+        var service = new AppSvc(broker, store, reservations, new FakeClock(), stops, brokerPositions: scripted);
+        var terminal = store.FindByDecisionId(approved.DecisionId)! with { Status = OrderStatus.Filled, FilledQuantity = 10 };
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var resolved = await service.ResolveUnconfirmedEntryCancelAsync(terminal, cts.Token);
+
+        resolved!.Remediation.Should().Be(ProtectiveStopRemediation.PositionClosed);
+        scripted.MarketCloseCount.Should().Be(1, "成行は 1 本だけ");
+        (await service.ResolveUnconfirmedEntryCancelAsync(terminal, CancellationToken.None)).Should().BeNull();
+        scripted.MarketCloseCount.Should().Be(1);
+    }
+
+    // T-10-2984
+    [Fact]
+    public async Task AC4_成行手仕舞いがOperationCanceledExceptionで落ちても_無音にせず解消にも失敗を返し再送しない()
+    {
+        // 通信のタイムアウト等は OperationCanceledException（TaskCanceledException）で現れ得る。送った後かもしれないので再送しない。
+        var (scripted, store, stops, reservations, approved) = await AwaitingCancelAsync();
+        var broker = new CancellationObservingBroker(scripted) { MarketThrowsCanceled = true };
+        var service = new AppSvc(broker, store, reservations, new FakeClock(), stops, brokerPositions: scripted);
+        var terminal = store.FindByDecisionId(approved.DecisionId)! with { Status = OrderStatus.Filled, FilledQuantity = 10 };
+
+        var resolved = await service.ResolveUnconfirmedEntryCancelAsync(terminal, CancellationToken.None);
+
+        resolved!.Remediation.Should().Be(ProtectiveStopRemediation.None);
+        broker.MarketAttempts.Should().Be(1);
+        stops.Find(approved.DecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+        (await service.ResolveUnconfirmedEntryCancelAsync(terminal, CancellationToken.None)).Should().BeNull();
+        broker.MarketAttempts.Should().Be(1, "二重に手仕舞わない");
+    }
+
+    // 逆指値が未受理・取消は確かめられず、確認待ちで残った状態を作る。
+    private static async Task<(StopLegScriptedBroker, InMemoryExecutedOrderStore, InMemoryProtectiveStopOrderStore,
+        InMemoryOrderReservationStore, OrderApproved)> AwaitingCancelAsync()
+    {
+        var scripted = RejectingBroker();
+        scripted.Orders["entry-1"] = null;
+        scripted.Positions = [];
+        var store = new InMemoryExecutedOrderStore();
+        var stops = new InMemoryProtectiveStopOrderStore();
+        var reservations = new InMemoryOrderReservationStore();
+        var approved = Approved();
+        await new AppSvc(scripted, store, reservations, new FakeClock(), stops, brokerPositions: scripted).ExecuteAsync(approved);
+        stops.Find(approved.DecisionId)!.State.Should().Be(ProtectiveStopState.AwaitingEntryCancel);
+        return (scripted, store, stops, reservations, approved);
+    }
+
+    // 成行の発注で取消トークンを守る（取り消されていれば OperationCanceledException）ブローカー。他は委譲する。
+    private sealed class CancellationObservingBroker(StopLegScriptedBroker inner)
+        : AiStockTrading.Shared.Contracts.Ports.IBrokerAdapter, AiStockTrading.Shared.Contracts.Ports.IProtectiveOrderBroker
+    {
+        public bool MarketThrowsCanceled { get; init; }
+        public int MarketAttempts { get; private set; }
+        public BrokerProvider Provider => inner.Provider;
+
+        public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default) => inner.PlaceOrderAsync(intent, ct);
+        public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) => inner.GetOrderAsync(orderId, ct);
+        public Task CancelOrderAsync(string orderId, CancellationToken ct = default) => inner.CancelOrderAsync(orderId, ct);
+
+        public Task<BrokerOrder> PlaceStopOrderAsync(
+            OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken ct = default) =>
+            inner.PlaceStopOrderAsync(closeIntent, triggerPrice, decisionId, ct);
+
+        public Task<BrokerOrder> PlaceMarketOrderAsync(OrderIntent closeIntent, Guid decisionId, CancellationToken ct = default)
+        {
+            MarketAttempts++;
+            if (MarketThrowsCanceled)
+                throw new TaskCanceledException("返信待ちのタイムアウト（テスト）");
+            ct.ThrowIfCancellationRequested();
+            return inner.PlaceMarketOrderAsync(closeIntent, decisionId, ct);
+        }
+    }
+
     // T-10-2980
     [Fact]
     public async Task AC5_逆指値が受理されたエントリーの終端化では何もしない_否定形()
