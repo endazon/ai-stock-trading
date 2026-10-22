@@ -3,6 +3,7 @@ using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TradeDecisionService.Features.TradeDecision;
@@ -162,6 +163,8 @@ public class RiskManagementGrpcWiringTests
                 cfg.AddInMemoryCollection(settings);
             });
             builder.ConfigureServices(services => services.DisableAllExternalWolverineTransports());
+            // 閉場前の手仕舞いの常駐が実時刻の窓でサイジング文脈を照会し、提供側の呼び出し数に混ざるのを止める（TestHostClock）。
+            builder.ConfigureTestServices(services => services.UseFixedClock(TestHostClock.OutsideMarketHours));
         }
     }
 }

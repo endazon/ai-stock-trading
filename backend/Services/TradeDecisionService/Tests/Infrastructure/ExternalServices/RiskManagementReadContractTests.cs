@@ -146,7 +146,11 @@ public class RiskManagementReadContractTests
                 // ADR-0013, IADR-0129, #354: 実 RabbitMQ を避けて Wolverine の外部トランスポートを無効化する。
                 services.DisableAllExternalWolverineTransports());
             builder.ConfigureTestServices(services =>
-                services.AddHttpClient("risk").ConfigurePrimaryHttpMessageHandler(() => riskHandler));
+            {
+                services.AddHttpClient("risk").ConfigurePrimaryHttpMessageHandler(() => riskHandler);
+                // 閉場前の手仕舞いの常駐が実時刻の窓でサイジング文脈を照会し、経路の表明に混ざるのを止める（TestHostClock）。
+                services.UseFixedClock(TestHostClock.OutsideMarketHours);
+            });
         }
     }
 }
