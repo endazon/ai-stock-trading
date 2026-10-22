@@ -178,6 +178,8 @@ public class GrpcOrderExecutionReadTests
         {
             grpc.Should().BeEquivalentTo(rest, "解釈は REST と同じ 1 つ");
             grpc!.Covered.Should().Be(covered.Value);
+            // T-10-2993, #1434, IADR-0572 決定2: ブローカーの決済方向の建玉を線上で運ぶ（REST と同じ値）。
+            grpc.BrokerClosableQuantity.Should().Be(10);
         }
 
         behavior.LastInFlightCloses!.CloseSide.Should().Be(Proto.TradeSide.Sell, "C# の Sell（1）を線上の名前で運ぶ");
@@ -204,6 +206,19 @@ public class GrpcOrderExecutionReadTests
         };
 
         (await GetGrpcAsync(respond)).Coverage.Should().BeNull();
+    }
+
+    // 🔴 T-10-2993, #1434, IADR-0572 決定2: 線上の closable_quantity の欠落（旧い送り手・照会していない）は不明（null）。0 と読まない。
+    [Fact]
+    public async Task T_10_2993_線上のブローカーの建玉の欠落は不明()
+    {
+        var notCovered = OrderExecutionReadWireMapping.ToProto(new InFlightClosesView(
+            "AAPL", Market.UnitedStates, TradeSide.Sell, InFlightClosesStatus.NotCovered, null, 0, 0, [], []));
+        notCovered.HasClosableQuantity.Should().BeTrue("送り手は照会した値（0）を書く");
+
+        (await GetGrpcAsync(OrderExecutionReadStubBehavior.Returns(notCovered))).Coverage!.BrokerClosableQuantity.Should().Be(0);
+        (await GetGrpcAsync(OrderExecutionReadStubBehavior.Returns(Mutate(notCovered, r => r.ClearClosableQuantity()))))
+            .Coverage!.BrokerClosableQuantity.Should().BeNull();
     }
 
     private static T Mutate<T>(T message, Action<T> change)

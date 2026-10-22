@@ -78,6 +78,29 @@ public class InFlightCloseProviderTests
 
         read.Should().NotBeNull();
         read!.Covered.Should().BeFalse();
+        read.BrokerClosableQuantity.Should().Be(13, "#1434, IADR-0572 決定2: ブローカーの決済方向の建玉も読む");
+    }
+
+    // 🔴 T-10-2993, FR-04, #1434, IADR-0572 決定2: ブローカーの決済方向の建玉（ClosableQuantity）を送り手の本物の型の本文から読む。
+    // 0 は 0（建玉なし）、欠落（照会していない・旧い送り手）と負（契約外）は null（不明）——0 と読むと LLM を省く向きへ誤る。
+    [Theory]
+    [InlineData("zero", 0)]
+    [InlineData("missing", null)]
+    [InlineData("negative", null)]
+    public async Task T_10_2993_ブローカーの決済方向の建玉を読み欠落と負は不明(string shape, int? expected)
+    {
+        var node = JsonNode.Parse(Body(Covered() with { Status = InFlightClosesStatus.NotCovered, InFlightQuantity = 0, ClosableQuantity = 0 }))!.AsObject();
+        if (shape == "missing")
+            node.Remove("closableQuantity");
+        else if (shape == "negative")
+            node["closableQuantity"] = -1;
+
+        var read = await Http(new StubHandler(HttpStatusCode.OK, node.ToJsonString()))
+            .GetAsync("AAPL", Market.UnitedStates, TradeSide.Sell, TestContext.Current.CancellationToken);
+
+        read.Should().NotBeNull();
+        read!.Covered.Should().BeFalse();
+        read.BrokerClosableQuantity.Should().Be(expected);
     }
 
     // 🔴 見送る向きの読み違いを不明へ倒す: 別の銘柄・市場・方向の答え、送り手の Unknown、項目の欠落、未知の状態、覆うのに株数・注文 ID が無い。

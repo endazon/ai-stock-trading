@@ -255,7 +255,7 @@ public sealed class TradeDecisionAppService(
         return Skip(trigger, ToSkipReason(reason));
     }
 
-    // #1092, IADR-0462 決定4: 台帳の語彙（#1113・#1176・#1174・#1286・#1338 で 1 値ずつ足した）→ 観測の語彙（DecisionSkipReason）。名前は同じ（試験が固定する）。
+    // #1092, IADR-0462 決定4: 台帳の語彙（#1113・#1176・#1174・#1286・#1338・#1434 で 1 値ずつ足した）→ 観測の語彙（DecisionSkipReason）。名前は同じ（試験が固定する）。
     internal static DecisionSkipReason ToSkipReason(DecisionForgoneBeforeLlmReason reason) => reason switch
     {
         DecisionForgoneBeforeLlmReason.DailyPolicyUnconfirmed => DecisionSkipReason.DailyPolicyUnconfirmed,
@@ -267,6 +267,7 @@ public sealed class TradeDecisionAppService(
         DecisionForgoneBeforeLlmReason.EntryCapacityBelowOneShare => DecisionSkipReason.EntryCapacityBelowOneShare,
         DecisionForgoneBeforeLlmReason.ExitOnlyWithoutHolding => DecisionSkipReason.ExitOnlyWithoutHolding,
         DecisionForgoneBeforeLlmReason.InFlightCloseCoversPosition => DecisionSkipReason.InFlightCloseCoversPosition,
+        DecisionForgoneBeforeLlmReason.BrokerPositionClosed => DecisionSkipReason.BrokerPositionClosed,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "LLM を呼ぶ前の見送りの理由ではない"),
     };
 
@@ -520,19 +521,39 @@ public sealed class TradeDecisionAppService(
         //     LLM を呼ぶ（逆方向の判断を塞がない）。覆わない（部分。建玉を超える残りの決済が出せる）・不明・照会の失敗も LLM を呼ぶ。
         // 照会はブローカーへの往復を伴い得るので、手元の値で決まる買い増しの判定を先に置く（成り立たなければ照会しない）。
         // 🔴 **ゲートは残す**（両端で止める）。ここで省くのは費用の最適化であって統制ではない。
+        //
+        // 🔴 FR-04, FR-10, #1434, IADR-0572 決定2: **判断由来の決済が約定した直後**（発注執行がブローカーの決済方向の建玉を 0 と観測した）も同じ形で省く。
+        // 判断の保有（プロンプト・LLM の後の Sell の関所）の読み元はどちらも台帳（リスク管理の open-positions）であり、約定追跡（30 秒周期）が約定を
+        // 書いて射影が届くまで遅れる。この照会はその間にブローカーを直接見ている唯一の読み元である（HOOD 2026-10-21: 照会は建玉 0 を観測したのに
+        // NotCovered を「LLM を呼ぶ」と読み、一次・二次を呼んだ後に台帳が追いついて held=0 で見送った）。建玉 0 なら決済の結論は発注執行の決済のゲート
+        // （建玉なし）が見送る。不明（null・照会していない・旧い送り手）・建玉が正は従来どおり LLM を呼ぶ。
         if (heldPosition is { SignedQuantity: not 0 } inFlightHeld
             && AddOnKnownForgone(trigger, fxReading, workingEntries, addOnBlockers, context, currentPrice, rateToBase)
             && await GetInFlightCloseSafeAsync(
                     trigger, inFlightHeld.IsLong ? TradeSide.Sell : TradeSide.Buy, cancellationToken).ConfigureAwait(false)
-                is { Covered: true } coverage)
+                is { } coverage)
         {
-            logger.LogInformation(
-                "判断由来の決済が処理中のまま建玉を覆い、買い増しも必ず見送られるため LLM を呼ばずに見送り（ゲートは不変・IADR-0535）: " +
-                "{Symbol} held={Held} inFlight={InFlight} orders={OrderIds}",
-                trigger.Symbol, inFlightHeld.SignedQuantity, coverage.InFlightQuantity, string.Join(",", coverage.OrderIds));
-            return await SkipBeforeLlmAsync(
-                    trigger, DecisionForgoneBeforeLlmReason.InFlightCloseCoversPosition, cancellationToken)
-                .ConfigureAwait(false);
+            if (coverage.Covered)
+            {
+                logger.LogInformation(
+                    "判断由来の決済が処理中のまま建玉を覆い、買い増しも必ず見送られるため LLM を呼ばずに見送り（ゲートは不変・IADR-0535）: " +
+                    "{Symbol} held={Held} inFlight={InFlight} orders={OrderIds}",
+                    trigger.Symbol, inFlightHeld.SignedQuantity, coverage.InFlightQuantity, string.Join(",", coverage.OrderIds));
+                return await SkipBeforeLlmAsync(
+                        trigger, DecisionForgoneBeforeLlmReason.InFlightCloseCoversPosition, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (coverage.BrokerClosableQuantity == 0)
+            {
+                logger.LogInformation(
+                    "ブローカーの決済方向の建玉が 0（決済の約定の直後で台帳が未反映）で、買い増しも必ず見送られるため LLM を呼ばずに見送り" +
+                    "（ゲートは不変・IADR-0572）: {Symbol} held={Held}",
+                    trigger.Symbol, inFlightHeld.SignedQuantity);
+                return await SkipBeforeLlmAsync(
+                        trigger, DecisionForgoneBeforeLlmReason.BrokerPositionClosed, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
         // FR-08, IADR-0072: 収集情報・判断根拠を KB から RAG 取得して判断文脈に加える（既定＝空＝文脈なし＝現行動作）。

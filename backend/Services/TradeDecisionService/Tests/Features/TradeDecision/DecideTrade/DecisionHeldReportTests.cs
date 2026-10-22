@@ -327,13 +327,14 @@ public class DecisionHeldReportTests
         }
     }
 
-    // 判断後の 12 地点と判断前の 9 地点で語彙 21 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
+    // 判断後の 12 地点と判断前の 10 地点で語彙 22 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
     // 判断前の 5 地点目〔#1113 の EntryBlockedByRiskControls〕は EntryBlockersBeforeLlmTests が、判断後の 10 地点目
     // 〔T-10-1907, #1130 の AddOnBlockedByRiskControls〕は HeldAddOnBlockersTests が固定する。#1176 の 2 値〔判断前の EntryCapacityBelowMinimumNotional・判断後の
     // SizedBelowMinimumNotional〕は MinimumEntryNotionalDecisionTests が、#1174 の判断前の EntryCapacityBelowOneShare は OneShareCapacityDecisionTests が固定する）。
     [Fact]
-    public void 判断前と判断後の見送りは語彙21値を過不足なく覆う()
+    public void 判断前と判断後の見送りは語彙22値を過不足なく覆う()
     {
+        // T-10-2994, #1434, IADR-0572 決定2: 判断前に BrokerPositionClosed を足した（21 → 22。振る舞いは InFlightCloseBeforeLlmTests）。
         // T-10-2651, #1338, IADR-0535 決定1: 判断前に InFlightCloseCoversPosition を足した（20 → 21。振る舞いは InFlightCloseBeforeLlmTests）。
         // T-10-2502, #1286, IADR-0521 決定 2: 判断前に ExitOnlyWithoutHolding を足した（19 → 20）。
         // T-10-2496, #1286, IADR-0521 決定 2: 判断後に ExitOnlyOpenOutsideWatchlist を足した（18 → 19。振る舞いは HeldOutsideWatchlistExitOnlyTests）。
@@ -345,7 +346,7 @@ public class DecisionHeldReportTests
             DecisionSkipReason.FxRateUnresolved, DecisionSkipReason.FxRateStaleNoHolding,
             DecisionSkipReason.EntryBlockedByRiskControls, DecisionSkipReason.EntryCapacityBelowMinimumNotional,
             DecisionSkipReason.EntryCapacityBelowOneShare, DecisionSkipReason.ExitOnlyWithoutHolding,
-            DecisionSkipReason.InFlightCloseCoversPosition,
+            DecisionSkipReason.InFlightCloseCoversPosition, DecisionSkipReason.BrokerPositionClosed,
         ];
         DecisionSkipReason[] after =
         [

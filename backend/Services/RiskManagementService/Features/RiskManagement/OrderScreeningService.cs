@@ -281,8 +281,9 @@ public sealed class OrderScreeningService(
     }
 
     // FR-10, FR-19, #1396, IADR-0561 決定 2: その市場の当日の閉場（MarketHours。休場日は null＝締め切りに入らない）と効いている分数（#1407 で保存値を加えた）。
+    // #1433, IADR-0572 決定1: 組み立ては新規建ての可否の口と同じ関数（PreCloseEntryCutoffSupply.For）。
     private static PreCloseEntryCutoffSupply PreCloseCutoffFor(PreCloseEntryCutoffSettings preCloseCutoff, Market market, DateTimeOffset now) =>
-        new(now, MarketHours.SessionCloseOn(market, now), preCloseCutoff.MinutesFor(market));
+        PreCloseEntryCutoffSupply.For(preCloseCutoff, market, now);
 
     private static DateTimeOffset TruncateToMicroseconds(DateTimeOffset value) =>
         value.AddTicks(-(value.Ticks % TimeSpan.TicksPerMicrosecond));

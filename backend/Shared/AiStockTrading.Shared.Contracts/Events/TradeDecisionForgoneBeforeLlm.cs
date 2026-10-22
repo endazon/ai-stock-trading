@@ -11,7 +11,8 @@ namespace AiStockTrading.Shared.Contracts.Events;
 //
 //   - Reason: 9 値（`DecisionSkipReason` のうち LLM より前の全部。名前は同じ）。#1113 / IADR-0463 で EntryBlockedByRiskControls を、
 //     #1176 / IADR-0495 で EntryCapacityBelowMinimumNotional を、#1174 / IADR-0500 で EntryCapacityBelowOneShare を、
-//     #1286 / IADR-0521 で ExitOnlyWithoutHolding を、#1338 / IADR-0535 で InFlightCloseCoversPosition を末尾へ足した。
+//     #1286 / IADR-0521 で ExitOnlyWithoutHolding を、#1338 / IADR-0535 で InFlightCloseCoversPosition を、#1434 / IADR-0572 で BrokerPositionClosed を
+//     末尾へ足した。
 //   - CycleTrigger: `BusinessMetrics.TriggerScheduled` / `TriggerPriceMovement` の語彙（TradeDecisionHeld と同じ）。
 //   - 監査台帳だけが購読する（通知しない。日報の未確定の通知は DailyPolicyUnconfirmed が営業日ごとに出す）。
 public record TradeDecisionForgoneBeforeLlm(
@@ -73,4 +74,11 @@ public enum DecisionForgoneBeforeLlmReason
     /// 発注執行が <c>InFlightCloseCoversPosition</c> で見送り、新規建ての結論も見送られるため、LLM の結論に依らず発注にならない。
     /// </summary>
     InFlightCloseCoversPosition,
+
+    /// <summary>
+    /// FR-04, FR-10, #1434, IADR-0572 決定2: 保有中（台帳）の銘柄で、処理中の決済の照会に発注執行が<b>ブローカーの決済方向の建玉 0</b>と答え
+    /// （判断由来の決済が約定した直後で、台帳へ約定の射影がまだ届いていない）、かつ買い増し・売り増しが LLM の後で必ず見送られると分かっている。
+    /// 決済の結論は発注執行の決済のゲートが建玉なしで見送り、新規建ての結論も見送られるため、LLM の結論に依らず発注にならない。
+    /// </summary>
+    BrokerPositionClosed,
 }

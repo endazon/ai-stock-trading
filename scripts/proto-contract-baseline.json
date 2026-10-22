@@ -720,6 +720,11 @@
         },
         "GetInFlightClosesResponse": {
           "fields": {
+            "closable_quantity": {
+              "number": 8,
+              "type": "int32",
+              "label": "optional"
+            },
             "close_side": {
               "number": 3,
               "type": "TradeSide",
@@ -3060,7 +3065,9 @@
             "ENTRY_BLOCKER_MARKET_DISABLED": 9,
             "ENTRY_BLOCKER_MAX_DRAWDOWN_REACHED": 7,
             "ENTRY_BLOCKER_MAX_POSITIONS_EXCEEDED": 5,
+            "ENTRY_BLOCKER_PRE_CLOSE_ENTRY_CUTOFF": 11,
             "ENTRY_BLOCKER_STOPPED_OUT_SAME_DAY": 3,
+            "ENTRY_BLOCKER_THEME_CONCENTRATION_EXCEEDED": 12,
             "ENTRY_BLOCKER_TRADING_PAUSED": 2,
             "ENTRY_BLOCKER_UNSPECIFIED": 0
           },

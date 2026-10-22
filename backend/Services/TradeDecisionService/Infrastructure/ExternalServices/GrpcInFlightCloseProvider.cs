@@ -40,7 +40,8 @@ public sealed class GrpcInFlightCloseProvider(
             : HttpInFlightCloseProvider.Interpret(ToDto(response), symbol, market, closeSide, logger);
     }
 
-    // ClosableQuantity・DecisionIds は判定に使わない（REST の受け手も読まない）ため線上に無い＝null。
+    // DecisionIds は判定に使わない（REST の受け手も読まない）ため線上に無い＝null。
+    // #1434, IADR-0572 決定2: ClosableQuantity は読む（欠落＝旧い送り手・照会していない＝null）。
     internal static HttpInFlightCloseProvider.InFlightClosesDto ToDto(Proto.GetInFlightClosesResponse response) =>
         new(
             response.HasSymbol ? response.Symbol : null,
@@ -48,7 +49,7 @@ public sealed class GrpcInFlightCloseProvider(
             OrderExecutionWire.Side(response.CloseSide),
             OrderExecutionWire.Status(response.Status),
             response.HasUnknownReason ? response.UnknownReason : null,
-            ClosableQuantity: null,
+            response.HasClosableQuantity ? response.ClosableQuantity : null,
             response.HasInFlightQuantity ? response.InFlightQuantity : null,
             [.. response.OrderIds.Select(id => (string?)id)],
             DecisionIds: null);
