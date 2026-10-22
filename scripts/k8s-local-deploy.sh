@@ -34,6 +34,11 @@
 #     ESO に取り込ませてよいと判断したときだけ --adopt-existing-secrets で警告に下げて進める。
 #   - 従来経路（AST_ESO=0）: ESO の無いクラスタ向け。下記の env → ast-secrets 同期と discord.bot.* の values 経路。
 #   どちらでも helm へ externalSecrets.enabled / appSecrets.enabled を明示する（プロファイルとの食い違いを残さない）。
+# NFR, IADR-0570（Refs GHSA-j4qv-2w99-xg5p）: **メッシュ参入（Istio のサイドカー注入）は AST_MESH_INJECTION=1|0 で選ぶ。**
+#   未指定の再実行は現行の helm リリースの mesh.sidecarInjection.enabled を引き継ぎ、新規・未宣言なら無効（従来どおり）。
+#   有効なら名前空間へ istio-injection=enabled を貼り（chart は namespace.create=false で描くため貼らない）、
+#   明示の 0 なら剥がす。状態が変わった回は OpenD を除く全 Deployment を作り直す（絞り込みがあっても）。
+#   OpenD は常に注入対象外（chart が mesh.sidecarInjection.enabled に依らず注釈を描き、起動器は excludeOpend=true を渡す）。
 # #267, IADR-0111 / #132, IADR-0060: ブローカ階層・OpenD 常駐配備は BROKER_TIER（"" / paper / moomoo-sim）/
 #   OPEND_ENABLED（true / false）で切り替える。**未設定なら前回リリースの値を引き継ぐ**（#626, IADR-0283）。
 #   明示的な空指定で前回の非空値を消す場合は --force-empty-values が要る（ast-secrets と同型）。
@@ -653,6 +658,115 @@ resolve_ast_value_overrides() {
   return 0
 }
 
+# NFR, IADR-0570（Refs GHSA-j4qv-2w99-xg5p）: メッシュ参入（Istio のサイドカー注入）の受け口。
+#   AST_MESH_INJECTION=1|0（true|false も可）。優先順位は「明示 → 現行の helm リリースの値 → 既定（無効）」。
+#   未指定の再実行は現行の mesh.sidecarInjection.enabled を引き継ぐ（手で与えた値が次の配備で外れない）。
+#   それ以外の値（空を含む）は exit 2。前回値が真偽値として読めなければ止める（黙って既定へ戻さない）。
+#   決めた結果は次の変数に置く（helm へ渡す値・名前空間のラベル・手順 5 の restart の範囲が読む）:
+#     AST_MESH_INJECTION_EFFECTIVE  true / false
+#     AST_MESH_INJECTION_SOURCE     explicit / inherited / default（default は新規・未宣言＝helm へ何も足さない）
+#     AST_MESH_INJECTION_PREV       前回リリースの値（true / false / 空）
+#     AST_MESH_OVERRIDES            helm へ足す --set 列
+#   🔴 有効なときは mesh.sidecarInjection.excludeOpend=true を必ず渡す（OpenD は常に注入対象外。プロファイルの上書きも許さない）。
+AST_MESH_KEY="mesh.sidecarInjection.enabled"
+resolve_ast_mesh_injection() {
+  local prev
+  AST_MESH_INJECTION_EFFECTIVE=false
+  AST_MESH_INJECTION_SOURCE=default
+  AST_MESH_OVERRIDES=()
+  prev="$(ast_prev_release_value "$AST_MESH_KEY")"
+  case "$prev" in
+    ""|true|false) AST_MESH_INJECTION_PREV="$prev" ;;
+    # 読めない前回値は「不明」として持つ（明示で進んだとき、状態が変わったものとして全件を作り直す）。
+    *) AST_MESH_INJECTION_PREV=unknown ;;
+  esac
+
+  if [ -n "${AST_MESH_INJECTION+set}" ]; then
+    case "$AST_MESH_INJECTION" in
+      1|true) AST_MESH_INJECTION_EFFECTIVE=true ;;
+      0|false) AST_MESH_INJECTION_EFFECTIVE=false ;;
+      *)
+        echo "ERROR: AST_MESH_INJECTION は 1（注入する）か 0（注入しない）を指定してください（値: '${AST_MESH_INJECTION}'）。IADR-0570" >&2
+        return 2
+        ;;
+    esac
+    AST_MESH_INJECTION_SOURCE=explicit
+  elif [ "$AST_MESH_INJECTION_PREV" = "unknown" ]; then
+    {
+      echo "ERROR: 現行の helm リリースの ${AST_MESH_KEY} を真偽値として読めません（値: ${prev}）。"
+      echo "       未指定のまま進むと既定（無効）へ戻るおそれがあるため止めます（IADR-0570）。"
+      echo "       AST_MESH_INJECTION=1（注入する）か AST_MESH_INJECTION=0（注入しない）を明示して再実行してください。"
+    } >&2
+    return 1
+  elif [ -n "$prev" ]; then
+    AST_MESH_INJECTION_EFFECTIVE="$prev"
+    AST_MESH_INJECTION_SOURCE=inherited
+    echo "  引き継ぎ: ${AST_MESH_KEY}=${prev}（前回リリースの値。\$AST_MESH_INJECTION 未指定）" >&2
+  else
+    # 新規・未宣言: 何も足さない（chart 既定の false。従来と同じ helm の引数）。
+    echo "  mesh: サイドカー注入は無効（既定。\$AST_MESH_INJECTION 未指定・前回リリースに宣言なし）"
+    return 0
+  fi
+
+  AST_MESH_OVERRIDES+=("--set" "${AST_MESH_KEY}=${AST_MESH_INJECTION_EFFECTIVE}")
+  if [ "$AST_MESH_INJECTION_EFFECTIVE" = "true" ]; then
+    AST_MESH_OVERRIDES+=("--set" "mesh.sidecarInjection.excludeOpend=true")
+  fi
+  echo "  mesh: サイドカー注入は ${AST_MESH_INJECTION_EFFECTIVE}（${AST_MESH_INJECTION_SOURCE}）"
+  return 0
+}
+
+# NFR, IADR-0570: 名前空間の注入ラベル（istio-injection=enabled）を起動器が貼る・剥がす。
+#   起動器は namespace.create=false で chart を描くため、chart はラベルを描かない（IADR-0314 決定1）。
+#   - 有効 → 貼る（無ければ）。
+#   - 明示の無効（AST_MESH_INJECTION=0）→ 剥がす（あれば）。
+#   - それ以外（引き継いだ無効・既定）→ 触らない。手で貼ったラベルが残っていれば告げるだけにする。
+#   注入の状態が変わった回（ラベルを貼った・剥がした、または chart の値が前回から変わった）は
+#   AST_MESH_INJECTION_CHANGED=1 にする（手順 5 の restart を全件へ広げる。注入は Pod の作成時にしか効かない）。
+#   OpenD は restart しない（ast_rollout_restart_workers が除外する）。注入対象外の注釈は chart が常に描く。
+ast_apply_mesh_namespace_label() {
+  local cur prev_eff
+  AST_MESH_INJECTION_CHANGED=0
+  if ! cur="$(kubectl get namespace "$NS" -o 'jsonpath={.metadata.labels.istio-injection}')"; then
+    echo "  ERROR: 名前空間 $NS のラベルを読めませんでした。中断します（IADR-0570）。" >&2
+    return 1
+  fi
+  prev_eff="${AST_MESH_INJECTION_PREV:-false}"
+  [ -z "$prev_eff" ] && prev_eff=false
+  if [ "$AST_MESH_INJECTION_SOURCE" != "default" ] && [ "$AST_MESH_INJECTION_EFFECTIVE" != "$prev_eff" ]; then
+    AST_MESH_INJECTION_CHANGED=1
+  fi
+
+  if [ "$AST_MESH_INJECTION_EFFECTIVE" = "true" ]; then
+    if [ "$cur" != "enabled" ]; then
+      kubectl label namespace "$NS" istio-injection=enabled --overwrite >/dev/null || {
+        echo "  ERROR: 名前空間 $NS へ istio-injection=enabled を貼れませんでした。中断します（IADR-0570）。" >&2
+        return 1
+      }
+      AST_MESH_INJECTION_CHANGED=1
+      echo "  mesh: 名前空間 $NS へ istio-injection=enabled を貼った"
+    else
+      echo "  mesh: 名前空間 $NS は istio-injection=enabled のまま"
+    fi
+  elif [ "$AST_MESH_INJECTION_SOURCE" = "explicit" ]; then
+    if [ -n "$cur" ]; then
+      kubectl label namespace "$NS" istio-injection- >/dev/null || {
+        echo "  ERROR: 名前空間 $NS の istio-injection を剥がせませんでした。中断します（IADR-0570）。" >&2
+        return 1
+      }
+      AST_MESH_INJECTION_CHANGED=1
+      echo "  mesh: 名前空間 $NS の istio-injection を剥がした（AST_MESH_INJECTION=0）"
+    fi
+  elif [ "$cur" = "enabled" ]; then
+    {
+      echo "  WARN: 名前空間 $NS に istio-injection=enabled がありますが、chart の ${AST_MESH_KEY} は無効です（起動器は触りません）。"
+      echo "        メッシュに入れるなら AST_MESH_INJECTION=1、外すなら AST_MESH_INJECTION=0 を明示してください。IADR-0570"
+    } >&2
+  fi
+  [ "$AST_MESH_INJECTION_CHANGED" = "1" ] && echo "  mesh: 注入の状態が変わったため、手順 5 で OpenD を除く全 Deployment を作り直す"
+  return 0
+}
+
 # #1094, IADR-0457: 作り直すイメージの絞り込みを決める。SERVICES（env）と --changed-since（CHANGED_SINCE）を
 # k8s-local-images.sh の SERVICES へ中継し、絞り込みがあれば AST_IMAGE_SELECTION=1 にする（手順 5 の restart を絞る）。
 #   --changed-since: select-changed-services.js の出力が ALL → 絞り込みなし（SERVICES を unset＝全件・全 restart）/
@@ -745,6 +859,10 @@ ast_restart_step() {
   local built_file="$1"
   if [ "${AST_IMAGE_SELECTION:-0}" != "1" ]; then
     ast_rollout_restart_workers
+  elif [ "${AST_MESH_INJECTION_CHANGED:-0}" = "1" ]; then
+    # NFR, IADR-0570: 注入は Pod の作成時にしか効かない。絞ると作り直さない Pod がメッシュの外（内）に残る。
+    echo "  サイドカー注入の状態を変えたため、絞り込みを解いて全件を restart する（OpenD は除外）"
+    ast_rollout_restart_workers
   elif [ "${AST_SECRETS_PATCHED:-0}" = "1" ]; then
     echo "  ast-secrets を更新したため、絞り込みを解いて全件を restart する（Secret 参照の env は再起動でしか反映されない）"
     ast_rollout_restart_workers
@@ -830,8 +948,12 @@ kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
 # 供給経路は [0/5] で決めた（resolve_ast_eso_mode）。
 ast_prepare_secrets
 
-echo "==> [3/5] broker.tier / opend.enabled / discord.bot.* (前回リリースの値を引き継ぐ・#626 / IADR-0283 / #673。ESO 所有では discord.bot.* を渡さない)"
+echo "==> [3/5] broker.tier / opend.enabled / discord.bot.* / mesh.sidecarInjection.enabled (前回リリースの値を引き継ぐ・#626 / IADR-0283 / #673 / IADR-0570。ESO 所有では discord.bot.* を渡さない)"
 resolve_ast_value_overrides
+# NFR, IADR-0570: メッシュ参入の受け口（AST_MESH_INJECTION → 現行のリリースの値 → 既定 無効）と名前空間の注入ラベル。
+# ラベルは helm upgrade と手順 5 の restart より前に貼る（作り直す Pod にサイドカーが入るように）。
+resolve_ast_mesh_injection || exit $?
+ast_apply_mesh_namespace_label || exit 1
 
 echo "==> [4/5] helm upgrade --install (local/SIMULATE プロファイル)"
 # namespace は本スクリプトが先に作成（ast-secrets 投入のため）。chart に Namespace を template させると
@@ -847,6 +969,7 @@ AST_HELM_VALUE_ARGS=(
   --set namespace.create=false
   "${AST_VALUE_OVERRIDES[@]}"
   "${AST_ESO_OVERRIDES[@]}"
+  "${AST_MESH_OVERRIDES[@]}"
   -f deploy/helm/ai-stock-trading/values-local.yaml
 )
 # #1351: Recreate へ移る Deployment に残る rollingUpdate を、upgrade の前に外す（SSA は消さない。関数の注記）。
@@ -864,6 +987,10 @@ if [ "${AST_ESO_MODE:-0}" = "1" ]; then
   echo "  OpenD（opend.enabled=true）は moomoo-credentials / moomoo-rsa が Vault に入り同期されるまで起動を待つ（画面で入力・生成する）"
   echo "  認証サイドカーは opend-auth-caller-secret（Vault ai-stock-trading/opend-auth）が同期されるまで全口 503（基盤の BFF も同じ値を要る。IADR-0566）"
   echo "  ast-rabbitmq-users（Vault ai-stock-trading/rabbitmq-users）が同期されるまで新しい Worker の Pod は起動しない（旧 Pod が残る。IADR-0568）"
+fi
+if [ "${AST_MESH_INJECTION_EFFECTIVE:-false}" = "true" ]; then
+  echo "  サイドカー注入（IADR-0570）: OpenD 以外の Pod が istio-proxy を持ち、OpenD は持たないこと"
+  echo "    kubectl -n $NS get pods -o custom-columns='NAME:.metadata.name,INIT:.spec.initContainers[*].name,CONTAINERS:.spec.containers[*].name'"
 fi
 echo "#121（CronJob）を有効化する場合: helm ... --set tradingCycle.cronjob.enabled=true"
 echo "  （run-once エンドポイント実装が前提。既定は in-process ポーリング維持=fail-safe）"
