@@ -2,6 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TradeDecisionService.Features.TradeDecision;
@@ -137,6 +138,8 @@ public class OrderExecutionGrpcWiringTests
                 ["Otlp:Endpoint"] = "http://localhost:4317",
             }));
             builder.ConfigureServices(services => services.DisableAllExternalWolverineTransports());
+            // NFR, FR-10, FR-19, IADR-0561 決定 3: 閉場前の手仕舞いの常駐が実時刻の窓で偽の提供側を照会しないよう、時計を休場の時刻へ固定する（TestHostClock）。
+            builder.ConfigureTestServices(services => services.UseFixedClock(TestHostClock.OutsideMarketHours));
         }
     }
 }
