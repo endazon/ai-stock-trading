@@ -84,7 +84,8 @@ updated: 2026-10-23
 - #1433: `grep -rn "EntryStateBlockers.Determine\|Determinable\|EntryBlocker\." backend --include=*.cs` と proto の `enum EntryBlocker`。
   口の理由を列挙する箇所: `EntryStateBlockers.Determinable`、`RiskReadWireMapping.ToProto(RejectionReason)`、`GrpcEntryBlockersProvider.Reason`、
   `TradeDecisionPromptBuilder.EntryBlockerLabel`、試験 `HeldAddOnBlockersTests`（8 理由を名付ける）・`EntryBlockersEndpointTests`（全理由が線上の値を持つ）、
-  文書 `docs/functional/FR-10_risk-controls.md` の「新規建ての可否」の表・`docs/api/east-west-grpc.md` の行。いずれも追随する。
+  文書 `docs/functional/FR-10_risk-controls.md` の「新規建ての可否」の表。いずれも追随する。
+  `docs/api/east-west-grpc.md` の `GetEntryBlockers` の行は理由を列挙しないため**該当なし**（`grep -n "DecisionExitSameDay\|8 理由\|closable" docs/api/east-west-grpc.md` が 0 件であることで確認）。
   `PreCloseFlattener` は `AnyOrder` だけを読むので対象外。`BacktestService/RecordedDecisionReplayStrategy` は口を読まない（名前の一致だけ）ので対象外。
 - #1434: `grep -rn "InFlightCloseCoverage(\|ClosableQuantity\|closable_quantity" backend --include=*.cs --include=*.proto`。受け皿は `HttpInFlightCloseProvider.Interpret`・`GrpcInFlightCloseProvider`。
   見送りの語彙の列挙: `DecisionForgoneBeforeLlmReason`・`DecisionSkipReason`・`TradeDecisionAppService.ToSkipReason`、試験（末尾の値を固定する `DecisionSkipReasonTests`・`LedgerGapEventsTests`）、
