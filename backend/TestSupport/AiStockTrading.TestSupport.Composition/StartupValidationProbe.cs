@@ -72,6 +72,8 @@ public static class StartupValidationProbe
         return new Outcome(recorder.Failure, startFailure, recorder.ValidatorPresent);
     }
 
+    // 書き手はアプリ側スレッド（WaitForStartAsync）。Failure・ValidatorPresent は Ran（volatile）より前に書くので、
+    // 読み手は必ず Ran を先に読んでから他を読む（ProbeStartupValidation がその順を守る）。
     private sealed class Recorder
     {
         public volatile bool Ran;
