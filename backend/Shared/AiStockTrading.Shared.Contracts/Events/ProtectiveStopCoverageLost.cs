@@ -151,4 +151,16 @@ public enum ProtectiveStopRemediation
     /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
     /// </summary>
     EntryStateUnknown,
+
+    /// <summary>
+    /// 🔴 FR-10, #1422, IADR-0569 決定1・決定3: <b>保護逆指値が未受理のため未約定のエントリーへ取消を送ったが、取消の結果を確かめられていない</b>
+    /// （送った後の照会が非終端・不明）。取消要求の後にも約定し得るため、「取り消した（建玉は生じていない）」とは言わない。
+    /// <para>
+    /// 承認時の保護の文脈は閉じずに「取消の確認待ち」で残る。約定追跡がエントリーの終端を観測したら、約定 0 なら
+    /// <see cref="EntryCancelled"/>、約定 &gt; 0 なら約定数量を成行で手仕舞った結果（<see cref="PositionClosed"/> 等）を<b>もう 1 回</b>発行する。
+    /// それまでのあいだ、取消の窓で約定した分は逆指値なしで残り得る（Critical）。<c>CloseDecisionId</c> / <c>CloseIntent</c> は運ばない（何も送っていない）。
+    /// </para>
+    /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
+    /// </summary>
+    EntryCancelUnconfirmed,
 }

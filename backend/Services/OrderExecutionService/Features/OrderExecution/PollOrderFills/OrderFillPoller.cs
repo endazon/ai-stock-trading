@@ -43,6 +43,10 @@ namespace OrderExecutionService.Features.OrderExecution.PollOrderFills;
 // ——解放した注文がブローカーで生きていれば、台帳が在庫を返したうえ後の約定を誰も追わず、同じ建玉へ 2 本目の決済が並び得る。
 // 間隔は Worker が決める（FillPollingOptions.AbandonedCloseRecheckMinutes）。
 //
+// 🔴 FR-10, UC-02, #1422, IADR-0569 決定4: **保護逆指値が未受理で取消を送ったが結果を確かめられなかった新規建て**（保護記録が
+// 「取消の確認待ち」）の終端化も、ここでしか観測できない。終端化した新規建ての記録について発注執行の口（entryCancelResolution）を呼び、
+// 返った保護喪失（取消の確定・約定数量の成行手仕舞い）を結果へ載せる。発行は Worker が OrderExecuted の後に行う。未構成なら何もしない。
+//
 // 発行（OrderExecuted の Publish）は Worker 層が担う（Application はメッセージ基盤に非依存の既存レイヤリングを維持）。
 public sealed class OrderFillPoller(
     IBrokerAdapter broker,
@@ -50,7 +54,8 @@ public sealed class OrderFillPoller(
     IClock clock,
     SoftwareStopReArmer? reArmer = null,
     ILogger<OrderFillPoller>? logger = null,
-    IProtectiveStopOrderStore? protectiveStops = null)
+    IProtectiveStopOrderStore? protectiveStops = null,
+    IUnconfirmedEntryCancelResolution? entryCancelResolution = null)
 {
     private readonly ILogger _logger = logger ?? NullLogger<OrderFillPoller>.Instance;
 
@@ -69,6 +74,7 @@ public sealed class OrderFillPoller(
 
         var executed = new List<OrderExecuted>();
         var softwareStopEvents = new List<SoftwareStopExecuted>();
+        var entryCancelResolutions = new List<ProtectiveStopCoverageLost>();
         var updated = 0;
         var terminalized = 0;
         var unchanged = 0;
@@ -81,7 +87,8 @@ public sealed class OrderFillPoller(
 
             try
             {
-                switch ((await ApplyAsync(record, now, executed, softwareStopEvents, cancellationToken).ConfigureAwait(false)).Outcome)
+                switch ((await ApplyAsync(record, now, executed, softwareStopEvents, entryCancelResolutions, cancellationToken)
+                            .ConfigureAwait(false)).Outcome)
                 {
                     case ApplyOutcome.Unknown:
                         unknown++;
@@ -107,10 +114,11 @@ public sealed class OrderFillPoller(
         // 🔴 FR-10, FR-11, #1048（利用者裁定 2026-10-02・Q3）, IADR-0481 決定3: 追跡上限を過ぎて非終端のまま残った注文の
         // **追跡の打ち切りを監査へ残す**（結果に載せ、発行と印は呼び出し側＝Worker が行う）。
         var abandoned = await CollectAbandonedAsync(
-            now, maxTracking, batchSize, executed, softwareStopEvents, cancellationToken).ConfigureAwait(false);
+            now, maxTracking, batchSize, executed, softwareStopEvents, entryCancelResolutions, cancellationToken).ConfigureAwait(false);
 
         return new OrderFillPollResult(
-            pending.Count, updated, terminalized, unchanged, unknown, failed, executed, softwareStopEvents, abandoned);
+            pending.Count, updated, terminalized, unchanged, unknown, failed, executed, softwareStopEvents, abandoned,
+            entryCancelResolutions);
     }
 
     private enum ApplyOutcome
@@ -128,6 +136,7 @@ public sealed class OrderFillPoller(
         DateTimeOffset now,
         List<OrderExecuted> executed,
         List<SoftwareStopExecuted> softwareStopEvents,
+        List<ProtectiveStopCoverageLost> entryCancelResolutions,
         CancellationToken cancellationToken)
     {
         var snapshot = await broker.GetOrderAsync(record.OrderId, cancellationToken).ConfigureAwait(false);
@@ -200,6 +209,30 @@ public sealed class OrderFillPoller(
                 snapshot.Status, record.DecisionId, record.OrderId);
         }
 
+        // 🔴 FR-10, UC-02, #1422, IADR-0569 決定4: 新規建ての終端化で「取消の確認待ち」を後始末する（記録を終端化した**後**。
+        // 失敗で巡回を止めないが無音にもしない——終端化はこの 1 回しか観測できない）。
+        if (entryCancelResolution is not null && record.PositionEffect == PositionEffect.Open)
+        {
+            try
+            {
+                var resolved = await entryCancelResolution
+                    .ResolveUnconfirmedEntryCancelAsync(
+                        record with { Status = snapshot.Status, FilledQuantity = filledQuantity, AveragePrice = averagePrice, ExecutedAt = executedAt },
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (resolved is not null)
+                    entryCancelResolutions.Add(resolved);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogCritical(ex,
+                    "🔴 取消の確認待ちだったエントリーの後始末に失敗しました（エントリーは {Status}・約定 {Filled} で終端化済み）。"
+                        + "**逆指値なしの建玉が残っている可能性があります。証券会社の画面で建玉を確認してください。**"
+                        + "EntryDecisionId={DecisionId} OrderId={OrderId}",
+                    snapshot.Status, filledQuantity, record.DecisionId, record.OrderId);
+            }
+        }
+
         return (ApplyOutcome.Terminalized, snapshot.Status, filledQuantity);
     }
 
@@ -237,6 +270,7 @@ public sealed class OrderFillPoller(
         int batchSize,
         List<OrderExecuted> executed,
         List<SoftwareStopExecuted> softwareStopEvents,
+        List<ProtectiveStopCoverageLost> entryCancelResolutions,
         CancellationToken cancellationToken)
     {
         IReadOnlyList<ExecutionRecord> expired;
@@ -263,7 +297,7 @@ public sealed class OrderFillPoller(
             var filled = record.FilledQuantity;
             try
             {
-                var applied = await ApplyAsync(record, now, executed, softwareStopEvents, cancellationToken)
+                var applied = await ApplyAsync(record, now, executed, softwareStopEvents, entryCancelResolutions, cancellationToken)
                     .ConfigureAwait(false);
                 if (applied.Outcome == ApplyOutcome.Terminalized)
                     continue;
@@ -310,6 +344,8 @@ public sealed class OrderFillPoller(
         var now = clock.UtcNow;
         var executed = new List<OrderExecuted>();
         var softwareStopEvents = new List<SoftwareStopExecuted>();
+        // 照会し直すのは決済（Close）だけなので、取消の確認待ちの後始末（新規建てだけ）は起きない。
+        var entryCancelResolutions = new List<ProtectiveStopCoverageLost>();
         var released = new List<ReleasedClose>();
         var stillPending = 0;
         var unknown = 0;
@@ -320,7 +356,7 @@ public sealed class OrderFillPoller(
 
             try
             {
-                var applied = await ApplyAsync(record, now, executed, softwareStopEvents, cancellationToken)
+                var applied = await ApplyAsync(record, now, executed, softwareStopEvents, entryCancelResolutions, cancellationToken)
                     .ConfigureAwait(false);
                 switch (applied.Outcome)
                 {
@@ -391,6 +427,7 @@ public sealed class OrderFillPoller(
 // #833 項目1, IADR-0389: SoftwareStopEvents は再武装で発行すべき SoftwareStopExecuted（CloseUnfilled）。
 // 既定 null で足すのは、既存の呼び出し（テスト・集計）を壊さないためである。
 // 🔴 #1048, IADR-0481 決定3: Abandoned は追跡上限を過ぎて非終端のまま打ち切った注文（発行の後に印を書くのは Worker）。
+// 🔴 #1422, IADR-0569 決定4: EntryCancelResolutions は取消の確認待ちだった新規建ての後始末の保護喪失（発行は Worker・OrderExecuted の後）。
 public sealed record OrderFillPollResult(
     int Scanned,
     int Updated,
@@ -400,7 +437,8 @@ public sealed record OrderFillPollResult(
     int Failed,
     IReadOnlyList<OrderExecuted> Executed,
     IReadOnlyList<SoftwareStopExecuted>? SoftwareStopEvents = null,
-    IReadOnlyList<OrderFillTrackingAbandoned>? Abandoned = null);
+    IReadOnlyList<OrderFillTrackingAbandoned>? Abandoned = null,
+    IReadOnlyList<ProtectiveStopCoverageLost>? EntryCancelResolutions = null);
 
 // 🔴 FR-10, FR-05, #1339, IADR-0536 決定2: 追跡を打ち切った承認経路の決済の照会し直しの結果。
 // Released はブローカーが終端と答えて解放した決済（記録・終端の状態・約定数）。StillPending は非終端（進捗のみ記録）、

@@ -45,6 +45,14 @@ public class OrderExecutionServiceProtectiveStopTests
         /// <summary>取消失敗後の再照会が返す約定数（null＝照会も失敗）。</summary>
         public int? RequeryFilled { get; init; }
 
+        /// <summary>
+        /// #1422, IADR-0569: 取消が**成功した後**の照会が返す状態（null＝照会できない＝不明）。約定数は <see cref="RequeryFilled"/>（null は 0）。
+        /// 既定は Cancelled（取消を確かめられる）。
+        /// </summary>
+        public OrderStatus? AfterCancelStatus { get; init; } = OrderStatus.Cancelled;
+
+        private bool _cancelled;
+
         public int StopPlaceCount { get; private set; }
         public int CancelCount { get; private set; }
         public int MarketCloseCount { get; private set; }
@@ -89,17 +97,27 @@ public class OrderExecutionServiceProtectiveStopTests
             };
         }
 
-        public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
-            Task.FromResult<BrokerOrder?>(RequeryFilled is { } filled
+        public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default)
+        {
+            if (_cancelled)
+            {
+                return Task.FromResult<BrokerOrder?>(AfterCancelStatus is { } status
+                    ? new BrokerOrder("entry-1", Intent(), status, RequeryFilled ?? 0, 1_000m, Now, null)
+                    : null);
+            }
+
+            return Task.FromResult<BrokerOrder?>(RequeryFilled is { } filled
                 ? new BrokerOrder("entry-1", Intent(), OrderStatus.PartiallyFilled, filled, 1_000m, Now, null)
                 : null);
+        }
 
         public Task CancelOrderAsync(string orderId, CancellationToken ct = default)
         {
             CancelCount++;
-            return Cancel == RemedyBehavior.Succeed
-                ? Task.CompletedTask
-                : throw new InvalidOperationException("取消に失敗（テスト）");
+            if (Cancel != RemedyBehavior.Succeed)
+                throw new InvalidOperationException("取消に失敗（テスト）");
+            _cancelled = true;
+            return Task.CompletedTask;
         }
     }
 
@@ -568,6 +586,14 @@ public class OrderExecutionServiceProtectiveStopTests
                 Cancel = (RemedyBehavior)random.Next(2),
                 MarketClose = (RemedyBehavior)random.Next(2),
                 RequeryFilled = random.Next(3) switch { 0 => null, 1 => 0, _ => random.Next(1, 10) },
+                // #1422, IADR-0569: 取消の後の照会も振る（終端の取消・約定し切った・非終端・不明）。
+                AfterCancelStatus = random.Next(4) switch
+                {
+                    0 => OrderStatus.Cancelled,
+                    1 => OrderStatus.Filled,
+                    2 => OrderStatus.Accepted,
+                    _ => null,
+                },
             };
             var (service, _, stops, _) = NewService(broker);
             var approved = Approved(Intent());
@@ -589,9 +615,14 @@ public class OrderExecutionServiceProtectiveStopTests
                 //（黙って「手仕舞い済み」にしない、が本 issue の中心）。
                 // #853, IADR-0428 決定1・決定2: 逆指値そのものの送信結果が不明（StopDispatchIndeterminate）も Critical の人手確認であり、
                 // 保護記録は送信結果待ちで巡回に残る（取消も成行もしない＝建玉は残り得るが、黙ってはいない）。
+                // #1422, IADR-0569: 取消を確かめられない（EntryCancelUnconfirmed）も Critical であり、保護の文脈は
+                // 「取消の確認待ち」で残る（約定追跡の終端化で後始末される）。黙ってはいない。
                 var humanAlerted = result.CoverageLost?.Remediation
                     is ProtectiveStopRemediation.None or ProtectiveStopRemediation.CloseDispatchIndeterminate
-                    or ProtectiveStopRemediation.CloseRejected or ProtectiveStopRemediation.StopDispatchIndeterminate;
+                    or ProtectiveStopRemediation.CloseRejected or ProtectiveStopRemediation.StopDispatchIndeterminate
+                    or ProtectiveStopRemediation.EntryCancelUnconfirmed;
+                if (result.CoverageLost?.Remediation == ProtectiveStopRemediation.EntryCancelUnconfirmed)
+                    stops.Find(approved.DecisionId)!.State.Should().Be(ProtectiveStopState.AwaitingEntryCancel, $"case {i}");
 
                 (protectedByStop || humanAlerted).Should().BeTrue(
                     $"逆指値なしの建玉が黙って残ってはならない（case {i}: entry={entryStatus}/{filled}"

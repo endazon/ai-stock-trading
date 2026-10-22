@@ -415,7 +415,10 @@ if (brokerSelection.IsMoomoo)
         sp.GetRequiredService<SoftwareStopReArmer>(),
         sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderFillPoller>(),
         // 🔴 FR-10, #958, IADR-0406 決定2: Active な S0 の逆指値レグを追跡上限の対象外にする（保護記録は読むだけ）。
-        sp.GetRequiredService<IProtectiveStopOrderStore>()));
+        sp.GetRequiredService<IProtectiveStopOrderStore>(),
+        // 🔴 FR-10, #1422, IADR-0569 決定4: 取消の確認待ちだった新規建ての後始末の口（実体は発注執行）。渡し忘れると
+        // 引数は省略可能なのでコンパイルも単体の試験も通ったまま、取消の窓で約定した建玉が保護も手仕舞いも無く残る。
+        sp.GetRequiredService<OrderExecutionAppService>()));
     // 🔴 #1339, IADR-0539: 約定追跡の常駐が巡回ごとに呼ぶ（新しい常駐は足さない）。無効なら何もしない。
     builder.Services.AddScoped<DecisionCloseUnfilledCanceller>();
     builder.Services.AddHostedService<OrderFillPollingService>();

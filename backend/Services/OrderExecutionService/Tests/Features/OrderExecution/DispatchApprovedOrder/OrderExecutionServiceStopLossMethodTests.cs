@@ -64,12 +64,19 @@ public class OrderExecutionServiceStopLossMethodTests
                 "close-1", closeIntent, OrderStatus.Filled, closeIntent.Quantity, closeIntent.Price, Now, Now));
         }
 
+        // #1422, IADR-0569: 取消の後の照会は終端（約定 0 の Cancelled）を返す（取消を確かめられる）。取消の前は照会不能。
+        private OrderIntent? _cancelledEntry;
+
         public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
-            Task.FromResult<BrokerOrder?>(null);
+            Task.FromResult<BrokerOrder?>(_cancelledEntry is { } entry
+                ? new BrokerOrder(orderId, entry, OrderStatus.Cancelled, 0, 0m, Now, Now)
+                : null);
 
         public Task CancelOrderAsync(string orderId, CancellationToken ct = default)
         {
             CancelCount++;
+            _cancelledEntry = new OrderIntent(
+                "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, Provider, 10, 1_000m, PositionEffect.Open);
             return Task.CompletedTask;
         }
     }

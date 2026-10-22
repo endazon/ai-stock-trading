@@ -1184,6 +1184,21 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().NotEndWith("…", "要約の上限に収まり、結論が切れない");
     }
 
+    // T-10-2982, FR-10, UC-02, #1422, IADR-0569 決定3: 取消を送ったが未確認。要約で「取り消した」と読ませず、後始末の行き先を書く。
+    [Fact]
+    public void エントリーの取消が未確認なら_取り消したと書かず未確認と読める()
+    {
+        var entry = AuditEntryFactory.From(
+            new ProtectiveStopCoverageLost(Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.EntryCancelUnconfirmed,
+                10, CloseDecisionId: null, CloseIntent: null, StopT0),
+            Id, RecordedAt);
+
+        entry.Summary.Should().Contain("取消を送ったが未確認").And.Contain("成行手仕舞い");
+        entry.Summary.Should().NotContain("解消にも失敗");
+        entry.Summary.Should().NotEndWith("…", "要約の上限に収まり、結論が切れない");
+    }
+
     // 🔴 T-10-640, FR-10, FR-11, #857, IADR-0369: 確認できた拒否は「解消した」とも「不明」とも書かない。
     // 監査要約だけを読んで「建玉が無保護で残っている」と分かること（一次証跡の役目）。
     [Fact]

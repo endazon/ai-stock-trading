@@ -149,6 +149,8 @@ public class ProtectiveStopLedgerHandlersTests
     [InlineData(ProtectiveStopRemediation.EntryCancelled)]
     [InlineData(ProtectiveStopRemediation.None)]
     [InlineData(ProtectiveStopRemediation.EntryStateUnknown)]
+    // #1422, IADR-0569 決定3: EntryCancelUnconfirmed（取消を送ったが未確認）も何も送っていない（決済は後始末で別に届く）。
+    [InlineData(ProtectiveStopRemediation.EntryCancelUnconfirmed)]
     public async Task 手仕舞いレグの無い保護喪失は台帳へ何も書かない_否定形(ProtectiveStopRemediation remediation)
     {
         // EntryCancelled / None に決済レグは無い。無い承認行を書くと、存在しない決済が在庫を控除する。

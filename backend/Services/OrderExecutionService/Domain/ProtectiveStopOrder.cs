@@ -153,4 +153,15 @@ public enum ProtectiveStopState
     /// </para>
     /// </summary>
     AwaitingEntry = 2,
+
+    /// <summary>
+    /// 🔴 FR-10, #1422, IADR-0569 決定2: <b>保護逆指値が未受理で、エントリーへ取消を送ったが、取消の結果（終端）をまだ確かめていない</b>。
+    /// 取消要求の後にも約定し得る（moomoo は <c>Cancelling_*</c> を経て約定し得る）ため、「取消済み」と扱って文脈を閉じない。
+    /// <para>
+    /// <b>巡回の対象ではない</b>（<see cref="Active"/> ではない）。約定追跡がエントリーの終端化を観測したとき、発注執行がこの行を
+    /// <see cref="Completed"/> にして、約定 0 なら取消の確定を、約定 &gt; 0 なら約定数量の成行手仕舞いを行う（業務フロー 02 の表）。
+    /// 完了していない記録（<c>FindIncomplete</c>）には数える（生きているかもしれないエントリー）。<b>末尾へ足す</b>（整数列のため Migration 不要）。
+    /// </para>
+    /// </summary>
+    AwaitingEntryCancel = 3,
 }

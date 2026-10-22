@@ -3,13 +3,13 @@ title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-10-13
+updated: 2026-10-22
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07, NFR, FR-02]
 adrs: [ADR-0001, ADR-0003, ADR-0040, ADR-0049]
-iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483, IADR-0487, IADR-0495, IADR-0500, IADR-0521, IADR-0534]
+iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483, IADR-0487, IADR-0495, IADR-0500, IADR-0521, IADR-0534, IADR-0569]
 specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id, 20261002_1111_decision-final-failure-record, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261013_1330_approved-close-not-external-reduction]
 issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148, #1111, #1164, #1176, #1174, #1286, #1330]
 -->
@@ -76,6 +76,10 @@ issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028
   常駐ガードが**逆指値を取り消さず保護記録も閉じずに据え置いている**ことを表す（何も送っていない）。`CloseDecisionId` と決済意図は運ばない。
   要約は「建玉 0 だがエントリー注文の状態が不明・逆指値の取消・記録の完了はせず据え置き」と書く（前置きの「成立せず」は共通の書式で、
   実際には何も取り消していない）。状態が分かるまで約 1 時間ごと（と再起動後）に複数回残り得る。
+  `Remediation` が `EntryCancelUnconfirmed` のときは、保護逆指値が未受理のため未約定のエントリーへ**取消を送ったが、照会しても終端を
+  確かめられていない**ことを表す（取消を求めた後にも約定することがある）。`CloseDecisionId` と決済意図は運ばない。要約は「取消を送ったが未確認」と書き、
+  「取り消した」とは書かない。約定の追跡がエントリーの終了を確かめたら、同じエントリーの `DecisionId` で**もう 1 件**（約定 0 なら `EntryCancelled`、
+  約定があれば成行手仕舞いの結果）が残る。
 - moomoo SIMULATE で損切りの実行機構 S2（逆指値なしの建玉を許容）が選ばれていた新規建ては、保護逆指値を発注せず
   **免除の事実（`ProtectiveStopWaived`）**を記録する（#819）。種別は保護喪失（`ProtectiveStopCoverageLost`）と**別**であり、
   相関は同じくエントリーの `DecisionId` である。要約に手法（S2）・発注先・損切りラインと「逆指値なしの建玉を保持する

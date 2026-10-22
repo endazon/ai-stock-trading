@@ -127,6 +127,10 @@ public sealed class StopLegScriptedBroker
     public Task CancelOrderAsync(string orderId, CancellationToken ct = default)
     {
         CancelCount++;
+        // #1422, IADR-0569: エントリーの取消は、照会で終端（約定 0 の Cancelled）を確かめられる（既定）。
+        // 取消の窓で約定した・非終端のままの場面は、試験が Orders へ先に入れて表す（TryAdd なので上書きしない）。
+        if (orderId.StartsWith("entry", StringComparison.Ordinal))
+            Orders.TryAdd(orderId, new BrokerOrder(orderId, CloseIntent(EntryFilled), OrderStatus.Cancelled, 0, 0m, Now, Now));
         return Task.CompletedTask;
     }
 
