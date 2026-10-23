@@ -111,6 +111,33 @@ public class ProtectiveStopEventPayloadTests
     }
 
     // 🔴 列挙は末尾へ足す（既存値の序数を動かさない）。序数で永続化・送受信されても過去の記録の意味が変わらない。
+    // T-10-3033, FR-10, #1454, IADR-0580 決定1（PR #1458 の AI レビュー 🟡）: 保護喪失の原因の列挙も既存値の序数を動かさない。
+    // 逆指値がエントリーより先に約定した原因は失効（LapsedInFlight）を借りず、末尾の専用の値で表す。
+    [Fact]
+    public void T_10_3033_保護喪失の原因の列挙は既存値の序数を動かさず_先に約定した原因は末尾()
+    {
+        ((int)ProtectiveStopLossCause.RejectedAtEntry).Should().Be(0);
+        ((int)ProtectiveStopLossCause.LapsedInFlight).Should().Be(1);
+        ((int)ProtectiveStopLossCause.FilledBeforeEntry).Should().Be(2);
+    }
+
+    // T-10-3033: 先に約定した据え置きは往復しても原因・対処・相関（逆指値レグ）を保ち、決済意図を運ばない。
+    [Fact]
+    public void T_10_3033_逆指値が先に約定した据え置きは往復しても原因と相関を保ち決済意図を運ばない()
+    {
+        var stopDecision = Guid.NewGuid();
+        var evt = new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, ProtectiveStopLossCause.FilledBeforeEntry,
+            ProtectiveStopRemediation.StopFilledBeforeEntry, 10, stopDecision, CloseIntent: null, T0);
+
+        var restored = RoundTrip(evt);
+
+        restored.Should().Be(evt);
+        restored.Cause.Should().Be(ProtectiveStopLossCause.FilledBeforeEntry);
+        restored.CloseDecisionId.Should().Be(stopDecision);
+        restored.CloseIntent.Should().BeNull();
+    }
+
     [Fact]
     public void 保護喪失への対処の列挙は既存値の序数を動かさない()
     {
@@ -126,6 +153,8 @@ public class ProtectiveStopEventPayloadTests
         ((int)ProtectiveStopRemediation.StopReservationFailed).Should().Be(6);
         // T-10-1134, #1013, IADR-0428（2026-09-26 追記）: 建玉 0 だがエントリー注文の状態が不明（ガードが据え置き）。
         ((int)ProtectiveStopRemediation.EntryStateUnknown).Should().Be(7);
+        // T-10-3033, #1454, IADR-0580 決定1: 逆指値がエントリーより先に約定した（末尾。既存値の序数を動かさない）。
+        ((int)ProtectiveStopRemediation.StopFilledBeforeEntry).Should().Be(9);
     }
 
     // T-10-1134, FR-10, #1013, IADR-0428（2026-09-26 追記）: エントリーの状態が不明な据え置きは何も送っていない。

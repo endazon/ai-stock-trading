@@ -1199,6 +1199,22 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().NotEndWith("…", "要約の上限に収まり、結論が切れない");
     }
 
+    // T-10-3033, FR-10, ADR-0040, #1454, IADR-0580 決定1: 逆指値がエントリーより先に約定した。要約で「解消した」と読ませず、
+    // 反対方向の建玉の可能性と、買い戻しも取消もしていないことを書く。
+    [Fact]
+    public void T_10_3033_逆指値がエントリーより先に約定したら_反対方向の建玉の可能性と人手対応を読める()
+    {
+        var entry = AuditEntryFactory.From(
+            new ProtectiveStopCoverageLost(Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                ProtectiveStopLossCause.FilledBeforeEntry, ProtectiveStopRemediation.StopFilledBeforeEntry,
+                10, CloseDecisionId: Guid.NewGuid(), CloseIntent: null, StopT0),
+            Id, RecordedAt);
+
+        entry.Summary.Should().Contain("エントリーより先に約定").And.Contain("反対方向の建玉").And.Contain("要人手対応");
+        entry.Summary.Should().NotContain("解消にも失敗");
+        entry.Summary.Should().NotEndWith("…", "要約の上限に収まり、結論が切れない");
+    }
+
     // 🔴 T-10-640, FR-10, FR-11, #857, IADR-0369: 確認できた拒否は「解消した」とも「不明」とも書かない。
     // 監査要約だけを読んで「建玉が無保護で残っている」と分かること（一次証跡の役目）。
     [Fact]

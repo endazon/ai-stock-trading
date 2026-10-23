@@ -592,6 +592,9 @@ public static class AuditEntryFactory
                 // FR-10, #1422, IADR-0569 決定3: 取消は送ったが終端を確かめられていない。「取り消した」とは書かない。
                 ProtectiveStopRemediation.EntryCancelUnconfirmed =>
                     "——**エントリーへ取消を送ったが未確認（取消の窓で約定し得る）。終端の観測で取消の確定か成行手仕舞いを行う**",
+                // FR-10, ADR-0040, #1454, IADR-0580 決定1: 逆指値がエントリーより先に約定した。買い戻しも取消もしていない。
+                ProtectiveStopRemediation.StopFilledBeforeEntry =>
+                    "——**逆指値がエントリーより先に約定（反対方向の建玉の可能性）。買い戻し・エントリーの取消はせず記録を据え置き（要人手対応）**",
                 _ => string.Empty,
             }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);

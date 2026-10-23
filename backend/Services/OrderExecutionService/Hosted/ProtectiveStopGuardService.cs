@@ -169,7 +169,9 @@ public sealed class ProtectiveStopGuardService(
                         {
                             Remediation: ProtectiveStopRemediation.CloseDispatchIndeterminate
                                 or ProtectiveStopRemediation.StopDispatchIndeterminate
-                                or ProtectiveStopRemediation.StopReservationFailed,
+                                or ProtectiveStopRemediation.StopReservationFailed
+                                // 🔴 #1454, IADR-0580 決定1: 逆指値が先に約定した据え置きも同じ記憶（キーは約定した逆指値レグの DecisionId）。
+                                or ProtectiveStopRemediation.StopFilledBeforeEntry,
                             CloseDecisionId: { } closeDecisionId,
                         })
                     {
