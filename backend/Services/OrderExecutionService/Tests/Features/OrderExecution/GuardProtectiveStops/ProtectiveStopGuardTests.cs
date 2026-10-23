@@ -71,6 +71,9 @@ public class ProtectiveStopGuardTests
         public List<string> Cancelled { get; } = [];
         public int StopPlaceCount { get; private set; }
         public int MarketCloseCount { get; private set; }
+
+        /// <summary>#1446: 成行を送る直前に呼ばれる（直列化を握っているかを確かめる）。</summary>
+        public Action? BeforeMarketClose { get; set; }
         public OrderIntent? LastStopIntent { get; private set; }
         public OrderIntent? LastCloseIntent { get; private set; }
 
@@ -93,6 +96,7 @@ public class ProtectiveStopGuardTests
         public Task<BrokerOrder> PlaceMarketOrderAsync(
             OrderIntent closeIntent, Guid decisionId, CancellationToken ct = default)
         {
+            BeforeMarketClose?.Invoke();
             MarketCloseCount++;
             LastCloseIntent = closeIntent;
             // #848, IADR-0117（改定 7）: 「次の巡回で再試行できる失敗」は**確実に未発注**（接続確立の失敗）だけである。
@@ -136,7 +140,7 @@ public class ProtectiveStopGuardTests
             OrderStatusLifecycle.IsTerminal(status) ? Now : null);
 
     private static (ProtectiveStopGuard Guard, GuardBroker Broker, InMemoryProtectiveStopOrderStore Stops,
-        InMemoryExecutedOrderStore Store) NewGuard(ProtectiveStopOrder stop)
+        InMemoryExecutedOrderStore Store) NewGuard(ProtectiveStopOrder stop, IClosePositionLock? closeLock = null)
     {
         var broker = new GuardBroker();
         var stops = new InMemoryProtectiveStopOrderStore();
@@ -149,7 +153,8 @@ public class ProtectiveStopGuardTests
             stop.ProductType, PositionEffect.Open, stop.Quantity, 1_000m, stop.Quantity, 1_000m, OrderStatus.Filled, 0m,
             Now.AddMinutes(-5)));
         return (new ProtectiveStopGuard(
-            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance), broker, stops, store);
+            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance,
+            closeLock: closeLock), broker, stops, store);
     }
 
     private static BrokerPositionSnapshot Long(int qty) => new("AAPL", Market.UnitedStates, qty, 1_000m);
@@ -284,6 +289,121 @@ public class ProtectiveStopGuardTests
         // 次回巡回で再試行できるよう Active のまま残す（黙って完了にしない）。
         // 再試行してよいのは失敗が**確実に未発注**（BrokerUnavailableException）だからである（#848・T-10-409）。
         stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+    }
+
+    // 決済の直列化の記録係（取った鍵・握っている間か）。Unavailable なら取れない。
+    private sealed class RecordingCloseLock(bool unavailable = false) : IClosePositionLock
+    {
+        public List<ClosePositionKey> Acquired { get; } = [];
+
+        public bool Held { get; private set; }
+
+        /// <summary>直列化を取れた瞬間に呼ばれる（直列化を待つ間に他の経路が約定した、を作る）。</summary>
+        public Action? OnAcquired { get; set; }
+
+        public Task<IAsyncDisposable> AcquireAsync(ClosePositionKey key, CancellationToken cancellationToken)
+        {
+            if (unavailable)
+                throw new ClosePositionLockUnavailableException(key, "試験");
+            Acquired.Add(key);
+            Held = true;
+            OnAcquired?.Invoke();
+            return Task.FromResult<IAsyncDisposable>(new Release(this));
+        }
+
+        private sealed class Release(RecordingCloseLock owner) : IAsyncDisposable
+        {
+            public ValueTask DisposeAsync()
+            {
+                owner.Held = false;
+                return ValueTask.CompletedTask;
+            }
+        }
+    }
+
+    // 🔴 T-10-3009, NFR, FR-10, #1446（親 #1423 M-2）, IADR-0575 決定 3: ガードの成行の手仕舞いは、同じ建玉の決済の直列化を握ったまま送り、
+    // 記録を保存してから外す（後から来る判断の決済・S1 がこの記録を読んで数量を決める）。取れなければ送らず、記録は Active のまま
+    // 人手対応（None）を求める（確実に未発注＝手仕舞いの送信に失敗した回と同じ扱い）。逆指値の張り直しは直列化を使わない。
+    [Fact]
+    public async Task T_10_3009_成行の手仕舞いは決済の直列化の中で送り取れなければ送らない()
+    {
+        var held = new RecordingCloseLock();
+        var stop = ActiveStop();
+        var (guard, broker, stops, store) = NewGuard(stop, held);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Cancelled);
+        broker.Positions = [Long(10)];
+        broker.RejectReplacement = true;
+        var heldWhileSending = false;
+        broker.BeforeMarketClose = () => heldWhileSending = held.Held;
+
+        var result = await guard.RunOnceAsync(10);
+
+        broker.MarketCloseCount.Should().Be(1);
+        heldWhileSending.Should().BeTrue("成行は直列化を握ったまま送る");
+        held.Held.Should().BeFalse("送って記録した後に外す");
+        held.Acquired.Should().Equal([new ClosePositionKey("AAPL", Market.UnitedStates, TradeSide.Sell)]);
+        var lost = result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle().Which;
+        store.FindByDecisionId(lost.CloseDecisionId!.Value).Should().NotBeNull();
+
+        var unavailableStop = ActiveStop();
+        var (blocked, blockedBroker, blockedStops, _) = NewGuard(unavailableStop, new RecordingCloseLock(unavailable: true));
+        blockedBroker.Orders["stop-1"] = StopOrder(OrderStatus.Cancelled);
+        blockedBroker.Positions = [Long(10)];
+        blockedBroker.RejectReplacement = true;
+
+        var blockedResult = await blocked.RunOnceAsync(10);
+
+        blockedBroker.MarketCloseCount.Should().Be(0, "🔴 直列化を取れなければ成行を送らない");
+        blockedResult.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle()
+            .Which.Remediation.Should().Be(ProtectiveStopRemediation.None, "人手対応を求める（無音にしない）");
+        blockedStops.Find(unavailableStop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active, "次の巡回で撃ち直す");
+    }
+
+    // 🔴 T-10-3011, NFR, FR-10, #1446, IADR-0575 決定 3（2026-10-23 追記）: ガードは直列化を取った後に建玉を照会し直し、
+    // 送る数量を min(巡回の先頭の数量, 照会し直した決済方向の建玉) にする。直列化を待つ間に他の経路（判断の決済・S1）が約定していれば、
+    //   一部約定（10 → 4 株）→ 4 株だけ送る／全量約定（→ 0 株）→ 送らず記録は Active のまま・保護喪失の通知も出さない／
+    //   照会できない → 送らず人手対応（None）。古い数量のまま送ると、押さえない証券会社では超過の売り（反対建玉）になる。
+    [Theory]
+    [InlineData(4, 4)]
+    [InlineData(0, 0)]
+    [InlineData(-1, 0)] // -1 = 照会できない（null）
+    public async Task T_10_3011_直列化を待つ間に他の決済が約定したら照会し直した数量を超えて送らない(int heldAfterWait, int expectedSent)
+    {
+        var closeLock = new RecordingCloseLock();
+        var stop = ActiveStop();
+        var (guard, broker, stops, _) = NewGuard(stop, closeLock);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Cancelled);
+        broker.Positions = [Long(10)];
+        broker.RejectReplacement = true;
+        closeLock.OnAcquired = () => broker.Positions = heldAfterWait switch
+        {
+            < 0 => null,
+            0 => [],
+            _ => [Long(heldAfterWait)],
+        };
+
+        var result = await guard.RunOnceAsync(10);
+
+        broker.MarketCloseCount.Should().Be(expectedSent > 0 ? 1 : 0);
+        if (expectedSent > 0)
+        {
+            broker.LastCloseIntent!.Quantity.Should().Be(expectedSent, "🔴 照会し直した建玉を超えて売らない");
+            result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle()
+                .Which.Quantity.Should().Be(expectedSent, "通知・台帳の数量も送った数量");
+        }
+        else if (heldAfterWait == 0)
+        {
+            result.Events.OfType<ProtectiveStopCoverageLost>().Should().BeEmpty("建玉はもう無い（次の巡回が完了させる）");
+            stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+        }
+        else
+        {
+            result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle()
+                .Which.Remediation.Should().Be(ProtectiveStopRemediation.None, "照会できなければ送らず人手対応を求める");
+            stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+        }
+
+        closeLock.Held.Should().BeFalse();
     }
 
     [Fact]

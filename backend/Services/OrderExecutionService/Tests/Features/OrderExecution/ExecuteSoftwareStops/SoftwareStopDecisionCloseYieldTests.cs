@@ -507,7 +507,8 @@ public class SoftwareStopDecisionCloseYieldTests
 
         await Guard(f, upper, staleSnapshot);
 
-        f.Broker.PositionQueries.Should().Be(queriesBefore + 1, "取り消した後はガードのスナップショットを捨てて照会し直す");
+        // ［2026-10-23 追記 / #1446, IADR-0575 決定 1］ガードのスナップショットは直列化の後に必ず照会し直す（+1）。取り消した後にもう 1 回（+1）。
+        f.Broker.PositionQueries.Should().Be(queriesBefore + 2, "取り消した後はガードのスナップショットを捨てて照会し直す");
         f.Broker.MarketCloses.Sum(c => c.Intent.Quantity)
             .Should().BeLessThanOrEqualTo(428, "取消の最中に約定した分を重ねて売りに出さない（送った数量で見る）");
     }

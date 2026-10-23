@@ -54,8 +54,13 @@ public sealed class SoftwareStopExecutor(
     ILogger<SoftwareStopExecutor>? logger = null,
     TimeSpan? orphanGrace = null,
     TimeSpan? settlementGrace = null,
-    IPositionQueryHealthReporter? positionQueryHealth = null)
+    IPositionQueryHealthReporter? positionQueryHealth = null,
+    IClosePositionLock? closeLock = null)
 {
+    // 🔴 NFR, FR-10, #1446（親 #1423 M-2）, IADR-0575: 決済の直列化。本番は Program.cs が DB の advisory lock を渡す（T-10-3008）。
+    // 渡さなければこの組み立てだけの InProcess（他の経路とは直列にならない＝単体の試験の既定。試験間で待ち合わない）。
+    private readonly IClosePositionLock _closeLock = closeLock ?? new InProcessClosePositionLock();
+
     /// <summary>
     /// 決済が続けて売れなかった回数がこの値に達したら Critical（<see cref="SoftwareStopOutcome.CloseRejected"/>）を出す
     /// （IADR-0344 決定5-6）。
@@ -227,8 +232,13 @@ public sealed class SoftwareStopExecutor(
     }
 
     /// <summary>
-    /// 到達済みのソフトウェア逆指値 1 件を決済する（ハンドラとガードが共有）。<paramref name="snapshot"/> を渡せばその建玉を使う
-    /// （ガードは 1 巡回に 1 回だけ照会する）。null なら照会する。
+    /// 到達済みのソフトウェア逆指値 1 件を決済する（ハンドラとガードが共有）。
+    /// <para>
+    /// 🔴 #1446, IADR-0575 決定 1: 建玉は<b>決済の直列化を取った後に照会し直す</b>。<paramref name="snapshot"/>（ガードの巡回の先頭の照会）は
+    /// 直列化の外で読んだ値であり、その後に同じ建玉を売った判断の決済（約定済みなら処理中の記録にも現れない）を映さない。
+    /// 引数は呼び出し側の互換のために残す（送る数量の判断には使わない）。到達済みで決済できていない行だけが通るので、
+    /// 照会の増分は巡回ごとにその行の数だけである。
+    /// </para>
     /// </summary>
     public async Task<SoftwareStopCloseOutcome> TryCloseAsync(
         ProtectiveStopOrder stop,
@@ -236,20 +246,41 @@ public sealed class SoftwareStopExecutor(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stop);
+        _ = snapshot;
 
-        SoftwareStopCloseOutcome outcome;
+        // 🔴 NFR, FR-10, #1446（親 #1423 M-2）, IADR-0575 決定 1: 判断の手仕舞いの取消（IADR-0466）・建玉の照会・利用者の決済の差し引きから
+        // 成行の記録までを、同じ建玉を売る他の決済（承認の決済・ガードの成行手仕舞い・他の S1 の行）と直列にする。
+        // 取れなければ送らない（据え置き。到達の記録は残り、次の巡回で撃ち直す。猶予を過ぎれば CloseStalled が出る）。
+        var key = new ClosePositionKey(stop.Symbol, stop.Market, stop.CloseSide);
+        IAsyncDisposable serialized;
         try
         {
-            outcome = await TryCloseCoreAsync(stop, snapshot, yieldDecisionCloses: true, cancellationToken)
-                .ConfigureAwait(false);
+            serialized = await _closeLock.AcquireAsync(key, cancellationToken).ConfigureAwait(false);
         }
-        catch (ProtectiveStopConcurrencyException ex)
+        catch (ClosePositionLockUnavailableException ex)
         {
-            // 🔴 #833 項目3, IADR-0396: 読み直して当て直しても衝突し続けた。**書いていない**（古い写しで上書きしない）。
-            // 成行を送った後の確定で起きた場合も、同じ試行の記録が残っているので次の巡回が記録の結果で確定する
-            //（送信後に行の更新だけが失われた窓と同じ経路。再送はしない）。
-            LogConcurrencyConflict(ex, stop);
-            return SoftwareStopCloseOutcome.Deferred;
+            _logger.LogError(ex,
+                "ソフトウェア逆指値の決済を据え置きます（決済の直列化を取れません。送っていません）。EntryDecisionId={EntryDecisionId} 建玉={Key}",
+                stop.EntryDecisionId, key);
+            return NotifyIfStalled(stop, SoftwareStopCloseOutcome.Deferred);
+        }
+
+        SoftwareStopCloseOutcome outcome;
+        await using (serialized.ConfigureAwait(false))
+        {
+            try
+            {
+                outcome = await TryCloseCoreAsync(stop, snapshot: null, yieldDecisionCloses: true, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (ProtectiveStopConcurrencyException ex)
+            {
+                // 🔴 #833 項目3, IADR-0396: 読み直して当て直しても衝突し続けた。**書いていない**（古い写しで上書きしない）。
+                // 成行を送った後の確定で起きた場合も、同じ試行の記録が残っているので次の巡回が記録の結果で確定する
+                //（送信後に行の更新だけが失われた窓と同じ経路。再送はしない）。
+                LogConcurrencyConflict(ex, stop);
+                return SoftwareStopCloseOutcome.Deferred;
+            }
         }
 
         // 🔴 #1444, IADR-0574 決定3（2026-10-23 追記）: 閉場で待つ行（AwaitingMarketOpen）は「決済できていない」通知の対象にしない。
