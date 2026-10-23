@@ -785,30 +785,45 @@ public class ProtectiveStopGuardTests
     }
 
     // T-10-3021（#1448 受け入れ基準 4・退行なし）, IADR-0577: 判断の決済が無い／記録は非終端のまま古いが証券会社では既に終わっている
-    // （約定は進んでいない）→ 何も取り消さず、建玉を照会し直すこともなく、従来どおり全量を送る。
+    // （約定は進んでいない）／板に残るのが猶予の内の利用者の手仕舞い（OwnerClose。IADR-0515 決定3）だけ
+    // → 何も取り消さず、従来どおり全量を送る（利用者の決済の差し引きは #1452 で扱う）。
+    public enum PendingCloseCase
+    {
+        None,
+        StaleTerminalRecord,
+        OwnerCloseInGrace,
+    }
+
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task T_10_3021_判断の決済が無ければ取り消さず従来どおり全量を送る(bool staleTerminalRecord)
+    [InlineData(PendingCloseCase.None)]
+    [InlineData(PendingCloseCase.StaleTerminalRecord)]
+    [InlineData(PendingCloseCase.OwnerCloseInGrace)]
+    public async Task T_10_3021_判断の決済が無ければ取り消さず従来どおり全量を送る(PendingCloseCase pending)
     {
         var stop = ActiveStop();
         var (guard, broker, _, store) = NewGuard(stop);
         broker.Orders["stop-1"] = StopOrder(OrderStatus.Cancelled);
         broker.Positions = [Long(10)];
         broker.RejectReplacement = true;
-        if (staleTerminalRecord)
+        switch (pending)
         {
-            PlaceDecisionClose(broker, store);
-            broker.Orders[DecisionCloseOrderId] = broker.Orders[DecisionCloseOrderId]! with
-            {
-                Status = OrderStatus.Cancelled,
-                CompletedAt = Now,
-            };
+            case PendingCloseCase.StaleTerminalRecord:
+                PlaceDecisionClose(broker, store);
+                broker.Orders[DecisionCloseOrderId] = broker.Orders[DecisionCloseOrderId]! with
+                {
+                    Status = OrderStatus.Cancelled,
+                    CompletedAt = Now,
+                };
+                break;
+            case PendingCloseCase.OwnerCloseInGrace:
+                // 記録の時刻は 1 分前（猶予 NettedCloseGrace＝2 分の内）。証券会社では生きている。
+                PlaceDecisionClose(broker, store, origin: OrderApprovalOrigin.OwnerClose);
+                break;
         }
 
         await guard.RunOnceAsync(10);
 
-        broker.Cancelled.Should().BeEmpty("取り消すものが無い");
+        broker.Cancelled.Should().BeEmpty("取り消すものが無い（猶予の内の利用者の手仕舞いは取り消さない）");
         broker.MarketCloseCount.Should().Be(1);
         broker.LastCloseIntent!.Quantity.Should().Be(10, "従来どおり全量を送る");
     }

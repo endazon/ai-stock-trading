@@ -666,8 +666,6 @@ public sealed class SoftwareStopExecutor(
         DecisionCloseYield.CancelAndConfirmAsync(
             stop, broker, stops, store, clock, _logger, "ソフトウェア逆指値の決済", cancellationToken);
 
-    private static bool IsOwnerOrigin(ExecutionRecord record) => DecisionCloseYield.IsOwnerOrigin(record);
-
     // 🔴 FR-10, UC-06, ADR-0050 決定1, #1222, IADR-0515 決定4: 取り消さなかった利用者の手仕舞い・維持率割れの自動縮小が生きているとき、
     // **送れる数量＝決済方向の建玉 − 処理中の決済の残りの合計**を返す（判断側 IADR-0461 の CountInFlightClosesAsync と同じ物差し）。
     //   - 処理中の決済: 同じ銘柄・市場・決済の方向の非終端の Close の記録のうち、**ブローカー側の保護逆指値レグ（S0 / S3）を除いた**もの
@@ -688,7 +686,7 @@ public sealed class SoftwareStopExecutor(
         try
         {
             var pending = store.FindPendingCloses(stop.Symbol, stop.Market, stop.CloseSide);
-            if (!pending.Any(IsOwnerOrigin))
+            if (!pending.Any(DecisionCloseYield.IsOwnerOrigin))
                 return OwnerCloseNettingResult.NotApplicable;
 
             var legDecisionIds = new HashSet<Guid>();
@@ -730,7 +728,7 @@ public sealed class SoftwareStopExecutor(
                 continue;
 
             inFlight += remaining;
-            if (IsOwnerOrigin(record))
+            if (DecisionCloseYield.IsOwnerOrigin(record))
                 ownerCloses.Add(record.DecisionId);
         }
 
