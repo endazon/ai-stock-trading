@@ -1174,7 +1174,7 @@ public sealed class ProtectiveStopGuard(
                 quantity, state, stop.EntryDecisionId, stop.StopDecisionId, stop.StopOrderId, stop.Symbol, opposite);
             events.Add(new ProtectiveStopCoverageLost(
                 stop.EntryDecisionId, stop.Symbol, stop.Market,
-                ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.StopFilledBeforeEntry,
+                ProtectiveStopLossCause.FilledBeforeEntry, ProtectiveStopRemediation.StopFilledBeforeEntry,
                 quantity, stop.StopDecisionId, CloseIntent: null, now));
             _heldCloseNotifications.MarkNotified(stop.StopDecisionId, stop.EntryDecisionId, now);
         }

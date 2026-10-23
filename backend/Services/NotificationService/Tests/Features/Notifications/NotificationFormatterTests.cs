@@ -504,7 +504,7 @@ public class NotificationFormatterTests
         var entry = Guid.NewGuid();
         var stopDecision = Guid.NewGuid();
         var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
-            entry, "AAPL", Market.UnitedStates, ProtectiveStopLossCause.LapsedInFlight,
+            entry, "AAPL", Market.UnitedStates, ProtectiveStopLossCause.FilledBeforeEntry,
             ProtectiveStopRemediation.StopFilledBeforeEntry, 10, stopDecision, CloseIntent: null, StopT0));
 
         msg.Severity.Should().Be(NotificationSeverity.Critical);

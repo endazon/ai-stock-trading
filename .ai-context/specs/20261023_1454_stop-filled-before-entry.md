@@ -69,3 +69,5 @@ updated: 2026-10-23
 
 - `dotnet build` / `dotnet test` を OrderExecutionService・NotificationService・AuditService・Shared.Contracts のテストに絞って実行する。
 - `dotnet format --verify-no-changes`、文書系検査（trace ブロック・ADR 索引）。
+
+［2026-10-23 追記 / #1454］PR #1458 の AI レビュー 🟡 により、事実の原因は `LapsedInFlight` を借りず、`ProtectiveStopLossCause` の末尾に足した `FilledBeforeEntry`（序数 2）とした。原因の消費者（母集合）は `grep -rn "ProtectiveStopLossCause\." backend --include=*.cs` で引き、通知の `RejectedAtEntry` との二択（5 か所）と監査の要約の名前の表示だけだった（追加の網羅は不要）。

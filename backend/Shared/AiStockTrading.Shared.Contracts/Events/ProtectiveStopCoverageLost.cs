@@ -47,6 +47,14 @@ public enum ProtectiveStopLossCause
 
     /// <summary>滞留中の逆指値が失効した（取消・拒否・期限切れ）。</summary>
     LapsedInFlight,
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0040, #1454, IADR-0580 決定1（PR #1458 の AI レビュー 🟡）: 保護逆指値が<b>エントリー注文より先に約定した</b>（窓開け）。
+    /// 失効でも未受理でもない——逆指値は約定しており、反対方向の建玉が生じ得る。対処は
+    /// <see cref="ProtectiveStopRemediation.StopFilledBeforeEntry"/> と組で出る（発行元は常駐ガード）。
+    /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
+    /// </summary>
+    FilledBeforeEntry,
 }
 
 // #331, IADR-0210: 保護喪失への対処。
@@ -174,7 +182,7 @@ public enum ProtectiveStopRemediation
     /// </para>
     /// <para>
     /// <c>CloseDecisionId</c> は<b>約定した逆指値レグ</b>の DecisionId（相関のため）。<c>CloseIntent</c> は運ばない（システムは何も送っていない・台帳は押さえない）。
-    /// <c>Cause</c> は常に <see cref="ProtectiveStopLossCause.LapsedInFlight"/>（発行元が常駐ガードであることだけを表す）。
+    /// <c>Cause</c> は常に <see cref="ProtectiveStopLossCause.FilledBeforeEntry"/>（失効を表す LapsedInFlight を借りない。集計・表示で取り違えないため）。
     /// </para>
     /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
     /// </summary>

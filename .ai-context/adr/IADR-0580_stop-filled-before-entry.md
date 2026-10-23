@@ -71,7 +71,7 @@ related_specs:
   Error ログと `ProtectiveStopCoverageLost`（Remediation=**`StopFilledBeforeEntry`**・列挙の末尾・序数 9）を出す。他の巡回は Warning だけ。
   記憶のキーは約定した逆指値レグの `StopDecisionId`（据え置きの他の通知と同じ表。記録の完了で `ForgetEntry` が捨てる。
   発行に失敗したら `PublishAllAsync` が捨てる）。
-- 事実の `CloseDecisionId` は約定した逆指値レグ（相関のため）、`CloseIntent` は null（何も送っていない。台帳は何もしない）、`Cause` は `LapsedInFlight`。
+- 事実の `CloseDecisionId` は約定した逆指値レグ（相関のため）、`CloseIntent` は null（何も送っていない。台帳は何もしない）、`Cause` は専用の **`FilledBeforeEntry`**（`ProtectiveStopLossCause` の末尾・序数 2）。失効を表す `LapsedInFlight` を借りると、集計・表示で「失効した」と取り違える（PR #1458 の AI レビュー 🟡。原因の列挙の消費者は通知の `RejectedAtEntry` との二択と監査の要約の名前の表示だけで、追加の網羅は要らない）。
   `Quantity` は逆指値の約定数量（0 なら記録の数量）。通知は Critical、監査の要約は「逆指値がエントリーより先に約定（反対方向の建玉の可能性）」と書く。
 - 約定追跡の起点（`RenewStopLegTracking`）は据え置く場合も先に進める（逆指値レグの約定が台帳へ届く）。
 

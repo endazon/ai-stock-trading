@@ -563,7 +563,7 @@ public class ProtectiveStopGuardEntryStateTests
         notice.Quantity.Should().Be(10);
         notice.CloseDecisionId.Should().Be(h.Row.StopDecisionId, "相関は約定した逆指値レグ");
         notice.CloseIntent.Should().BeNull("何も送っていない（台帳に処理中の決済を押さえさせない）");
-        notice.Cause.Should().Be(ProtectiveStopLossCause.LapsedInFlight);
+        notice.Cause.Should().Be(ProtectiveStopLossCause.FilledBeforeEntry, "失効（LapsedInFlight）と取り違えない専用の原因");
 
         // エントリーが後で全量約定すると、建玉は純額 0 に戻る。終端を見た巡回で完了する。
         h.Clock.UtcNow = Now.AddMinutes(1);

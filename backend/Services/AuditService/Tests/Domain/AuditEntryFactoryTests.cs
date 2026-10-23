@@ -1206,7 +1206,7 @@ public class AuditEntryFactoryTests
     {
         var entry = AuditEntryFactory.From(
             new ProtectiveStopCoverageLost(Guid.NewGuid(), "AAPL", Market.UnitedStates,
-                ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.StopFilledBeforeEntry,
+                ProtectiveStopLossCause.FilledBeforeEntry, ProtectiveStopRemediation.StopFilledBeforeEntry,
                 10, CloseDecisionId: Guid.NewGuid(), CloseIntent: null, StopT0),
             Id, RecordedAt);
 
