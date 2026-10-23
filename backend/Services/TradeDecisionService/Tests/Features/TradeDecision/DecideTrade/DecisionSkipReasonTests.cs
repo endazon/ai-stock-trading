@@ -291,11 +291,12 @@ public class DecisionSkipReasonTests
     // T-10-2502, #1286 / IADR-0521 決定 2 が末尾に ExitOnlyWithoutHolding〔LLM の前〕を足して 19 → 20。振る舞いは HeldOutsideWatchlistExitOnlyTests が固定する。
     // T-10-2651, #1338 / IADR-0535 決定1 が末尾に InFlightCloseCoversPosition〔LLM の前〕を足して 20 → 21。振る舞いは InFlightCloseBeforeLlmTests が固定する。
     // T-10-2994, #1434 / IADR-0572 決定2 が末尾に BrokerPositionClosed〔LLM の前〕を足して 21 → 22。振る舞いは InFlightCloseBeforeLlmTests が固定する）。
+    // T-10-3052, #1423 M-5 / IADR-0582 が末尾に LlmCostCapHalted〔LLM の前〕を足して 22 → 23。振る舞いは LlmCostCapHaltBeforeLlmTests が固定する。
     // 値を足したのに報告点を足さない／報告点を消したのに値を残す、を気付けるようにする。
     // 上のテストが 13 値を**振る舞いで**固定し（EntryBlockedByRiskControls・AddOnBlockedByRiskControls の 2 値は上記の別の試験が固定する）、残る 3 値は到達に LLM 出力の不正（参照価格 0・損切り幅の異常）か
     // 採算ゲートの構成が要るため、ここでは語彙の側だけを固定する（IADR-0374 §結果 に明記）。
     [Fact]
-    public void 見送り理由の語彙は洗い出した22値である()
+    public void 見送り理由の語彙は洗い出した23値である()
     {
         // T-10-2496, #1286 / IADR-0521 決定 2 が末尾に ExitOnlyOpenOutsideWatchlist（LLM の後）を足して 18 → 19。
         // T-10-2386, #1174 / IADR-0500 決定2 が末尾に EntryCapacityBelowOneShare（LLM の前）を足して 17 → 18。
@@ -304,12 +305,14 @@ public class DecisionSkipReasonTests
         // T-10-2502, #1286 / IADR-0521 決定 2 が末尾に ExitOnlyWithoutHolding（LLM の前）を足して 19 → 20。
         // T-10-2651, #1338 / IADR-0535 決定1 が末尾に InFlightCloseCoversPosition（LLM の前）を足して 20 → 21。
         // T-10-2994, #1434 / IADR-0572 決定2 が末尾に BrokerPositionClosed（LLM の前）を足して 21 → 22。
-        Enum.GetValues<DecisionSkipReason>().Should().HaveCount(22);
-        Enum.GetValues<DecisionSkipReason>()[^1].Should().Be(DecisionSkipReason.BrokerPositionClosed, "値は末尾へ足す");
-        Enum.GetValues<DecisionSkipReason>()[^2].Should().Be(DecisionSkipReason.InFlightCloseCoversPosition, "既存の値の位置を変えない");
-        Enum.GetValues<DecisionSkipReason>()[^3].Should().Be(DecisionSkipReason.ExitOnlyWithoutHolding, "既存の値の位置を変えない");
-        Enum.GetValues<DecisionSkipReason>()[^4].Should().Be(DecisionSkipReason.ExitOnlyOpenOutsideWatchlist, "既存の値の位置を変えない");
-        Enum.GetValues<DecisionSkipReason>()[^5].Should().Be(DecisionSkipReason.EntryCapacityBelowOneShare, "既存の値の位置を変えない");
+        // T-10-3052, #1423 M-5 / IADR-0582 が末尾に LlmCostCapHalted（LLM の前）を足して 22 → 23。
+        Enum.GetValues<DecisionSkipReason>().Should().HaveCount(23);
+        Enum.GetValues<DecisionSkipReason>()[^1].Should().Be(DecisionSkipReason.LlmCostCapHalted, "値は末尾へ足す");
+        Enum.GetValues<DecisionSkipReason>()[^2].Should().Be(DecisionSkipReason.BrokerPositionClosed, "既存の値の位置を変えない");
+        Enum.GetValues<DecisionSkipReason>()[^3].Should().Be(DecisionSkipReason.InFlightCloseCoversPosition, "既存の値の位置を変えない");
+        Enum.GetValues<DecisionSkipReason>()[^4].Should().Be(DecisionSkipReason.ExitOnlyWithoutHolding, "既存の値の位置を変えない");
+        Enum.GetValues<DecisionSkipReason>()[^5].Should().Be(DecisionSkipReason.ExitOnlyOpenOutsideWatchlist, "既存の値の位置を変えない");
+        Enum.GetValues<DecisionSkipReason>()[^6].Should().Be(DecisionSkipReason.EntryCapacityBelowOneShare, "既存の値の位置を変えない");
         Enum.GetValues<DecisionSkipReason>().Should().Contain(
         [
             DecisionSkipReason.ReferencePriceInvalid,

@@ -426,6 +426,10 @@ services:
       # したうえで結線する。下の TradeCycle__Watchlist__0__* は結線を外したときの対象（#1134 / IADR-0475: 結線時は照会不達でも
       # 構成へ倒さず、直前に読めた一覧か、一度も読めていなければその巡回を見送る）。
       - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
+      # 🔴 NFR-13, UC-02, #1423 M-5, ADR-0074 決定2, IADR-0582: 月次 LLM 費用上限の 100% 到達（Halted）を判断の合流点で読み、
+      # 定時・価格変動の両方の判断を LLM の前で見送る。情報収集と同じ GET /costs/state・同じ s2s（下の ServiceAuth__*）。
+      # 空にすると未結線（NoOp＝常に停止していない＝価格変動の判断は上限の後も LLM を呼ぶ）。
+      - { name: CostControl__BaseUrl, value: "http://cost-control-service:8080" }
       # FR-04, FR-15, ADR-0033 決定3, ADR-0037 決定2, #632: 記録側の学習カットオフ日（本番既定と同値の写し）。
       # #1295, IADR-0524: 5.5 系の割当（training data cutoff Jun 2026）を月末へ写した 2026-06-30（旧割当は 2026-01-31）。
       # 🔴 backtest 側の Backtest__Stage0__LlmTrainingCutoff と必ず同値にする（食い違うと RecordingMismatch）。
