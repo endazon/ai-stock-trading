@@ -101,6 +101,13 @@ public sealed class WithdrawalTriggeredNotificationHandler(INotificationSender s
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
 
+// FR-10, FR-09, #1423 M-3, ADR-0073 決定3, IADR-0581: 基準資金の観測の欠けによる新規建ての拒否を通知する（リスク統制の発動）。
+public sealed class CapitalBaselineObservationMissingNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(CapitalBaselineObservationMissing message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
 // UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップ（取引判断 #11）を購読して確定を促す通知を送る。
 public sealed class DailyPolicyUnconfirmedNotificationHandler(INotificationSender sender)
 {

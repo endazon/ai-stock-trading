@@ -26,6 +26,9 @@ public class RiskStatusServiceTests
         public InMemoryPortfolioLedgerStore Ledger { get; } = new();
         public PortfolioState State { get; init; } = new() { LedgerEquity = 100_000m };
 
+        // #1423 M-3: 基準資金の供給（既定は照会できている）。
+        public FakeCapitalBaseline Capital { get; init; } = FakeCapitalBaseline.Of(100_000m);
+
         public Fixture(TradingStage stage = TradingStage.Stage0Verification)
         {
             StageGate = new InMemoryStageGateStore(stage);
@@ -35,7 +38,7 @@ public class RiskStatusServiceTests
         {
             var builder = new PortfolioSnapshotBuilder(
                 new FakePortfolioStateProvider(State), KillSwitch, Pause,
-                FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
+                FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed(), capitalBaseline: Capital);
             var svc = new RiskStatusService(
                 builder,
                 new InMemoryRiskSettingsStore(),
@@ -43,7 +46,8 @@ public class RiskStatusServiceTests
                 Lockout,
                 StageGate,
                 Ledger,
-                new FakeClock(Now, Today));
+                new FakeClock(Now, Today),
+                Capital);
             return svc.Build();
         }
     }
@@ -191,5 +195,41 @@ public class RiskStatusServiceTests
     public void 取り込みが無ければ_0_件を出す()
     {
         new Fixture().Build().DriftAdoptionCountToday.Should().Be(0);
+    }
+
+    // 🔴 T-10-3044, FR-10, SC-03, #1423 M-3, ADR-0073 決定3: **直前の米国東部暦日の観測が欠けたために新規建てを止めていることを
+    // 画面へ出す。** 基準資金は未供給（null）になり、欠けの印と最後に観測できた取引日が載る。
+    [Theory]
+    [InlineData(AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome.UnavailableMissingPreviousDay, true)]
+    [InlineData(AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome.UnavailableStale, true)]
+    [InlineData(AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome.UnavailableNoRow, false)]
+    [InlineData(AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome.UnavailableNonPositive, false)]
+    public void 観測の欠けで基準資金が未供給なら_その理由を表示へ載せる(
+        AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome outcome, bool missing)
+    {
+        var capital = FakeCapitalBaseline.NotObserved();
+        capital.UnavailableOutcome = outcome;
+        if (outcome is AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome.UnavailableMissingPreviousDay
+            or AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome.UnavailableStale)
+        {
+            capital.UnavailableLatestTradingDay = new DateOnly(2026, 7, 6);
+        }
+
+        var status = new Fixture { Capital = capital }.Build();
+
+        status.Capital.Should().BeNull();
+        status.CapitalBaselineObservationMissing.Should().Be(missing);
+        status.CapitalBaselineLatestTradingDay.Should().Be(missing ? new DateOnly(2026, 7, 6) : null);
+    }
+
+    // T-10-3044（否定形）: 照会できている平常時は欠けを出さない。
+    [Fact]
+    public void 基準資金が供給されていれば欠けを出さない()
+    {
+        var status = new Fixture().Build();
+
+        status.Capital.Should().Be(100_000m);
+        status.CapitalBaselineObservationMissing.Should().BeFalse();
+        status.CapitalBaselineLatestTradingDay.Should().BeNull();
     }
 }

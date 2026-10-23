@@ -12,7 +12,10 @@ public sealed class RiskStatusService(
     ILockoutStore lockoutStore,
     IStageGateStore stageGateStore,
     IPortfolioLedgerStore ledger,
-    IClock clock)
+    IClock clock,
+    // FR-10, SC-03, #1423 M-3, ADR-0073 決定3, IADR-0581: 基準資金が**なぜ**未供給か（観測の欠け）を表示するため。
+    // 未注入の組み立て（既存の単体試験）では欠けを表示しない（値は従来どおりスナップショットから来る）。
+    ICapitalBaselineStore? capitalBaseline = null)
 {
     public RiskStatusView Build()
     {
@@ -50,6 +53,11 @@ public sealed class RiskStatusService(
             .Count(a => PortfolioProjection.TradeDate(a.AdoptedAt, a.Market)
                      == PortfolioProjection.TradeDate(now, a.Market));
 
+        // FR-10, SC-03, #1423 M-3, ADR-0073 決定3, IADR-0581: 直前の米国東部暦日に成功した観測が無いために新規建てを
+        // 止めていることを画面へ出す。🔴 計器を動かさない口（Read）で読む —— 帰結を数えるのは審査の側だけである。
+        var reading = capitalBaseline?.Read();
+        var observationMissing = reading?.ObservationMissing == true;
+
         return new RiskStatusView(
             KillSwitchEngaged: snapshot.KillSwitchEngaged,
             DailyLossLockoutActive: lockoutActive,
@@ -81,6 +89,8 @@ public sealed class RiskStatusService(
             // FR-10, SC-03, ADR-0040 決定1, #819: 選択中の損切りの実行機構（参照専用）。
             StopLossMethod: settings.StopLossMethod,
             // FR-11, SC-03, ADR-0041 決定 1, #870: 当日の取り込み件数（参照専用）。
-            DriftAdoptionCountToday: driftAdoptionCountToday);
+            DriftAdoptionCountToday: driftAdoptionCountToday,
+            CapitalBaselineObservationMissing: observationMissing,
+            CapitalBaselineLatestTradingDay: observationMissing ? reading!.LatestTradingDay : null);
     }
 }

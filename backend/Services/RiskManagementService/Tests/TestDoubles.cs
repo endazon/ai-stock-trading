@@ -128,6 +128,17 @@ internal sealed class FakeCapitalBaseline : ICapitalBaselineStore
     }
 
     public CapitalBaseline? GetCurrent() => Baseline;
+
+    /// <summary>#1423 M-3: 未供給の帰結（既定は「行なし」）。欠けの通知・SC-03 の表示の試験が上書きする。</summary>
+    public AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome UnavailableOutcome { get; set; } =
+        AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome.UnavailableNoRow;
+
+    /// <summary>#1423 M-3: 未供給のときの最新行の取引日（既定は行なし）。</summary>
+    public DateOnly? UnavailableLatestTradingDay { get; set; }
+
+    public CapitalBaselineReading Read() => Baseline is { } b
+        ? new(b, AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome.Supplied, b.TradingDay.AddDays(1), b.TradingDay, b.EquityInBase)
+        : new(null, UnavailableOutcome, new DateOnly(2026, 7, 9), UnavailableLatestTradingDay, UnavailableLatestTradingDay is null ? null : 3_000m);
 }
 
 // FR-10, #967, IADR-0425: 空売り文脈の供給の既定のテスト用組み立て。**借株可否は常に「分からない」**

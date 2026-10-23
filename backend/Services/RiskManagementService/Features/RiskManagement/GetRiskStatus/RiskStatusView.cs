@@ -56,7 +56,14 @@ public sealed record RiskStatusView(
     // ずれ得る。件数を出す目的は「ずれていることを画面から知る手段」を与えることである。
     // 「当日」は**取り込みの市場の現地取引日**で判定する（当日実現損益・日次発注枠と同じ境界。IADR-0246）。
     // 末尾の既定値つき項目として足し、既存の生成箇所を変えない。
-    int DriftAdoptionCountToday = 0);
+    int DriftAdoptionCountToday = 0,
+    // FR-10, SC-03, #1423 M-3, ADR-0073 決定1・3, IADR-0581: **直前の米国東部暦日に成功した口座照会が無いため、
+    // 基準資金を未供給として新規建てを拒否しているか**（鮮度切れを含む。行が 1 つも無い初回・人手の 0 は含めない）。
+    // 計画は SC-03 の「基準資金の供給元と、その照会が成立しているか」にこの理由を出すと定める。
+    // 🔴 true のとき `Capital` は null である。解除は自動（直前の暦日の観測が成功すれば次の読み出しから供給に戻る）。
+    bool CapitalBaselineObservationMissing = false,
+    // 上が true のとき、最後に観測できた取引日（米国東部の暦日）。false なら null。
+    DateOnly? CapitalBaselineLatestTradingDay = null);
 
 // ADR-0009: 成立中で最優先の統制。重い順（kill switch > 日次損失ロックアウト > 一時停止）。
 public enum ActiveTradingControl

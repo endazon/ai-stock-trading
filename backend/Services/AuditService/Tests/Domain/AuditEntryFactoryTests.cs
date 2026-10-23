@@ -1215,6 +1215,21 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().NotEndWith("…", "要約の上限に収まり、結論が切れない");
     }
 
+    // T-10-3046, FR-10, FR-11, #1423 M-3, ADR-0073, IADR-0581: 基準資金の観測の欠けによる新規建ての拒否は、銘柄に依らない統制の
+    // 状態として固定の相関で残り、要約から判定日と最後の観測日が読める。
+    [Fact]
+    public void T_10_3046_基準資金の観測の欠けは判定日と最後の観測日が要約から読める()
+    {
+        var entry = AuditEntryFactory.From(
+            new CapitalBaselineObservationMissing(new DateOnly(2026, 8, 31), new DateOnly(2026, 8, 29), false, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(CapitalBaselineObservationMissing));
+        entry.Symbol.Should().BeNull();
+        entry.Summary.Should().Contain("新規建てを拒否").And.Contain("2026-08-31").And.Contain("2026-08-29");
+        entry.Summary.Should().NotContain("鮮度超過");
+    }
+
     // 🔴 T-10-640, FR-10, FR-11, #857, IADR-0369: 確認できた拒否は「解消した」とも「不明」とも書かない。
     // 監査要約だけを読んで「建玉が無保護で残っている」と分かること（一次証跡の役目）。
     [Fact]

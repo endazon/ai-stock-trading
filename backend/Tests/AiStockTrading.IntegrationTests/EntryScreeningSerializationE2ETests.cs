@@ -121,6 +121,11 @@ public sealed class EntryScreeningSerializationE2ETests : IAsyncLifetime
 
         public CapitalBaseline? GetCurrent() =>
             new(Equity, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1)), DateTimeOffset.UtcNow.AddHours(-1));
+
+        // #1423 M-3: 表示・通知の口（本試験は使わない）。
+        public CapitalBaselineReading Read() =>
+            new(GetCurrent(), AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome.Supplied,
+                DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1)), Equity);
     }
 
     private sealed class NoPrices : ICurrentPriceSource

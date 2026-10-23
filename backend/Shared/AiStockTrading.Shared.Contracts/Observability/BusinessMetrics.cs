@@ -560,9 +560,9 @@ public sealed class BusinessMetrics : IDisposable
     /// <summary>
     /// FR-10, #889, IADR-0372: 基準資金を読んだ 1 回を帰結つきで計上する。
     /// <para>
-    /// 🔴 <b>「供給できた」の中を割るためにある。</b> 残高 0 を観測した日は行が書かれず、読み出しは
-    /// 前取引日の値を返し続ける ——<b>値が返っている以上、統制は平常どおり動いて見える</b>。
-    /// <see cref="CapitalBaselineReadOutcome.SuppliedWithGap"/> はその状態を数える唯一の手段である。
+    /// 🔴 <b>未供給の理由を割るためにある。</b> 残高 0 を観測した日は行が書かれず、翌暦日の読み出しは
+    /// <see cref="CapitalBaselineReadOutcome.UnavailableMissingPreviousDay"/> で未供給になる（#1423 M-3・ADR-0073）。
+    /// 初回の配備（行なし）・長い停止（鮮度切れ）・人手の 0 と分けて数える。
     /// </para>
     /// </summary>
     public void RecordCapitalBaselineRead(CapitalBaselineReadOutcome outcome) =>

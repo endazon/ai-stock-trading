@@ -19,5 +19,7 @@
   "openPositionCount": 0,
   "maxOpenPositions": 3,
   "stopLossMethod": 0,
-  "driftAdoptionCountToday": 0
+  "driftAdoptionCountToday": 0,
+  "capitalBaselineObservationMissing": false,
+  "capitalBaselineLatestTradingDay": null
 }
