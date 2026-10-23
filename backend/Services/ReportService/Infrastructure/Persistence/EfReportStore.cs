@@ -273,6 +273,14 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
             .Select(v => new VersionedReport(ToReport(v), v.Version))];
     }
 
+    // FR-07, #1423 M-6, IADR-0583 決定2: 未確定の最新（本文を読まない射影）。
+    public ReportPeriodKeyItem? GetLatestUnconfirmed(ReportKind kind) =>
+        db.Reports.AsNoTracking()
+            .Where(r => r.Kind == kind && r.State != ReportState.Confirmed)
+            .OrderByDescending(r => r.PeriodStart).ThenByDescending(r => r.PeriodKey)
+            .Select(r => new ReportPeriodKeyItem(r.PeriodKey, r.PeriodStart))
+            .FirstOrDefault();
+
     public ReportReview? GetReview(string periodKey)
     {
         var row = db.Reports.Find(periodKey);

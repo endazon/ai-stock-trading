@@ -87,4 +87,9 @@ public enum DecisionForgoneBeforeLlmReason
     /// LLM を使わない保護（損切り・利用者の手仕舞い・閉場前の手仕舞い・維持率割れの自動縮小）は本見送りを通らない。
     /// </summary>
     LlmCostCapHalted,
+    /// <summary>
+    /// 🔴 FR-07, UC-03, #1423 M-6, ADR-0075 決定1〜3, IADR-0583: 無応答時の設定が「停止」で、承認待ちの日報が期限（翌営業日の米国市場の開場）を過ぎた。
+    /// 日報が確定するまで、定時・価格変動のどちらの判断も（新規建ても出口の判断も）LLM の前で見送る。損切り・手仕舞いは本見送りを通らない。
+    /// </summary>
+    DailyReportNoResponseHalted,
 }

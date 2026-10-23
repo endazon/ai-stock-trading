@@ -159,4 +159,9 @@ public enum DecisionSkipReason
     /// （<c>DecisionForgoneBeforeLlmReason.LlmCostCapHalted</c> と同名）。定時・価格変動の両方。
     /// </summary>
     LlmCostCapHalted,
+    /// <summary>
+    /// 🔴 FR-07, #1423 M-6, ADR-0075 決定1, IADR-0583: 日報の無応答（停止）のため LLM を呼ぶ前に見送った
+    /// （<c>DecisionForgoneBeforeLlmReason.DailyReportNoResponseHalted</c> と同名）。定時・価格変動の両方。
+    /// </summary>
+    DailyReportNoResponseHalted,
 }

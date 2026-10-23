@@ -79,6 +79,16 @@ public interface IReportStore
     ReportReview? GetReview(string periodKey);
 
     /// <summary>
+    /// FR-07, #1423 M-6, ADR-0075, IADR-0583 決定2: <paramref name="kind"/> の<b>未確定</b>の報告書のうち、開始日が最大のもの（無ければ null）。
+    /// 既定の実装は一覧から引く（試験の偽物のため）。本番の実装は本文を読まずに引く。
+    /// </summary>
+    ReportPeriodKeyItem? GetLatestUnconfirmed(ReportKind kind) =>
+        List().Where(r => r.Kind == kind && r.State != ReportState.Confirmed)
+            .OrderByDescending(r => r.PeriodStart).ThenByDescending(r => r.PeriodKey, StringComparer.Ordinal)
+            .Select(r => new ReportPeriodKeyItem(r.PeriodKey, r.PeriodStart))
+            .FirstOrDefault();
+
+    /// <summary>
     /// FR-07, IADR-0042/0071: レビュー操作（提示・差し戻し）を <see cref="ReportReviewStateMachine"/> で検証し、遷移を永続化する。
     /// 提示・差し戻しは内容不変のため Version を上げない。拒否時は状態不変で理由を含む決定を返す。対象が無ければ null。
     /// </summary>

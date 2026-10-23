@@ -183,6 +183,24 @@ public class NotificationTemplateGoldenTests
                     + "口座照会・発注執行の巡回・ブローカーの接続を確認してください。直前の暦日の観測が成功すれば自動で解除されます。",
                 NotificationSeverity.Critical)),
 
+        // 🔴 T-10-3058, FR-07, #1423 M-6, ADR-0075 決定4: 日報の無応答（停止・継続）。止めているもの・止めていないもの・確定で戻ることが本文から欠けない。
+        ["DailyReportNoResponse/停止"] = (
+            new DailyReportNoResponse("daily-2026-08-27", new DateOnly(2026, 8, 27), new DateTimeOffset(2026, 8, 27, 9, 30, 0, TimeSpan.FromHours(-4)), true, "daily-2026-08-26", T),
+            new NotificationMessage(
+                "取引判断を停止: 日報が無応答のまま期限を過ぎました",
+                "日報 daily-2026-08-27 が承認待ちのまま期限（2026-08-27 09:30 -04:00）を過ぎました。無応答時の設定が「停止」のため、"
+                    + "**日報が確定するまで取引判断（定時・急変・新規建て・AI 判断の決済）を見送っています。損切り・手仕舞いは止めていません。**"
+                    + "日報を確定すると自動で再開します。",
+                NotificationSeverity.Critical)),
+
+        ["DailyReportNoResponse/継続"] = (
+            new DailyReportNoResponse("daily-2026-08-27", new DateOnly(2026, 8, 27), new DateTimeOffset(2026, 8, 27, 9, 30, 0, TimeSpan.FromHours(-4)), false, "daily-2026-08-26", T),
+            new NotificationMessage(
+                "日報が無応答のまま期限を過ぎました",
+                "日報 daily-2026-08-27 が承認待ちのまま期限（2026-08-27 09:30 -04:00）を過ぎました。無応答時の設定が「継続」のため、"
+                    + "直近の確定済み日報（daily-2026-08-26）の方針で取引を続けています。日報を確定すると新しい方針に切り替わります。",
+                NotificationSeverity.Warning)),
+
         ["DailyPolicyUnconfirmed"] = (
             new DailyPolicyUnconfirmed(new DateOnly(2026, 8, 28), T),
             new NotificationMessage(

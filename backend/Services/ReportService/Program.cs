@@ -624,6 +624,21 @@ builder.Services.AddSingleton<IReportDraftPresentedNotifier>(sp =>
         : new NoOpReportDraftPresentedNotifier());
 // EF ストア・ドラフト生成が scoped のため、オーケストレータも scoped（常駐は巡回ごとにスコープを作る）。
 builder.Services.AddScoped<ReportAutoGenerator>();
+// 🔴 FR-07, UC-03, #1423 M-6, ADR-0075 決定1〜4, IADR-0583: 日報の無応答の判定（方針の照会の停止の印と、無応答の通知が同じ答えを見る）。
+// 期限は日報の生成境界（Reports:AutoGeneration の日報の時刻）より後の最初の米国市場の開場。設定は Reports:NoResponseBehavior（既定は継続）。
+builder.Services.AddSingleton(sp => new ReportNoResponseSettings(
+    ReportNoResponsePolicy.ParseBehavior(sp.GetRequiredService<IConfiguration>()["Reports:NoResponseBehavior"]),
+    sp.GetRequiredService<IOptions<ReportAutoGenerationOptions>>().Value.ToSettings().Schedule));
+builder.Services.AddScoped<DailyReportNoResponseEvaluator>();
+// 無応答の通知（継続・停止とも。期間キーごとに 1 回）。既定で有効（計画が求める通知）。`Reports:NoResponseNotice:Enabled=false` で外せる。
+if (builder.Configuration.GetValue("Reports:NoResponseNotice:Enabled", true))
+{
+    builder.Services.AddHostedService(sp => new DailyReportNoResponseMonitorService(
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<IClock>(),
+        TimeSpan.FromSeconds(Math.Max(1, sp.GetRequiredService<IConfiguration>().GetValue("Reports:NoResponseNotice:IntervalSeconds", 300))),
+        sp.GetRequiredService<ILogger<DailyReportNoResponseMonitorService>>()));
+}
 if (builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName)
         .Get<ReportAutoGenerationOptions>()?.Enabled == true)
     builder.Services.AddHostedService<ReportAutoGenerationService>();
@@ -684,11 +699,11 @@ if (startupPriceTable.UnknownModelSettingRejected)
     app.Logger.LogWarning(LlmPricingStartupGuard.UnknownModelSettingWarningMessage);
 
 // FR-07, IADR-0071 決定2: 無応答時の既定動作を起動時に解釈してログに残す（設定が実際に消費されていることを可視化する）。
-// これによりオペレーターは REPORTS_NORESPONSE_BEHAVIOR の反映を確認できる。期限（翌営業日開場）検知→停止の**実強制**は
-// スケジューラ（#22）が本設定（ReportNoResponsePolicy.Decide）を読み取って行う seam であり、本サービス単体では判定のみを持つ。
+// 🔴 #1423 M-6, ADR-0075, IADR-0583（2026-10-24）: 期限検知→停止の実強制は、方針の照会の停止の印（DailyReportNoResponseEvaluator）と
+// 無応答の通知の常駐（DailyReportNoResponseMonitorService）が行う（旧注記の「スケジューラ #22 が読む seam」は実装が無かった）。
 var noResponseBehavior = ReportNoResponsePolicy.ParseBehavior(builder.Configuration["Reports:NoResponseBehavior"]);
 app.Logger.LogInformation(
-    "報告書の無応答時の既定動作: {Behavior}（確定を経ない新方針は不適用。期限検知→停止の実強制はスケジューラ #22 が本設定を読む）。",
+    "報告書の無応答時の既定動作: {Behavior}（確定を経ない新方針は不適用。停止なら期限後の取引判断の全体を見送り、継続・停止とも無応答を通知する）。",
     noResponseBehavior);
 
 // IADR-0012 準拠: 起動時にスキーマを最新 Migration へ更新（relational のみ。テストの InMemory はスキップ）。

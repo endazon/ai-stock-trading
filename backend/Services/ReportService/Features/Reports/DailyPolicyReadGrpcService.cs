@@ -61,7 +61,11 @@ public static class DailyPolicyWireMapping
     public static Proto.DailyPolicyRecord ToProto(ConfirmedDailyPolicy policy)
     {
         ArgumentNullException.ThrowIfNull(policy);
-        return Record(policy.Date, policy.Summary, policy.PeriodKey, policy.Version);
+        var record = Record(policy.Date, policy.Summary, policy.PeriodKey, policy.Version);
+        // FR-07, #1423 M-6, IADR-0583 決定3: 停止の印は立っているときだけ載せる（欠落＝停止していない。古い送り手と同じ読み）。
+        if (policy.NoResponseHalted)
+            record.NoResponseHalted = true;
+        return record;
     }
 
     // FR-15, #1388, IADR-0557 決定 3: 当時の方針（as-of）。運ぶ項目は確定の方針と同じ（日付・要約・期間キー・版）。確定の時刻は応答の別の項目。

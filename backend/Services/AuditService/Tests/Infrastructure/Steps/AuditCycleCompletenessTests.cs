@@ -233,6 +233,8 @@ public class AuditCycleCompletenessTests
                 [new BuyInCoveringFill(TradeSide.Buy, 5, 1_010m, t)], day, t, t),
             new CostThresholdReached("2026-08", "llm", 0.8m, "Warning", t),
             new DailyPolicyUnconfirmed(day, t),
+            // FR-07, #1423 M-6, ADR-0075, IADR-0583: 日報の無応答。
+            new DailyReportNoResponse("daily-2026-08-27", day.AddDays(-1), t, true, "daily-2026-08-26", t),
             // FR-10, #1423 M-3, ADR-0073, IADR-0581: 基準資金の観測の欠けによる新規建ての拒否。
             new CapitalBaselineObservationMissing(day, day.AddDays(-2), false, t),
             new FxRateSourceFellBack("JPY", "fallback-source", 2, 3, t),

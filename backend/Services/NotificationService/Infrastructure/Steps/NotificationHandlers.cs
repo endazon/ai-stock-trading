@@ -108,6 +108,13 @@ public sealed class CapitalBaselineObservationMissingNotificationHandler(INotifi
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
 
+// FR-07, FR-09, UC-03, #1423 M-6, ADR-0075 決定4, IADR-0583: 日報の無応答（継続・停止とも）を通知する。
+public sealed class DailyReportNoResponseNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(DailyReportNoResponse message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
 // UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップ（取引判断 #11）を購読して確定を促す通知を送る。
 public sealed class DailyPolicyUnconfirmedNotificationHandler(INotificationSender sender)
 {

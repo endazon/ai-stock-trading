@@ -274,6 +274,7 @@ public sealed class TradeDecisionAppService(
         DecisionForgoneBeforeLlmReason.InFlightCloseCoversPosition => DecisionSkipReason.InFlightCloseCoversPosition,
         DecisionForgoneBeforeLlmReason.BrokerPositionClosed => DecisionSkipReason.BrokerPositionClosed,
         DecisionForgoneBeforeLlmReason.LlmCostCapHalted => DecisionSkipReason.LlmCostCapHalted,
+        DecisionForgoneBeforeLlmReason.DailyReportNoResponseHalted => DecisionSkipReason.DailyReportNoResponseHalted,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "LLM を呼ぶ前の見送りの理由ではない"),
     };
 
@@ -337,6 +338,17 @@ public sealed class TradeDecisionAppService(
             // fail-safe: 通知は取引判断のクリティカルパス外。発行失敗・例外で見送り（null 返却）を壊さない。キャンセルは伝播。
             await NotifyDailyPolicyUnconfirmedSafeAsync(cancellationToken).ConfigureAwait(false);
             return await SkipBeforeLlmAsync(trigger, DecisionForgoneBeforeLlmReason.DailyPolicyUnconfirmed, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // 🔴 FR-07, UC-01, UC-02, UC-03, #1423 M-6, ADR-0075 決定1〜3, IADR-0583 決定3: 無応答時の設定が「停止」で、承認待ちの日報が期限
+        // （翌営業日の米国市場の開場）を過ぎている間は、**取引判断の全体を見送る**（定時・価格変動・新規建て・出口の判断。LLM を呼ばない）。
+        // 方針は直近の確定済み日報のまま届いている（閉場前の手仕舞いはこの印を読まない）。日報を確定すれば次の照会から印が消え、自動で再開する。
+        // 日報未確定の通知（確定済みの日報が無い）は鳴らさない —— 無応答の通知は報告書サービスが期間キーごとに 1 回出す。
+        if (policy.NoResponseHalted)
+        {
+            logger.LogInformation("日報の無応答（停止）のため取引判断を見送ります: {Symbol} trigger={Trigger}", trigger.Symbol, trigger.MetricTrigger);
+            return await SkipBeforeLlmAsync(trigger, DecisionForgoneBeforeLlmReason.DailyReportNoResponseHalted, cancellationToken)
                 .ConfigureAwait(false);
         }
 

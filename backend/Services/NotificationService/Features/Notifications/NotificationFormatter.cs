@@ -679,6 +679,22 @@ public static class NotificationFormatter
             + "口座照会・発注執行の巡回・ブローカーの接続を確認してください。直前の暦日の観測が成功すれば自動で解除されます。",
         NotificationSeverity.Critical);
 
+    // 🔴 FR-07, FR-09, UC-03, #1423 M-6, ADR-0075 決定4, IADR-0583: 提示した日報が承認待ちのまま期限（翌営業日の米国市場の開場）を過ぎた。
+    // 継続・停止のどちらでも出す。何が起きているか（続けている方針／止めているもの・止めていないもの）と、確定で戻ることを本文に書く。
+    // 停止は取引判断の全体を見送るので Critical、継続は古い方針で取引しているので Warning。
+    public static NotificationMessage From(DailyReportNoResponse e) => e.TradingHalted
+        ? new NotificationMessage(
+            "取引判断を停止: 日報が無応答のまま期限を過ぎました",
+            $"日報 {e.PeriodKey} が承認待ちのまま期限（{e.Deadline:yyyy-MM-dd HH:mm zzz}）を過ぎました。無応答時の設定が「停止」のため、"
+                + "**日報が確定するまで取引判断（定時・急変・新規建て・AI 判断の決済）を見送っています。損切り・手仕舞いは止めていません。**"
+                + "日報を確定すると自動で再開します。",
+            NotificationSeverity.Critical)
+        : new NotificationMessage(
+            "日報が無応答のまま期限を過ぎました",
+            $"日報 {e.PeriodKey} が承認待ちのまま期限（{e.Deadline:yyyy-MM-dd HH:mm zzz}）を過ぎました。無応答時の設定が「継続」のため、"
+                + $"直近の確定済み日報（{e.LastConfirmedPeriodKey ?? "なし"}）の方針で取引を続けています。日報を確定すると新しい方針に切り替わります。",
+            NotificationSeverity.Warning);
+
     // UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップ。確定を促す注意喚起（Warning）。
     // 日報が未確定の間は取引が見送られ続けるため、利用者に確定を促す（同一営業日内は 1 回に抑止済み・IADR-0096）。
     public static NotificationMessage From(DailyPolicyUnconfirmed e) => new(

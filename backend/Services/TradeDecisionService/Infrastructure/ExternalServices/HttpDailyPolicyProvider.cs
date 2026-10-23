@@ -32,7 +32,10 @@ public sealed class HttpDailyPolicyProvider(
             var dto = await response.Content.ReadFromJsonAsync<ConfirmedDailyPolicyDto>(cancellationToken).ConfigureAwait(false);
             return dto is null
                 ? null
-                : new DailyPolicy(dto.Date, dto.Summary, DailyPolicyReferences.From(dto.PeriodKey, dto.Version, logger, "rest"));
+                : new DailyPolicy(
+                    dto.Date, dto.Summary, DailyPolicyReferences.From(dto.PeriodKey, dto.Version, logger, "rest"),
+                    // FR-07, #1423 M-6, IADR-0583 決定3: 無応答時の停止の印（欠落＝停止していない）。
+                    NoResponseHalted: dto.NoResponseHalted == true);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -51,5 +54,6 @@ public sealed class HttpDailyPolicyProvider(
     // GET /reports/daily-policy の応答（ConfirmedDailyPolicy）。AssumptionsVersion は本結線では未使用。
     // ADR-0068 決定4, #1373, IADR-0548 決定5: PeriodKey・Version は確定版の出所（古い送り手は返さない＝null のまま方針は使う）。
     private sealed record ConfirmedDailyPolicyDto(
-        DateOnly Date, string Summary, int AssumptionsVersion, string? PeriodKey = null, int? Version = null);
+        DateOnly Date, string Summary, int AssumptionsVersion, string? PeriodKey = null, int? Version = null,
+        bool? NoResponseHalted = null);
 }
