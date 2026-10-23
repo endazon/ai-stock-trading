@@ -576,7 +576,10 @@ public static class ProtectiveStopNetting
     /// 「受理後に取り消された決済の残り」の配置には <c>Active</c> な行が 1 件も残らない——
     /// Active 行の群を回すだけでは見えない。ただし <b>S1 の足跡がある群に限る</b>
     /// （Active な S1 行、または <see cref="IProtectiveStopOrderStore.FindCompletedSoftwareStops"/> が返す完了済みの行）。
-    /// <b>S1 が 1 件も無い構成（実弾・S0 のみ）では 1 バイトも動かない。</b>
+    /// <b>S1 が 1 件も無い構成（実弾・S0 のみ）では、同じ方向の群には 1 バイトも動かない。</b>
+    /// 🔴 <b>#1454, IADR-0580 決定2: 例外は逆方向の群である</b>——建玉の方向と逆の方向をエントリーとする S0 / S3 の記録（有効・完了を問わない）が
+    /// ある群は、S1 の足跡が無くても対象にする（窓開けで逆指値がエントリーより先に約定した売り建玉など）。その印は S0 の行が持ち、
+    /// 印の読み戻しは逆方向の群へ対応させる（<see cref="WatchedSide"/>）。
     /// </para>
     /// <para>
     /// <b>同じ状態で毎巡回鳴らさない</b>: 群の S1 行のうち<b>作成が最も新しい 1 行</b>が
@@ -625,7 +628,7 @@ public static class ProtectiveStopNetting
         foreach (var (symbol, market, entrySide) in snapshot
             .Where(p => p.Quantity != 0)
             .Select(p => (p.Symbol, p.Market, EntrySide: p.Quantity > 0 ? TradeSide.Buy : TradeSide.Sell))
-            .Concat(notified.Select(s => (s.Symbol, s.Market, s.EntrySide)))
+            .Concat(notified.Select(s => (s.Symbol, s.Market, WatchedSide(s))))
             .Distinct())
         {
             // #880: 純額が 0（その方向に 0）の群は帰属不明 0 として下のリセット分岐へ入れる（かつては continue で素通りした）。
@@ -635,19 +638,30 @@ public static class ProtectiveStopNetting
                 .Where(s => s.Symbol == symbol && s.Market == market && s.EntrySide == entrySide)
                 .ToList();
             var completed = stops.FindCompletedSoftwareStops(symbol, market, entrySide, SentCloseScanLimit);
+            // 🔴 #1454, IADR-0580 決定2: 印の読み戻しは「その印がどの方向の群の帰属不明か」で対応させる（WatchedSide）。
             var notifiedInGroup = notified
-                .Where(s => s.Symbol == symbol && s.Market == market && s.EntrySide == entrySide)
+                .Where(s => s.Symbol == symbol && s.Market == market && WatchedSide(s) == entrySide)
                 .ToList();
 
-            // S1 の足跡が無い群（実弾・S0 のみ）には触れない。
-            if (!group.Any(s => s.IsSoftwareStop) && completed.Count == 0 && notifiedInGroup.Count == 0)
-                continue;
-
-            // 群を代表して記録を持つ行（作成が最も新しい S1 行）。完了済みでも構わない（状態は変えない）。
-            var anchor = group
+            // 群を代表して記録を持つ候補（S1 行。完了済みでも構わない＝状態は変えない）。
+            var candidates = group
                 .Where(s => s.IsSoftwareStop)
                 .Concat(completed)
                 .Concat(notifiedInGroup)
+                .ToList();
+
+            // S1 の足跡が無い群（実弾・S0 のみ）には触れない。
+            // 🔴 FR-10, ADR-0040, #1454, IADR-0580 決定2: **ただし、この方向と逆の方向をエントリーとする S0 の記録がある群は除外しない。**
+            // その銘柄でシステムが建てたのは逆方向であり、この方向の純額は（窓開けで逆指値がエントリーより先に約定した・二重決済などで）
+            // 保護の決済が建玉を越えて生んだ反対方向の建玉であり得る。売り建玉の損失には上限が無いので、S0 だけの銘柄でも黙らない。
+            // 同じ方向の S0 だけの群（T-10-488）は従来どおり触れない（手動・他の実行機構の建玉を S0 の近似で鳴らさない）。
+            if (candidates.Count == 0)
+                candidates = OppositeBrokerStopFootprints(symbol, market, entrySide, active, stops);
+            if (candidates.Count == 0)
+                continue;
+
+            // 群を代表して記録を持つ行（作成が最も新しい候補）。
+            var anchor = candidates
                 .OrderByDescending(s => s.CreatedAt)
                 .ThenByDescending(s => s.EntryDecisionId)
                 .First();
@@ -715,6 +729,31 @@ public static class ProtectiveStopNetting
                 SoftwareStopOutcome.UnattributedPosition, anchor.EntryDecisionId, symbol, market, entrySide,
                 anchor.UnattributedNotifiedQuantity ?? 0, unattributed, net);
         }
+    }
+
+    /// <summary>
+    /// 🔴 FR-10, #1454, IADR-0580 決定2: 帰属不明の通知済みの印が<b>どの方向の群</b>の帰属不明を指すか。
+    /// S1 の行は自分のエントリー方向の群（従来どおり）。S0 / S3 の行（ブローカー側の注文）が印を持つのは、
+    /// <see cref="OppositeBrokerStopFootprints"/> で<b>逆方向の群</b>の代表になったときだけである（同じ方向の S0 だけの群には触れない）。
+    /// </summary>
+    private static TradeSide WatchedSide(ProtectiveStopOrder row) =>
+        row.IsSoftwareStop ? row.EntrySide : row.CloseSide;
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0040, #1454, IADR-0580 決定2: 方向 <paramref name="side"/> の群に対し、<b>逆の方向をエントリーとする S0 / S3 の記録</b>
+    /// （有効・完了を問わない。完了した記録は更新が新しい順に上限つき）。帰属不明の検知の除外（S1 の足跡が無い群には触れない）を
+    /// 狭めるためだけに使う——帳簿の主張・持ち分の計算には使わない。
+    /// </summary>
+    private static List<ProtectiveStopOrder> OppositeBrokerStopFootprints(
+        string symbol, Market market, TradeSide side, List<ProtectiveStopOrder> active, IProtectiveStopOrderStore stops)
+    {
+        var entrySide = side == TradeSide.Buy ? TradeSide.Sell : TradeSide.Buy;
+        return active
+            .Where(s => s.Symbol == symbol && s.Market == market && s.EntrySide == entrySide)
+            .Concat(stops.FindRecentFor(symbol, market, entrySide, SentCloseScanLimit))
+            .Where(s => !s.IsSoftwareStop && s.Symbol == symbol && s.Market == market && s.EntrySide == entrySide)
+            .DistinctBy(s => s.EntryDecisionId)
+            .ToList();
     }
 
     /// <summary>

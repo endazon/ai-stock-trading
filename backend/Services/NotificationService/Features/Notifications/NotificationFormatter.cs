@@ -162,8 +162,24 @@ public static class NotificationFormatter
         ProtectiveStopRemediation.StopDispatchIndeterminate => StopDispatchIndeterminate(e),
         ProtectiveStopRemediation.StopReservationFailed => StopReservationFailed(e),
         ProtectiveStopRemediation.EntryStateUnknown => EntryStateUnknown(e),
+        ProtectiveStopRemediation.StopFilledBeforeEntry => StopFilledBeforeEntry(e),
         _ => CoverageLost(e),
     };
+
+    // 🔴 FR-10, ADR-0040, #1454, IADR-0580 決定1: **保護逆指値がエントリー注文より先に約定した**（窓開け）。反対方向の建玉が保護なしで生じ得る。
+    // 「成立せず」「解消」とは言わない——逆指値は約定しており、システムは買い戻しもエントリーの取消もしていない。
+    // 伝えるのは (1) 反対方向の建玉が生じている可能性、(2) 自動では何もしない、(3) 証券会社の画面で確かめる観点、(4) 約 1 時間ごとに繰り返す。
+    private static NotificationMessage StopFilledBeforeEntry(ProtectiveStopCoverageLost e) => new(
+        "リスク統制: 保護逆指値がエントリーより先に約定（反対方向の建玉の可能性）",
+        $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 保護逆指値が、エントリー注文の約定より先に約定しました（寄り付きの窓開けなど）。"
+            + "エントリー注文はまだ終わっていないか、状態を確認できません。"
+            + "**反対方向の建玉（買いのエントリーなら売り建玉）が、逆指値なしで生じている可能性があります**（売り建玉の損失には上限がありません）。"
+            + "**システムは自動では買い戻さず、エントリー注文も取り消していません。**"
+            + "**証券会社の画面で、この銘柄の建玉とエントリー注文を確認し、手で対応してください**"
+            + "（エントリーが全量約定すれば建玉は 0 に戻ります。約定しないまま終わると反対方向の建玉が残ります）。"
+            + "エントリー注文が終わるまで、この通知を約 1 時間ごと（と再起動のたび）に繰り返します。"
+            + $"EntryDecisionId={e.EntryDecisionId} StopDecisionId={e.CloseDecisionId}",
+        NotificationSeverity.Critical);
 
     // 🔴 FR-10, #1013, IADR-0428（2026-09-26 追記）: **建玉は 0 に見えるが、エントリー注文の状態を確認できない**ため、常駐ガードが
     // 保護逆指値を取り消さず、保護記録も閉じずに据え置いている。「成立せず」「解消」「未受理」とは言わない——何も送っておらず、何も取り消していない。
@@ -381,7 +397,7 @@ public static class NotificationFormatter
             "リスク統制: どの保護記録も主張していない建玉があります",
             $"{e.Symbol}/{e.Market} 数量{e.Quantity}: この銘柄・方向の建玉のうち {e.Quantity} 株を、"
                 + "どの保護記録も主張していません（他の実行機構の建玉・手動で建てた建玉・"
-                + "受理後に取り消された決済の残りなど）。"
+                + "受理後に取り消された決済の残り・保護逆指値がエントリーより先に約定した反対方向の建玉など）。"
                 + "**ソフトウェア逆指値はこの建玉を決済しません。手動で決済するか、保護を掛け直してください**"
                 + "（この銘柄ではソフトウェア逆指値の新規建ても見送られます）"
                 + $"（損切りライン {Invariant(e.StopLossPrice)}・EntryDecisionId={e.EntryDecisionId}）。",

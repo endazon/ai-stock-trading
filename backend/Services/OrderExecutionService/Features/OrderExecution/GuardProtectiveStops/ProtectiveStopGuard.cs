@@ -31,6 +31,9 @@ namespace OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 //     指値のエントリーが未約定のあいだ建玉は 0 であり、そこで逆指値を取り消す・記録を閉じると約定後の建玉が無保護で残る。
 //     未約定なら据え置き、約定 0 で終端なら従来どおり、約定済みなら建玉を照会し直して 0 のときだけ従来どおり、分からなければ据え置く
 //     （EntryStateUnknown を 1 時間ごと）。
+//   - 🔴 #1454, IADR-0580 決定1: **逆指値の約定を「損切りの成立」と読む前にもエントリー注文の状態を確かめる**（HoldIfStopFilledBeforeEntryAsync）。
+//     窓開けで逆指値が先に約定すると反対方向の建玉が生じる。エントリーが生きていれば記録を閉じずに据え置き、StopFilledBeforeEntry を
+//     1 時間ごとに出す（買い戻し・エントリーの取消はしない）。終端なら従来どおり完了（反対建玉は帰属不明の検知が知らせる）。
 //
 // 発行（イベントの Publish）は Worker 層（ProtectiveStopGuardService）が担う。
 //
@@ -386,6 +389,11 @@ public sealed class ProtectiveStopGuard(
             // OrderExecuted が一度も出ずに台帳へ届かない（ガードと約定追跡は別々の巡回で、どちらが先かは決まらない）。
             // 進めるのは非終端の記録の時刻だけで、約定追跡が既に反映していれば何もしない。
             RenewStopLegTracking(stop);
+
+            // 🔴 FR-10, ADR-0040, #1454, IADR-0580 決定1: 完了させる**前に**エントリーの状態を見る（窓開けで逆指値が先に約定し得る）。
+            if (await HoldIfStopFilledBeforeEntryAsync(stop, order, snapshot, events, cancellationToken).ConfigureAwait(false) is { } heldFilled)
+                return heldFilled;
+
             return MarkCompleted(stop) ? Outcome.Completed : Outcome.Unknown;
         }
 
@@ -1094,6 +1102,84 @@ public sealed class ProtectiveStopGuard(
             ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.EntryStateUnknown,
             stop.Quantity, CloseDecisionId: null, CloseIntent: null, now));
         _heldCloseNotifications.MarkNotified(stop.EntryDecisionId, stop.EntryDecisionId, now);
+    }
+
+    // 🔴 FR-10, ADR-0040, #1454（親 #1423 試験の穴 3）, IADR-0580 決定1: **逆指値の約定を「損切りの成立」と読む前に、エントリーの状態を確かめる。**
+    // S0 / S3 は承認数量の逆指値を未約定のエントリーと同時に板へ置く。窓開けでは逆指値が先に約定し、建玉 0 からの決済＝反対方向の建玉
+    //（買いのエントリーなら売り建玉）が生じ得る。従来はここで記録を完了させ、エントリーが約定しないまま終わると売り建玉が無通知で残った。
+    // null を返したら呼び出し側は従来どおり完了させる。値を返したらその結果で据え置く（完了させない）。
+    //
+    //   - エントリーが終端（全量約定・取消・失効・拒否）→ null（従来どおり完了）。反対方向の純額が見えていれば Error を残す
+    //     （事実は帰属不明の検知が出す。IADR-0580 決定2）。
+    //   - エントリーが生きている（未約定・一部約定）→ **Active のまま据え置き**、Error と StopFilledBeforeEntry（Critical）を出す。
+    //     自動の買い戻し・エントリーの取消はしない（どちらを採るかは別途の判断）。エントリーが終端した巡回で上の分岐へ進んで完了する。
+    //   - 分からない（記録が無い・注文 ID が空・照会が null／例外）→ 反対方向の純額が見えていれば生きている場合と同じく据え置いて知らせる。
+    //     見えていなければ従来どおり完了させる（通常の損切りの成立と区別が付かない。Warning を残す）。
+    // 通知はこのプロセスで未通知のときと前回から 1 時間ごとだけ（巡回ごとに重ねない。キーは約定した逆指値レグの StopDecisionId）。
+    private async Task<Outcome?> HoldIfStopFilledBeforeEntryAsync(
+        ProtectiveStopOrder stop,
+        BrokerOrder filledStop,
+        IReadOnlyList<BrokerPositionSnapshot> snapshot,
+        List<object> events,
+        CancellationToken cancellationToken)
+    {
+        var (entry, reason, partiallyFilled) = await ObserveEntryAsync(stop, cancellationToken).ConfigureAwait(false);
+        // 反対方向（決済の方向）の純額。買いのエントリーなら売り建玉の株数。
+        var opposite = ProtectiveStopNetting.DirectionalNet(stop.Symbol, stop.Market, stop.CloseSide, snapshot);
+
+        switch (entry)
+        {
+            case EntryObservation.Opened or EntryObservation.NeverOpened:
+                if (opposite > 0)
+                {
+                    _logger.LogError(
+                        "保護逆指値ガード: 約定した逆指値の保護記録を完了しますが、反対方向の建玉 {Opposite} 株が見えています"
+                        + "（エントリー注文は{Entry}）。逆指値がエントリーより先に約定した可能性があります。自動では買い戻しません"
+                        + "（帰属不明の建玉として知らせます）。証券会社の画面で建玉を確認してください: "
+                        + "EntryDecisionId={EntryDecisionId} StopOrderId={StopOrderId} 銘柄={Symbol}",
+                        opposite, entry == EntryObservation.Opened ? "約定して終わっています" : "約定しないまま終わっています",
+                        stop.EntryDecisionId, stop.StopOrderId, stop.Symbol);
+                }
+
+                return null;
+
+            case EntryObservation.Unknown when opposite <= 0:
+                _logger.LogWarning(
+                    "保護逆指値ガード: 逆指値は約定しましたが、エントリー注文の状態を確認できません（{Reason}）。反対方向の建玉は見えないため、"
+                    + "損切りの成立として保護記録を完了します: EntryDecisionId={EntryDecisionId} StopOrderId={StopOrderId} 銘柄={Symbol}",
+                    reason, stop.EntryDecisionId, stop.StopOrderId, stop.Symbol);
+                return null;
+        }
+
+        var quantity = filledStop.FilledQuantity > 0 ? filledStop.FilledQuantity : stop.Quantity;
+        var now = clock.UtcNow;
+        var state = entry == EntryObservation.Working
+            ? (partiallyFilled ? "一部約定のまま生きています" : "未約定のまま生きています")
+            : $"状態を確認できません（{reason}）が、反対方向の建玉 {opposite} 株が見えています";
+
+        if (!_heldCloseNotifications.IsDue(stop.StopDecisionId, now))
+        {
+            _logger.LogWarning(
+                "保護逆指値ガード: 逆指値がエントリーより先に約定したため、保護記録を完了せずに据え置いています（エントリー注文は{State}）。"
+                + "買い戻しもエントリーの取消もしていません: EntryDecisionId={EntryDecisionId} StopOrderId={StopOrderId} 銘柄={Symbol}",
+                state, stop.EntryDecisionId, stop.StopOrderId, stop.Symbol);
+        }
+        else
+        {
+            _logger.LogError(
+                "保護逆指値ガード: 逆指値（約定 {Filled} 株）がエントリー注文より先に約定しました（エントリー注文は{State}）。"
+                + "**反対方向の建玉が逆指値なしで生じている可能性があります。**自動では買い戻さず、エントリーも取り消しません。"
+                + "保護記録は完了させず、エントリーが終わるまで据え置きます。証券会社の画面で建玉とエントリー注文を確認してください: "
+                + "EntryDecisionId={EntryDecisionId} StopDecisionId={StopDecisionId} StopOrderId={StopOrderId} 銘柄={Symbol} 反対方向の建玉={Opposite}",
+                quantity, state, stop.EntryDecisionId, stop.StopDecisionId, stop.StopOrderId, stop.Symbol, opposite);
+            events.Add(new ProtectiveStopCoverageLost(
+                stop.EntryDecisionId, stop.Symbol, stop.Market,
+                ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.StopFilledBeforeEntry,
+                quantity, stop.StopDecisionId, CloseIntent: null, now));
+            _heldCloseNotifications.MarkNotified(stop.StopDecisionId, stop.EntryDecisionId, now);
+        }
+
+        return entry == EntryObservation.Working ? Outcome.StillActive : Outcome.Unknown;
     }
 
     // 🔴 FR-10, #853, IADR-0428 決定1・決定2: 逆指値の再発注を送ったが届いたか分からない（または予約が既にある）。

@@ -1,5 +1,6 @@
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
+using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using OrderExecutionService.Hosted;
 using OrderExecutionService.Infrastructure.Persistence;
@@ -516,23 +517,34 @@ public class ProtectiveStopGuardEntryStateTests
         UnknownNotices(third).Should().ContainSingle("別の不明の始まりであり、前回の通知から 1 時間を待たせない");
     }
 
-    // ---- 🔴 FR-10, ADR-0040, T-10-3025・T-10-3026（#1423 試験の穴 3。現行の挙動を固定する。危険と判断し #1454 へ起票）: 窓開けで逆指値がエントリーより先に約定する ----
+    // ---- 🔴 FR-10, ADR-0040, #1454, IADR-0580: 窓開けで逆指値がエントリーより先に約定する（T-10-3025〜T-10-3032） ----
     //
     // S0/S3 は承認数量の逆指値を、未約定のエントリー（指値）と同時に板に置く。窓開け（寄り付きが損切りラインの下）では、
     // 買いの指値と売りの逆指値がどちらも発火し得る。逆指値が先に約定すると、建玉 0 からの売り＝反対方向の建玉（売り建玉）が生じる。
-    // 現行のガードは逆指値の Filled を「損切りが成立した」と読み、エントリーの状態を見ずに保護記録を完了させる
-    // （エントリーの取消・成行の手仕舞い・逆指値の張り直しはしない）。エントリーが後で全量約定すれば建玉は純額 0 に戻る。
-    // エントリーが約定しないまま終わると売り建玉が残り、完了した記録はガードの巡回に載らない（検知は建玉観測の常駐の帰属不明の検知に依る）。
-    // 本試験は**是正ではなく現行の挙動の記録**であり、是正は #1454 で扱う（是正したらこの 2 件の期待を書き換える）。
+    // #1423（試験の穴 3）で現行の挙動（エントリーを見ずに記録を完了し、売り建玉を誰も知らせない）を T-10-3025・T-10-3026 に固定し、
+    // #1454 で是正した。期待は是正後の挙動へ書き換えた（決定 1: エントリーが生きていれば据え置いて知らせる／決定 2: 逆方向の S0 の足跡がある
+    // 群は帰属不明の検知の対象にする）。自動の買い戻し・エントリーの取消はしない（別途の判断）。
+    //
+    // 殺す変異（手で入れて赤を確かめた）: Filled の分岐のエントリー照会を外す（T-10-3025 / 3026 / 3027 / 3028）／通知の間隔を外す（T-10-3027）／
+    // 検知の逆方向の足跡を外す（T-10-3026 / 3031）／印の読み戻しの方向（WatchedSide）を EntrySide に戻す（T-10-3026。同じ方向の群が
+    // 印を毎回消して、売り建玉が残るあいだ巡回ごとに鳴り直す）。
 
     private static BrokerOrder FilledStop(int filled) =>
         StopOrder(OrderStatus.Filled) with { FilledQuantity = filled, AveragePrice = 940m };
 
     private static BrokerPositionSnapshot Short(int qty) => new("AAPL", Market.UnitedStates, -qty, 940m);
 
-    // T-10-3025: 逆指値が先に約定（売り建玉 10）・エントリーは未約定のまま生きている → 記録を完了し、エントリーにも建玉にも触れない。
+    private static IEnumerable<ProtectiveStopCoverageLost> FilledBeforeEntryNotices(ProtectiveStopGuardResult result) =>
+        result.Events.OfType<ProtectiveStopCoverageLost>()
+            .Where(e => e.Remediation == ProtectiveStopRemediation.StopFilledBeforeEntry);
+
+    private static IEnumerable<SoftwareStopExecuted> UnattributedNotices(IEnumerable<object> events) =>
+        events.OfType<SoftwareStopExecuted>().Where(e => e.Outcome == SoftwareStopOutcome.UnattributedPosition);
+
+    // T-10-3025: 逆指値が先に約定（売り建玉 10）・エントリーは未約定のまま生きている → 記録を閉じずに据え置き、保護喪失の事実を出す。
+    // エントリーが後で全量約定して純額 0 に戻ったら完了する。
     [Fact]
-    public async Task T_10_3025_窓開けで逆指値が先に約定したら_エントリーの状態を見ずに記録を完了し_取消も成行も送らない()
+    public async Task T_10_3025_窓開けで逆指値が先に約定しエントリーが生きていれば_記録を閉じずに知らせ_全量約定で完了する()
     {
         var h = NewHarness();
         h.Broker.Orders[StopOrderId] = FilledStop(10);
@@ -541,46 +553,214 @@ public class ProtectiveStopGuardEntryStateTests
 
         var result = await h.PatrolAsync();
 
-        result.Completed.Should().Be(1, "現行: 逆指値の Filled は損切りの成立として記録を完了させる");
-        h.Row.State.Should().Be(ProtectiveStopState.Completed);
-        h.Broker.OrderQueries.Should().NotContain(EntryOrderId, "現行: Filled の分岐はエントリーの状態を照会しない");
-        h.Broker.Cancelled.Should().BeEmpty("現行: 生きているエントリーを取り消さない");
-        h.Broker.MarketCloseCount.Should().Be(0, "現行: 売り建玉を買い戻す成行は送らない");
-        h.Broker.StopPlaceCount.Should().Be(0, "現行: 逆指値を張り直さない");
-        result.Events.Should().BeEmpty(
-            "現行: 売り建玉を知らせる事実を出さない（帰属不明の建玉の検知は S1 の足跡が無い S0 だけの群に触れない）");
+        result.Completed.Should().Be(0, "エントリーが生きているあいだは損切りの成立と読まない");
+        h.Row.State.Should().Be(ProtectiveStopState.Active, "閉じると、エントリーが約定しないまま終わったときに売り建玉が巡回から外れる");
+        h.Broker.OrderQueries.Should().Contain(EntryOrderId, "完了させる前にエントリーの状態を照会する");
+        h.Broker.Cancelled.Should().BeEmpty("エントリーの取消は別途の判断（自動ではしない）");
+        h.Broker.MarketCloseCount.Should().Be(0, "売り建玉の自動の買い戻しは別途の判断（自動ではしない）");
+        h.Broker.StopPlaceCount.Should().Be(0, "逆指値を張り直さない");
+        var notice = FilledBeforeEntryNotices(result).Should().ContainSingle("保護喪失の事実を出して人手対応を求める").Subject;
+        notice.Quantity.Should().Be(10);
+        notice.CloseDecisionId.Should().Be(h.Row.StopDecisionId, "相関は約定した逆指値レグ");
+        notice.CloseIntent.Should().BeNull("何も送っていない（台帳に処理中の決済を押さえさせない）");
+        notice.Cause.Should().Be(ProtectiveStopLossCause.LapsedInFlight);
 
-        // エントリーが後で全量約定すると、建玉は純額 0 に戻る。完了した記録はもう巡回に載らない。
+        // エントリーが後で全量約定すると、建玉は純額 0 に戻る。終端を見た巡回で完了する。
+        h.Clock.UtcNow = Now.AddMinutes(1);
         h.Broker.Orders[EntryOrderId] = EntryOrder(OrderStatus.Filled, filled: 10);
         h.Broker.Positions = [];
-        h.Broker.OrderQueries.Clear();
-        var positionCallsBefore = h.Broker.PositionCalls;
 
         var after = await h.PatrolAsync();
 
-        after.Scanned.Should().Be(0, "Active な記録が無い");
-        h.Broker.OrderQueries.Should().BeEmpty();
-        h.Broker.PositionCalls.Should().Be(positionCallsBefore, "巡回対象ゼロなら建玉を照会しない（既存の規律）");
+        after.Completed.Should().Be(1);
+        h.Row.State.Should().Be(ProtectiveStopState.Completed);
+        after.Events.Should().BeEmpty("純額 0 に戻った。知らせることは無い");
+        h.Broker.MarketCloseCount.Should().Be(0);
     }
 
-    // T-10-3026: 同上で、エントリーが約定しないまま終わる（失効）→ 売り建玉 10 が残るが、ガードは何もしない（残余リスクの記録）。
+    // T-10-3026: 同上で、エントリーが約定しないまま終わる（失効）→ 記録は完了する。売り建玉 10 は帰属不明として知らせ続ける
+    // （ガードの最初の巡回で 1 回、記録の完了後は建玉観測の常駐の検知が 1 時間ごと。完了した S0 の記録が逆方向の足跡になる）。
     [Fact]
-    public async Task T_10_3026_逆指値が先に約定しエントリーが約定せず失効しても_ガードは売り建玉に何もしない_残余リスク()
+    public async Task T_10_3026_逆指値が先に約定しエントリーが約定せず失効したら_記録を完了し売り建玉を帰属不明として知らせ続ける()
     {
         var h = NewHarness();
         h.Broker.Orders[StopOrderId] = FilledStop(10);
         h.Broker.Orders[EntryOrderId] = EntryOrder(OrderStatus.Accepted, filled: 0);
         h.Broker.Positions = [Short(10)];
-        (await h.PatrolAsync()).Completed.Should().Be(1);
+
+        var first = await h.PatrolAsync();
+        first.Completed.Should().Be(0);
+        FilledBeforeEntryNotices(first).Should().ContainSingle();
+        UnattributedNotices(first.Events).Should().ContainSingle(
+            "S0 だけの銘柄でも、エントリーと逆方向の純額（売り建玉）は帰属不明として知らせる").Which.Quantity.Should().Be(10);
 
         h.Broker.Orders[EntryOrderId] = EntryOrder(OrderStatus.Expired, filled: 0);
-        h.Clock.UtcNow = Now.AddHours(1);
+        h.Clock.UtcNow = Now.AddMinutes(10);
 
         var after = await h.PatrolAsync();
 
-        after.Scanned.Should().Be(0, "現行: 完了した記録は巡回に載らず、売り建玉はガードの対象外になる");
-        after.Events.Should().BeEmpty();
+        after.Completed.Should().Be(1, "エントリーが終端した。従来どおり完了させる");
+        h.Row.State.Should().Be(ProtectiveStopState.Completed);
+        after.Events.Should().BeEmpty("同じ株数の帰属不明は間隔の内は重ねない・据え置きは解けた");
+        h.Row.UnattributedNotifiedQuantity.Should().Be(10, "印が残る＝完了した後も検知が同じ群を訪れ続ける");
         h.Broker.Cancelled.Should().BeEmpty();
-        h.Broker.MarketCloseCount.Should().Be(0, "現行: 反対方向の建玉を自動では買い戻さない");
+        h.Broker.MarketCloseCount.Should().Be(0, "反対方向の建玉を自動では買い戻さない（検知であって是正ではない）");
+
+        // 完了した記録は巡回に載らない（ガードは建玉を照会しない）。建玉観測の常駐が同じ検知を行う。
+        var resident = new List<object>();
+        ProtectiveStopNetting.DetectUnattributedPositions(
+            [Short(10)], h.Stops.FindActive(10), h.Stops, h.Store, Now.AddMinutes(70), resident);
+        UnattributedNotices(resident).Should().ContainSingle("売り建玉が残るあいだ 1 時間ごとに知らせる（無通知で残らない）")
+            .Which.EntryDecisionId.Should().Be(h.EntryDecisionId, "代表は逆方向の S0 の記録");
+    }
+
+    // T-10-3027: 据え置きの通知は巡回ごとに重ねない（このプロセスで 1 回・以後 1 時間ごと）。
+    [Fact]
+    public async Task T_10_3027_逆指値が先に約定した据え置きの通知は巡回ごとに重ねず_1時間ごとに出し直す()
+    {
+        var h = NewHarness();
+        h.Broker.Orders[StopOrderId] = FilledStop(10);
+        h.Broker.Orders[EntryOrderId] = EntryOrder(OrderStatus.Accepted, filled: 0);
+        h.Broker.Positions = [Short(10)];
+
+        FilledBeforeEntryNotices(await h.PatrolAsync()).Should().ContainSingle();
+
+        h.Clock.UtcNow = Now.AddMinutes(5);
+        var second = await h.PatrolAsync();
+        FilledBeforeEntryNotices(second).Should().BeEmpty("30 秒の巡回ごとに Critical を重ねない");
+        second.StillActive.Should().Be(1);
+        h.Row.State.Should().Be(ProtectiveStopState.Active);
+
+        h.Clock.UtcNow = Now.AddHours(1);
+        FilledBeforeEntryNotices(await h.PatrolAsync()).Should().ContainSingle("通知を 1 回見逃すと売り建玉が無期限に残る");
+    }
+
+    // T-10-3028: エントリーの状態が分からない（照会が答えない）・売り建玉が見えている → 据え置いて知らせる（無音にしない側）。
+    [Fact]
+    public async Task T_10_3028_逆指値が約定しエントリーの状態が不明で売り建玉が見えるなら_記録を閉じずに知らせる()
+    {
+        var h = NewHarness();
+        h.Broker.Orders[StopOrderId] = FilledStop(10);
+        // エントリー注文は未登録＝照会が答えない（不明）。
+        h.Broker.Positions = [Short(10)];
+
+        var result = await h.PatrolAsync();
+
+        result.Completed.Should().Be(0);
+        result.Unknown.Should().Be(1);
+        h.Row.State.Should().Be(ProtectiveStopState.Active);
+        FilledBeforeEntryNotices(result).Should().ContainSingle();
+        h.Broker.Cancelled.Should().BeEmpty();
+        h.Broker.MarketCloseCount.Should().Be(0);
+    }
+
+    // T-10-3029: エントリーの状態が不明でも、反対方向の建玉が見えなければ従来どおり完了する（通常の損切りの成立と区別が付かない）。
+    [Fact]
+    public async Task T_10_3029_逆指値が約定しエントリーの状態が不明でも反対建玉が無ければ従来どおり完了する()
+    {
+        var h = NewHarness();
+        h.Broker.Orders[StopOrderId] = FilledStop(10);
+        h.Broker.Positions = [];
+
+        var result = await h.PatrolAsync();
+
+        result.Completed.Should().Be(1);
+        h.Row.State.Should().Be(ProtectiveStopState.Completed);
+        result.Events.Should().BeEmpty();
+    }
+
+    // T-10-3030: 通常の損切り（エントリーの記録が終端の Filled・建玉 0）→ 従来どおり完了。エントリーをブローカーへ照会しない（記録で足りる）。
+    [Fact]
+    public async Task T_10_3030_通常の損切りの成立は従来どおり完了し_エントリーをブローカーへ照会しない()
+    {
+        var h = NewHarness(entryRecordStatus: OrderStatus.Filled, entryRecordFilled: 10);
+        h.Broker.Orders[StopOrderId] = FilledStop(10);
+        h.Broker.Positions = [];
+
+        var result = await h.PatrolAsync();
+
+        result.Completed.Should().Be(1);
+        h.Row.State.Should().Be(ProtectiveStopState.Completed);
+        h.Broker.OrderQueries.Should().NotContain(EntryOrderId, "終端の発注記録で足りる（平常の経路で照会を増やさない）");
+        result.Events.Should().BeEmpty();
+    }
+
+    // ---- 帰属不明の検知（建玉観測の常駐と同じ関数を直接呼ぶ）----
+
+    private static ProtectiveStopOrder CompletedS0(Guid entry, DateTimeOffset at) =>
+        LiveRow(entry) with { State = ProtectiveStopState.Completed, UpdatedAt = at };
+
+    // T-10-3031: 完了した S0 の買いの記録があり、売り建玉 10 が見える → 知らせる。印は S0 の行が持ち、1 時間は重ねない。
+    // 売り建玉が消えたら（銘柄が照会から消えた巡回でも）印を消し、再発したら改めて知らせる。
+    [Fact]
+    public void T_10_3031_完了したS0の逆方向の売り建玉は検知が知らせ_印で重ねず_解消で印を消す()
+    {
+        var stops = new InMemoryProtectiveStopOrderStore();
+        var store = new InMemoryExecutedOrderStore();
+        var entry = Guid.NewGuid();
+        stops.Save(CompletedS0(entry, Now.AddMinutes(-5)));
+
+        var first = new List<object>();
+        ProtectiveStopNetting.DetectUnattributedPositions([Short(10)], [], stops, store, Now, first);
+        UnattributedNotices(first).Should().ContainSingle().Which.Quantity.Should().Be(10);
+        stops.Find(entry)!.UnattributedNotifiedQuantity.Should().Be(10);
+        stops.Find(entry)!.State.Should().Be(ProtectiveStopState.Completed, "状態は変えない（検知だけ）");
+
+        var second = new List<object>();
+        ProtectiveStopNetting.DetectUnattributedPositions([Short(10)], [], stops, store, Now.AddMinutes(10), second);
+        UnattributedNotices(second).Should().BeEmpty("同じ株数・間隔の内は重ねない");
+
+        var resolved = new List<object>();
+        ProtectiveStopNetting.DetectUnattributedPositions([], [], stops, store, Now.AddMinutes(20), resolved);
+        UnattributedNotices(resolved).Should().BeEmpty();
+        stops.Find(entry)!.UnattributedNotifiedQuantity.Should().BeNull("印の群（逆方向）を訪れて消す");
+        stops.Find(entry)!.UnattributedNotifiedAt.Should().BeNull();
+
+        var again = new List<object>();
+        ProtectiveStopNetting.DetectUnattributedPositions([Short(10)], [], stops, store, Now.AddMinutes(25), again);
+        UnattributedNotices(again).Should().ContainSingle("解消のあと再発した同数は、間隔を待たずに知らせる");
+    }
+
+    // T-10-3032: 同じ方向の S0 だけの群（買いの記録と買い建玉の超過）は従来どおり触れない。逆方向の記録が無い売り建玉も触れない。
+    [Fact]
+    public void T_10_3032_同じ方向のS0だけの群と逆方向の記録が無い売り建玉は従来どおり知らせない()
+    {
+        var stops = new InMemoryProtectiveStopOrderStore();
+        var store = new InMemoryExecutedOrderStore();
+        var entry = Guid.NewGuid();
+        stops.Save(LiveRow(entry));
+
+        var sameSide = new List<object>();
+        ProtectiveStopNetting.DetectUnattributedPositions([Long(25)], stops.FindActive(10), stops, store, Now, sameSide);
+        UnattributedNotices(sameSide).Should().BeEmpty("S1 の足跡が無い同方向の群は S0 の近似の挙動を変えない（T-10-488）");
+
+        var otherSymbol = new List<object>();
+        ProtectiveStopNetting.DetectUnattributedPositions(
+            [new BrokerPositionSnapshot("MSFT", Market.UnitedStates, -10, 400m)], stops.FindActive(10), stops, store, Now, otherSymbol);
+        UnattributedNotices(otherSymbol).Should().BeEmpty("システムが建てていない銘柄の売り建玉（手動・他の実行機構）には触れない");
+        stops.Find(entry)!.UnattributedNotifiedQuantity.Should().BeNull();
+    }
+
+    // T-10-3034: 常駐の補償（StopFilledBeforeEntry の発行に失敗したら記憶を捨て、次の巡回で出し直す。T-10-1130 と同じ形）。
+    [Fact]
+    public async Task T_10_3034_逆指値が先に約定した通知を発行できなければ通知済みとして覚えず_次の巡回で出し直す()
+    {
+        var h = NewHarness();
+        h.Broker.Orders[StopOrderId] = FilledStop(10);
+        h.Broker.Orders[EntryOrderId] = EntryOrder(OrderStatus.Accepted, filled: 0);
+        h.Broker.Positions = [Short(10)];
+        var stopDecisionId = h.Row.StopDecisionId;
+
+        var first = await h.PatrolAsync();
+        FilledBeforeEntryNotices(first).Should().ContainSingle();
+        h.Held.IsDue(stopDecisionId, Now).Should().BeFalse("発行の前に通知済みと覚える");
+
+        var publish = () => ProtectiveStopGuardService.PublishAllAsync(
+            first.Events, _ => throw new InvalidOperationException("発行に失敗（テスト）"), h.Held);
+        await publish.Should().ThrowAsync<InvalidOperationException>();
+
+        h.Held.IsDue(stopDecisionId, Now).Should().BeTrue("発行できなかった通知で 1 時間黙らない");
+        h.Clock.UtcNow = Now.AddSeconds(30);
+        FilledBeforeEntryNotices(await h.PatrolAsync()).Should().ContainSingle("次の巡回で出し直す");
     }
 }

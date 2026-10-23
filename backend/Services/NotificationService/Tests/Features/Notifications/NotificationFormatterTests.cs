@@ -496,6 +496,25 @@ public class NotificationFormatterTests
             .And.NotContain("解消にも失敗");
     }
 
+    // 🔴 T-10-3033, FR-10, ADR-0040, #1454, IADR-0580 決定1: 逆指値がエントリーより先に約定した（StopFilledBeforeEntry）。
+    // 「成立せず」「解消」と読ませない。反対方向の建玉が無保護で生じ得ること・自動では何もしないこと・手で確かめることを伝える Critical。
+    [Fact]
+    public void T_10_3033_逆指値がエントリーより先に約定したら_反対方向の建玉の可能性と自動では何もしないことを伝えるCriticalになる()
+    {
+        var entry = Guid.NewGuid();
+        var stopDecision = Guid.NewGuid();
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            entry, "AAPL", Market.UnitedStates, ProtectiveStopLossCause.LapsedInFlight,
+            ProtectiveStopRemediation.StopFilledBeforeEntry, 10, stopDecision, CloseIntent: null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().Contain("エントリーより先に約定").And.Contain("反対方向の建玉")
+            .And.NotContain("成立せず").And.NotContain("解消");
+        msg.Content.Should().Contain("反対方向の建玉").And.Contain("自動では買い戻さず").And.Contain("取り消していません")
+            .And.Contain("証券会社の画面").And.Contain("約 1 時間ごと").And.Contain(entry.ToString()).And.Contain(stopDecision.ToString());
+        msg.Content.Should().NotContain("手仕舞いました").And.NotContain("解消にも失敗").And.NotContain("未受理");
+    }
+
     // 🔴 T-10-640, FR-10, FR-11, UC-06, #857, IADR-0369: 成行手仕舞いが**確認できた拒否**で終わったとき、
     // 「手仕舞いました」とも「届いたか不明」とも言ってはならない。**建玉は残っており、成行は生きていない**
     // ——読んだ人が取るべき行動（証券会社の画面で建玉を確認し、手で手仕舞う）が読み取れること。

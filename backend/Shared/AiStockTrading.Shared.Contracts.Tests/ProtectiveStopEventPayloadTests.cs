@@ -126,6 +126,8 @@ public class ProtectiveStopEventPayloadTests
         ((int)ProtectiveStopRemediation.StopReservationFailed).Should().Be(6);
         // T-10-1134, #1013, IADR-0428（2026-09-26 追記）: 建玉 0 だがエントリー注文の状態が不明（ガードが据え置き）。
         ((int)ProtectiveStopRemediation.EntryStateUnknown).Should().Be(7);
+        // T-10-3033, #1454, IADR-0580 決定1: 逆指値がエントリーより先に約定した（末尾。既存値の序数を動かさない）。
+        ((int)ProtectiveStopRemediation.StopFilledBeforeEntry).Should().Be(9);
     }
 
     // T-10-1134, FR-10, #1013, IADR-0428（2026-09-26 追記）: エントリーの状態が不明な据え置きは何も送っていない。
