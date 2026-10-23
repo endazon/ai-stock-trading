@@ -668,10 +668,7 @@ public sealed class ProtectiveStopGuard(
                 return CloseNotPlaced(stop, quantity, events);
             }
 
-            var closableNow = fresh
-                .Where(p => p.Symbol == stop.Symbol && p.Market == stop.Market
-                    && (stop.CloseSide == TradeSide.Sell ? p.Quantity > 0 : p.Quantity < 0))
-                .Sum(p => Math.Abs(p.Quantity));
+            var closableNow = ClosableQuantity(fresh, stop);
             if (closableNow <= 0)
             {
                 _logger.LogWarning(
@@ -679,6 +676,58 @@ public sealed class ProtectiveStopGuard(
                     + "成行の手仕舞いを送らず、記録は次の巡回で確かめます: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 巡回の先頭の数量={Quantity}",
                     stop.EntryDecisionId, stop.Symbol, quantity);
                 return Outcome.StillActive;
+            }
+
+            // 🔴 FR-10, ADR-0050 決定1, #1448（親 #1423）, IADR-0577: **板に残る未約定の判断の決済（指値）を取り消し、照会で終端を確かめてから送る。**
+            // 照会し直しは約定済みの分だけを映す。判断の決済が板に残ったまま全量の成行を送ると、未約定の売りを押さえない証券会社では
+            // 売りが重なり、両方が約定すると反対建玉になる。S1 と同じ段（IADR-0466。DecisionCloseYield へ共通化）を直列化の内側で通す。
+            //   - AwaitingCancel（取消の後に照会できない・まだ生きている）→ 送らない。確実に未発注として人手対応（None）。次の巡回で取り消し直す。
+            //   - Changed（取り消した・取消の窓で約定が進んでいた）→ 建玉を照会し直し、その値で数量を縮める（0 なら送らない・照会できなければ送らない）。
+            //     部分約定: 一部約定して取り消された分は建玉の照会値に現れる。一部約定のまま生きていれば AwaitingCancel。
+            //   - None（取り消すものが無い・確かめられない）→ 従来どおり。
+            var yielded = await DecisionCloseYield.CancelAndConfirmAsync(
+                    stop, broker, stops, store, clock, _logger, "保護逆指値ガードの成行の手仕舞い", cancellationToken)
+                .ConfigureAwait(false);
+            if (yielded == DecisionCloseYieldResult.AwaitingCancel)
+            {
+                _logger.LogError(
+                    "保護逆指値ガード: 同じ建玉を売る判断の決済の取消を確かめられないため、成行の手仕舞いを送りません（確実に未発注）。"
+                    + "**逆指値なしの建玉が残っています。**次の巡回で取り消し直します: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 数量={Quantity}",
+                    stop.EntryDecisionId, stop.Symbol, quantity);
+                return CloseNotPlaced(stop, quantity, events);
+            }
+
+            if (yielded == DecisionCloseYieldResult.Changed)
+            {
+                IReadOnlyList<BrokerPositionSnapshot>? afterYield;
+                try
+                {
+                    afterYield = (await PositionQueries.QueryAsync(positions, cancellationToken).ConfigureAwait(false)).Positions;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogError(ex, "保護逆指値ガード: 判断の決済の取消の後の建玉の照会し直しが例外で失敗しました（不明として扱います）。");
+                    afterYield = null;
+                }
+
+                if (afterYield is null)
+                {
+                    _logger.LogError(
+                        "保護逆指値ガード: 判断の決済の取消の後に建玉を照会できないため、成行の手仕舞いを送りません（確実に未発注）。"
+                        + "**逆指値なしの建玉が残っている可能性があります。**EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 数量={Quantity}",
+                        stop.EntryDecisionId, stop.Symbol, quantity);
+                    return CloseNotPlaced(stop, quantity, events);
+                }
+
+                closableNow = ClosableQuantity(afterYield, stop);
+                if (closableNow <= 0)
+                {
+                    _logger.LogWarning(
+                        "保護逆指値ガード: 判断の決済の取消の窓で約定が進み、決済方向の建玉が 0 になりました。"
+                        + "成行の手仕舞いを送らず、記録は次の巡回で確かめます: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 巡回の先頭の数量={Quantity}",
+                        stop.EntryDecisionId, stop.Symbol, quantity);
+                    return Outcome.StillActive;
+                }
             }
 
             if (closableNow < quantity)
@@ -751,6 +800,13 @@ public sealed class ProtectiveStopGuard(
 
         return CloseNotPlaced(stop, quantity, events);
     }
+
+    // #1446, IADR-0575 決定 3 / #1448, IADR-0577: 決済方向の建玉（方向ごとに数える。ネットは使わない）。
+    private static int ClosableQuantity(IReadOnlyList<BrokerPositionSnapshot> positions, ProtectiveStopOrder stop) =>
+        positions
+            .Where(p => p.Symbol == stop.Symbol && p.Market == stop.Market
+                && (stop.CloseSide == TradeSide.Sell ? p.Quantity > 0 : p.Quantity < 0))
+            .Sum(p => Math.Abs(p.Quantity));
 
     private Outcome CloseNotPlaced(ProtectiveStopOrder stop, int quantity, List<object> events)
     {

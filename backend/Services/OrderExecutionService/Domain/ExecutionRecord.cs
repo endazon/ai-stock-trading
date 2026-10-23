@@ -19,7 +19,9 @@ namespace OrderExecutionService.Domain;
 // 🔴 FR-10, FR-09, UC-06, #1395, IADR-0560: SoftwareStopCancelRequestedAt はソフトウェア逆指値（S1）が損切りの成行の前に
 // この決済（同じ建玉を売る判断の手仕舞い）を取り消すと決めて**取消を送る前に**書いた時刻。null＝S1 はこの注文の取消を求めていない。
 // 約定追跡が終端（Cancelled）を観測したとき OrderExecuted.CancelledBySoftwareStop へ写す（取消の主体を通知の判定へ届ける唯一の運び手）。
-// 書くのは SoftwareStopExecutor だけ（MarkSoftwareStopCancelRequested）。UnfilledCancelRequestedAt とは別の列——そちらは回数の上限に数える。
+// 書くのは判断の手仕舞いの取消の段 DecisionCloseYield だけ（MarkSoftwareStopCancelRequested）。#1448, IADR-0577: 段は S1 と保護逆指値ガードの
+// 成行手仕舞いが共通に使う（ガードの取消でも同じ印＝「保護の機構が成行に置き換えるために取り消した」。列の名前は S1 のまま）。
+// UnfilledCancelRequestedAt とは別の列——そちらは回数の上限に数える。
 public record ExecutionRecord(
     Guid DecisionId,
     string OrderId,
