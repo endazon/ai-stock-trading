@@ -176,10 +176,13 @@ public sealed class OrderExecutionAppService(
         // 台帳が乖離していると（#849。台帳 3,381 株 / ブローカー 0 株を実測）ブローカー上では
         // **保有 0 からの売り＝裸の新規ショート**になる。**予約（相2）より前**に判定する
         //（送らないと決めたら発注に着手しない＝予約も取らない。逆指値を張れない Open の見送りと同じ位置）。
-        // 能力の無い発注先（内蔵 paper）では brokerPositions が DI に現れないため、この分岐そのものが起きない。
+        // 能力の無い発注先（内蔵 paper）では建玉照会の口（_positions）が無いため、この分岐そのものが起きない。
+        // 🔴 FR-10, #1449（親 #1423 L-1）, IADR-0576 決定1: 判定は**フィールド _positions**（明示の brokerPositions、無ければ
+        // 建玉照会の能力を持つアダプタそのもの）で行う。コンストラクタ引数を直接見ると、アダプタだけを渡す組み立てで
+        // このゲートと処理中の決済の差し引きが**黙って外れる**（S1 の武装は _positions を見るので食い違う）。
         PositionReconciliationDrift? drift = null;
         CloseReducedForInFlightCloses? inFlightReduction = null;
-        if (intent.PositionEffect == PositionEffect.Close && brokerPositions is not null)
+        if (intent.PositionEffect == PositionEffect.Close && _positions is not null)
         {
             // ポートの契約は「照会不能は null（例外を投げない）」である（IBrokerPositionSource）。
             // #873 の監査 N2: それでも**例外は不明として扱う**——契約違反の実装が現れたときに
@@ -189,7 +192,7 @@ public sealed class OrderExecutionAppService(
             PositionQueryResult query;
             try
             {
-                query = await PositionQueries.QueryAsync(brokerPositions, cancellationToken).ConfigureAwait(false);
+                query = await PositionQueries.QueryAsync(_positions, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
