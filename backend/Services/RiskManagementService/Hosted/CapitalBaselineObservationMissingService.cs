@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -75,7 +76,7 @@ public sealed class CapitalBaselineObservationMissingService(
             await bus.PublishAsync(new CapitalBaselineObservationMissing(
                 reading.Today,
                 latest,
-                reading.Outcome == AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome.UnavailableStale,
+                reading.Outcome == CapitalBaselineReadOutcome.UnavailableStale,
                 clock.UtcNow)).ConfigureAwait(false);
         }
         catch

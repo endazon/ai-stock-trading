@@ -329,8 +329,6 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
             "情報収集の現況観測がリスク管理へ適用されませんでした（新規建て停止が解けない）。");
     }
 
-    // #893, IADR-0354: 口座照会の観測が基準資金として**判定に使える状態になった**まで待つ。
-    // 発行の完了と適用の完了は別である（WaitInformationObservedAsync と同じ理由）。
     // FR-10, #1423 M-3, ADR-0073 決定1: 起点の直前の米国東部暦日に属する時刻（1 時間ずつ遡り、最初に前暦日へ入った時刻）。
     private static DateTimeOffset PreviousEasternDayObservation(DateTimeOffset now)
     {
@@ -344,6 +342,8 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
         return observedAt;
     }
 
+    // #893, IADR-0354: 口座照会の観測が基準資金として**判定に使える状態になった**まで待つ。
+    // 発行の完了と適用の完了は別である（WaitInformationObservedAsync と同じ理由）。
     private async Task WaitCapitalBaselineAsync(TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;

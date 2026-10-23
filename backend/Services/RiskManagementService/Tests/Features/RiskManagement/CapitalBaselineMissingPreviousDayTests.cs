@@ -131,26 +131,28 @@ public class CapitalBaselineMissingPreviousDayTests
         store.Read().ObservationMissing.Should().BeFalse("人手の 0 は意図した停止");
     }
 
-    // T-10-3048（プロパティベース）: どの時刻に判定しても（夏時間の切り替えを含む 1 年・97 分刻み）、
+    // T-10-3048（プロパティベース）: どの時刻に判定しても（夏時間の切り替えを含む 1 年・7 時間 13 分刻み＝時刻を 1 日の中でずらしながら回る）、
     // 直前の米国東部暦日の行があれば供給し、その 1 日前（2 暦日前）までしか無ければ未供給である。
     [Fact]
     public void どの時刻でも_直前の暦日の行の有無だけで供給が決まる()
     {
+        // 🔴 計器は 1 つを使い回す（反復ごとに作ると Meter が数千個残り、同じプロセスの計器の購読者すべてへ登録されて遅くなる）。
+        using var metrics = new BusinessMetrics();
         var broken = new List<string>();
         var from = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        for (var now = from; now < from.AddDays(366); now = now.AddMinutes(97))
+        for (var now = from; now < from.AddDays(366); now = now.AddMinutes(433))
         {
             var previous = RiskWorkerWebApplicationFactory.PreviousTradingDayObservation(now);
             var twoBefore = RiskWorkerWebApplicationFactory.PreviousTradingDayObservation(previous);
 
             using var withPrevious = NewContext();
-            var supplied = NewStore(withPrevious, new FakeClock(now, DateOnly.FromDateTime(now.UtcDateTime)));
+            var supplied = NewStore(withPrevious, new FakeClock(now, DateOnly.FromDateTime(now.UtcDateTime)), metrics);
             supplied.Record(3_000m, previous);
             if (supplied.GetCurrent() is null)
                 broken.Add($"{now:o} 直前の暦日の行があるのに未供給");
 
             using var withGap = NewContext();
-            var gap = NewStore(withGap, new FakeClock(now, DateOnly.FromDateTime(now.UtcDateTime)));
+            var gap = NewStore(withGap, new FakeClock(now, DateOnly.FromDateTime(now.UtcDateTime)), metrics);
             gap.Record(3_000m, twoBefore);
             if (gap.GetCurrent() is not null)
                 broken.Add($"{now:o} 2 暦日前の行しか無いのに供給");

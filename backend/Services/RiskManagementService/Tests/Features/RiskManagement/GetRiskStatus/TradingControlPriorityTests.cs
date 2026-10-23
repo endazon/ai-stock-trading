@@ -86,7 +86,9 @@ public class TradingControlPriorityTests
             new InMemoryStageGateStore(TradingStage.Stage0Verification),
             // #870: 本テストは統制の優先順位だけを関心に持つため、取り込みの無い台帳を渡す。
             new InMemoryPortfolioLedgerStore(),
-            new FakeClock(Now, Today)).Build();
+            new FakeClock(Now, Today),
+            // #1423 M-3: 基準資金は照会できている状態（スナップショットと同じ値）。
+            FakeCapitalBaseline.Of(100_000m)).Build();
 
         public async Task<ScreeningOutcome> ScreenAsync(PositionEffect effect)
         {

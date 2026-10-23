@@ -13,9 +13,9 @@ public sealed class RiskStatusService(
     IStageGateStore stageGateStore,
     IPortfolioLedgerStore ledger,
     IClock clock,
-    // FR-10, SC-03, #1423 M-3, ADR-0073 決定3, IADR-0581: 基準資金が**なぜ**未供給か（観測の欠け）を表示するため。
-    // 未注入の組み立て（既存の単体試験）では欠けを表示しない（値は従来どおりスナップショットから来る）。
-    ICapitalBaselineStore? capitalBaseline = null)
+    // FR-10, SC-03, #1423 M-3, ADR-0073 決定3, IADR-0581: 基準資金とその帰結（観測の欠け）を**1 回の読み出し**から表示するため。
+    // 🔴 必須である（省略可にすると、結線が外れても欠けを黙って表示しない形で試験が通る）。
+    ICapitalBaselineStore capitalBaseline)
 {
     public RiskStatusView Build()
     {
@@ -54,9 +54,11 @@ public sealed class RiskStatusService(
                      == PortfolioProjection.TradeDate(now, a.Market));
 
         // FR-10, SC-03, #1423 M-3, ADR-0073 決定3, IADR-0581: 直前の米国東部暦日に成功した観測が無いために新規建てを
-        // 止めていることを画面へ出す。🔴 計器を動かさない口（Read）で読む —— 帰結を数えるのは審査の側だけである。
-        var reading = capitalBaseline?.Read();
-        var observationMissing = reading?.ObservationMissing == true;
+        // 止めていることを画面へ出す。🔴 計器を動かさない口（Read）で**1 回だけ**読み、表示の基準資金（と上限の実額）と欠けの印を
+        // 同じ結果から作る（スナップショット側の読み出しと 2 回読むと、間に行が書かれたとき「資金あり・欠けあり」が並び得る）。
+        var reading = capitalBaseline.Read();
+        var capital = reading.Baseline?.EquityInBase;
+        var observationMissing = reading.ObservationMissing;
 
         return new RiskStatusView(
             KillSwitchEngaged: snapshot.KillSwitchEngaged,
@@ -71,15 +73,15 @@ public sealed class RiskStatusService(
             DailyRealizedPnl: snapshot.DailyRealizedPnl,
             UnrealizedPnl: snapshot.UnrealizedPnl,
             DailyPnl: snapshot.DailyRealizedPnl + snapshot.UnrealizedPnl,
-            Capital: snapshot.Capital,
+            Capital: capital,
             DailyOrderedAmount: snapshot.DailyOrderedAmount,
             // FR-10, #329, IADR-0130 決定1: 上限は equity 比のため、表示も equity から解決した実額を載せる。
             // #869, ADR-0041 決定2: equity が未供給（口座を照会できていない）なら実額も未供給である。
             // **0 で埋めない**——「上限 0」と「上限が分からない」は別の事実である。
-            MaxOrderAmount: snapshot.Capital is { } equity
+            MaxOrderAmount: capital is { } equity
                 ? settings.Limits.MaxOrderAmountFor(equity)
                 : null,
-            MaxDailyOrderAmount: snapshot.Capital is { } dailyEquity
+            MaxDailyOrderAmount: capital is { } dailyEquity
                 ? settings.Limits.MaxDailyOrderAmountFor(dailyEquity)
                 : null,
             DrawdownRatio: snapshot.DrawdownRatio,
@@ -91,6 +93,6 @@ public sealed class RiskStatusService(
             // FR-11, SC-03, ADR-0041 決定 1, #870: 当日の取り込み件数（参照専用）。
             DriftAdoptionCountToday: driftAdoptionCountToday,
             CapitalBaselineObservationMissing: observationMissing,
-            CapitalBaselineLatestTradingDay: observationMissing ? reading!.LatestTradingDay : null);
+            CapitalBaselineLatestTradingDay: observationMissing ? reading.LatestTradingDay : null);
     }
 }

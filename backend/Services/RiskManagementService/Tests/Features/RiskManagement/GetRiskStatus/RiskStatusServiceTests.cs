@@ -27,7 +27,7 @@ public class RiskStatusServiceTests
         public PortfolioState State { get; init; } = new() { LedgerEquity = 100_000m };
 
         // #1423 M-3: 基準資金の供給（既定は照会できている）。
-        public FakeCapitalBaseline Capital { get; init; } = FakeCapitalBaseline.Of(100_000m);
+        public ICapitalBaselineStore Capital { get; init; } = FakeCapitalBaseline.Of(100_000m);
 
         public Fixture(TradingStage stage = TradingStage.Stage0Verification)
         {
@@ -231,5 +231,39 @@ public class RiskStatusServiceTests
         status.Capital.Should().Be(100_000m);
         status.CapitalBaselineObservationMissing.Should().BeFalse();
         status.CapitalBaselineLatestTradingDay.Should().BeNull();
+    }
+
+    // #1423 M-3（AI レビュー 🟡1）: 1 回目の読み出し（スナップショット）と 2 回目（表示）の間に行が書かれた状態を模す。
+    // GetCurrent は供給、Read は欠けを返す（逆も）。
+    private sealed class DivergingCapitalBaseline(bool currentSupplied) : ICapitalBaselineStore
+    {
+        private static readonly CapitalBaseline Supplied = new(100_000m, new DateOnly(2026, 7, 8), Now.AddHours(-10));
+
+        public void Record(decimal equityInBase, DateTimeOffset observedAt)
+        {
+        }
+
+        public CapitalBaseline? GetCurrent() => currentSupplied ? Supplied : null;
+
+        public CapitalBaselineReading Read() => currentSupplied
+            ? new(null, AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome.UnavailableMissingPreviousDay,
+                Today, new DateOnly(2026, 7, 6), 90_000m)
+            : new(Supplied, AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome.Supplied,
+                Today, Supplied.TradingDay, Supplied.EquityInBase);
+    }
+
+    // 🔴 T-10-3044（続き・#1423 M-3 の AI レビュー 🟡1）: 表示の基準資金・上限の実額・欠けの印は**同じ 1 回の読み出し**から作る。
+    // 読み出しの間に行が書かれても「資金あり・欠けあり」「資金なし・欠けなし」が並ばない。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void 基準資金と欠けの印は同じ読み出しから作り食い違わない(bool snapshotSupplied)
+    {
+        var status = new Fixture { Capital = new DivergingCapitalBaseline(snapshotSupplied) }.Build();
+
+        (status.Capital is null).Should().Be(status.CapitalBaselineObservationMissing,
+            "未供給と欠けの印は同じ読み出しの結果である");
+        (status.MaxOrderAmount is null).Should().Be(status.Capital is null);
+        (status.MaxDailyOrderAmount is null).Should().Be(status.Capital is null);
     }
 }

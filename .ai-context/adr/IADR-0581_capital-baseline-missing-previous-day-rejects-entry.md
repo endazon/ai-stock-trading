@@ -70,7 +70,8 @@ related_specs:
 ### 決定 4: SC-03 の表示
 
 - `RiskStatusView` に `CapitalBaselineObservationMissing`（bool）と `CapitalBaselineLatestTradingDay`（DateOnly?）を末尾の既定値つきで足す。
-  `RiskStatusService` は `Read()` で読む（計器を水増ししない）。画面は欠けのときだけ「新規建てを停止中: …」の文を出す（色だけで意味を持たせない）。
+  `RiskStatusService` は `Read()` で**1 回だけ**読み（計器を水増ししない）、表示の基準資金・上限の実額・欠けの印を同じ結果から作る
+  （スナップショット側の読み出しと 2 回読むと、間に行が書かれたとき食い違う。PR の AI レビュー）。依存は必須（省略可にしない）。画面は欠けのときだけ「新規建てを停止中: …」の文を出す（色だけで意味を持たせない）。
 - `NewEntriesBlocked`（3 統制の OR）には混ぜない。同フラグは kill switch / ロックアウト / 一時停止の表示用であり、未供給は既に「資金: 未供給」が示す。
 
 ### 決定 5: 試験の仕込み
