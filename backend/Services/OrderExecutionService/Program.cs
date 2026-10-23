@@ -153,6 +153,10 @@ builder.Services.AddSingleton<IBrokerAdapter>(sp =>
 });
 
 builder.Services.AddSingleton<IClock, SystemClock>();
+// 🔴 FR-10, NFR, #1444（親 #1423 M-1）, IADR-0574 決定1: 保護逆指値ガードと S1 の決済が「今は場中か」を問う口（共有カーネルの MarketHours）。
+// 下の 2 つの組み立てへ**名前つきで渡す**。引数は省略可能なので、渡し忘れてもコンパイルも単体の試験も通ったまま閉場中に再発注・成行を送る
+// （T-10-3001 が本番の組み立てで固定する）。
+builder.Services.AddSingleton<IMarketSessionGate>(MarketHoursSessionGate.Instance);
 // 🔴 NFR, FR-10, FR-11, #1092, IADR-0462 決定1〜3: 建玉照会の成功・失敗を、状態が変わったときだけ監査台帳へ出す報告口。
 // **singleton を 1 つだけ**置き、ガード・S1・発注・観測の常駐へ同じものを渡す（状態は発生源ごとにこの中で持つ）。
 // 発行はランタイムの MessageBus から行う —— 発注・S1 のハンドラの処理中に呼ばれても、その処理が例外で終わったときに
@@ -221,7 +225,9 @@ builder.Services.AddScoped(sp => new SoftwareStopExecutor(
     sp.GetRequiredService<IClock>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<SoftwareStopExecutor>(),
     // NFR, FR-10, #1092, IADR-0462: S1 が自ら照会した回の建玉照会の状態を台帳へ出す。
-    positionQueryHealth: sp.GetRequiredService<IPositionQueryHealthReporter>()));
+    positionQueryHealth: sp.GetRequiredService<IPositionQueryHealthReporter>(),
+    // #1444, IADR-0574 決定3: 閉場中は S1 の成行を送らない。
+    marketSession: sp.GetRequiredService<IMarketSessionGate>()));
 
 // FR-11, FR-16, ADR-0016 決定15, ADR-0027 決定2/決定4, #633, IADR-0300: 取引の経費区分の記録（段 1）。
 // 既定の供給口は **常に「取得できない」** を返す no-op であり、経費イベントは 1 本も出ない。
@@ -496,7 +502,9 @@ if (brokerSelection.IsMoomoo)
                 sp.GetRequiredService<IBrokerAdapter>(),
                 sp.GetRequiredService<IClock>(),
                 sp.GetRequiredService<ILoggerFactory>().CreateLogger<
-                    OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor.SoftwareStopFloorRetrofitter>())));
+                    OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor.SoftwareStopFloorRetrofitter>()),
+            // 🔴 #1444, IADR-0574 決定2: 閉場中は逆指値の張り直し・成行の手仕舞いを送らず、次の開場の巡回で張り直す。
+            marketSession: sp.GetRequiredService<IMarketSessionGate>()));
     // FR-10, #902, IADR-0365 決定5: Active な S1 行の低頻度の要約（観測のみ。間隔をまたいで状態を持つため singleton）。
     // #856, IADR-0538: 発注記録の無いまま未確定で残る S1（幽霊の疑い）の経過と再通知の間隔も同じ構成から渡す。
     builder.Services.AddSingleton(sp =>
