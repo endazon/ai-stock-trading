@@ -29,7 +29,7 @@ public enum DecisionCloseYieldResult
 //     試行 1..Attempt+1 の逆指値レグ・成行手仕舞い・S1 の決済の DecisionId。🔴 **保護レグを取り消すと保護そのものを外す。**
 //     加えて、同じ銘柄・市場・方向のエントリーの記録から導いた、保護逆指値を張れなかった建玉の成行手仕舞い（試行 1）の DecisionId。
 //   - 🔴 #1222, IADR-0515 決定3: 利用者の手仕舞い・維持率割れの自動縮小（記録の出どころが OwnerClose / MaintenanceMarginReduction で、
-//     記録の時刻から NettedCloseGrace 以内）は取り消さない（S1 は NetOwnerClosesAsync が差し引く）。**出どころが分からない（null）記録は
+//     記録の時刻から NettedCloseGrace 以内）は取り消さない（S1 とガードは OwnerCloseNetting が差し引く。#1452, IADR-0578）。**出どころが分からない（null）記録は
 //     判断の手仕舞いと同じく取り消す**（損切りを止めない側）。猶予を過ぎて処理中のものも取り消す（約定しない指値で止めない）。
 //   - 確かめられない（照会 null・例外）ものは取り消さない（拒否され得るが撃ち直しは続く）。
 //     環境の違う記録（照会が恒久的に null）で損切りを永遠に待たせないため、待つのは「生きている」と答えたものだけである。
@@ -211,7 +211,7 @@ public static class DecisionCloseYield
         }
     }
 
-    private static async Task<BrokerOrder?> TryGetOrderAsync(
+    internal static async Task<BrokerOrder?> TryGetOrderAsync(
         IBrokerAdapter broker, ILogger logger, string orderId, CancellationToken cancellationToken)
     {
         try

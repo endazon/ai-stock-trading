@@ -785,19 +785,17 @@ public class ProtectiveStopGuardTests
     }
 
     // T-10-3021（#1448 受け入れ基準 4・退行なし）, IADR-0577: 判断の決済が無い／記録は非終端のまま古いが証券会社では既に終わっている
-    // （約定は進んでいない）／板に残るのが猶予の内の利用者の手仕舞い（OwnerClose。IADR-0515 決定3）だけ
-    // → 何も取り消さず、従来どおり全量を送る（利用者の決済の差し引きは #1452 で扱う）。
+    // （約定は進んでいない）→ 何も取り消さず、従来どおり全量を送る。
+    // #1452, IADR-0578: 板に残るのが猶予の内の利用者の手仕舞いだけの場合（旧 OwnerCloseInGrace）は、取り消さずに差し引く（T-10-3022〜T-10-3024 へ移した）。
     public enum PendingCloseCase
     {
         None,
         StaleTerminalRecord,
-        OwnerCloseInGrace,
     }
 
     [Theory]
     [InlineData(PendingCloseCase.None)]
     [InlineData(PendingCloseCase.StaleTerminalRecord)]
-    [InlineData(PendingCloseCase.OwnerCloseInGrace)]
     public async Task T_10_3021_判断の決済が無ければ取り消さず従来どおり全量を送る(PendingCloseCase pending)
     {
         var stop = ActiveStop();
@@ -815,17 +813,89 @@ public class ProtectiveStopGuardTests
                     CompletedAt = Now,
                 };
                 break;
-            case PendingCloseCase.OwnerCloseInGrace:
-                // 記録の時刻は 1 分前（猶予 NettedCloseGrace＝2 分の内）。証券会社では生きている。
-                PlaceDecisionClose(broker, store, origin: OrderApprovalOrigin.OwnerClose);
-                break;
         }
 
         await guard.RunOnceAsync(10);
 
-        broker.Cancelled.Should().BeEmpty("取り消すものが無い（猶予の内の利用者の手仕舞いは取り消さない）");
+        broker.Cancelled.Should().BeEmpty("取り消すものが無い");
         broker.MarketCloseCount.Should().Be(1);
         broker.LastCloseIntent!.Quantity.Should().Be(10, "従来どおり全量を送る");
+    }
+
+    // ---- #1452, IADR-0578: ガードの成行の手仕舞いは、猶予の内の利用者の手仕舞い・維持率割れの自動縮小を取り消さずに差し引く ----
+
+    // 🔴 T-10-3022（#1452 受け入れ基準 1・2）, FR-10, UC-06, ADR-0050 決定1, IADR-0578: 猶予の内（記録の時刻は 1 分前）の利用者の手仕舞い
+    // （OwnerClose）／維持率割れの自動縮小（MaintenanceMarginReduction）の指値 4 株が板に残る状態で、逆指値が失効し張り直しも拒否された。
+    // ガードは取り消さず（利用者の意思を尊重する。IADR-0515 決定3）、建玉 10 − 処理中 4 ＝ 6 株だけ送る。偽の証券会社は未約定の売りを押さえないため、
+    // 差し引かないと 4 ＋ 10 ＝ 14 株の売りが板に並ぶ。変異（差し引きの段を外す）: 10 株を送り赤。
+    [Theory]
+    [InlineData(OrderApprovalOrigin.OwnerClose)]
+    [InlineData(OrderApprovalOrigin.MaintenanceMarginReduction)]
+    public async Task T_10_3022_猶予の内の利用者の決済は取り消さず差し引いて合計が建玉を超えない(OrderApprovalOrigin origin)
+    {
+        var stop = ActiveStop();
+        var (guard, broker, stops, store) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Cancelled);
+        broker.Positions = [Long(10)];
+        broker.RejectReplacement = true;
+        PlaceDecisionClose(broker, store, quantity: 4, origin: origin);
+
+        var result = await guard.RunOnceAsync(10);
+
+        broker.Cancelled.Should().BeEmpty("🔴 猶予の内の利用者・自動縮小の決済は取り消さない");
+        broker.MarketCloseCount.Should().Be(1);
+        broker.LastCloseIntent!.Quantity.Should().Be(6, "🔴 建玉 10 − 処理中の決済 4 ＝ 6 株だけ送る");
+        TotalSells(broker).Should().BeLessThanOrEqualTo(10, "🔴 決済の合計が建玉を超えない（押さえない証券会社で反対建玉にしない）");
+        result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle()
+            .Which.Quantity.Should().Be(6, "通知・台帳の数量も送った数量");
+    }
+
+    // 🔴 T-10-3023（#1452 受け入れ基準 3）, IADR-0578: 猶予の内の利用者・自動縮小の決済が建玉 10 株をすべて覆う → 差し引いて 0 なので送らない。
+    // 記録は Active のまま（利用者の決済が売り切れば次の巡回が完了させる）・保護喪失の通知も出さない・失敗に数えない。
+    // 変異（差し引きの段を外す）: 成行 10 株を送り赤。変異（0 のときも送る）: 0 株の成行で赤。
+    [Theory]
+    [InlineData(OrderApprovalOrigin.OwnerClose)]
+    [InlineData(OrderApprovalOrigin.MaintenanceMarginReduction)]
+    public async Task T_10_3023_利用者の決済が建玉をすべて覆えば差し引いて0なので送らない(OrderApprovalOrigin origin)
+    {
+        var stop = ActiveStop();
+        var (guard, broker, stops, store) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Cancelled);
+        broker.Positions = [Long(10)];
+        broker.RejectReplacement = true;
+        PlaceDecisionClose(broker, store, quantity: 10, origin: origin);
+
+        var result = await guard.RunOnceAsync(10);
+
+        broker.Cancelled.Should().BeEmpty("利用者・自動縮小の決済は取り消さない");
+        broker.MarketCloseCount.Should().Be(0, "🔴 差し引いて 0 なら送らない");
+        TotalSells(broker).Should().BeLessThanOrEqualTo(10);
+        result.Events.OfType<ProtectiveStopCoverageLost>().Should().BeEmpty("利用者の決済が建玉を覆っている（次の巡回で確かめる）");
+        stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active, "次の巡回で確かめる");
+    }
+
+    // 🔴 T-10-3024（#1452）, IADR-0578: 差し引くための建玉照会ができない（巡回の先頭・直列化の後の照会は通り、差し引きの照会だけが不明）
+    // → 成行を送らず人手対応（None）。記録は Active のまま。不明を「持っている」へ倒さない（IADR-0575 の照会し直しと同じ倒し方）。
+    [Fact]
+    public async Task T_10_3024_差し引くための建玉照会ができなければ送らず人手対応にする()
+    {
+        var stop = ActiveStop();
+        var (guard, broker, stops, store) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Cancelled);
+        broker.Positions = [Long(10)];
+        broker.RejectReplacement = true;
+        PlaceDecisionClose(broker, store, quantity: 4, origin: OrderApprovalOrigin.OwnerClose);
+        // 巡回の先頭は従来の口（GetPositionsAsync）。分類つきの口は直列化の後の照会し直し → 差し引きの照会の順に使う。
+        broker.ClassifiedResults.Enqueue(PositionQueryResult.Success([Long(10)])); // 直列化の後の照会し直し
+        broker.ClassifiedResults.Enqueue(PositionQueryResult.Failed(PositionQueryFailure.Other)); // 差し引きの照会
+
+        var result = await guard.RunOnceAsync(10);
+
+        broker.MarketCloseCount.Should().Be(0, "🔴 差し引けなければ送らない");
+        broker.Cancelled.Should().BeEmpty();
+        result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle()
+            .Which.Remediation.Should().Be(ProtectiveStopRemediation.None, "人手対応を求める（無音にしない）");
+        stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active, "次の巡回で撃ち直す");
     }
 
     [Fact]

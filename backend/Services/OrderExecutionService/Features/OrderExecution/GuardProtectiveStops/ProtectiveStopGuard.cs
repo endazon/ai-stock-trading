@@ -730,6 +730,50 @@ public sealed class ProtectiveStopGuard(
                 }
             }
 
+            // 🔴 FR-10, UC-06, ADR-0050 決定1, #1452（親 #1423）, IADR-0578: 取消の段は猶予の内の利用者の手仕舞い・維持率割れの自動縮小を
+            // **取り消さない**（IADR-0515 決定3。利用者の意思を尊重する）。代わりに S1 と同じ差し引き（OwnerCloseNetting。IADR-0515 決定4）を通し、
+            // **処理中の決済の残りを差し引いた数量だけ送る。** 差し引かないと、未約定の売りを押さえない証券会社では利用者の指値と成行の両方が約定して
+            // 反対建玉になる。生きている利用者・自動縮小の決済が無ければ何もしない（建玉照会も増やさない＝従来の挙動）。
+            //   - PositionsUnknown（差し引くための建玉照会ができない）→ 送らない。確実に未発注として人手対応（None）。
+            //     照会の成否の報告（IADR-0462）は巡回の先頭の 1 回に留める（上の照会し直しと同じ）。
+            //   - 差し引いて 0 → 送らない。記録は Active のまま（利用者・自動縮小の決済が売り切れば次の巡回が建玉 0 を見て完了させる。
+            //     約定しないまま猶予を過ぎれば、次の巡回の取消の段が取り消してから送る）。失敗に数えず、保護喪失の通知も出さない。
+            var netted = await OwnerCloseNetting.NetAsync(
+                    stop, broker, stops, store, QueryPositionsOrNullAsync, _logger, "保護逆指値ガードの成行の手仕舞い",
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (netted.Kind == OwnerCloseNettingKind.PositionsUnknown)
+            {
+                _logger.LogError(
+                    "保護逆指値ガード: 処理中の利用者の手仕舞い・維持率割れの自動縮小を差し引くための建玉照会ができないため、成行の手仕舞いを送りません（確実に未発注）。"
+                    + "**逆指値なしの建玉が残っている可能性があります。**EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 数量={Quantity} 利用者・自動縮小の決済={OwnerCloses}",
+                    stop.EntryDecisionId, stop.Symbol, quantity, string.Join(",", netted.OwnerCloseDecisionIds));
+                return CloseNotPlaced(stop, quantity, events);
+            }
+
+            if (netted.Kind == OwnerCloseNettingKind.Applied && netted.Sendable < Math.Min(quantity, closableNow))
+            {
+                if (netted.Sendable <= 0)
+                {
+                    _logger.LogWarning(
+                        "保護逆指値ガード: 同じ建玉を売る処理中の決済が決済方向の建玉をすべて覆っているため、成行の手仕舞いを送りません"
+                        + "（利用者の手仕舞い・維持率割れの自動縮小は取り消しません。記録は次の巡回で確かめます）: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} "
+                        + "決済方向の建玉={Closable} 処理中の決済={InFlight} 利用者・自動縮小の決済={OwnerCloses}",
+                        stop.EntryDecisionId, stop.Symbol, netted.Closable, netted.InFlight,
+                        string.Join(",", netted.OwnerCloseDecisionIds));
+                    return Outcome.StillActive;
+                }
+
+                _logger.LogWarning(
+                    "保護逆指値ガード: 成行の手仕舞いの数量を、同じ建玉を売る処理中の決済の分だけ縮めました（利用者の手仕舞い・維持率割れの自動縮小は取り消しません）"
+                    + "（巡回の先頭 {Quantity} 株 / 決済方向の建玉 {Closable} 株 − 処理中の決済 {InFlight} 株 → {Sent} 株）: "
+                    + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 利用者・自動縮小の決済={OwnerCloses}",
+                    quantity, netted.Closable, netted.InFlight, netted.Sendable, stop.EntryDecisionId, stop.Symbol,
+                    string.Join(",", netted.OwnerCloseDecisionIds));
+                quantity = netted.Sendable;
+                closeIntent = BuildCloseIntent(stop, quantity, stop.TriggerPrice);
+            }
+
             if (closableNow < quantity)
             {
                 _logger.LogWarning(
@@ -799,6 +843,20 @@ public sealed class ProtectiveStopGuard(
         }
 
         return CloseNotPlaced(stop, quantity, events);
+    }
+
+    // #1452, IADR-0578: 差し引きの段へ渡す建玉の照会（例外・不明は null。報告はしない＝巡回の先頭の 1 回に留める）。
+    private async Task<IReadOnlyList<BrokerPositionSnapshot>?> QueryPositionsOrNullAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return (await PositionQueries.QueryAsync(positions, cancellationToken).ConfigureAwait(false)).Positions;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "保護逆指値ガード: 処理中の利用者の決済を差し引くための建玉の照会が例外で失敗しました（不明として扱います）。");
+            return null;
+        }
     }
 
     // #1446, IADR-0575 決定 3 / #1448, IADR-0577: 決済方向の建玉（方向ごとに数える。ネットは使わない）。
