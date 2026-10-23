@@ -89,7 +89,7 @@ public class SoftwareStopExecutorTests
         var store = new InMemoryExecutedOrderStore();
         var reservations = new InMemoryOrderReservationStore();
         return new Fixture(
-            new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock()),
+            new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock(), AlwaysOpenSessionGate.Instance),
             broker, stops, store, reservations);
     }
 
@@ -429,7 +429,7 @@ public class SoftwareStopExecutorTests
         var store = new InMemoryExecutedOrderStore();
         var health = new RecordingPositionQueryHealth();
         var f = new Fixture(
-            new SoftwareStopExecutor(broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(),
+            new SoftwareStopExecutor(broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance,
                 positionQueryHealth: health),
             broker, stops, store, new InMemoryOrderReservationStore());
         var stop = SoftwareStop();
@@ -459,7 +459,7 @@ public class SoftwareStopExecutorTests
         var store = new InMemoryExecutedOrderStore();
         var health = new RecordingPositionQueryHealth();
         var f = new Fixture(
-            new SoftwareStopExecutor(broker, positions, stops, store, new InMemoryOrderReservationStore(), new FakeClock(),
+            new SoftwareStopExecutor(broker, positions, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance,
                 positionQueryHealth: health),
             broker, stops, store, new InMemoryOrderReservationStore());
         var stop = SoftwareStop();
@@ -481,7 +481,7 @@ public class SoftwareStopExecutorTests
         var store = new InMemoryExecutedOrderStore();
         var health = new RecordingPositionQueryHealth();
         var executor = new SoftwareStopExecutor(
-            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), positionQueryHealth: health);
+            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance, positionQueryHealth: health);
         var stop = SoftwareStop() with { TriggeredAt = Now, TriggeredPrice = 940m };
         stops.Save(stop);
         Entry(new Fixture(executor, broker, stops, store, new InMemoryOrderReservationStore()), stop, OrderStatus.Filled, 10);

@@ -11,7 +11,7 @@ using Xunit;
 
 namespace OrderExecutionService.Tests;
 
-// 🔴 T-10-2995〜T-10-3000, FR-10, NFR, #1444（親 #1423 M-1）, IADR-0574: **閉場中は保護逆指値ガードと S1 が新しい注文を送らない。**
+// 🔴 T-10-2995〜T-10-3000・T-10-3002・T-10-3003, FR-10, NFR, #1444（親 #1423 M-1）, IADR-0574: **閉場中は保護逆指値ガードと S1 が新しい注文を送らない。**
 //
 // 是正前: ガードは時間帯を見ずに 30 秒ごとに巡回し、引けで失効した当日限りの逆指値（保護レグは有効期限を載せない）を
 // 閉場中に見つけると張り直し、拒否されれば成行で手仕舞った。場外の成行は翌寄りで約定し、**損切りラインに達していない建玉を
@@ -49,9 +49,9 @@ public class ProtectiveStopGuardMarketHoursTests
         var store = new InMemoryExecutedOrderStore();
         var reservations = new InMemoryOrderReservationStore();
         var executor = new SoftwareStopExecutor(
-            broker, broker, stops, store, reservations, clock, marketSession: gate);
+            broker, broker, stops, store, reservations, clock, gate);
         var guard = new ProtectiveStopGuard(
-            broker, broker, stops, store, reservations, clock, softwareStops: executor, marketSession: gate);
+            broker, broker, stops, store, reservations, clock, gate, softwareStops: executor);
         return new Harness(guard, broker, stops, store, clock, executor);
     }
 
@@ -249,5 +249,56 @@ public class ProtectiveStopGuardMarketHoursTests
         h.Clock.UtcNow = NextOpen;
         await h.Guard.RunOnceAsync(10);
         h.Broker.MarketCloseCount.Should().Be(1);
+    }
+
+    private static int Stalled(ProtectiveStopGuardResult result) =>
+        result.Events.OfType<SoftwareStopExecuted>().Count(e => e.Outcome == SoftwareStopOutcome.CloseStalled);
+
+    // T-10-3002: 🔴 引け際に到達した S1 が閉場をまたいで決済を待つだけなら「決済できていない」通知（CloseStalled）を出さない。
+    // 閉場の間は猶予の計時を進めず、到達の後の最初の開場から数え直す——開場後も猶予（15 分）を過ぎて決済できなければ 1 回だけ出す。
+    [Fact]
+    public async Task T_10_3002_閉場をまたいで待つだけのS1は決済できていない通知を出さず開場から猶予を数え直す()
+    {
+        var h = NewHarness(AtClose.AddMinutes(-5)); // 15:55 EDT
+        h.Broker.MarketUnavailable = true;          // 場中も開場後も確実に未発注（据え置き）が続く
+        var stop = S1(h, AtClose.AddHours(-6));
+        await h.Executor.OnTriggeredAsync(Trigger(h.Clock.UtcNow));
+
+        var stalled = 0;
+        // 閉場中（引け〜翌寄り）に何度巡回しても出さない。
+        foreach (var at in new[] { AtClose.AddMinutes(1), AtClose.AddMinutes(30), AtClose.AddHours(6), NextOpen.AddMinutes(-1) })
+        {
+            h.Clock.UtcNow = at;
+            stalled += Stalled(await h.Guard.RunOnceAsync(10));
+        }
+
+        stalled.Should().Be(0, "閉場で待つことは「決済できていない」ではない（到達から 17 時間以上たっても出さない）");
+
+        // 開場の後: 猶予（15 分）の内は出さない。
+        h.Clock.UtcNow = NextOpen.AddMinutes(14);
+        Stalled(await h.Guard.RunOnceAsync(10)).Should().Be(0, "猶予は到達の後の最初の開場から数え直す");
+
+        // 開場から猶予を過ぎて、なお決済できない: 1 回だけ出す。
+        h.Clock.UtcNow = NextOpen.AddMinutes(16);
+        Stalled(await h.Guard.RunOnceAsync(10)).Should().Be(1);
+        h.Clock.UtcNow = NextOpen.AddMinutes(30);
+        Stalled(await h.Guard.RunOnceAsync(10)).Should().Be(0, "通知は 1 回だけ（従来どおり）");
+        h.Stops.Find(stop.EntryDecisionId)!.StalledNotifiedAt.Should().Be(NextOpen.AddMinutes(16));
+    }
+
+    // T-10-3003: 場中に到達して決済できないまま猶予を過ぎたら、従来どおり「決済できていない」通知を 1 回出す。
+    [Fact]
+    public async Task T_10_3003_場中に到達して猶予を過ぎても決済できなければ従来どおり通知する()
+    {
+        var triggeredAt = new DateTimeOffset(2026, 10, 22, 14, 0, 0, TimeSpan.Zero); // 10:00 EDT
+        var h = NewHarness(triggeredAt);
+        h.Broker.MarketUnavailable = true;
+        S1(h, triggeredAt.AddHours(-1));
+        await h.Executor.OnTriggeredAsync(Trigger(triggeredAt));
+
+        h.Clock.UtcNow = triggeredAt.AddMinutes(14);
+        Stalled(await h.Guard.RunOnceAsync(10)).Should().Be(0);
+        h.Clock.UtcNow = triggeredAt.AddMinutes(16);
+        Stalled(await h.Guard.RunOnceAsync(10)).Should().Be(1, "同じ場の中で猶予を過ぎた（到達の時刻から数える）");
     }
 }

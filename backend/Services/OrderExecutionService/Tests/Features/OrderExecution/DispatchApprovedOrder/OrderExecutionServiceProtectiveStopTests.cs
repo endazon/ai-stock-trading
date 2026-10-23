@@ -389,7 +389,7 @@ public class OrderExecutionServiceProtectiveStopTests
         var positions = new CountingPositionSource();
         var held = new HeldCloseNotificationTracker();
         var guard = new ProtectiveStopGuard(
-            broker, positions, stops, store, reservations, clock, heldCloseNotifications: held,
+            broker, positions, stops, store, reservations, clock, AlwaysOpenSessionGate.Instance, heldCloseNotifications: held,
             closeRejections: new CloseRejectionTracker());
         clock.UtcNow = Now + HeldCloseNotificationTracker.RenotifyInterval;
 

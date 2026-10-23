@@ -266,8 +266,8 @@ public class ProtectiveStopOptimisticConcurrencyTests
         var store = new HookedExecutedOrderStore();
         var reservations = new InMemoryOrderReservationStore();
         var handlerLog = new RecordingLogger<SoftwareStopExecutor>();
-        var handler = new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock(), handlerLog);
-        var guard = new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock());
+        var handler = new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock(), AlwaysOpenSessionGate.Instance, handlerLog);
+        var guard = new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock(), AlwaysOpenSessionGate.Instance);
         var stop = TriggeredStop(stops, store, 707);
 
         SoftwareStopCloseOutcome? guardOutcome = null;
@@ -304,7 +304,7 @@ public class ProtectiveStopOptimisticConcurrencyTests
         var reservations = new InMemoryOrderReservationStore();
         var executorBroker = new FakeBroker { Positions = [Long(707)] };
         var executor = new SoftwareStopExecutor(
-            executorBroker, executorBroker, stops, store, reservations, new FakeClock());
+            executorBroker, executorBroker, stops, store, reservations, new FakeClock(), AlwaysOpenSessionGate.Instance);
         var adopterLog = new RecordingLogger<ProtectiveStopDriftAdopter>();
         var adopter = new ProtectiveStopDriftAdopter(
             stops, new OrderAmendmentService(broker, store, new InMemoryOrderLifecycleStore(), new FakeClock()),
@@ -383,7 +383,7 @@ public class ProtectiveStopOptimisticConcurrencyTests
         var stops = new InMemoryProtectiveStopOrderStore();
         var store = new InMemoryExecutedOrderStore();
         var executor = new SoftwareStopExecutor(
-            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock());
+            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance);
         var stop = TriggeredStop(stops, store, 707);
         broker.OnPositionsQueried = () => stops.TrySave(stops.Find(stop.EntryDecisionId)! with
         {
@@ -404,7 +404,7 @@ public class ProtectiveStopOptimisticConcurrencyTests
         var conflicting = new ConflictingStopStore(inner, row.EntryDecisionId, conflicts: 1);
         var broker2 = new FakeBroker { Positions = [Long(300)] };
         var executor2 = new SoftwareStopExecutor(
-            broker2, broker2, conflicting, store2, new InMemoryOrderReservationStore(), new FakeClock());
+            broker2, broker2, conflicting, store2, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance);
 
         await executor2.TryCloseAsync(inner.Find(row.EntryDecisionId)!, snapshot: null);
 
@@ -426,7 +426,7 @@ public class ProtectiveStopOptimisticConcurrencyTests
         var stops = new ConflictingStopStore(inner, b.EntryDecisionId, int.MaxValue);
         var log = new RecordingLogger<SoftwareStopExecutor>();
         var executor = new SoftwareStopExecutor(
-            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), log);
+            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance, log);
 
         var result = await executor.OnTriggeredAsync(new StopLossTriggered(
             Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 1_428, 329m, 331.67m, Now));

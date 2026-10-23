@@ -168,7 +168,7 @@ public class ProtectiveStopGuardCompletionBookkeepingTests
         var rejections = new CloseRejectionTracker();
         var held = new HeldCloseNotificationTracker();
         var guard = new ProtectiveStopGuard(
-            broker, broker, stops, store, reservations, clock,
+            broker, broker, stops, store, reservations, clock, AlwaysOpenSessionGate.Instance,
             heldCloseNotifications: held, closeRejections: rejections);
         return new Harness(guard, broker, stops, store, reservations, clock, entryDecisionId, rejections, held);
     }

@@ -16,6 +16,8 @@ public interface IMarketSessionGate
 }
 
 // 本番の実体（規則計算の休場日・半日取引日。臨時休場は足さない——発注執行に構成の口は無い。IADR-0574 残余 2）。
+// 🔴 IADR-0574 決定1（2026-10-23 追記）: 「常に場中」の実体は本番のアセンブリに置かない（試験の偽物だけが持つ）。
+// ガード・実行器はこの口を**省略できない引数**で受け取る——省略時に場中と読む既定（fail-open）は資金の統制に置かない。
 public sealed class MarketHoursSessionGate : IMarketSessionGate
 {
     public static readonly MarketHoursSessionGate Instance = new();
@@ -23,15 +25,4 @@ public sealed class MarketHoursSessionGate : IMarketSessionGate
     public bool IsOpen(Market market, DateTimeOffset instant) => MarketHours.IsOpen(market, instant);
 
     public DateTimeOffset? NextOpen(Market market, DateTimeOffset instant) => MarketHours.NextOpen(market, instant);
-}
-
-// 判定しない構成（単体の試験の既定。本番では使わない——Program.cs は MarketHoursSessionGate を渡し、T-10-3001 が固定する）。
-// 省略時に常に場中と読むのは、ゲートを持つ前の挙動（時間帯を見ない）をそのまま残すためである。
-public sealed class AlwaysOpenSessionGate : IMarketSessionGate
-{
-    public static readonly AlwaysOpenSessionGate Instance = new();
-
-    public bool IsOpen(Market market, DateTimeOffset instant) => true;
-
-    public DateTimeOffset? NextOpen(Market market, DateTimeOffset instant) => instant;
 }

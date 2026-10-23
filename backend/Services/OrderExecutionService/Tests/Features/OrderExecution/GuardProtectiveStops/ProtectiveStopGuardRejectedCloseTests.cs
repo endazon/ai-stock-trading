@@ -126,7 +126,7 @@ public class ProtectiveStopGuardRejectedCloseTests
         var reservations = new InMemoryOrderReservationStore();
         // 本番と同じく数えの記憶は外から渡す（常駐の発行が補償に使う・PR #916 監査 F2）。
         var rejections = new CloseRejectionTracker();
-        var guard = new ProtectiveStopGuard(broker, broker, stops, store, reservations, clock, closeRejections: rejections);
+        var guard = new ProtectiveStopGuard(broker, broker, stops, store, reservations, clock, AlwaysOpenSessionGate.Instance, closeRejections: rejections);
         return new Harness(guard, broker, stops, store, reservations, clock, stop, rejections);
     }
 

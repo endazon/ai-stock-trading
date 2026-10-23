@@ -95,7 +95,7 @@ public class SoftwareStopCloseBackoffTests
         var store = new InMemoryExecutedOrderStore();
         var log = new RecordingLogger<SoftwareStopExecutor>();
         return new Fixture(
-            new SoftwareStopExecutor(broker, broker, stops, store, new InMemoryOrderReservationStore(), clock, log),
+            new SoftwareStopExecutor(broker, broker, stops, store, new InMemoryOrderReservationStore(), clock, AlwaysOpenSessionGate.Instance, log),
             new SoftwareStopReArmer(stops, store, clock),
             broker, stops, store, clock, log);
     }

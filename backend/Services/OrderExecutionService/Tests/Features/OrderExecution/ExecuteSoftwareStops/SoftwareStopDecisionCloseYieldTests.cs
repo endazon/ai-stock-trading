@@ -203,7 +203,7 @@ public class SoftwareStopDecisionCloseYieldTests
         IExecutedOrderStore executorStore = wrapStore is null ? store : wrapStore(store);
         var reservations = new InMemoryOrderReservationStore();
         return new Fixture(
-            new SoftwareStopExecutor(broker, broker, stops, executorStore, reservations, clock, log),
+            new SoftwareStopExecutor(broker, broker, stops, executorStore, reservations, clock, AlwaysOpenSessionGate.Instance, log),
             broker, stops, store, clock, log, reservations);
     }
 

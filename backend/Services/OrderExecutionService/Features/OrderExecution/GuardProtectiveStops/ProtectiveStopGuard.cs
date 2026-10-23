@@ -51,14 +51,15 @@ public sealed class ProtectiveStopGuard(
     IExecutedOrderStore store,
     IOrderReservationStore reservations,
     IClock clock,
+    // 🔴 FR-10, NFR, #1444, IADR-0574 決定1: 閉場中は張り直し・成行を送らない。**省略できない**（既定の fail-open を置かない）。
+    IMarketSessionGate marketSession,
     ILogger<ProtectiveStopGuard>? logger = null,
     HeldCloseNotificationTracker? heldCloseNotifications = null,
     OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopExecutor? softwareStops = null,
     CloseRejectionTracker? closeRejections = null,
     PositionQueryRetry? positionQueryRetry = null,
     IPositionQueryHealthReporter? positionQueryHealth = null,
-    OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor.SoftwareStopFloorRetrofitter? floorRetrofit = null,
-    IMarketSessionGate? marketSession = null)
+    OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor.SoftwareStopFloorRetrofitter? floorRetrofit = null)
 {
     /// <summary>
     /// 🔴 #857, IADR-0369 決定3: <b>確認できた拒否</b>で終わった成行手仕舞いを撃ち直す上限
@@ -75,8 +76,8 @@ public sealed class ProtectiveStopGuard(
     private readonly ILogger _logger = logger ?? NullLogger<ProtectiveStopGuard>.Instance;
 
     // 🔴 FR-10, NFR, #1444（親 #1423 M-1）, IADR-0574 決定1: 閉場中は逆指値の張り直し・成行の手仕舞いを送らない。
-    // 省略時は常に場中（ゲートを持つ前の挙動。単体の試験の既定）。本番は Program.cs が MarketHoursSessionGate を渡す（T-10-3001）。
-    private readonly IMarketSessionGate _marketSession = marketSession ?? AlwaysOpenSessionGate.Instance;
+    // 本番は Program.cs が MarketHoursSessionGate を渡す（T-10-3001）。
+    private readonly IMarketSessionGate _marketSession = marketSession ?? throw new ArgumentNullException(nameof(marketSession));
 
     // NFR, FR-10, #1092, IADR-0462: 建玉照会の状態の報告口。本番は Program.cs が singleton（発行の実装）を渡す。
     private readonly IPositionQueryHealthReporter _positionQueryHealth =

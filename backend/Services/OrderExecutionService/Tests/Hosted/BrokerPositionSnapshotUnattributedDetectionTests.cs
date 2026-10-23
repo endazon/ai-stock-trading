@@ -271,7 +271,7 @@ public class BrokerPositionSnapshotUnattributedDetectionTests
         // ガードの既存の不変条件「巡回対象が無ければ建玉照会もしない」は変えていない（ガードからは検知も出ない）。
         var broker = new GuardBroker { Positions = [Long("AAPL", 10)] };
         var guard = new ProtectiveStopGuard(
-            broker, broker, f.Stops, f.Store, new InMemoryOrderReservationStore(), f.Clock);
+            broker, broker, f.Stops, f.Store, new InMemoryOrderReservationStore(), f.Clock, AlwaysOpenSessionGate.Instance);
         var result = await guard.RunOnceAsync(50);
 
         broker.PositionQueries.Should().Be(0);
@@ -410,7 +410,7 @@ public class BrokerPositionSnapshotUnattributedDetectionTests
         var positions = new List<BrokerPositionSnapshot> { Long("AAPL", 10), new("MSFT", Market.UnitedStates, 5, 410m) };
         var broker = new GuardBroker { Positions = positions };
         var guard = new ProtectiveStopGuard(
-            broker, broker, f.Stops, f.Store, new InMemoryOrderReservationStore(), f.Clock);
+            broker, broker, f.Stops, f.Store, new InMemoryOrderReservationStore(), f.Clock, AlwaysOpenSessionGate.Instance);
         var fromGuard = (await guard.RunOnceAsync(50)).Events.OfType<SoftwareStopExecuted>()
             .Where(e => e.Outcome == SoftwareStopOutcome.UnattributedPosition)
             .ToList();

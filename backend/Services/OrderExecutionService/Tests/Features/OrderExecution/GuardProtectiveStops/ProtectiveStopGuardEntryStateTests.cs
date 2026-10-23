@@ -135,7 +135,7 @@ public class ProtectiveStopGuardEntryStateTests
         var clock = new MutableClock(Now);
         var held = new HeldCloseNotificationTracker();
         var guard = new ProtectiveStopGuard(
-            broker, broker, stops, store, reservations, clock, logger,
+            broker, broker, stops, store, reservations, clock, AlwaysOpenSessionGate.Instance, logger,
             heldCloseNotifications: held, closeRejections: new CloseRejectionTracker());
         return new Harness(guard, broker, stops, store, reservations, clock, held, entry);
     }

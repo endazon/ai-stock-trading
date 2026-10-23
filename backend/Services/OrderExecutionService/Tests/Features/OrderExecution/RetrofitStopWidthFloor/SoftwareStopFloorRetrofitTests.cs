@@ -339,9 +339,9 @@ public class SoftwareStopFloorRetrofitTests
         f.Broker.Positions = positionsKnown ? [new BrokerPositionSnapshot("NVDA", Market.UnitedStates, 10, 230.82m)] : null;
         var reservations = new InMemoryOrderReservationStore();
         var clock = new FakeClock();
-        var executor = new SoftwareStopExecutor(f.Broker, f.Broker, f.Stops, f.Store, reservations, clock);
+        var executor = new SoftwareStopExecutor(f.Broker, f.Broker, f.Stops, f.Store, reservations, clock, AlwaysOpenSessionGate.Instance);
         var guard = new ProtectiveStopGuard(
-            f.Broker, f.Broker, f.Stops, f.Store, reservations, clock, softwareStops: executor,
+            f.Broker, f.Broker, f.Stops, f.Store, reservations, clock, AlwaysOpenSessionGate.Instance, softwareStops: executor,
             floorRetrofit: withRetrofit ? f.Retrofit : null);
 
         var result = await guard.RunOnceAsync(10);
@@ -397,7 +397,7 @@ public class SoftwareStopFloorRetrofitTests
         stops.Save(stop);
         Entry(f, stop, 230.82m);
         var executor = new SoftwareStopExecutor(
-            f.Broker, f.Broker, stops, f.Store, new InMemoryOrderReservationStore(), new FakeClock());
+            f.Broker, f.Broker, stops, f.Store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance);
         return (f, stops, executor, stop);
     }
 
@@ -548,7 +548,7 @@ public class SoftwareStopFloorRetrofitTests
         f.Stops.Save(stop);
         Entry(f, stop, 230.82m);
         var guard = new ProtectiveStopGuard(
-            f.Broker, new ThrowingPositions(), f.Stops, f.Store, new InMemoryOrderReservationStore(), new FakeClock(),
+            f.Broker, new ThrowingPositions(), f.Stops, f.Store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance,
             floorRetrofit: f.Retrofit);
 
         var run = async () => await guard.RunOnceAsync(10);
@@ -563,7 +563,7 @@ public class SoftwareStopFloorRetrofitTests
 
             // 次の巡回は冪等で事実を出さない＝この巡回の結果に載せた 1 件が唯一の事実（失っていない）。
             var again = new ProtectiveStopGuard(
-                f.Broker, f.Broker, f.Stops, f.Store, new InMemoryOrderReservationStore(), new FakeClock(), floorRetrofit: f.Retrofit);
+                f.Broker, f.Broker, f.Stops, f.Store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance, floorRetrofit: f.Retrofit);
             (await again.RunOnceAsync(10)).Events.OfType<SoftwareStopLineWidened>().Should().BeEmpty();
         }
         else
@@ -586,7 +586,7 @@ public class SoftwareStopFloorRetrofitTests
         f.Broker.Positions = [new BrokerPositionSnapshot("NVDA", Market.UnitedStates, 10, 230.82m)];
         stops.FailFindActiveOnCall = 2; // 1 回目＝巡回の先頭、2 回目＝遡及で広げた後の読み直し
         var guard = new ProtectiveStopGuard(
-            f.Broker, f.Broker, stops, f.Store, new InMemoryOrderReservationStore(), new FakeClock(), floorRetrofit: f.Retrofit);
+            f.Broker, f.Broker, stops, f.Store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance, floorRetrofit: f.Retrofit);
 
         var result = await guard.RunOnceAsync(10);
 
