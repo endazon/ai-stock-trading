@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import {
@@ -88,6 +88,24 @@ export function WatchlistForm() {
   const [deleteReason, setDeleteReason] = useState('');
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  // 🔴 NFR-19, #1414（WCAG 2.4.3 フォーカス順序・2.1.1 キーボード）: **確認パネルの開閉でフォーカスを失わない。**
+  // 行の「削除」は確認中に無効化されるため、押した直後にフォーカスが `<body>` へ落ちていた（E2E で実測）。
+  // キーボードの利用者は確認パネルへ戻るのに頁の先頭から Tab を辿り直すことになる。開いたら削除理由へ、
+  // 取り消したら押した行の「削除」へ戻す（削除し終えて行が消えたら、残る先頭の行の「削除」へ）。
+  // 要素は id とデータ属性で引く（`@platform/ui` の `Input` は単独リポのスタブでは ref を受けないため）。
+  const returnFocusKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (pendingKey !== null) {
+      document.getElementById('wl-delete-reason')?.focus();
+      return;
+    }
+    const key = returnFocusKey.current;
+    if (key === null) return;
+    returnFocusKey.current = null;
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button[data-watchlist-delete]'));
+    (buttons.find((b) => b.dataset.watchlistDelete === key) ?? buttons[0])?.focus();
+  }, [pendingKey]);
+
   const canAdd = newSymbol.trim() !== '' && newReason.trim() !== '' && !addSymbol.isPending;
 
   async function handleAdd(e: React.FormEvent): Promise<void> {
@@ -116,6 +134,7 @@ export function WatchlistForm() {
   function beginDelete(target: MonitoredSymbol): void {
     // 削除は破壊的なため、行の「削除」では確定せず確認パネルを開く（明示確認・IADR-0090 決定 3）。
     setPendingKey(keyOf(target));
+    returnFocusKey.current = keyOf(target);
     setDeleteReason('');
     setDeleteError(null);
   }
@@ -200,6 +219,7 @@ export function WatchlistForm() {
                           <TableCell>
                             <Button
                               type="button"
+                              data-watchlist-delete={keyOf(s)}
                               onClick={() => beginDelete(s)}
                               disabled={pendingKey !== null}
                             >

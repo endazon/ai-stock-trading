@@ -5,7 +5,7 @@ using Xunit;
 
 namespace AiStockTrading.Bff.Endpoints.Tests;
 
-// SC-04, FR-09, FR-11, UC-06, NFR, #1413, IADR-0146, IADR-0321: **BFF ↔ フロントの契約テスト（OpenD 認証の状態）。**
+// SC-04, FR-09, FR-11, UC-06, #1413, IADR-0146, IADR-0321: **BFF ↔ フロントの契約テスト（OpenD 認証の状態）。**
 //
 // SC-04 の E2E（`frontend/e2e/sc04-opend-auth.spec.ts`）と単体テストのモックは、ここで採った**BFF の実応答**を土台にする。
 // 手書きの literal で組むと、フロントが「こう返ってくるはずだ」と思っている形をフロント自身が検証する構造に戻る（#389 の根因）。

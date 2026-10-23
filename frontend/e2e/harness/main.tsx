@@ -39,19 +39,29 @@ i18n.activate('ja');
 
 // ナビゲーション＋子ルートの描画枠。nav はロール可視性を問わず全項目を列挙する
 // （E2E は URL 直接遷移が基本であり、ここは「ナビ項目が公開されている」ことの表示面である）。
+//
+// NFR-19, #1414: **ランドマーク（`<nav>`・`<main>`）は基盤の共通シェルと同じ形にする。** 本ユニットの画面は
+// 本番では共通シェルの `<main>` の中に描かれる。ハーネスが `<main>` を持たないと、axe の `region` /
+// `landmark-one-main` が**ハーネスの欠落**を画面の違反として数え、本物の違反がその中に埋もれる。
+// ナビの各リンクには 24×24 px の当たり領域を与える（WCAG 2.5.8。ハーネスにだけある素のリンクの
+// `target-size` を画面の違反として数えないため。本番のナビは基盤が描き、基盤の axe が測る）。
 function Layout() {
   return (
     <div>
-      <nav>
+      <nav aria-label="取引">
         <ul>
           {aiStockTradingNavItems.map((nav) => (
             <li key={nav.id}>
-              <Link to={nav.to}>{nav.label}</Link>
+              <Link to={nav.to} style={{ display: 'inline-block', minWidth: 24, minHeight: 24, padding: 4 }}>
+                {nav.label}
+              </Link>
             </li>
           ))}
         </ul>
       </nav>
-      <Outlet />
+      <main>
+        <Outlet />
+      </main>
     </div>
   );
 }
