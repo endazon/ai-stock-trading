@@ -14,6 +14,7 @@ import type {
   MarketMonitorSettings,
   MonitorSettingsChangeEntry,
 } from '../src/lib/monitor/contracts';
+import type { OpendAuthStateView } from '../src/features/sc04-opend-auth/types';
 
 // SC-01/02/03, IADR-0087: E2E の BFF モック定義（test-only）。
 // 画面が叩く BFF パス/メソッドを Playwright の page.route で横取りし、決定的な応答を返す（実 API に依存しない）。
@@ -138,6 +139,24 @@ export const STAGE_GATE: StageGateStatus = {
 export const RISK_SETTINGS_PAPER = { ...RISK_SETTINGS, brokerProvider: 0 };
 export const RISK_STATUS_PAPER = { ...RISK_STATUS, brokerProvider: 0 };
 
+// SC-04, FR-09, FR-11, UC-06, ADR-0024, #1412: OpenD ゲートウェイの状態（SMS 検証コード待ち）。
+// **契約フィクスチャがまだ無い**（バックエンドの生成対象は risk-controls / monitor だけ）ため、型
+// `OpendAuthStateView` で形を縛った literal で置く。値は `access.test.tsx` の待機中の状態と同じにした。
+// 「待機していない」「供給が無い」の描き分けは SC-04 の spec が spread で上書きする。
+export const OPEND_AUTH_STATE_WAITING: OpendAuthStateView = {
+  promptAvailability: 0,
+  prompt: 'phone',
+  connection: 'waiting',
+  captchaAvailable: false,
+  lastLoginAtAvailability: 0,
+  lastLoginAt: '2026-09-09T21:02:00Z',
+  deviceTrustAvailability: 0,
+  deviceTrustPersisted: true,
+  egressStabilityAvailability: 0,
+  egressStable: true,
+  detail: null,
+};
+
 // 既定の全ハンドラ（各画面の正常系）。個々のテストは spread で必要なキーだけ上書きする。
 export function defaultBff(): BffConfig {
   return {
@@ -174,6 +193,14 @@ export function defaultBff(): BffConfig {
     'PUT /monitor/settings/cooldown': { status: 200, body: MONITOR_SETTINGS },
     // FR-20, SC-02, #423: Stage 1 の最小取引件数（既定 100・値域 1〜1000）。
     'PUT /risk-controls/settings/stage1-minimum-trade-count': { status: 200, body: RISK_SETTINGS },
+    // FR-19, SC-02, IADR-0086, #1412: 取引ガードの変更（全置換）。サーバは変更後の設定を返す。
+    'PUT /risk-controls/settings/guard': { status: 200, body: RISK_SETTINGS },
+    // FR-10, SC-02, ADR-0040 決定1, IADR-0422, #1412: 損切りの実行機構（S0〜S3）の変更。サーバは変更後の設定を返す。
+    'PUT /risk-controls/settings/stop-loss-method': { status: 200, body: RISK_SETTINGS },
+    // SC-04, FR-09, FR-11, IADR-0321, #1412: OpenD 認証操作。投入・再送は本文を返さない（204）。
+    'GET /opend-auth/state': { status: 200, body: OPEND_AUTH_STATE_WAITING },
+    'POST /opend-auth/code': { status: 204 },
+    'POST /opend-auth/resend': { status: 204 },
   };
 }
 
