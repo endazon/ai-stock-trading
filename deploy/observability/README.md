@@ -31,6 +31,7 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
 | `ast_order_executions_total` | `status` / `provider` | 発注結果と発注先 |
 | `ast_order_dispatch_forgone_total` | `reason` | 発注に**届いていない**見送り（ブローカーの拒否とは別） |
 | `ast_order_drift_adoption_followup_abandoned_total` | `reason` | 乖離の取り込みの追随を、建玉照会の不明（`positions-unknown`）・失敗（`positions-query-failed`）のまま**再試行を使い切って**打ち切った件数（#942）。🔴 発注執行の起動完了時に 0 で作られる（最初の打ち切りを `increase()` が取りこぼさないため）。ダッシュボードには載せず、アラート `AstDriftAdoptionFollowUpAbandoned` が引く |
+| `ast_order_executed_publish_pending` | — | 約定追跡の巡回の末尾で、発行し終えていない約定の件数（ゲージ）。平常は 0 |
 | `ast_order_reservation_reconciliations_total` | `outcome`, `provider` | 発注予約の自動リコンサイル（滞留した予約を証券会社の注文一覧と備考で突き合わせる巡回）の**判定の内訳**。`probe-placed`（照会で発注済みと確定）/ `self-healed`（記録ありの自己修復）/ `held-not-placed`（照会は未発注と答えたが解放の門が閉じているため据え置き。同じ予約が巡回ごとに数え直される）/ `released`（門が閉じている限り 0）/ `indeterminate` / `failed`（据え置き）。🔴 **実際には証券会社に存在する注文に対して `held-not-placed` が出ていたら、解放の門を開けてはならない**（備考が往復していない）。`provider` は**予約の取引環境**（`MoomooSimulate` / `MoomooReal` / `InternalPaper`、不明は `Unknown`。#1051）で、解放の門は取引環境ごとに分かれている——**門の判断は同じ `provider` の系列だけで行う**（`MoomooSimulate` の系列で実弾の門を開けない）。リコンサイルが有効な構成でだけ、発注執行の起動完了時に 0 で作られる（判定 6 × 取引環境 4）。アラートは置かない（鳴らす基準は未決） |
 | `ast_llm_cost_jpy_total` | `category` | LLM 費用（上限対象 `Llm` / 対象外 `LlmUncapped`） |
 | `ast_llm_cost_limit_ratio_percent` | — | 月次上限に対する比率（80 で間隔延長・100 で停止） |
@@ -79,6 +80,7 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
   （[`../../docs/observability/observability.md`](../../docs/observability/observability.md)）。
   1 件目のルールが実測なしで置けるのは、**平常時の期待値が 0 件**の事象だけを見ているからである。
   2 件目（`AstDriftAdoptionFollowUpAbandoned`。#942）も同じ性質である（再試行を使い切った打ち切りだけを数える）。
+  `AstOrderExecutedPublishPending`（#1442）も同じ性質である（平常は巡回の末尾で 0 件）。
 - **`_error` キューの滞留そのものは見ていない。** RabbitMQ のキュー長（`rabbitmq_queue_messages*`）は
   どこからも scrape されておらず（本リポジトリの otel-collector は OTLP しか受けず、基盤側の Prometheus の scrape 対象は
   otel-collector だけ）、その系列を引くルールは永久に鳴らない。🔴 **`check-observability-assets.js` はこれを止めない**

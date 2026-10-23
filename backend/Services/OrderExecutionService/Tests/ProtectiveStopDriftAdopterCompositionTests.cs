@@ -113,6 +113,7 @@ public class ProtectiveStopDriftAdopterCompositionTests
                 foreach (var d in ownHosted) services.Remove(d);
 
                 services.DisableAllExternalWolverineTransports();
+                services.DisableAllWolverineMessagePersistence(); // #1442, IADR-0573: 耐久アウトボックスの DB に触れない（InMemory の試験）。
 
                 // 観測の口だけを足す（#942: OTel の exporter を 1 つ足す）。Program.cs の登録は置き換えない。
                 observe?.Invoke(services);

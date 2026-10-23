@@ -540,10 +540,19 @@ builder.Services.AddHostedService<BrokerAvailabilityProbeService>();
 // キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている（サービス側でトポロジを選ばない）。
 // **IADR-0129 決定 3 が効く経路**: OrderApproved は発行元の RiskManagementService 自身も購読しており、
 // ローカルルーティングを無効化しないと承認済みの発注が本サービスへ一通も届かない。
-builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
-    ServiceName,
-    builder.Configuration["RabbitMq:ConnectionString"],
-    typeof(OrderApprovedHandler).Assembly));
+// 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定1: 送信は耐久アウトボックス（専有 DB の `wolverine` スキーマ）に載せる。
+// 既定の RabbitMQ 送信はブローカー断の間も PublishAsync を成功で返して黙って捨てるため、約定（OrderExecuted）が台帳へ届かなくなる（実測）。
+// 構成 Messaging:DurableOutbox:Enabled=false は配備の不具合のときの戻し口（常用しない）。
+var durableOutbox = WolverineDurableOutbox.IsEnabled(builder.Configuration);
+builder.Host.UseWolverine(opts =>
+{
+    opts.UseAiStockTradingRabbitMq(
+        ServiceName,
+        builder.Configuration["RabbitMq:ConnectionString"],
+        typeof(OrderApprovedHandler).Assembly);
+    if (durableOutbox)
+        opts.UseOrderExecutionDurableOutbox(connStr);
+});
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。

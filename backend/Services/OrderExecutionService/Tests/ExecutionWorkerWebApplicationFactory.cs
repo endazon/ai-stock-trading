@@ -33,6 +33,7 @@ public sealed class ExecutionWorkerWebApplicationFactory : WebApplicationFactory
 
             // 実 RabbitMQ へ接続せず、送信は stub エンドポイントへ記録される（宛先 URI は保たれる）。
             services.DisableAllExternalWolverineTransports();
+            services.DisableAllWolverineMessagePersistence(); // #1442, IADR-0573: 耐久アウトボックスの DB に触れない（InMemory の試験）。
         });
     }
 

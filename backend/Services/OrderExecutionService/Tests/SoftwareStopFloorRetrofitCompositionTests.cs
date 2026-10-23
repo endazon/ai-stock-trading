@@ -60,6 +60,7 @@ public class SoftwareStopFloorRetrofitCompositionTests
                 foreach (var d in ownHosted) services.Remove(d);
 
                 services.DisableAllExternalWolverineTransports();
+                services.DisableAllWolverineMessagePersistence(); // #1442, IADR-0573: 耐久アウトボックスの DB に触れない（InMemory の試験）。
             });
         }
     }
