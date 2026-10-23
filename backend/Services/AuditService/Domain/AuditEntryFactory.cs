@@ -148,9 +148,11 @@ public static class AuditEntryFactory
 
     // NFR（費用）, FR-04, IADR-0055: 実 LLM 呼び出しの費用発生（#79）。注文相関を持たないため、
     // 発生月で束ねられるよう "llm-cost:{yyyy-MM}" の決定的 GUID を相関にする（CostThresholdReached と同系）。
+    // 🔴 NFR-13, ADR-0057 決定3, #1461, IADR-0584 決定5: 月は費用統制の費用計上月と同じ **JST の年月**（以前は発生時刻のオフセットのまま＝UTC）。
+    // 相関を読む実装は無く（束ねて辿るだけ）、既に記録した行の相関は書き換えない。
     public static AuditEntry From(LlmCostIncurred e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(LlmCostIncurred),
-        AuditCorrelation.From($"llm-cost:{e.At.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)}"),
+        AuditCorrelation.From($"llm-cost:{e.At.ToOffset(TimeSpan.FromHours(9)).ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)}"),
         Symbol: null,
         $"LLM 費用発生 {e.Amount:N2} 円（用途 {e.Purpose ?? "不明"}・モデル {e.Model ?? "不明"}）",
         AuditSerialization.Serialize(e), e.At, recordedAt);

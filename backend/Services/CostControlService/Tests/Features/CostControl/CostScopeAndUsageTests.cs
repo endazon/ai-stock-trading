@@ -1,3 +1,4 @@
+using System.Globalization;
 using CostControlService.Common.Abstractions;
 using CostControlService.Features.CostControl;
 using CostControlService.Infrastructure.Persistence;
@@ -99,16 +100,17 @@ public class CostScopeAndUsageTests
     // ---- 月次リセットの境界 -----------------------------------------------------------------
 
     // 月が変われば累計はゼロから始まる（統制も解除される）。月末最終秒→翌月最初の秒の境界で確かめる。
+    // 🔴 #1461, ADR-0057 決定3, IADR-0584: 月は **JST の暦月**。JST 8/31 23:59:59（＝ 14:59:59Z）→ JST 9/1 0:00（＝ 15:00:00Z）。
     [Fact]
     public async Task 月をまたぐと累計はリセットされ統制も解除される()
     {
-        var clock = new MovableClock(new DateTimeOffset(2026, 8, 31, 23, 59, 59, TimeSpan.Zero));
+        var clock = new MovableClock(new DateTimeOffset(2026, 8, 31, 14, 59, 59, TimeSpan.Zero));
         var ledger = new InMemoryCostLedger();
         var svc = new AppSvc(ledger, new Limits(Standard), clock);
 
         (await svc.RecordAsync(CostCategory.Llm, 15_000m)).Decision.State.Should().Be(CostControlState.Halted);
 
-        clock.UtcNow = new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero);
+        clock.UtcNow = new DateTimeOffset(2026, 8, 31, 15, 0, 0, TimeSpan.Zero);
 
         (await svc.GetLlmStateAsync()).State.Should().Be(CostControlState.Normal);
         (await svc.RecordAsync(CostCategory.Llm, 1m)).Decision.State.Should().Be(CostControlState.Normal);
@@ -116,6 +118,41 @@ public class CostScopeAndUsageTests
         // 前月の記録は消えない（7 年保持の台帳・月報の遡及集計に要る）。
         ledger.GetMonthlyTotal("2026-08", CostCategory.Llm).Should().Be(15_000m);
         ledger.GetMonthlyTotal("2026-09", CostCategory.Llm).Should().Be(1m);
+    }
+
+    // 🔴 T-10-3064（境界の両側・issue の受け入れ基準）, #1461, ADR-0057 決定3, IADR-0584 決定1: 2026-10-31T15:00:00Z（JST 11/1 0:00）以降の計上は
+    // 11 月、直前は 10 月の累計に入る。80%・100% の判定と /costs/state（GetLlmStateAsync）・月の使用量も JST の暦月の累計で答える。
+    [Fact]
+    public async Task JST_の月初0時の前後で数える月が分かれ_判定と状態もJSTの月で答える()
+    {
+        var clock = new MovableClock(new DateTimeOffset(2026, 10, 31, 14, 59, 59, TimeSpan.Zero));
+        var ledger = new InMemoryCostLedger();
+        var svc = new AppSvc(ledger, new Limits(Standard), clock);
+
+        (await svc.RecordAsync(CostCategory.Llm, 12_000m)).Month.Should().Be("2026-10");
+        (await svc.GetLlmStateAsync()).State.Should().Be(CostControlState.Throttled, "10 月の 80% 到達（上限 15,000）");
+
+        clock.UtcNow = new DateTimeOffset(2026, 10, 31, 15, 0, 0, TimeSpan.Zero);
+        (await svc.GetLlmStateAsync()).State.Should().Be(CostControlState.Normal, "JST 11/1 0:00 で累計は 0 に戻る（停止・延長も解除）");
+        (await svc.RecordAsync(CostCategory.Llm, 100m)).Month.Should().Be("2026-11");
+        (await svc.GetUsageAsync()).Month.Should().Be("2026-11");
+
+        ledger.GetMonthlyTotal("2026-10", CostCategory.Llm).Should().Be(12_000m);
+        ledger.GetMonthlyTotal("2026-11", CostCategory.Llm).Should().Be(100m);
+    }
+
+    // T-10-3065（境界の表）: 月キーは JST の年月（UTC の年月ではない）。年越し・月初の 9 時間・オフセット付きの入力も同じ答え。
+    [Theory]
+    [InlineData("2026-10-31T14:59:59Z", "2026-10")]
+    [InlineData("2026-10-31T15:00:00Z", "2026-11")]
+    [InlineData("2026-11-01T08:59:59Z", "2026-11")] // UTC ではまだ 11/1 の朝（UTC の年月でも 11 月）
+    [InlineData("2026-12-31T15:00:00Z", "2027-01")] // 年越し
+    [InlineData("2026-12-31T14:59:59Z", "2026-12")]
+    [InlineData("2026-11-01T00:00:00+09:00", "2026-11")]
+    [InlineData("2026-10-31T23:59:59+09:00", "2026-10")]
+    public void 月キーはJSTの年月(string instant, string expected)
+    {
+        AppSvc.MonthKey(DateTimeOffset.Parse(instant, CultureInfo.InvariantCulture)).Should().Be(expected);
     }
 
     // ---- 上限変更（FR-17・前提条件バージョン切替）の境界 ------------------------------------

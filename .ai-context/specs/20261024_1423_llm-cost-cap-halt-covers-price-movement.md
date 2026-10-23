@@ -51,3 +51,5 @@ updated: 2026-10-24
 | T-10-3052 | 1（語彙） | `DecisionSkipReasonTests`・`LedgerGapEventsTests`・`DecisionHeldReportTests` |
 
 変異: 合流点の判定を `false &&` で無効にすると T-10-3049 の 2 件が赤になることを確かめた。4・6 は構成と経路の読みで、5 は費用統制の `MonthKey` の読みで確かめた（試験なし）。
+
+［2026-10-24 追記 / #1461］費用統制の費用計上月を JST の暦月へ改めた（計画 ADR-0057 決定 3 の追随・[IADR-0584](../adr/IADR-0584_cost-month-key-jst.md)）。本文中の「UTC の暦月」は、それ以前の実装の記述である。
