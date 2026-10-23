@@ -59,6 +59,26 @@ public class AuditEntryFactoryLlmGovernanceTests
         august.CorrelationId.Should().NotBe(july.CorrelationId, "月をまたぐと別の相関になること");
     }
 
+    // 🔴 T-10-3066, NFR-13, ADR-0057 決定3, #1461, IADR-0584 決定5: 相関の月は費用統制と同じ JST の年月。
+    // 2026-10-31T14:59:59Z（JST 10/31 23:59:59）は 10 月、15:00:00Z（JST 11/1 0:00）は 11 月の相関に入る。
+    [Fact]
+    public void LLM費用発生の相関の月はJSTの暦月で分かれる()
+    {
+        var lastOfOctober = AuditEntryFactory.From(
+            new LlmCostIncurred(1m, new DateTimeOffset(2026, 10, 31, 14, 59, 59, TimeSpan.Zero)), Id, RecordedAt);
+        var firstOfNovember = AuditEntryFactory.From(
+            new LlmCostIncurred(1m, new DateTimeOffset(2026, 10, 31, 15, 0, 0, TimeSpan.Zero)), Id, RecordedAt);
+
+        var midOctober = AuditEntryFactory.From(
+            new LlmCostIncurred(1m, new DateTimeOffset(2026, 10, 15, 3, 0, 0, TimeSpan.Zero)), Id, RecordedAt);
+        var midNovember = AuditEntryFactory.From(
+            new LlmCostIncurred(1m, new DateTimeOffset(2026, 11, 15, 3, 0, 0, TimeSpan.Zero)), Id, RecordedAt);
+
+        firstOfNovember.CorrelationId.Should().NotBe(lastOfOctober.CorrelationId, "JST の月初 0:00 で相関が分かれること");
+        lastOfOctober.CorrelationId.Should().Be(midOctober.CorrelationId, "JST 10/31 23:59:59 は 10 月の相関");
+        firstOfNovember.CorrelationId.Should().Be(midNovember.CorrelationId, "JST 11/1 0:00 は 11 月の相関");
+    }
+
     // ---- LlmFallbackFired（ADR-0017 決定4-(3): 月報の発火回数の供給元） -------------------------
 
     [Fact]

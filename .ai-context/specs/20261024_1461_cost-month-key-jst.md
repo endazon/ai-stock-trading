@@ -37,7 +37,22 @@ updated: 2026-10-24
 | `scripts/nightly-ledger-summary.sh` §13・`scripts/nightly-ledger-summary.pg.test.sh` T-10-2025 | 是正（JST） |
 | `TradeDecisionAppService.cs` のコメント（#1460） | 是正 |
 | `docs/operations/nightly-ledger-summary-runbook.md`・`docs/tests/FR-10_risk-controls-tests.md`（T-10-2025・#1460 の節） | 是正 |
-| `.ai-context/adr/IADR-0582`・`IADR-0478`・作業仕様書 `20261024_1423_llm-cost-cap-halt-covers-price-movement` | **本文は書き換えない**（凍結記録）。日付つきの追記を足した。索引の IADR-0478 の行も書き換えない |
+| `.ai-context/adr/IADR-0582`・`IADR-0478`・作業仕様書 `20261024_1423_llm-cost-cap-halt-covers-price-movement` | **本文は書き換えない**（凍結記録）。日付つきの追記を足した。索引の IADR-0478・IADR-0582 の行にも日付つきの追記を足した（`check-adr-index-sync` が本文の変更に索引の追随を求める） |
+
+### 引き直し（規則 9・10。PR の AI レビューで `UTC。` の漏れを指摘された後）
+
+`UTC の暦月`・`UTC の年月` だけでは `（UTC。…）` の書き方を拾えなかった。`UTC` と `月` の組み合わせ（`UTC。`・`UTC）`・`UTC)`・`UTC の月`）と、
+月を作る式（`ToString("yyyy-MM"`・`AT TIME ZONE 'UTC'`・`UtcNow` から月を作る箇所）で全ファイルを引き直した。
+
+| 引いた場所 | 判定 |
+| --- | --- |
+| `docs/data/cost-entries.md:39`「（UTC。月をまたぐと…）」 | 是正（JST） |
+| `AuditEntryFactory` の `llm-cost:{yyyy-MM}`（発生時刻のオフセットのまま＝UTC） | 是正（JST。IADR-0584 決定5。相関を読む実装が無いので壊れる集計は無い） |
+| `AuditEntryFactory` の `llm-fallback:{yyyy-MM}`・`trade-decision-skip:{yyyy-MM}` | **除外**: 費用統制の月ではない。月報の回数は監査台帳を期間の窓で引き、相関は使わない（IADR-0584 決定5） |
+| `ReportPeriod` の月報の期間キー（`date.ToString("yyyy-MM")`） | 除外: 入力は JST の日付（報告書の暦）であり、UTC の時刻から作っていない |
+| 費用統制の消費者の試験の当月（`UtcNow.ToString("yyyy-MM")`） | 是正済み（本番の導出を使う） |
+| 試験・文書の「… UTC」の時刻表記（例「17:00 JST ＝ 08:00 UTC」）・`backlog-audit.yml` の「月曜 00:00 UTC」 | 除外: 曜日・時刻の表記で、費用の月ではない |
+| `.ai-context/specs/20261001_1140_*`（「終端の UTC 月」） | 書き換えない（凍結された作業仕様書。当時の記述） |
 
 ## 試験の写像
 
