@@ -334,6 +334,32 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
         row.AveragePrice = averagePrice;
         row.SlippageRatio = slippageRatio;
         row.ExecutedAt = executedAt;
+        // 🔴 #1442, IADR-0573 決定2: 記録の更新と同じ SaveChanges で発行待ちの印を立てる（発行の後に Worker が倒す）。
+        row.OrderExecutedPublishPending = true;
+        db.SaveChanges();
+        return true;
+    }
+
+    // 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: 発行待ちの印が立った記録（古い順・上限つき。状態は問わない）。
+    public IReadOnlyList<ExecutionRecord> FindOrderExecutedPublishPending(int batchSize)
+    {
+        return [.. db.ExecutedOrders
+            .Where(r => r.OrderExecutedPublishPending)
+            .OrderBy(r => r.ExecutedAt)
+            .Take(batchSize)
+            .Select(r => ToRecord(r))];
+    }
+
+    // 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: 発行待ちの印を倒す（この 1 列だけ。今の状態・約定数が発行したものと同じときだけ）。
+    public bool MarkOrderExecutedPublished(string orderId, OrderStatus status, int filledQuantity)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(orderId);
+
+        var row = db.ExecutedOrders.Find(orderId);
+        if (row is null || !row.OrderExecutedPublishPending || row.Status != status || row.FilledQuantity != filledQuantity)
+            return false;
+
+        row.OrderExecutedPublishPending = false;
         db.SaveChanges();
         return true;
     }

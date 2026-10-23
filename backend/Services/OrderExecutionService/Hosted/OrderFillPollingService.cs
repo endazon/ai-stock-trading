@@ -102,9 +102,15 @@ public sealed class OrderFillPollingService(
         // ADR-0013, IADR-0129, #354: BackgroundService（singleton）からの発行。Wolverine の IMessageBus は scoped で
         // singleton へ注入できないため、singleton の IWolverineRuntime から MessageBus を作って発行する。
         var bus = new MessageBus(runtime);
+        var executedOrders = scope.ServiceProvider.GetRequiredService<IExecutedOrderStore>();
         foreach (var executed in result.Executed)
         {
             await bus.PublishAsync(executed).ConfigureAwait(false);
+
+            // 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: **発行の後に**発行待ちの印を倒す（先に倒すと、発行に失敗した約定が
+            // 二度と発行されない）。発行が投げたら以降は倒さずに巡回を終える——印は残り、次の巡回で再発行される。
+            // 耐久アウトボックス（決定1）では、発行が返った時点で封筒は DB にある（ブローカーへ届いたかではない）。
+            MarkOrderExecutedPublished(executedOrders, executed);
 
             // FR-11, FR-16, ADR-0016 決定15, #633, IADR-0300: **moomoo の約定はここでしか観測されない**
             // （発注時は Accepted であり、経費が発生し得るのは約定してからである）。段 1 の既定では
@@ -131,7 +137,6 @@ public sealed class OrderFillPollingService(
         // 追跡の起点から決定的に導いた Id で 1 件に畳む。
         if (result.Abandoned is { Count: > 0 } abandoned)
         {
-            var executedOrders = scope.ServiceProvider.GetRequiredService<IExecutedOrderStore>();
             foreach (var giveUp in abandoned)
             {
                 await bus.PublishAsync(giveUp).ConfigureAwait(false);
@@ -146,15 +151,16 @@ public sealed class OrderFillPollingService(
         }
 
         var clock = scope.ServiceProvider.GetRequiredService<IClock>();
-        await RecheckAbandonedClosesAsync(poller, tradeExpenses, bus, clock.UtcNow, cancellationToken).ConfigureAwait(false);
-        ReportPendingCloses(scope.ServiceProvider.GetRequiredService<IExecutedOrderStore>(), clock.UtcNow);
+        await RecheckAbandonedClosesAsync(poller, tradeExpenses, bus, executedOrders, clock.UtcNow, cancellationToken).ConfigureAwait(false);
+        ReportPendingCloses(executedOrders, clock.UtcNow);
         await CancelUnfilledDecisionClosesAsync(scope.ServiceProvider, bus, cancellationToken).ConfigureAwait(false);
 
-        if (result.Updated > 0 || result.Unknown > 0 || result.Failed > 0)
+        if (result.Updated > 0 || result.Unknown > 0 || result.Failed > 0 || result.Republished > 0)
             logger.LogInformation(
                 "約定追跡: 非終端 {Scanned} 件を照会（更新 {Updated} / 終端化 {Terminalized} / 変化なし {Unchanged}"
-                    + " / 照会不能 {Unknown} / 失敗 {Failed}）。",
-                result.Scanned, result.Updated, result.Terminalized, result.Unchanged, result.Unknown, result.Failed);
+                    + " / 照会不能 {Unknown} / 失敗 {Failed}）。再発行 {Republished} 件。",
+                result.Scanned, result.Updated, result.Terminalized, result.Unchanged, result.Unknown, result.Failed,
+                result.Republished);
 
         return result;
     }
@@ -166,6 +172,7 @@ public sealed class OrderFillPollingService(
         OrderFillPoller poller,
         TradeExpenseRecordingService tradeExpenses,
         MessageBus bus,
+        IExecutedOrderStore executedOrders,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -188,6 +195,7 @@ public sealed class OrderFillPollingService(
         foreach (var executed in recheck.Executed)
         {
             await bus.PublishAsync(executed).ConfigureAwait(false);
+            MarkOrderExecutedPublished(executedOrders, executed); // #1442, IADR-0573 決定2: 発行の後に倒す（理由は巡回の発行と同じ）。
             await RecordTradeExpensesAsync(tradeExpenses, bus, executed, cancellationToken).ConfigureAwait(false);
         }
 
@@ -292,6 +300,23 @@ public sealed class OrderFillPollingService(
                 "判断由来の決済の指値は未約定ですが、取消の上限（1 建玉 1 日あたり）に達したため取り消しません（当日限り〔DAY〕の失効に任せます）: "
                     + "DecisionId={DecisionId} OrderId={OrderId} 銘柄={Symbol} 方向={Side} 発注={PlacedAt}",
                 r.DecisionId, r.OrderId, r.Symbol, r.Side, r.ExecutedAt);
+        }
+    }
+
+    // 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: 発行待ちの印を倒す。倒せなかった（書き込みの失敗）ときは巡回を止めず、
+    // 次の巡回で同じ状態を再発行する——受け手（台帳の累積数量の単調 upsert・終端は初回だけ・GFV / Stage 1 は先着優先・
+    // 注文アクティビティは絶対値の代入）は冪等であり、二重に数えない。監査と通知は 1 件ずつ増え得る（IADR-0573 残余）。
+    private void MarkOrderExecutedPublished(IExecutedOrderStore store, OrderExecuted executed)
+    {
+        try
+        {
+            store.MarkOrderExecutedPublished(executed.OrderId, executed.Status, executed.FilledQuantity);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex,
+                "約定の発行済みの印を書けませんでした（次の巡回で同じ約定を再発行します。受け手は冪等です）。OrderId={OrderId}",
+                executed.OrderId);
         }
     }
 

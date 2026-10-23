@@ -13,6 +13,9 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
     // 🔴 #1048, IADR-0481 決定3: 打ち切りを記録した追跡の起点（OrderId → 起点）。EF の行の列に当たる。
     private readonly Dictionary<string, DateTimeOffset> _abandonedFrom = new(StringComparer.Ordinal);
 
+    // 🔴 #1442, IADR-0573 決定2: 発行待ちの印（OrderId の集合）。EF の行の列 OrderExecutedPublishPending に当たる。
+    private readonly HashSet<string> _publishPending = new(StringComparer.Ordinal);
+
     public void Save(ExecutionRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
@@ -333,7 +336,40 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
                 SlippageRatio = slippageRatio,
                 ExecutedAt = executedAt,
             };
+            // 🔴 #1442, IADR-0573 決定2: 記録の更新と同じ排他の中で発行待ちの印を立てる。
+            _publishPending.Add(orderId);
             return true;
+        }
+    }
+
+    // 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: 発行待ちの印が立った記録（古い順・上限つき。状態は問わない）。
+    public IReadOnlyList<ExecutionRecord> FindOrderExecutedPublishPending(int batchSize)
+    {
+        lock (_gate)
+        {
+            return _records
+                .Where(r => _publishPending.Contains(r.OrderId))
+                .OrderBy(r => r.ExecutedAt)
+                .Take(batchSize)
+                .ToList();
+        }
+    }
+
+    // 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: 発行待ちの印を倒す（今の状態・約定数が発行したものと同じときだけ）。
+    public bool MarkOrderExecutedPublished(string orderId, OrderStatus status, int filledQuantity)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(orderId);
+
+        lock (_gate)
+        {
+            var index = _records.FindIndex(r => r.OrderId == orderId);
+            if (index < 0 || !_publishPending.Contains(orderId)
+                || _records[index].Status != status || _records[index].FilledQuantity != filledQuantity)
+            {
+                return false;
+            }
+
+            return _publishPending.Remove(orderId);
         }
     }
 }

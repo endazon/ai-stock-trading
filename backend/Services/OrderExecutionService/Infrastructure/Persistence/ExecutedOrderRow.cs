@@ -58,4 +58,9 @@ public sealed class ExecutedOrderRow
     // 🔴 FR-10, FR-09, UC-06, #1395, IADR-0560: S1 が損切りの前にこの決済の取消を求めた時刻（取消を送る前に書く）。
     // null＝求めていない。**列の追加だけ**（既存行は null＝従来どおり「手仕舞いが約定せず終了」を出す側）。
     public DateTimeOffset? SoftwareStopCancelRequestedAt { get; set; }
+
+    // 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: 約定追跡が記録を更新した（UpdateOutcome）が、その状態の OrderExecuted を
+    // まだ発行し終えていない印。更新と同じ書き込みで立て、発行の後に Worker が倒す（状態・約定数が発行したものと同じときだけ）。
+    // 立ったままの記録は次の巡回で再発行する。**列の追加だけ**（既存行は false＝発行済みとして扱う。過去の約定を撃ち直さない）。
+    public bool OrderExecutedPublishPending { get; set; }
 }

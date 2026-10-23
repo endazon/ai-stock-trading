@@ -212,8 +212,25 @@ public interface IExecutedOrderStore
     // 決済レグの記録を持ち分の計算に使わない（完了済み S0 行の取消済みレグで持ち分が食われる事故も構造的に消える）。
 
     /// <summary>
+    /// 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: 約定追跡が記録を更新した（<see cref="UpdateOutcome"/>）のに、その状態の
+    /// <c>OrderExecuted</c> をまだ発行し終えていない記録（発行待ちの印が立っているもの）を古い順に最大 <paramref name="batchSize"/> 件返す
+    /// （次の巡回で再発行する対象）。状態は問わない（終端した記録も入る＝終端化の発行を失うと台帳の在庫が返らない）。
+    /// 既定の実装（試験用の包み型のためのもの）は何も返さない。本番のストア（EF・インメモリ）は印つきの問い合わせで上書きする。
+    /// </summary>
+    IReadOnlyList<ExecutionRecord> FindOrderExecutedPublishPending(int batchSize) => [];
+
+    /// <summary>
+    /// 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: 発行待ちの印を倒す（<b>その 1 列だけ</b>）。記録の今の状態・約定数が
+    /// 発行した <paramref name="status"/>・<paramref name="filledQuantity"/> と同じときだけ倒す——発行の後に記録がさらに進んでいれば
+    /// 印を残し、進んだ状態を次の巡回で発行する。<b>発行の後に呼ぶ</b>（先に倒すと、発行に失敗した約定が二度と発行されない）。
+    /// 記録が無い・印が無い・状態が違うなら何もせず false。既定の実装（試験用の包み型のためのもの）は何もしない。
+    /// </summary>
+    bool MarkOrderExecutedPublished(string orderId, OrderStatus status, int filledQuantity) => false;
+
+    /// <summary>
     /// #270, IADR-0113: 追跡で観測した最新のブローカ状態を既存記録へ反映する（<paramref name="orderId"/> で特定）。
     /// 記録が無ければ何もせず false を返す（新規に作らない＝DecisionId 1:1 の不変を壊さない）。
+    /// 🔴 #1442, IADR-0573 決定2: <b>同じ書き込みで発行待ちの印を立てる</b>（記録の更新と印が分かれると、間で落ちた約定が再発行されない）。
     /// </summary>
     bool UpdateOutcome(
         string orderId,

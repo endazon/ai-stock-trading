@@ -46,6 +46,9 @@ namespace OrderExecutionService.Infrastructure.Migrations
                     b.Property<int>("Market")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("OrderExecutedPublishPending")
+                        .HasColumnType("boolean");
+
                     b.Property<decimal>("PlannedPrice")
                         .HasColumnType("numeric");
 

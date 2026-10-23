@@ -63,6 +63,7 @@ public class ReservationReconciliationMetricsCompositionTests
                 foreach (var d in ownHosted) services.Remove(d);
 
                 services.DisableAllExternalWolverineTransports();
+                services.DisableAllWolverineMessagePersistence(); // #1442, IADR-0573: 耐久アウトボックスの DB に触れない（InMemory の試験）。
 
                 // 差し替えるのは Meter 名だけ（計上の呼び出しは Program.cs のまま通す）。
                 services.RemoveAll<BusinessMetrics>();

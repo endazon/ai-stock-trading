@@ -47,6 +47,11 @@ namespace OrderExecutionService.Features.OrderExecution.PollOrderFills;
 // 「取消の確認待ち」）の終端化も、ここでしか観測できない。終端化した新規建ての記録について発注執行の口（entryCancelResolution）を呼び、
 // 返った保護喪失（取消の確定・約定数量の成行手仕舞い）を結果へ載せる。発行は Worker が OrderExecuted の後に行う。未構成なら何もしない。
 //
+// 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: **記録の更新（UpdateOutcome）と発行は分かれている**（更新は巡回の中、発行は巡回の後に Worker）。
+// 間で落ちる・発行が投げると、次の巡回は「変化なし＝書かない・発行しない」ため、その約定は二度と発行されなかった。
+// 更新と同じ書き込みで「発行待ち」の印を立て、Worker が発行の後に倒す。印が立ったままの記録は、ここで記録の値から
+// OrderExecuted を組み直して再発行する（この巡回で更新した記録は新しい値で発行されるので重ねない）。受け手は冪等である。
+//
 // 発行（OrderExecuted の Publish）は Worker 層が担う（Application はメッセージ基盤に非依存の既存レイヤリングを維持）。
 public sealed class OrderFillPoller(
     IBrokerAdapter broker,
@@ -116,9 +121,52 @@ public sealed class OrderFillPoller(
         var abandoned = await CollectAbandonedAsync(
             now, maxTracking, batchSize, executed, softwareStopEvents, entryCancelResolutions, cancellationToken).ConfigureAwait(false);
 
+        // 🔴 #1442, IADR-0573 決定2: 前の巡回までに記録を更新したのに発行し終えていない約定を、**この巡回の発行より先に**積む
+        // （古い側から届ける。同じ注文をこの巡回で更新していれば、新しい値の 1 件だけを出す）。
+        var republished = CollectPublishPending(executed, batchSize);
+        executed.InsertRange(0, republished);
+
         return new OrderFillPollResult(
             pending.Count, updated, terminalized, unchanged, unknown, failed, executed, softwareStopEvents, abandoned,
-            entryCancelResolutions);
+            entryCancelResolutions, republished.Count);
+    }
+
+    // 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: 発行待ちの印が立った記録から OrderExecuted を組み直す（記録の今の値で）。
+    // 読み取りの失敗で巡回を止めない（印は立ったままなので次の巡回で拾われる）。ブローカーへは照会しない（記録が正）。
+    private List<OrderExecuted> CollectPublishPending(List<OrderExecuted> executedThisCycle, int batchSize)
+    {
+        IReadOnlyList<ExecutionRecord> pending;
+        try
+        {
+            pending = store.FindOrderExecutedPublishPending(batchSize);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "発行待ちの約定の洗い出しに失敗しました。次の巡回で再発行を試みます。");
+            return [];
+        }
+
+        var fresh = executedThisCycle.Select(e => e.OrderId).ToHashSet(StringComparer.Ordinal);
+        var republished = new List<OrderExecuted>();
+        foreach (var record in pending)
+        {
+            if (fresh.Contains(record.OrderId))
+                continue;
+
+            _logger.LogWarning(
+                "発行し終えていなかった約定を再発行します（記録は更新済み・OrderExecuted が届いていない可能性があります）: "
+                    + "DecisionId={DecisionId} OrderId={OrderId} 状態={Status} 約定={Filled}/{Quantity}",
+                record.DecisionId, record.OrderId, record.Status, record.FilledQuantity, record.Quantity);
+
+            // 照会したアダプタ＝発注したアダプタ（IADR-0149 決定1）。印は約定追跡の更新でしか立たないので、発注先は本ポーラーのアダプタである。
+            // 取消の主体（S1 か）は終端の取消のときだけ、更新のときと同じ読み方で立てる（#1395, IADR-0560）。
+            republished.Add(new OrderExecuted(
+                record.DecisionId, record.OrderId, record.Status, record.FilledQuantity, record.AveragePrice, record.ExecutedAt,
+                broker.Provider,
+                CancelledBySoftwareStop: record.Status == OrderStatus.Cancelled && IsSoftwareStopCancel(record)));
+        }
+
+        return republished;
     }
 
     private enum ApplyOutcome
@@ -428,6 +476,7 @@ public sealed class OrderFillPoller(
 // 既定 null で足すのは、既存の呼び出し（テスト・集計）を壊さないためである。
 // 🔴 #1048, IADR-0481 決定3: Abandoned は追跡上限を過ぎて非終端のまま打ち切った注文（発行の後に印を書くのは Worker）。
 // 🔴 #1422, IADR-0569 決定4: EntryCancelResolutions は取消の確認待ちだった新規建ての後始末の保護喪失（発行は Worker・OrderExecuted の後）。
+// 🔴 #1442, IADR-0573 決定2: Republished は Executed の先頭に積んだ再発行の件数（前の巡回までに発行し終えていなかった約定）。
 public sealed record OrderFillPollResult(
     int Scanned,
     int Updated,
@@ -438,7 +487,8 @@ public sealed record OrderFillPollResult(
     IReadOnlyList<OrderExecuted> Executed,
     IReadOnlyList<SoftwareStopExecuted>? SoftwareStopEvents = null,
     IReadOnlyList<OrderFillTrackingAbandoned>? Abandoned = null,
-    IReadOnlyList<ProtectiveStopCoverageLost>? EntryCancelResolutions = null);
+    IReadOnlyList<ProtectiveStopCoverageLost>? EntryCancelResolutions = null,
+    int Republished = 0);
 
 // 🔴 FR-10, FR-05, #1339, IADR-0536 決定2: 追跡を打ち切った承認経路の決済の照会し直しの結果。
 // Released はブローカーが終端と答えて解放した決済（記録・終端の状態・約定数）。StillPending は非終端（進捗のみ記録）、

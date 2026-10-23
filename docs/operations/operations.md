@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-04, FR-07, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-09, NFR-10, NFR-11, NFR-13, FR-10, FR-02, FR-13, NFR-02, NFR-06]
 adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040, ADR-0050, ADR-0044, ADR-0064, ADR-0048, ADR-0051, ADR-0067]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496, IADR-0210, IADR-0499, IADR-0505, IADR-0342, IADR-0524, IADR-0526, IADR-0538, IADR-0544, IADR-0357, IADR-0535, IADR-0536, IADR-0539, IADR-0551, IADR-0553, IADR-0560, IADR-0570]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production, 20261007_1202_cutover-runbook-adr0040-checks, 20261007_1197_llm-pricing-unset-guard, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261009_1228_planning741-ruling-records, 20261010_1295_claude-5-5-models, 20261010_1300_report-draft-knowledge-copy, 20261011_1296_remove-llm-migration-stage, 20261014_msp1919_host-memory-prereq, 20261015_856_held-warning-throttle-and-ghost-s1, 20261016_1365_daily-policy-self-contained-thresholds, 20261014_1339_close-limit-tif-and-release, 20261016_1339_decision-close-unfilled-cancel, 20261017_1339_operations-unfilled-decision-close, 20261017_1343_release-closes-entry-protection, 20261017_1305_unknown-model-price-setting, 20261020_1395_s1-yield-cancel-suppresses-abandon-notice, 20261023_GHSA-j4qv_mesh-injection-handover]
-issues: [#1395, #13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, #1192, #1202, #1214, #1197, #1228, #1275, #1295, #1296, #1300, #1365, #1339, #1343, #1305, MSP#266, MSP#635, planning#54, planning#676, planning#704, planning#741, planning#783, planning#784, MSP#1919]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496, IADR-0210, IADR-0499, IADR-0505, IADR-0342, IADR-0524, IADR-0526, IADR-0538, IADR-0544, IADR-0357, IADR-0535, IADR-0536, IADR-0539, IADR-0551, IADR-0553, IADR-0560, IADR-0570, IADR-0573]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production, 20261007_1202_cutover-runbook-adr0040-checks, 20261007_1197_llm-pricing-unset-guard, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261009_1228_planning741-ruling-records, 20261010_1295_claude-5-5-models, 20261010_1300_report-draft-knowledge-copy, 20261011_1296_remove-llm-migration-stage, 20261014_msp1919_host-memory-prereq, 20261015_856_held-warning-throttle-and-ghost-s1, 20261016_1365_daily-policy-self-contained-thresholds, 20261014_1339_close-limit-tif-and-release, 20261016_1339_decision-close-unfilled-cancel, 20261017_1339_operations-unfilled-decision-close, 20261017_1343_release-closes-entry-protection, 20261017_1305_unknown-model-price-setting, 20261020_1395_s1-yield-cancel-suppresses-abandon-notice, 20261023_GHSA-j4qv_mesh-injection-handover, 20261023_1442_order-executed-republish]
+issues: [#1442, #1395, #13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, #1192, #1202, #1214, #1197, #1228, #1275, #1295, #1296, #1300, #1365, #1339, #1343, #1305, MSP#266, MSP#635, planning#54, planning#676, planning#704, planning#741, planning#783, planning#784, MSP#1919]
 -->
 
 
@@ -313,6 +313,25 @@ done
 - **キュー名から所有サービスが読める**（接頭辞）。`consumers = 0` のキューは所有サービスが購読できていない印である。
 - 移行前（MassTransit）の旧キュー 47 本はブローカ上に残るため、Wolverine 版の安定稼働後に削除する:
   [旧キュー削除 Runbook](wolverine-queue-cleanup-runbook.md)。
+
+### 発注執行の送信は保存してから送る（#1442）
+
+発注執行（order-execution）だけは、送信するメッセージ（約定 `OrderExecuted` を含む）を専有 DB の **`wolverine` スキーマ**へ保存してから送る（耐久アウトボックス）。
+既定の RabbitMQ 送信は、ブローカーが落ちている間も発行を成功で返して黙って捨てるため、約定が台帳へ届かなくなる（実測）。
+保存した封筒はブローカーの復旧後・発注執行の再起動の後に送られ、送り終えると消える。
+
+- **配備**: 閉場後に行う。起動時に Wolverine が `wolverine` スキーマと表を作る（DB の利用者に作成権限が要る）。約定の記録の表 `executed_orders` に列が 1 本増える（起動時の移行。既存行は「発行済み」）。
+- **平常時の確認**（`order_execution_svc`）:
+
+  ```sql
+  SELECT count(*) FROM wolverine.wolverine_outgoing_envelopes;          -- 送れずに残っている封筒（平常は 0 に近い）
+  SELECT count(*) FROM executed_orders WHERE "OrderExecutedPublishPending"; -- 発行し終えていない約定（平常は 0）
+  ```
+
+- **ログ**: WRN `発行し終えていなかった約定を再発行します` は、前の巡回で発行し終えなかった約定を約定追跡が送り直した印である。リスク管理の台帳は二重に数えない。
+  監査台帳の行と Discord の「取引実行」は、まれに 2 件になり得る（発行は届いたが「発行済み」を書けなかったとき）。
+- **戻し口**: 発注執行が起動しない・送信が止まる等の不具合のときは、発注執行の環境変数 `Messaging__DurableOutbox__Enabled=false` で保存をやめて再配備する
+  （ブローカー断の間の送信は再び失われ得る。約定追跡の送り直しは残る）。
 
 ### 定時サイクルの実行時間の上限（#1169）
 
