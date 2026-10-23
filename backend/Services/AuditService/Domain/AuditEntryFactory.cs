@@ -328,6 +328,13 @@ public static class AuditEntryFactory
             + $"最後の観測 {e.LatestObservedTradingDay:yyyy-MM-dd}{(e.Stale ? "・鮮度超過" : string.Empty)}）",
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-07, FR-11, UC-03, #1423 M-6, ADR-0075 決定4, IADR-0583: 日報の無応答（承認待ちのまま期限を過ぎた）。相関は日報の方針と同じ固定キー。
+    public static AuditEntry From(DailyReportNoResponse e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(DailyReportNoResponse), AuditCorrelation.From("daily-policy"), Symbol: null,
+        $"日報 {e.PeriodKey} が無応答のまま期限（{e.Deadline:yyyy-MM-dd HH:mm zzz}）を過ぎた"
+            + (e.TradingHalted ? "（停止: 確定まで取引判断を見送る）" : $"（継続: 直近の確定済み {e.LastConfirmedPeriodKey ?? "なし"} の方針）"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     // UC-01, FR-09, FR-07, FR-11, #210: 日報未確定による取引スキップ。注文/市場相関を持たないため "daily-policy" の
     // 決定的 GUID を相関にする（日報未確定の見送りが同一相関で束ねられ、監査照会でまとめて辿れる）。
     public static AuditEntry From(DailyPolicyUnconfirmed e, Guid id, DateTimeOffset recordedAt) => new(

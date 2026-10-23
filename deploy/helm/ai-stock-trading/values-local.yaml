@@ -369,6 +369,8 @@ services:
       # 経路 B（values-local）は、MSP#1886 を含む MSP eac572ca の配備を PoC が確かめたので true にする（2026-10-10）。
       # 🔴 MSP#1886（ccbc4a3b 以降）より前の基盤へ当てる構成では true にしない。それより前の基盤は Wiki 同期と外部 AI エージェント向けの文書一覧が露出を見ず、ドラフトを Wiki.js へ載せ、一覧にも返す。
       - { name: ReportDraftKnowledge__Enabled, value: "true" }
+      # 🔴 FR-07, #1423 M-6, ADR-0075, IADR-0583: Halt にすると、承認待ちの日報が期限（翌営業日の米国市場の開場）を過ぎた間、取引判断の全体を見送る
+      # （損切り・手仕舞いは止めない・確定で自動再開）。継続・停止とも無応答を通知する（Reports__NoResponseNotice__Enabled=false で通知だけ外せる）。
       - { name: Reports__NoResponseBehavior, value: "" }
       # FR-09, UC-03, ADR-0003, #774, IADR-0240 決定11: 確定要求の本文で運ばれる「代理される利用者」（onBehalfOf）を
       # 信じてよいクライアント（カンマ区切り）。Discord Bot は owner マップ機密クライアントのトークンで確定を呼ぶため、

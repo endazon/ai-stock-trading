@@ -13,7 +13,9 @@ public sealed class ReportAppService(
     IClock clock,
     IReportDraftPresentedNotifier? bootstrapNotifier = null,
     // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 2: 月報の初回を承認待ちにしたら写し（ドラフト）を KB に持つ。未注入は持たない。
-    IReportDraftKnowledgeCopy? draftKnowledgeCopy = null)
+    IReportDraftKnowledgeCopy? draftKnowledgeCopy = null,
+    // 🔴 FR-07, #1423 M-6, ADR-0075, IADR-0583: 無応答時の判定。未注入（単体試験）は印を立てない（従来どおり）。
+    DailyReportNoResponseEvaluator? noResponse = null)
 {
     public VersionedReport? Get(string periodKey) => store.Get(periodKey);
 
@@ -106,7 +108,10 @@ public sealed class ReportAppService(
             ? null
             : new ConfirmedDailyPolicy(
                 latest.Report.PeriodStart, latest.Report.PolicySummary, latest.Report.AssumptionsVersion,
-                latest.Report.PeriodKey, latest.Version);
+                latest.Report.PeriodKey, latest.Version,
+                // FR-07, #1423 M-6, ADR-0075 決定1, IADR-0583 決定3: 方針は返したまま、停止の印を載せる。
+                // 設定が継続（既定）なら印は立ち得ないので評価しない（判断ごとの照会に DB の引きを足さない）。
+                NoResponseHalted: noResponse is { HaltConfigured: true } && noResponse.Evaluate().Halted);
     }
 
     /// <summary>

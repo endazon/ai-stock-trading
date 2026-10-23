@@ -757,6 +757,8 @@ services:
       # fail-safe: 空=未供給＝「供給されていません（0 円ではありません）」。**0 円へ倒さない。**
       - { name: Stage0Recording__ApprovedEstimateJpy, value: "" }
       # FR-07, IADR-0071 決定2: 無応答時の既定動作。空/不正=ContinueLastConfirmed（直近確定を継続＝安全既定）。
+      # 🔴 FR-07, #1423 M-6, ADR-0075, IADR-0583: Halt にすると、承認待ちの日報が期限（翌営業日の米国市場の開場）を過ぎた間、取引判断の全体を見送る
+      # （損切り・手仕舞いは止めない・確定で自動再開）。継続・停止とも無応答を通知する（Reports__NoResponseNotice__Enabled=false で通知だけ外せる）。
       - { name: Reports__NoResponseBehavior, value: "" }
       # FR-09, UC-03, ADR-0003, #774, IADR-0240 決定11: 確定要求の本文で運ばれる「代理される利用者」（onBehalfOf）を
       # 信じてよいクライアント（カンマ区切り）。Discord Bot は owner マップ機密クライアントのトークンで確定を呼ぶため、

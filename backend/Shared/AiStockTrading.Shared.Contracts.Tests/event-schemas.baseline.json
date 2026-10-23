@@ -109,6 +109,14 @@
     "BusinessDay": "DateOnly",
     "OccurredAt": "DateTimeOffset"
   },
+  "DailyReportNoResponse": {
+    "Deadline": "DateTimeOffset",
+    "LastConfirmedPeriodKey": "String",
+    "OccurredAt": "DateTimeOffset",
+    "PeriodKey": "String",
+    "ReportDate": "DateOnly",
+    "TradingHalted": "Boolean"
+  },
   "FxRateSourceFellBack": {
     "OccurredAt": "DateTimeOffset",
     "Quote": "String",

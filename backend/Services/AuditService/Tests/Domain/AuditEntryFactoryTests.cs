@@ -1230,6 +1230,21 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().NotContain("鮮度超過");
     }
 
+    // T-10-3059, FR-07, FR-11, #1423 M-6, IADR-0583: 日報の無応答は、期間キー・期限・停止か継続かが要約から読める。
+    [Fact]
+    public void T_10_3059_日報の無応答は期間キーと期限と停止か継続かが要約から読める()
+    {
+        var deadline = new DateTimeOffset(2026, 8, 27, 9, 30, 0, TimeSpan.FromHours(-4));
+        var halted = AuditEntryFactory.From(
+            new DailyReportNoResponse("daily-2026-08-27", new DateOnly(2026, 8, 27), deadline, true, "daily-2026-08-26", StopT0), Id, RecordedAt);
+        var continued = AuditEntryFactory.From(
+            new DailyReportNoResponse("daily-2026-08-27", new DateOnly(2026, 8, 27), deadline, false, null, StopT0), Id, RecordedAt);
+
+        halted.EventType.Should().Be(nameof(DailyReportNoResponse));
+        halted.Summary.Should().Contain("daily-2026-08-27").And.Contain("2026-08-27 09:30").And.Contain("停止");
+        continued.Summary.Should().Contain("継続").And.Contain("なし");
+    }
+
     // 🔴 T-10-640, FR-10, FR-11, #857, IADR-0369: 確認できた拒否は「解消した」とも「不明」とも書かない。
     // 監査要約だけを読んで「建玉が無保護で残っている」と分かること（一次証跡の役目）。
     [Fact]
