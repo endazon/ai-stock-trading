@@ -258,6 +258,9 @@ public class ProtectiveStopOptimisticConcurrencyTests
 
     // T-10-796: 🔴 ハンドラとガードが**同じ試行**を確定しに行っても、帳簿の減算と ClosePlaced は 1 回だけ。
     // 送信 → 発注記録の保存 → （ここでガードが「記録済み」を見て先に確定）→ ハンドラの確定、の窓を再現する。
+    // ［2026-10-23 追記 / #1446, IADR-0575］決済の直列化の後は、同じプロセスの 2 経路がこの窓で交錯することは無い（後発は直列化で待つ）。
+    // 楽観並行は直列化が効かない場合（直列化を取れずに据え置いた後の競合・旧版との並走）の後ろ盾として残るため、
+    // ガードには別の直列化を渡して窓を作り、同じ契約を固定し続ける（同じ直列化を渡すと、記録の保存の中で待ち合って止まる）。
     [Fact]
     public async Task T_10_796_同じ試行をハンドラとガードが確定してもClosePlacedと減算は1回だけ()
     {
@@ -267,7 +270,8 @@ public class ProtectiveStopOptimisticConcurrencyTests
         var reservations = new InMemoryOrderReservationStore();
         var handlerLog = new RecordingLogger<SoftwareStopExecutor>();
         var handler = new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock(), AlwaysOpenSessionGate.Instance, handlerLog);
-        var guard = new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock(), AlwaysOpenSessionGate.Instance);
+        var guard = new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock(), AlwaysOpenSessionGate.Instance,
+            closeLock: new InProcessClosePositionLock());
         var stop = TriggeredStop(stops, store, 707);
 
         SoftwareStopCloseOutcome? guardOutcome = null;

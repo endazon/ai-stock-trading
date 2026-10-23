@@ -165,6 +165,13 @@ builder.Services.AddSingleton<IPositionQueryHealthReporter>(sp => new PositionQu
     e => new MessageBus(sp.GetRequiredService<IWolverineRuntime>()).PublishAsync(e),
     sp.GetService<TimeProvider>() ?? TimeProvider.System,
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<PositionQueryHealthReporter>()));
+// 🔴 NFR, FR-10, FR-05, ADR-0050 決定1・3, #1446（親 #1423 M-2）, IADR-0575 決定 2: 同じ建玉を売る決済（承認の決済・S1・保護喪失と
+// ガードの成行手仕舞い）の「読む → 送る → 記録する」を、専有 DB の advisory lock で (銘柄, 市場, 決済の方向) ごとに 1 本ずつにする。
+// 承認の受信が 1 通ずつ（Inline・1 リスナ）でも、S1 は別のキューと常駐の巡回から来るため、それだけでは並行に送り得る（IADR-0575 の実測）。
+// 入れ替え中に新旧の Pod が重なっても DB が持つロックなので効く。渡し忘れると各経路はプロセス内の既定へ倒れる（T-10-3008 が固定する）。
+// 関係 DB でない試験の DbContext（InMemory）ではプロセス内のセマフォへ縮退する（PostgresClosePositionLock.ForContext）。
+builder.Services.AddScoped<IClosePositionLock>(sp =>
+    PostgresClosePositionLock.ForContext(sp.GetRequiredService<OrderExecutionDbContext>()));
 // DbContext が scoped のため発注結果ストアも scoped。
 builder.Services.AddScoped<IExecutedOrderStore, EfExecutedOrderStore>();
 // #131, IADR-0057: 発注前 DecisionId 予約（二重発注の防止）。
@@ -205,7 +212,9 @@ builder.Services.AddScoped(sp => new OrderExecutionAppService(
     // NFR, FR-10, #1092, IADR-0462: 決済のゲート・S1 の武装前の建玉照会の状態を台帳へ出す。
     sp.GetRequiredService<IPositionQueryHealthReporter>(),
     // 🔴 IADR-0567: 渡し忘れると照会が起きない（引数は省略可能）。T-10-2971 が Program.cs そのもので固定する。
-    sp.GetRequiredService<ITradingHaltSource>()));
+    sp.GetRequiredService<ITradingHaltSource>(),
+    // 🔴 #1446, IADR-0575 決定 1: 決済の「読む → 送る → 記録する」を同じ建玉の他の決済と直列にする（T-10-3008）。
+    sp.GetRequiredService<IClosePositionLock>()));
 // 🔴 FR-10, FR-12, #853, IADR-0428 決定4: 突合で「発注済み」と確定したエントリーに保護レグを張る口。実体は発注執行そのもの
 // （平常の経路と同じ PlaceProtectiveStopAsync を通す）。下の突合（OrderReservationReconciler）へ渡す——渡し忘れると、
 // 引数は省略可能なのでコンパイルも単体の試験も通ったまま、突合で確定したエントリーは保護レグを持たないまま台帳へ載る
@@ -227,7 +236,9 @@ builder.Services.AddScoped(sp => new SoftwareStopExecutor(
     sp.GetRequiredService<IMarketSessionGate>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<SoftwareStopExecutor>(),
     // NFR, FR-10, #1092, IADR-0462: S1 が自ら照会した回の建玉照会の状態を台帳へ出す。
-    positionQueryHealth: sp.GetRequiredService<IPositionQueryHealthReporter>()));
+    positionQueryHealth: sp.GetRequiredService<IPositionQueryHealthReporter>(),
+    // 🔴 #1446, IADR-0575 決定 1: S1 の決済を同じ建玉の他の決済と直列にする（T-10-3008）。
+    closeLock: sp.GetRequiredService<IClosePositionLock>()));
 
 // FR-11, FR-16, ADR-0016 決定15, ADR-0027 決定2/決定4, #633, IADR-0300: 取引の経費区分の記録（段 1）。
 // 既定の供給口は **常に「取得できない」** を返す no-op であり、経費イベントは 1 本も出ない。
@@ -504,7 +515,9 @@ if (brokerSelection.IsMoomoo)
                 sp.GetRequiredService<IBrokerAdapter>(),
                 sp.GetRequiredService<IClock>(),
                 sp.GetRequiredService<ILoggerFactory>().CreateLogger<
-                    OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor.SoftwareStopFloorRetrofitter>())));
+                    OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor.SoftwareStopFloorRetrofitter>()),
+            // 🔴 #1446, IADR-0575 決定 3: 成行の手仕舞いを同じ建玉の他の決済と直列にする（T-10-3008）。
+            sp.GetRequiredService<IClosePositionLock>()));
     // FR-10, #902, IADR-0365 決定5: Active な S1 行の低頻度の要約（観測のみ。間隔をまたいで状態を持つため singleton）。
     // #856, IADR-0538: 発注記録の無いまま未確定で残る S1（幽霊の疑い）の経過と再通知の間隔も同じ構成から渡す。
     builder.Services.AddSingleton(sp =>

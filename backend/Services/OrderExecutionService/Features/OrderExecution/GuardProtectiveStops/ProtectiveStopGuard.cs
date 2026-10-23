@@ -59,8 +59,13 @@ public sealed class ProtectiveStopGuard(
     CloseRejectionTracker? closeRejections = null,
     PositionQueryRetry? positionQueryRetry = null,
     IPositionQueryHealthReporter? positionQueryHealth = null,
-    OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor.SoftwareStopFloorRetrofitter? floorRetrofit = null)
+    OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor.SoftwareStopFloorRetrofitter? floorRetrofit = null,
+    IClosePositionLock? closeLock = null)
 {
+    // 🔴 NFR, FR-10, #1446（親 #1423 M-2）, IADR-0575: 決済の直列化。本番は Program.cs が DB の advisory lock を渡す（T-10-3008）。
+    // 渡さなければプロセスで 1 つの InProcess（承認の決済・S1 の既定と同じインスタンス）。
+    private readonly IClosePositionLock _closeLock = closeLock ?? InProcessClosePositionLock.Shared;
+
     /// <summary>
     /// 🔴 #857, IADR-0369 決定3: <b>確認できた拒否</b>で終わった成行手仕舞いを撃ち直す上限
     /// （同じ理由で拒否され続ける成行を 30 秒ごとに送り続けない）。回数は S1
@@ -576,6 +581,26 @@ public sealed class ProtectiveStopGuard(
             if (_closeRejections.Count(stop.EntryDecisionId) >= MaxConfirmedCloseRejections)
                 return HoldRejectedClose(stop, quantity, events);
 
+            // 🔴 NFR, FR-10, #1446（親 #1423 M-2）, IADR-0575 決定 3: 成行の手仕舞いの予約から記録の保存までを、同じ建玉を売る他の決済
+            // （承認の決済・S1）と直列にする（この if の終わりで外れる）。後から来る判断の決済・S1 はこの記録を読んで数量を決める。
+            // 取れなければ送らない（確実に未発注）＝下の「手仕舞いも失敗」と同じく Active のまま残し、人手対応を求める。
+            var closeKey = new ClosePositionKey(stop.Symbol, stop.Market, stop.CloseSide);
+            IAsyncDisposable serialized;
+            try
+            {
+                serialized = await _closeLock.AcquireAsync(closeKey, cancellationToken).ConfigureAwait(false);
+            }
+            catch (ClosePositionLockUnavailableException ex)
+            {
+                _logger.LogError(ex,
+                    "保護逆指値ガード: 決済の直列化を取れないため、成行の手仕舞いを送りません（確実に未発注）。"
+                    + "**逆指値なしの建玉が残っています。**EntryDecisionId={EntryDecisionId} 建玉={Key} 数量={Quantity}",
+                    stop.EntryDecisionId, closeKey, quantity);
+                return CloseNotPlaced(stop, quantity, events);
+            }
+
+            await using var releaseOnExit = serialized.ConfigureAwait(false);
+
             // 相 2（発注着手の権威・IADR-0057）: 送る「前」に決定的な DecisionId を予約する。取れなければ送らない
             //（(b) の後に並行して予約された＝送信中か成否不明。重ねて送らない）。
             // #1051, IADR-0444 決定1 / FR-10, UC-06, #1262, IADR-0515 追記(2): 成行手仕舞いは決済（通常の経路の記録と同じ値）。
@@ -634,6 +659,11 @@ public sealed class ProtectiveStopGuard(
             // 手仕舞いも失敗（確実に未発注）: 記録は Active のまま残し（次回巡回で再試行）、人手対応を Critical で求める。
         }
 
+        return CloseNotPlaced(stop, quantity, events);
+    }
+
+    private Outcome CloseNotPlaced(ProtectiveStopOrder stop, int quantity, List<object> events)
+    {
         events.Add(new ProtectiveStopCoverageLost(
             stop.EntryDecisionId, stop.Symbol, stop.Market,
             ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.None,

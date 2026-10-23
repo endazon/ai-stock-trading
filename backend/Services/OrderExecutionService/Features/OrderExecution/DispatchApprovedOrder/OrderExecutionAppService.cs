@@ -60,8 +60,14 @@ public sealed class OrderExecutionAppService(
     ILogger<OrderExecutionAppService>? logger = null,
     IBrokerPositionSource? brokerPositions = null,
     IPositionQueryHealthReporter? positionQueryHealth = null,
-    ITradingHaltSource? tradingHalt = null) : IReconciledEntryProtection, IUnconfirmedEntryCancelResolution
+    ITradingHaltSource? tradingHalt = null,
+    IClosePositionLock? closeLock = null) : IReconciledEntryProtection, IUnconfirmedEntryCancelResolution
 {
+    // 🔴 NFR, FR-10, #1446（親 #1423 M-2）, IADR-0575 決定 1・3: 決済（承認の決済・保護喪失の成行手仕舞い）の「読む → 送る → 記録する」を
+    // (銘柄, 市場, 決済の方向) ごとに 1 本ずつにする。本番は Program.cs が DB の advisory lock を渡す（T-10-3008）。
+    // 渡さなければプロセスで 1 つの InProcess（同じプロセスの中では直列化する＝是正前より悪くならない）。
+    private readonly IClosePositionLock _closeLock = closeLock ?? InProcessClosePositionLock.Shared;
+
     // #820 の 8 巡目監査, IADR-0344 追記(8): 武装の前提条件（帰属不明の建玉が無いこと）を確かめるために
     // 見る Active 行の上限。保有建玉数上限（既定 3）に対して十分大きい。
     private const int ArmingScanLimit = 500;
@@ -82,9 +88,44 @@ public sealed class OrderExecutionAppService(
     // ——戻り口を足したときに載せ忘れる形を作らない。本サービスは Singleton なので、回ごとの受け皿は引数で渡す。
     public async Task<OrderDispatchResult> ExecuteAsync(OrderApproved approved, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(approved);
+
         var resolved = new StrongBox<StopLossMethodResolved?>();
-        var result = await ExecuteCoreAsync(approved, resolved, cancellationToken).ConfigureAwait(false);
+        OrderDispatchResult result;
+        if (approved.Intent.PositionEffect == PositionEffect.Close)
+        {
+            // 🔴 NFR, FR-10, #1446, IADR-0575 決定 1: 決済は、建玉照会・処理中の決済の差し引き（IADR-0461）から記録の保存（相 4）までを
+            // 同じ建玉を売る他の決済（S1・ガードの成行手仕舞い・別の承認）と直列にする。後発は先発の記録を読んでから数量を決める。
+            // 取れなければ例外で抜ける——予約はまだ取っていない（ブローカーにも触れていない）ので、承認の再配送で撃ち直せる。
+            await using var serialized = await AcquireCloseLockAsync(
+                    new ClosePositionKey(approved.Intent.Symbol, approved.Intent.Market, approved.Intent.Side),
+                    approved.DecisionId, cancellationToken)
+                .ConfigureAwait(false);
+            result = await ExecuteCoreAsync(approved, resolved, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            result = await ExecuteCoreAsync(approved, resolved, cancellationToken).ConfigureAwait(false);
+        }
+
         return resolved.Value is { } methodResolved ? result with { MethodResolved = methodResolved } : result;
+    }
+
+    // 🔴 #1446, IADR-0575: 取れなかったことは必ず Error で残す（承認の再試行を使い切ると error キューに残るのはこの例外である）。
+    private async Task<IAsyncDisposable> AcquireCloseLockAsync(
+        ClosePositionKey key, Guid decisionId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _closeLock.AcquireAsync(key, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ClosePositionLockUnavailableException ex)
+        {
+            _logger.LogError(ex,
+                "決済の直列化を取れなかったため、決済を送りません（証券会社には触れていません）: DecisionId={DecisionId} 建玉={Key}",
+                decisionId, key);
+            throw;
+        }
     }
 
     private async Task<OrderDispatchResult> ExecuteCoreAsync(
@@ -1544,14 +1585,45 @@ public sealed class OrderExecutionAppService(
         }
     }
 
+    // 🔴 NFR, FR-10, #1446, IADR-0575 決定 3: 保護喪失の成行手仕舞いも、予約から記録の保存までを同じ建玉の他の決済と直列にする
+    // （数量は自分のエントリーの約定で決まり、他の決済を読まない。直列にするのは、後から来る判断の決済・S1 がこの記録を読んで数量を決めるため）。
+    // 取れなければ送らない＝確実に未発注（接続確立の失敗と同じ扱い）。
     private async Task<ProtectiveStopCoverageLost> CloseUnprotectedPositionAsync(
         OrderApproved approved, int quantity, CancellationToken cancellationToken)
     {
         var intent = approved.Intent;
-        var protective = (IProtectiveOrderBroker)broker;
-        var closeDecisionId = ProtectiveStopIds.CloseDecisionId(approved.DecisionId, attempt: 1);
         // 参照価格は判断時点の価格（intent.Price）。成行手仕舞いの実約定はブローカ側で決まる。
         var closeIntent = BuildCloseIntent(intent, quantity, intent.Price);
+        IAsyncDisposable serialized;
+        try
+        {
+            serialized = await _closeLock.AcquireAsync(
+                    new ClosePositionKey(closeIntent.Symbol, closeIntent.Market, closeIntent.Side), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (ClosePositionLockUnavailableException ex)
+        {
+            _logger.LogError(ex,
+                "保護逆指値を張れなかった建玉の成行手仕舞いを、決済の直列化を取れなかったため送りません（確実に未発注）。"
+                + "**逆指値なしの建玉が残っています。**証券会社の画面で建玉を確認してください: "
+                + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 数量={Quantity}",
+                approved.DecisionId, intent.Symbol, quantity);
+            return CoverageLost(approved, ProtectiveStopRemediation.None, quantity);
+        }
+
+        await using (serialized.ConfigureAwait(false))
+        {
+            return await CloseUnprotectedPositionSerializedAsync(approved, quantity, closeIntent, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task<ProtectiveStopCoverageLost> CloseUnprotectedPositionSerializedAsync(
+        OrderApproved approved, int quantity, OrderIntent closeIntent, CancellationToken cancellationToken)
+    {
+        var intent = approved.Intent;
+        var protective = (IProtectiveOrderBroker)broker;
+        var closeDecisionId = ProtectiveStopIds.CloseDecisionId(approved.DecisionId, attempt: 1);
 
         // 🔴 FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 7）: 成行手仕舞いもエントリーと同じ
         // 予約 → 発注 → 確定の 3 相（IADR-0057）で送る。「送ったかもしれない」を予約に残し、
