@@ -117,6 +117,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         // FR-04, FR-09, FR-11, #1267, IADR-0517: LLM ゲートウェイの Sent=false の連続と回復（通知・台帳）。
         [InlineData(typeof(LlmGatewayUnsentDetected), "AiStockTrading.Shared.Contracts.Events.LlmGatewayUnsentDetected")]
         [InlineData(typeof(LlmGatewayUnsentRecovered), "AiStockTrading.Shared.Contracts.Events.LlmGatewayUnsentRecovered")]
+        // FR-10, FR-09, #1423 M-3, ADR-0073 決定3, IADR-0581: 基準資金の観測の欠けによる新規建ての拒否（通知・台帳）。
+        [InlineData(typeof(CapitalBaselineObservationMissing), "AiStockTrading.Shared.Contracts.Events.CapitalBaselineObservationMissing")]
         // FR-04, UC-01, #335, ADR-0017 決定2, IADR-0216: 割当モデル不可による取引判断の見送り（発注しない）。
         [InlineData(typeof(TradeDecisionSkipped), "AiStockTrading.Shared.Contracts.Events.TradeDecisionSkipped")]
         [InlineData(typeof(StopLossTriggered), "AiStockTrading.Shared.Contracts.Events.StopLossTriggered")]

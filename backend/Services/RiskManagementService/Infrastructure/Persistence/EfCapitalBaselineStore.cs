@@ -22,9 +22,10 @@ namespace RiskManagementService.Infrastructure.Persistence;
 //
 // FR-10, NFR-07, #889, IADR-0372（2026-09-23 追加）: 🔴 **読み出しの帰結を観測する。**
 // 口座照会が残高 0 を返した日は供給側の門が未供給へ倒すため**その取引日の行が 1 行も書かれず**、
-// ここは前取引日の正の値を鮮度が切れるまで返し続ける（＝新規建ては止まらない）。
-// **値が返っている以上、統制は平常どおり動いて見え、この状態は外から一切見えなかった。**
-// **門は変えない**（止めるかどうかは #889 の裁定待ち）。見えるようにするだけである。
+// ここは前取引日の正の値を鮮度が切れるまで返し続けていた（＝新規建ては止まらなかった）。
+//
+// 🔴 FR-10, #1423 M-3, ADR-0073, IADR-0581（2026-10-24 追加）: **門を変えた。** 直前の米国東部暦日に成功した観測が
+// 無ければ未供給（＝新規建ての拒否）とする（計画 ADR-0073 決定1・2。IADR-0372 決定A の「門は変えない」を置き換える）。
 public sealed class EfCapitalBaselineStore(
     RiskManagementDbContext db,
     IClock clock,
@@ -82,6 +83,39 @@ public sealed class EfCapitalBaselineStore(
 
     public CapitalBaseline? GetCurrent()
     {
+        var reading = Read();
+        metrics.RecordCapitalBaselineRead(reading.Outcome);
+        switch (reading.Outcome)
+        {
+            case CapitalBaselineReadOutcome.UnavailableNonPositive:
+                // 🔴 #889: ここは**人手で 0 を 1 行入れた**経路である（供給側の 0 は行を書かないのでここへ来ない）。
+                // 黙って null を返していたため、運用からは「なぜか未供給」としか見えなかった。
+                logger.LogWarning(
+                    "基準資金の最新行が 0 以下のため未供給として扱います equity={Equity} tradingDay={TradingDay}。"
+                        + "人手で投入した行であれば、意図した停止かを確認してください。",
+                    reading.LatestEquityInBase,
+                    reading.LatestTradingDay);
+                break;
+            case CapitalBaselineReadOutcome.UnavailableMissingPreviousDay:
+                // FR-10, #1423 M-3, ADR-0073 決定1・2, IADR-0581 決定1: 直前の米国東部暦日に成功した観測が無い＝照会できない。
+                logger.LogWarning(
+                    "基準資金は直前の米国東部暦日の観測がないため未供給として扱い、新規建てを止めます "
+                        + "latestTradingDay={TradingDay} 経過={GapDays}日 equity={Equity}。"
+                        + "口座照会が値を返せない日がありました（残高 0・照会障害・プロセス停止のいずれか）。"
+                        + "直前の暦日の観測が成功すれば自動で解除されます（手仕舞い・損切りは止めていません）。",
+                    reading.LatestTradingDay,
+                    reading.GapDays,
+                    reading.LatestEquityInBase);
+                break;
+        }
+
+        return reading.Baseline;
+    }
+
+    // FR-10, #1423 M-3, ADR-0073 決定1, IADR-0581 決定1・2: 判定の本体（計器を動かさず、ログも出さない）。
+    // 審査（GetCurrent）と、表示（SC-03）・通知の巡回が**同じ判定**を共有するために切り出した。
+    public CapitalBaselineReading Read()
+    {
         var now = clock.UtcNow;
         var today = TradingDay.Of(now, Market.UnitedStates);
 
@@ -95,17 +129,20 @@ public sealed class EfCapitalBaselineStore(
 
         if (row is null)
         {
-            metrics.RecordCapitalBaselineRead(CapitalBaselineReadOutcome.UnavailableNoRow);
-            return null;
+            return new CapitalBaselineReading(null, CapitalBaselineReadOutcome.UnavailableNoRow, today, null, null);
         }
 
-        // 鮮度（計画は「日次でよい」とだけ定め、検査は実装判断・IADR-0354 決定4）。
-        // 既定 4 日は 3 連休（金 23:55 ET の観測を火曜の寄り付き 09:30 ET に使う＝実測で最大およそ 3.40 日）を通し、
-        // 巡回が 1 営業週にわたり死んでいる状態は通さない幅である。
+        var gapDays = today.DayNumber - row.TradingDay.DayNumber;
+
+        CapitalBaselineReading Unavailable(CapitalBaselineReadOutcome outcome) =>
+            new(null, outcome, today, row.TradingDay, row.EquityInBase);
+
+        // 鮮度（IADR-0354 決定4）。🔴 #1423 M-3, IADR-0581 決定2: 下の「直前の暦日」の判定がより厳しく包むため、
+        // この検査で新たに止まる場面は無い。残すのは帰結の区別のためだけである（巡回が長く死んでいたことを
+        // 「直前の暦日の欠け」と分けて数える）。
         if (now - row.ObservedAtUtc > options.MaxAge)
         {
-            metrics.RecordCapitalBaselineRead(CapitalBaselineReadOutcome.UnavailableStale);
-            return null;
+            return Unavailable(CapitalBaselineReadOutcome.UnavailableStale);
         }
 
         // 🔴 #869, IADR-0354 決定7: **0 以下の行は「判定できる値」として扱わない。**
@@ -115,43 +152,27 @@ public sealed class EfCapitalBaselineStore(
         // 発注審査がその理由で**翌営業日まで続く日次損失ロックアウトを実際に張る**。
         if (row.EquityInBase <= 0m)
         {
-            // 🔴 #889: ここは**人手で 0 を 1 行入れた**経路である（供給側の 0 は行を書かないのでここへ来ない）。
-            // 黙って null を返していたため、運用からは「なぜか未供給」としか見えなかった。
-            metrics.RecordCapitalBaselineRead(CapitalBaselineReadOutcome.UnavailableNonPositive);
-            logger.LogWarning(
-                "基準資金の最新行が 0 以下のため未供給として扱います equity={Equity} tradingDay={TradingDay}。"
-                    + "人手で投入した行であれば、意図した停止かを確認してください。",
-                row.EquityInBase,
-                row.TradingDay);
-            return null;
+            return Unavailable(CapitalBaselineReadOutcome.UnavailableNonPositive);
         }
 
-        // 🔴 #889, IADR-0372 決定A: **供給できたことと、観測が途切れていないことは別である。**
-        // 取引日は米国東部時間の暦日で数え、巡回（既定 5 分）は土日も回るため、**期待される間隔は 1 日**である
-        // （IADR-0354 決定2）。それより開いていれば、直前の取引日の観測が 1 件も届いていない
+        // 🔴 FR-10, #1423 M-3, ADR-0073 決定1・2, IADR-0581 決定1: **直前の米国東部暦日に成功した観測が無ければ
+        // 「照会できない」として新規建てを拒否する**（旧: #889 / IADR-0372 決定A は Warning を出すだけで古い値を返した）。
+        // 取引日は米国東部時間の暦日で数え、巡回（既定 5 分）は土日も回るため、期待される間隔は 1 日である
+        // （IADR-0354 決定2）。それより開いていれば、直前の暦日の観測が 1 件も成功していない
         // ——口座照会が残高 0 を返した日・照会が壊れていた日・プロセスが落ちていた日のいずれかである。
         // 🔴 **原因は区別しない**（読み出し側から区別できないし、危険なのは原因ではなく
-        // 「古い分母で統制が回っている」という状態である）。**門は変えない** —— 従来どおり値を返す。
-        var gapDays = today.DayNumber - row.TradingDay.DayNumber;
+        // 「古い分母で統制が回る」という状態である）。**暦日で数える。営業日では数えない**（ADR-0073 決定1）。
+        // 解除は自動である（直前の暦日の行が書かれれば、次の読み出しから供給に戻る。ADR-0073 決定2）。
         if (gapDays > 1)
         {
-            metrics.RecordCapitalBaselineRead(CapitalBaselineReadOutcome.SuppliedWithGap);
-            logger.LogWarning(
-                "基準資金は直前の取引日の観測ではありません tradingDay={TradingDay} 経過={GapDays}日 "
-                    + "equity={Equity} observedAt={ObservedAt}。"
-                    + "口座照会が値を返せない日が続いており（残高 0・照会障害・プロセス停止のいずれか）、"
-                    + "鮮度（既定 {MaxAgeDays} 日）が切れるまで**この古い値で新規建てが通り続けます**。",
-                row.TradingDay,
-                gapDays,
-                row.EquityInBase,
-                row.ObservedAtUtc,
-                options.MaxAgeDays);
-        }
-        else
-        {
-            metrics.RecordCapitalBaselineRead(CapitalBaselineReadOutcome.Supplied);
+            return Unavailable(CapitalBaselineReadOutcome.UnavailableMissingPreviousDay);
         }
 
-        return new CapitalBaseline(row.EquityInBase, row.TradingDay, row.ObservedAtUtc);
+        return new CapitalBaselineReading(
+            new CapitalBaseline(row.EquityInBase, row.TradingDay, row.ObservedAtUtc),
+            CapitalBaselineReadOutcome.Supplied,
+            today,
+            row.TradingDay,
+            row.EquityInBase);
     }
 }

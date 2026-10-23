@@ -423,6 +423,17 @@ function StatusView({ view }: { view: RiskStatusView }) {
             {i18n._(msg`資金:`)}{' '}
             {view.capital === null ? METRIC_NOT_SUPPLIED_TEXT : formatAmount(view.capital)}
           </Note>
+          {/* FR-10, SC-03, #1423 M-3, ADR-0073 決定3: 基準資金が「なぜ」未供給かを出す（止まっている理由を本画面から読めるように）。
+              色だけで意味を持たせず、止めているもの・止めていないもの・解除の条件を文で書く。 */}
+          {view.capitalBaselineObservationMissing && (
+            <Note>
+              {i18n._(
+                msg`新規建てを停止中: 直前の米国東部暦日に口座照会（基準資金）が成功していません（最後の観測: ${
+                  view.capitalBaselineLatestTradingDay ?? METRIC_NOT_SUPPLIED_TEXT
+                }）。手仕舞い・損切りは止めていません。直前の暦日の観測が成功すれば自動で解除されます。`,
+              )}
+            </Note>
+          )}
         </Panel>
       </div>
     </>

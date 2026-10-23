@@ -27,7 +27,7 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
 | `ast_trade_cycle_decision_duration_ms_*` | `trigger` | 判断レイテンシ（ヒストグラム） |
 | `ast_risk_screenings_total` | `outcome` | 発注前審査（**承認も拒否も数える**） |
 | `ast_risk_rejections_total` | `reason` | 見送り理由の内訳。保有 0・未約定なしで新規建てが必ず拒否される銘柄は判断が LLM を呼ぶ前に見送り、上の `decision_skips{reason="EntryBlockedByRiskControls"}` に出る。保有中の銘柄の買い増し・売り増しで可否が塞がっていたものは判断が発注せず `decision_skips{reason="AddOnBlockedByRiskControls"}` に出る（審査は不変。推移は両方を足して読む）。判断由来の決済（利確・判断の手仕舞い）の後の同じ取引日・同じ方向の新規建ては `DecisionExitSameDay` で拒否される（#1176）。可否の口が返す理由の 1 つなので、上の 2 つの見送りへ移る分も同じ読み方をする |
-| `ast_risk_capital_baseline_reads_total` | `outcome` | 統制上限の**基準資金を読んだ帰結**（#889）。🔴 `SuppliedWithGap` は「値は返っているが直前の取引日の観測が届いていない」＝**古い分母で統制が回っている**印である |
+| `ast_risk_capital_baseline_reads_total` | `outcome` | 統制上限の**基準資金を読んだ帰結**（#889）。🔴 `UnavailableMissingPreviousDay` は「直前の米国東部暦日に成功した観測が無い」ため**新規建てを拒否している**印である（#1423 M-3 の是正前は `SuppliedWithGap`＝値を返して止めなかった。配備前のラベルと混ぜない） |
 | `ast_order_executions_total` | `status` / `provider` | 発注結果と発注先 |
 | `ast_order_dispatch_forgone_total` | `reason` | 発注に**届いていない**見送り（ブローカーの拒否とは別） |
 | `ast_order_drift_adoption_followup_abandoned_total` | `reason` | 乖離の取り込みの追随を、建玉照会の不明（`positions-unknown`）・失敗（`positions-query-failed`）のまま**再試行を使い切って**打ち切った件数（#942）。🔴 発注執行の起動完了時に 0 で作られる（最初の打ち切りを `increase()` が取りこぼさないため）。ダッシュボードには載せず、アラート `AstDriftAdoptionFollowUpAbandoned` が引く |

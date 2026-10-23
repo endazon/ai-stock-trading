@@ -190,6 +190,12 @@ export interface RiskStatusView {
   // 🔴 **0 は「取り込みが無かった」という事実**であり、未供給ではない（台帳は常に読める）。
   // 本画面から取り込みは行わない（窓口は owner 権限の API）。
   driftAdoptionCountToday: number;
+  // FR-10, SC-03, #1423 M-3, ADR-0073 決定1・3, IADR-0581: **直前の米国東部暦日に成功した口座照会が無いため、
+  // 基準資金を未供給として新規建てを止めているか**（鮮度切れを含む。初回の配備〔行なし〕・人手の 0 は含めない）。
+  // true のとき `capital` は null。解除は自動（直前の暦日の観測が成功すれば戻る）。手仕舞い・損切りは止まらない。
+  capitalBaselineObservationMissing: boolean;
+  // 上が true のとき、最後に観測できた取引日（米国東部の暦日・DateOnly）。false なら null。
+  capitalBaselineLatestTradingDay: string | null;
 }
 
 // ---- 空売りの現況（GET /risk-controls/short-selling） ----
