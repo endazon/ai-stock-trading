@@ -515,4 +515,72 @@ public class ProtectiveStopGuardEntryStateTests
         var third = await h.PatrolAsync();
         UnknownNotices(third).Should().ContainSingle("別の不明の始まりであり、前回の通知から 1 時間を待たせない");
     }
+
+    // ---- 🔴 FR-10, ADR-0040, T-10-3025・T-10-3026（#1423 試験の穴 3。現行の挙動を固定する。危険と判断し #1454 へ起票）: 窓開けで逆指値がエントリーより先に約定する ----
+    //
+    // S0/S3 は承認数量の逆指値を、未約定のエントリー（指値）と同時に板に置く。窓開け（寄り付きが損切りラインの下）では、
+    // 買いの指値と売りの逆指値がどちらも発火し得る。逆指値が先に約定すると、建玉 0 からの売り＝反対方向の建玉（売り建玉）が生じる。
+    // 現行のガードは逆指値の Filled を「損切りが成立した」と読み、エントリーの状態を見ずに保護記録を完了させる
+    // （エントリーの取消・成行の手仕舞い・逆指値の張り直しはしない）。エントリーが後で全量約定すれば建玉は純額 0 に戻る。
+    // エントリーが約定しないまま終わると売り建玉が残り、完了した記録はガードの巡回に載らない（検知は建玉観測の常駐の帰属不明の検知に依る）。
+    // 本試験は**是正ではなく現行の挙動の記録**であり、是正は #1454 で扱う（是正したらこの 2 件の期待を書き換える）。
+
+    private static BrokerOrder FilledStop(int filled) =>
+        StopOrder(OrderStatus.Filled) with { FilledQuantity = filled, AveragePrice = 940m };
+
+    private static BrokerPositionSnapshot Short(int qty) => new("AAPL", Market.UnitedStates, -qty, 940m);
+
+    // T-10-3025: 逆指値が先に約定（売り建玉 10）・エントリーは未約定のまま生きている → 記録を完了し、エントリーにも建玉にも触れない。
+    [Fact]
+    public async Task T_10_3025_窓開けで逆指値が先に約定したら_エントリーの状態を見ずに記録を完了し_取消も成行も送らない()
+    {
+        var h = NewHarness();
+        h.Broker.Orders[StopOrderId] = FilledStop(10);
+        h.Broker.Orders[EntryOrderId] = EntryOrder(OrderStatus.Accepted, filled: 0);
+        h.Broker.Positions = [Short(10)]; // 建玉 0 からの売りが約定した（反対方向の建玉）
+
+        var result = await h.PatrolAsync();
+
+        result.Completed.Should().Be(1, "現行: 逆指値の Filled は損切りの成立として記録を完了させる");
+        h.Row.State.Should().Be(ProtectiveStopState.Completed);
+        h.Broker.OrderQueries.Should().NotContain(EntryOrderId, "現行: Filled の分岐はエントリーの状態を照会しない");
+        h.Broker.Cancelled.Should().BeEmpty("現行: 生きているエントリーを取り消さない");
+        h.Broker.MarketCloseCount.Should().Be(0, "現行: 売り建玉を買い戻す成行は送らない");
+        h.Broker.StopPlaceCount.Should().Be(0, "現行: 逆指値を張り直さない");
+        result.Events.Should().BeEmpty(
+            "現行: 売り建玉を知らせる事実を出さない（帰属不明の建玉の検知は S1 の足跡が無い S0 だけの群に触れない）");
+
+        // エントリーが後で全量約定すると、建玉は純額 0 に戻る。完了した記録はもう巡回に載らない。
+        h.Broker.Orders[EntryOrderId] = EntryOrder(OrderStatus.Filled, filled: 10);
+        h.Broker.Positions = [];
+        h.Broker.OrderQueries.Clear();
+        var positionCallsBefore = h.Broker.PositionCalls;
+
+        var after = await h.PatrolAsync();
+
+        after.Scanned.Should().Be(0, "Active な記録が無い");
+        h.Broker.OrderQueries.Should().BeEmpty();
+        h.Broker.PositionCalls.Should().Be(positionCallsBefore, "巡回対象ゼロなら建玉を照会しない（既存の規律）");
+    }
+
+    // T-10-3026: 同上で、エントリーが約定しないまま終わる（失効）→ 売り建玉 10 が残るが、ガードは何もしない（残余リスクの記録）。
+    [Fact]
+    public async Task T_10_3026_逆指値が先に約定しエントリーが約定せず失効しても_ガードは売り建玉に何もしない_残余リスク()
+    {
+        var h = NewHarness();
+        h.Broker.Orders[StopOrderId] = FilledStop(10);
+        h.Broker.Orders[EntryOrderId] = EntryOrder(OrderStatus.Accepted, filled: 0);
+        h.Broker.Positions = [Short(10)];
+        (await h.PatrolAsync()).Completed.Should().Be(1);
+
+        h.Broker.Orders[EntryOrderId] = EntryOrder(OrderStatus.Expired, filled: 0);
+        h.Clock.UtcNow = Now.AddHours(1);
+
+        var after = await h.PatrolAsync();
+
+        after.Scanned.Should().Be(0, "現行: 完了した記録は巡回に載らず、売り建玉はガードの対象外になる");
+        after.Events.Should().BeEmpty();
+        h.Broker.Cancelled.Should().BeEmpty();
+        h.Broker.MarketCloseCount.Should().Be(0, "現行: 反対方向の建玉を自動では買い戻さない");
+    }
 }
