@@ -28,7 +28,8 @@ updated: 2026-10-24
 2. Halted でない・未結線・照会の失敗では従来どおり（止めない）。
 3. 停止は `/costs/state` の `isHalted` が明示的に true のときだけ。
 4. LLM を使わない保護（閉場前の手仕舞いの常駐・損切り・利用者の手仕舞い・維持率割れの自動縮小）は合流点を通らない（巻き込まない）。
-5. 本番の構成で取引判断が費用統制を照会する（helm の `CostControl__BaseUrl`）。
+5. 解除は費用統制の月替わり（費用計上月＝UTC の暦月）で自動（判断側は毎回照会するので追随する）。
+6. 本番の構成で取引判断が費用統制を照会する（helm の `CostControl__BaseUrl`）。
 
 ## 母集合（規則 9）
 
@@ -39,13 +40,14 @@ updated: 2026-10-24
 | `DecisionForgoneBeforeLlmReason` / `DecisionSkipReason` の網羅 | 写像・語彙の試験 3 本・文書 4 本 | 末尾へ足して追随 |
 | `CostControl__BaseUrl` | helm（情報収集のみ） | 取引判断へ足す（values / values-local） |
 
-## 試験の写像（T-10-3049〜3052。M-3 の PR が T-10-3035〜3048 を使う）
+## 試験の写像（T-10-3049〜3053。M-3 の PR が T-10-3035〜3048 を使う）
 
 | ID | 受け入れ基準 | 試験 |
 | --- | --- | --- |
 | T-10-3049 | 1 | `LlmCostCapHaltBeforeLlmTests` |
 | T-10-3050 | 2 | 同上（NoOp を直接参照する＝組み立ての監視 W3） |
 | T-10-3051 | 3 | 同上（境界の表） |
+| T-10-3053 | 3（送り手の本物の型 `CostControlDecision` の直列化。IADR-0420） | `CostControlHaltReadContractTests` |
 | T-10-3052 | 1（語彙） | `DecisionSkipReasonTests`・`LedgerGapEventsTests`・`DecisionHeldReportTests` |
 
-変異: 合流点の判定を `false &&` で無効にすると T-10-3049 の 2 件が赤になることを確かめた。4・5 は構成と経路の読みで確かめた（試験なし）。
+変異: 合流点の判定を `false &&` で無効にすると T-10-3049 の 2 件が赤になることを確かめた。4・6 は構成と経路の読みで、5 は費用統制の `MonthKey` の読みで確かめた（試験なし）。
