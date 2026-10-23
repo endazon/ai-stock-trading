@@ -82,7 +82,8 @@ public static class OpendAuthBffEndpoints
         // SC-04: 検証コードの投入。**本文はコードだけ**であり、コマンド種別は受け取らない。
         g.MapPost("/code", PostCodeAsync).WithName("BffOpendAuthCode");
 
-        // SC-04: SMS の再送要求（本文なし）。レート制限は上流が課す（暫定 60 秒に 1 回・実測待ち）。
+        // SC-04: SMS の再送要求（本文なし）。レート制限は上流（サイドカー）が課す —— 再送だけの間隔（60 秒に 1 回）と、
+        // 投入と合算したサービス全体の上限（60 秒に 5 件）。いずれも暫定値・実測待ち（#1456・IADR-0579 / IADR-0322 決定 4）。
         g.MapPost("/resend", PostResendAsync).WithName("BffOpendAuthResend");
 
         return app;
@@ -221,7 +222,7 @@ public static class OpendAuthBffEndpoints
                 Encoding.UTF8,
                 "application/json");
             using var resp = await SendUpstreamAsync(client, req, loggerFactory, ct);
-            return MapSubmissionResult(resp.StatusCode);
+            return MapSubmissionResult(resp, http);
         }
         catch (Exception ex) when (IsUpstreamFailure(ex, ct))
         {
@@ -232,7 +233,7 @@ public static class OpendAuthBffEndpoints
     // ---- /resend ----
 
     private static async Task<IResult> PostResendAsync(
-        IHttpClientFactory httpFactory, IConfiguration config, ILoggerFactory loggerFactory, CancellationToken ct)
+        IHttpClientFactory httpFactory, IConfiguration config, ILoggerFactory loggerFactory, HttpContext http, CancellationToken ct)
     {
         var baseUrl = ResolveBaseUrl(config);
         if (baseUrl is null) return GatewayUnavailable();
@@ -245,7 +246,7 @@ public static class OpendAuthBffEndpoints
             // 本文なし。送るコマンドは `req_phone_verify_code` の 1 つに固定であり、選択肢が無い。
             using var req = UpstreamRequest(HttpMethod.Post, baseUrl + OpendAuthUpstream.ResendPath, secret);
             using var resp = await SendUpstreamAsync(client, req, loggerFactory, ct);
-            return MapSubmissionResult(resp.StatusCode);
+            return MapSubmissionResult(resp, http);
         }
         catch (Exception ex) when (IsUpstreamFailure(ex, ct))
         {
@@ -336,14 +337,41 @@ public static class OpendAuthBffEndpoints
     /// 上流の投入結果を画面向けの応答へ写す。
     /// 🔴 <b>上流の本文は捨てる。</b> 返すのは状態と機械可読な理由の符号だけであり、
     /// **利用者の入力に由来する文字列を 1 つも含まない**（検証コードが応答へ回り込む経路を塞ぐ）。
+    /// <para>
+    /// #1456, IADR-0579: 上流の <b>429（レート制限）は 409・<c>rate_limited</c>・残り秒数</b>へ写す
+    /// （以前は「その他」として 503＝供給が無い、へ倒れ、画面は「到達できない」と誤って述べていた）。
+    /// 409 にするのは、基盤の <c>apiFetch</c> が問題本文を残すのが 400 / 409 だけだからであり、
+    /// 残り秒数を画面へ渡すにはそこへ載せるしかない。<c>Retry-After</c> も同じ値で付ける。
+    /// </para>
     /// </summary>
-    private static IResult MapSubmissionResult(HttpStatusCode status) => status switch
+    private static IResult MapSubmissionResult(HttpResponseMessage resp, HttpContext http) => resp.StatusCode switch
     {
         HttpStatusCode.NoContent or HttpStatusCode.OK or HttpStatusCode.Accepted => Results.NoContent(),
         HttpStatusCode.Conflict => NotWaiting(),
         HttpStatusCode.BadRequest => Rejected(),
+        HttpStatusCode.TooManyRequests => RateLimited(http, RetryAfterSeconds(resp)),
         _ => GatewayUnavailable(),
     };
+
+    /// <summary>
+    /// 上流の <c>Retry-After</c> を秒で読む（切り上げ）。無い・読めないときは <c>null</c>（＝秒数を示さない。推測で埋めない）。
+    /// </summary>
+    private static int? RetryAfterSeconds(HttpResponseMessage resp)
+    {
+        var retryAfter = resp.Headers.RetryAfter;
+        TimeSpan? wait = retryAfter?.Delta
+            ?? (retryAfter?.Date is { } date ? date - DateTimeOffset.UtcNow : null);
+        if (wait is not { } w) return null;
+        return w <= TimeSpan.Zero ? 0 : (int)Math.Ceiling(w.TotalSeconds);
+    }
+
+    /// <summary>上流のレート制限に掛かった。<b>残り秒数</b>を本文と <c>Retry-After</c> の両方で返す。</summary>
+    private static IResult RateLimited(HttpContext http, int? retryAfterSeconds)
+    {
+        if (retryAfterSeconds is { } seconds)
+            http.Response.Headers.RetryAfter = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return Results.Json(new { reason = "rate_limited", retryAfterSeconds }, statusCode: StatusCodes.Status409Conflict);
+    }
 
     /// <summary>いま入力を待っていない（＝送るコマンドが決まらない）。</summary>
     private static IResult NotWaiting() =>

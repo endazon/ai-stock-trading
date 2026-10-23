@@ -3,15 +3,15 @@ title: 画面仕様書 — SC-04 OpenD 認証操作画面
 type: screen
 status: Draft
 created: 2026-09-09
-updated: 2026-10-22
+updated: 2026-10-23
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-09, FR-11, SC-04, UC-06, NFR-03, NFR-05, NFR-06]
 adrs: [ADR-0002, ADR-0024]
-iadrs: [IADR-0009, IADR-0091, IADR-0154, IADR-0162, IADR-0321, IADR-0338, IADR-0339, IADR-0566]
-specs: [20260909_SC-04_opend-auth-screen, 20260912_frontend-platform-ui-and-lingui, IADR-0321_opend-auth-bff-sole-authorization-point]
-issues: [#722, planning#594]
+iadrs: [IADR-0009, IADR-0091, IADR-0154, IADR-0162, IADR-0321, IADR-0338, IADR-0339, IADR-0566, IADR-0579]
+specs: [20260909_SC-04_opend-auth-screen, 20260912_frontend-platform-ui-and-lingui, IADR-0321_opend-auth-bff-sole-authorization-point, 20261023_1456_sms-resend-interval]
+issues: [#722, #1456, planning#594, planning#826]
 -->
 
 # OpenD 認証操作画面
@@ -75,7 +75,7 @@ OpenD のコンソールは検証コード以外のコマンドも受け付け�
 | --- | --- | --- | --- |
 | `input_phone_verify_code` | SMS 検証コードの入力 | 許可 | 待機中プロンプトが SMS のときだけ |
 | `input_pic_verify_code` | 画像 CAPTCHA の入力 | 許可 | 待機中プロンプトが画像のときだけ |
-| `req_phone_verify_code` | SMS の再送要求 | 許可 | レート制限（**暫定 60 秒に 1 回。算定根拠が無く実測待ち**） |
+| `req_phone_verify_code` | SMS の再送要求 | 許可 | レート制限を 2 つ重ねる。**再送だけの間隔 60 秒に 1 回**と、検証コードの投入と合算した**サービス全体の 60 秒に 5 件**（いずれも認証サイドカーが課す。**暫定値。算定根拠が無く実測待ち**）。検証コードの投入は前者に数えない |
 | `relogin -login_pwd=` ／ `exit` ／ `close_api_conn` ／ `set_log_level` | 再ログイン・終了・接続切断・ログ水準変更 | **送れない** | 統制の外からゲートウェイを止められてしまう |
 | `show_delay_report -detail_report_path=` ／ `show_sub_info -sub_info_path=` | レポート出力（任意パス指定） | **送れない** | 🔴 **root 権限で任意パスへ書ける** —— デバイス信頼の実体や `OpenD.xml` を潰せる |
 
@@ -141,8 +141,8 @@ OpenD のコンソールは検証コード以外のコマンドも受け付け�
 | --- | --- | --- |
 | ゲートウェイの状態 | `GET /opend-auth/state` | 供給可否を宣言する view。**未構成・上流不達でも 200** で未供給を宣言する（画面が 3 状態を描き分けるため、宣言そのものが要る）。取得自体の失敗（BFF 未登録＝404 等）はその領域のみ縮退 |
 | 画像 CAPTCHA | `GET /opend-auth/captcha` | `image/png`。不在・未構成・不達は 404 |
-| 検証コードの投入 | `POST /opend-auth/code` | 本文は**コードだけ**。204 / 400（受理せず）/ 409（待機中でない）/ 503（未構成・不達） |
-| SMS の再送 | `POST /opend-auth/resend` | **本文なし**。204 / 409（レート制限等）/ 503 |
+| 検証コードの投入 | `POST /opend-auth/code` | 本文は**コードだけ**。204 / 400（受理せず）/ 409（待機中でない・レート制限）/ 503（未構成・不達） |
+| SMS の再送 | `POST /opend-auth/resend` | **本文なし**。204 / 409（レート制限等）/ 503。レート制限の 409 は本文 `{"reason":"rate_limited","retryAfterSeconds":N}` と `Retry-After` を持ち、画面は残り秒数を示す（検証コードの投入の 409 も同じ形） |
 
 上流（認証サイドカー）の基底 URL は構成 `OpendAuth:BaseUrl` に置く。
 🔴 **既定は空であり、空は「未構成 → 供給が無い」を意味する**（fail-safe）。

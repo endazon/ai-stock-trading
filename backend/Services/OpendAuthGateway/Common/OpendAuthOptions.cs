@@ -56,6 +56,12 @@ public sealed class OpendAuthOptions
     public int RateLimitMaxSubmissions { get; set; } = 5;
 
     /// <summary>
+    /// #1456, SC-04, IADR-0579: SMS の<b>再送だけ</b>に課す最小の間隔（秒）。既定 60（暫定値・実測待ち）。
+    /// 上の流量制限（投入と再送の合算）の<b>内側に重ねる</b>ものであり、置き換えない。投入（検証）は数えない。
+    /// </summary>
+    public int ResendIntervalSeconds { get; set; } = 60;
+
+    /// <summary>
     /// NFR, IADR-0566: 呼び出し元の検証に使う共有シークレットの<b>ファイル</b>（Secret の volume のマウント先）。
     /// 空・読めない・短すぎる値は「未構成」であり、4 本の口はすべて 503 を返す（fail-closed）。
     /// 値を環境変数で受けないのは、Secret の差し替えを OpenD の Pod の再起動なしに効かせるためである。

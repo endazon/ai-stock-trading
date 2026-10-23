@@ -42,6 +42,15 @@ builder.Services.AddSingleton(sp =>
         options.RateLimitMaxSubmissions,
         TimeSpan.FromSeconds(options.RateLimitWindowSeconds));
 });
+// #1456, IADR-0579: 再送だけの間隔（② 60 秒に 1 回）。上の ① と同じくサービス全体で 1 つで、① を内側で呼ぶ。
+builder.Services.AddSingleton(sp =>
+{
+    var options = sp.GetRequiredService<IOptions<OpendAuthOptions>>().Value;
+    return new ResendIntervalLimiter(
+        sp.GetRequiredService<TimeProvider>(),
+        TimeSpan.FromSeconds(options.ResendIntervalSeconds),
+        sp.GetRequiredService<SubmissionRateLimiter>());
+});
 // 時刻源は差し替え可能にしておく（流量制限の試験が実時間を待たずに窓を跨げるようにするため）。
 builder.Services.TryAddSingleton(TimeProvider.System);
 
