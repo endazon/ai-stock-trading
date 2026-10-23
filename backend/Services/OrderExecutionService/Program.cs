@@ -168,10 +168,12 @@ builder.Services.AddSingleton<IPositionQueryHealthReporter>(sp => new PositionQu
 // 🔴 NFR, FR-10, FR-05, ADR-0050 決定1・3, #1446（親 #1423 M-2）, IADR-0575 決定 2: 同じ建玉を売る決済（承認の決済・S1・保護喪失と
 // ガードの成行手仕舞い）の「読む → 送る → 記録する」を、専有 DB の advisory lock で (銘柄, 市場, 決済の方向) ごとに 1 本ずつにする。
 // 承認の受信が 1 通ずつ（Inline・1 リスナ）でも、S1 は別のキューと常駐の巡回から来るため、それだけでは並行に送り得る（IADR-0575 の実測）。
-// 入れ替え中に新旧の Pod が重なっても DB が持つロックなので効く。渡し忘れると各経路はプロセス内の既定へ倒れる（T-10-3008 が固定する）。
-// 関係 DB でない試験の DbContext（InMemory）ではプロセス内のセマフォへ縮退する（PostgresClosePositionLock.ForContext）。
-builder.Services.AddScoped<IClosePositionLock>(sp =>
-    PostgresClosePositionLock.ForContext(sp.GetRequiredService<OrderExecutionDbContext>()));
+// 入れ替え中に新旧の Pod が重なっても DB が持つロックなので効く。渡し忘れるとその経路だけが他の決済と直列にならない（T-10-3008 が固定する）。
+// 関係 DB でない試験の DbContext（InMemory）では、このホストで 1 つのプロセス内のセマフォへ縮退する（PostgresClosePositionLock.ForContext）。
+// static の共有にしない——並列に走る別々の試験のホストどうしが待ち合う（PR #1447 の CI で実測）。
+builder.Services.AddSingleton<InProcessClosePositionLock>();
+builder.Services.AddScoped<IClosePositionLock>(sp => PostgresClosePositionLock.ForContext(
+    sp.GetRequiredService<OrderExecutionDbContext>(), sp.GetRequiredService<InProcessClosePositionLock>()));
 // DbContext が scoped のため発注結果ストアも scoped。
 builder.Services.AddScoped<IExecutedOrderStore, EfExecutedOrderStore>();
 // #131, IADR-0057: 発注前 DecisionId 予約（二重発注の防止）。

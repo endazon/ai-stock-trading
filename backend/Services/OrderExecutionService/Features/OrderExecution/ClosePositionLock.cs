@@ -16,7 +16,8 @@ namespace OrderExecutionService.Features.OrderExecution;
 // 常駐の巡回から来るので、それだけでは塞がらない（IADR-0575 の比較）。
 //
 // 本番は DB の advisory lock（PostgresClosePositionLock。プロセス・レプリカをまたぐ）。本ファイルの InProcess は単体の試験と、
-// 組み立てで渡し忘れた場合の既定である（同じプロセスの中では直列化する＝渡し忘れても是正前より悪くならない。本番の組み立ては T-10-3008 が固定する）。
+// 関係 DB でない DbContext（試験の InMemory）の組み立て（ホストごとに 1 つ）で使う。**static の共有インスタンスは置かない**——
+// 置くと、並列に走る無関係な試験（別々のホスト）どうしが同じ鍵で待ち合う（PR #1447 の CI で実測）。本番の組み立ては T-10-3008 が固定する。
 // 🔴 **入れ子にしない。** 同じ鍵を同じ流れの中で 2 回取ると、別の接続（別のセッション）として待ち合い、待ちの上限まで止まる。
 // 決済を送る 4 経路（承認の決済・S1・保護喪失の成行手仕舞い・ガードの成行手仕舞い）はどれも他の経路を呼ばない（IADR-0575 決定 3）。
 public interface IClosePositionLock
@@ -33,6 +34,7 @@ public readonly record struct ClosePositionKey(string Symbol, Market Market, Tra
 {
     /// <summary>
     /// advisory lock の 64bit 鍵。文字列の SHA-256 の先頭 8 バイト（<c>string.GetHashCode</c> はプロセスごとに変わるので使わない）。
+    /// <c>BitConverter</c> はプラットフォームのバイト順で読む。稼働・CI の x64 / ARM64 はどちらもリトルエンディアンであり、T-10-3006 の固定値はその前提である。
     /// 🔴 書式を変えると、入れ替えで新旧が並走する間だけ直列化が 2 系統に割れる。変えない。衝突は直列化が過剰になるだけで害は無い。
     /// </summary>
     public long AdvisoryKey
@@ -58,6 +60,19 @@ public sealed class ClosePositionLockUnavailableException(ClosePositionKey key, 
 public static class ClosePositionLockLimits
 {
     /// <summary>
+    /// 🔴 待ちの上限の下限（1 ミリ秒）。PostgreSQL の <c>lock_timeout = 0</c> は「無期限」であり、1 ミリ秒未満を渡すと
+    /// ミリ秒へ丸めた 0 が意図と逆の無期限待ちになる。両実装の組み立てで拒否する（T-10-3006）。
+    /// </summary>
+    public static readonly TimeSpan MinimumWaitLimit = TimeSpan.FromMilliseconds(1);
+
+    /// <summary>待ちの上限を検証する（1 ミリ秒未満・無期限〔<see cref="Timeout.InfiniteTimeSpan"/>〕は拒否）。</summary>
+    public static TimeSpan Validate(TimeSpan waitLimit) =>
+        waitLimit >= MinimumWaitLimit
+            ? waitLimit
+            : throw new ArgumentOutOfRangeException(
+                nameof(waitLimit), waitLimit, "決済の直列化の待ちの上限は 1 ミリ秒以上にする（0 は PostgreSQL で無期限になる）。");
+
+    /// <summary>
     /// 待ちの上限。先発が握る間に行うのは建玉照会・注文照会・取消・発注（OpenD の応答待ちは既定 15 秒）で、通常は数秒で外れる。
     /// これを超えて待つのは先発が止まっている場合であり、待ち続けると承認のリスナ（1 本）と常駐の巡回まで止まる。
     /// </summary>
@@ -65,16 +80,14 @@ public static class ClosePositionLockLimits
 }
 
 /// <summary>
-/// プロセス内の決済の直列化（鍵ごとのセマフォ）。<see cref="Shared"/> を全経路で共有する（インスタンスごとに作ると直列化しない）。
+/// プロセス内の決済の直列化（鍵ごとのセマフォ）。<b>同じインスタンスを渡した経路どうしだけが直列になる</b>
+/// （ホストの組み立ては DI の singleton を 1 つ渡す。試験は直列にしたい経路へ同じインスタンスを明示で渡す）。
 /// </summary>
 public sealed class InProcessClosePositionLock(TimeSpan? waitLimit = null) : IClosePositionLock
 {
-    /// <summary>プロセスで 1 つ。組み立てで渡さなかった経路の既定。</summary>
-    public static readonly InProcessClosePositionLock Shared = new();
-
     private readonly ConcurrentDictionary<long, SemaphoreSlim> _gates = new();
 
-    private readonly TimeSpan _waitLimit = waitLimit ?? ClosePositionLockLimits.WaitLimit;
+    private readonly TimeSpan _waitLimit = ClosePositionLockLimits.Validate(waitLimit ?? ClosePositionLockLimits.WaitLimit);
 
     public async Task<IAsyncDisposable> AcquireAsync(ClosePositionKey key, CancellationToken cancellationToken)
     {

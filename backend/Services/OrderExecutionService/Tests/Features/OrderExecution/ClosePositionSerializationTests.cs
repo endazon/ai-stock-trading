@@ -231,6 +231,7 @@ public class ClosePositionSerializationTests
     }
 
     // T-10-3006: プロセス内の直列化は、同じ鍵だけを待たせ、違う鍵（銘柄・市場・決済の方向）は待たせない。待ちの上限で取れなければ例外。
+    // 待ちの上限は 1 ミリ秒以上（両実装）。
     // 鍵の 64bit 値は版をまたいで変えない（入れ替えで新旧が並走する間に直列化が割れる）。銘柄の大文字小文字は区別しない。
     [Fact]
     public async Task T_10_3006_同じ鍵だけを待たせ上限で取れなければ例外で鍵は版をまたいで変わらない()
@@ -254,6 +255,15 @@ public class ClosePositionSerializationTests
         key.AdvisoryKey.Should().Be(new ClosePositionKey("aapl", Market.UnitedStates, TradeSide.Sell).AdvisoryKey);
         key.AdvisoryKey.Should().NotBe((key with { CloseSide = TradeSide.Buy }).AdvisoryKey);
         key.AdvisoryKey.Should().Be(ExpectedAaplUsSellKey, "鍵の書式を変えると並走の間に直列化が割れる");
+
+        // 🔴 待ちの上限は 1 ミリ秒以上（0 へ丸めると PostgreSQL の lock_timeout が無期限になる）。両実装とも組み立てで拒否する。
+        foreach (var bad in new[] { TimeSpan.Zero, TimeSpan.FromTicks(9_999), TimeSpan.FromMilliseconds(-1), Timeout.InfiniteTimeSpan })
+        {
+            FluentActions.Invoking(() => new InProcessClosePositionLock(bad)).Should().Throw<ArgumentOutOfRangeException>();
+            FluentActions.Invoking(() => new PostgresClosePositionLock("Host=localhost", bad)).Should().Throw<ArgumentOutOfRangeException>();
+        }
+
+        FluentActions.Invoking(() => new PostgresClosePositionLock("Host=localhost", TimeSpan.FromMilliseconds(1))).Should().NotThrow();
     }
 
     // AAPL / UnitedStates / Sell の鍵（"AST:close-position:UnitedStates:AAPL:Sell" の SHA-256 の先頭 8 バイト・リトルエンディアン）。

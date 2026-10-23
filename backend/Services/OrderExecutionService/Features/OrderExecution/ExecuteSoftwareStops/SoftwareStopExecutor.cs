@@ -58,8 +58,8 @@ public sealed class SoftwareStopExecutor(
     IClosePositionLock? closeLock = null)
 {
     // 🔴 NFR, FR-10, #1446（親 #1423 M-2）, IADR-0575: 決済の直列化。本番は Program.cs が DB の advisory lock を渡す（T-10-3008）。
-    // 渡さなければプロセスで 1 つの InProcess（承認の決済の既定と同じインスタンス＝同じプロセスの中では直列化する）。
-    private readonly IClosePositionLock _closeLock = closeLock ?? InProcessClosePositionLock.Shared;
+    // 渡さなければこの組み立てだけの InProcess（他の経路とは直列にならない＝単体の試験の既定。試験間で待ち合わない）。
+    private readonly IClosePositionLock _closeLock = closeLock ?? new InProcessClosePositionLock();
 
     /// <summary>
     /// 決済が続けて売れなかった回数がこの値に達したら Critical（<see cref="SoftwareStopOutcome.CloseRejected"/>）を出す

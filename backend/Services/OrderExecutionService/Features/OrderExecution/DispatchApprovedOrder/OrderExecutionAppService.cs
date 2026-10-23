@@ -65,8 +65,8 @@ public sealed class OrderExecutionAppService(
 {
     // 🔴 NFR, FR-10, #1446（親 #1423 M-2）, IADR-0575 決定 1・3: 決済（承認の決済・保護喪失の成行手仕舞い）の「読む → 送る → 記録する」を
     // (銘柄, 市場, 決済の方向) ごとに 1 本ずつにする。本番は Program.cs が DB の advisory lock を渡す（T-10-3008）。
-    // 渡さなければプロセスで 1 つの InProcess（同じプロセスの中では直列化する＝是正前より悪くならない）。
-    private readonly IClosePositionLock _closeLock = closeLock ?? InProcessClosePositionLock.Shared;
+    // 渡さなければこの組み立てだけの InProcess（他の経路とは直列にならない＝単体の試験の既定。試験間で待ち合わない）。
+    private readonly IClosePositionLock _closeLock = closeLock ?? new InProcessClosePositionLock();
 
     // #820 の 8 巡目監査, IADR-0344 追記(8): 武装の前提条件（帰属不明の建玉が無いこと）を確かめるために
     // 見る Active 行の上限。保有建玉数上限（既定 3）に対して十分大きい。

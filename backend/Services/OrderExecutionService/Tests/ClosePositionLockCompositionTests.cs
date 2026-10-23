@@ -37,7 +37,11 @@ public class ClosePositionLockCompositionTests
             throw new NotSupportedException("組み立ての試験では取らない");
     }
 
-    private sealed class ProgramFactory(IClosePositionLock closeLock) : WebApplicationFactory<Program>
+    private sealed class InMemoryProgramFactory() : ProgramFactoryBase(null);
+
+    private sealed class ProgramFactory(IClosePositionLock closeLock) : ProgramFactoryBase(closeLock);
+
+    private class ProgramFactoryBase(IClosePositionLock? closeLock) : WebApplicationFactory<Program>
     {
         private readonly string _dbName = Guid.NewGuid().ToString();
 
@@ -75,8 +79,11 @@ public class ClosePositionLockCompositionTests
                 foreach (var d in ownHosted) services.Remove(d);
 
                 // 直列化だけを差し替え、3 つの組み立てが同じものを受け取るかを見る。
-                services.RemoveAll<IClosePositionLock>();
-                services.AddSingleton(closeLock);
+                if (closeLock is not null)
+                {
+                    services.RemoveAll<IClosePositionLock>();
+                    services.AddSingleton(closeLock);
+                }
 
                 services.DisableAllExternalWolverineTransports();
                 services.DisableAllWolverineMessagePersistence();
@@ -88,6 +95,24 @@ public class ClosePositionLockCompositionTests
         (IClosePositionLock)service.GetType()
             .GetField("_closeLock", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(service)!;
+
+    // 🔴 InMemory の DbContext のホストでも、3 つの組み立てが同じホストの 1 つのセマフォを受け取り、別のホストとは共有しない
+    // （PR #1447 の CI: static の共有だと並列の試験のホストどうしが待ち合い、Wolverine の追跡の上限で落ちた）。
+    [Fact]
+    public async Task T_10_3008_InMemoryのホストでも3つは同じセマフォを受け取り別のホストとは共有しない()
+    {
+        await using var first = new InMemoryProgramFactory();
+        await using var second = new InMemoryProgramFactory();
+        using var a = first.Services.CreateScope();
+        using var b = second.Services.CreateScope();
+
+        var lockA = LockOf(a.ServiceProvider.GetRequiredService<OrderExecutionAppService>());
+        lockA.Should().BeOfType<InProcessClosePositionLock>();
+        LockOf(a.ServiceProvider.GetRequiredService<SoftwareStopExecutor>()).Should().BeSameAs(lockA);
+        LockOf(a.ServiceProvider.GetRequiredService<ProtectiveStopGuard>()).Should().BeSameAs(lockA);
+        LockOf(b.ServiceProvider.GetRequiredService<OrderExecutionAppService>()).Should().NotBeSameAs(lockA,
+            "別のホスト（並列に走る別の試験）とは待ち合わない");
+    }
 
     [Fact]
     public async Task T_10_3008_Programの承認の受け口とS1とガードは同じ決済の直列化を受け取る()
@@ -105,13 +130,14 @@ public class ClosePositionLockCompositionTests
     [Fact]
     public void T_10_3008_直列化は関係DBならadvisory_lockで試験のInMemoryならプロセス内に縮退する()
     {
+        var fallback = new InProcessClosePositionLock();
         using var relational = new OrderExecutionDbContext(new DbContextOptionsBuilder<OrderExecutionDbContext>()
             .UseNpgsql("Host=localhost;Database=order_execution_svc;Username=ai;Password=ai").Options);
-        PostgresClosePositionLock.ForContext(relational).Should().BeOfType<PostgresClosePositionLock>();
+        PostgresClosePositionLock.ForContext(relational, fallback).Should().BeOfType<PostgresClosePositionLock>();
 
         using var inMemory = new OrderExecutionDbContext(new DbContextOptionsBuilder<OrderExecutionDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
-        PostgresClosePositionLock.ForContext(inMemory).Should().BeSameAs(InProcessClosePositionLock.Shared,
-            "プロセスで 1 つ（経路ごとに別のものを作ると直列にならない）");
+        PostgresClosePositionLock.ForContext(inMemory, fallback).Should().BeSameAs(fallback,
+            "ホストで 1 つ（DI の singleton）。static の共有にしない（並列の試験のホストどうしが待ち合う）");
     }
 }

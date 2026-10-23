@@ -16,17 +16,19 @@ namespace OrderExecutionService.Infrastructure.Persistence;
 //   本番の配線は常に Npgsql）。選ぶのは ForContext だけである。
 public sealed class PostgresClosePositionLock(string connectionString, TimeSpan? waitLimit = null) : IClosePositionLock
 {
-    private readonly TimeSpan _waitLimit = waitLimit ?? ClosePositionLockLimits.WaitLimit;
+    // 🔴 1 ミリ秒未満は拒否する（0 へ丸めると lock_timeout が無期限になる）。
+    private readonly TimeSpan _waitLimit = ClosePositionLockLimits.Validate(waitLimit ?? ClosePositionLockLimits.WaitLimit);
 
     /// <summary>
     /// 発注執行の DbContext の接続先で決済の直列化を選ぶ。関係 DB なら同じ接続文字列の advisory lock、そうでなければ
-    /// プロセスで 1 つの <see cref="InProcessClosePositionLock.Shared"/>。
+    /// <paramref name="nonRelationalFallback"/>（ホストの組み立てが DI の singleton で 1 つ渡す＝同じホストの経路どうしだけが直列になる）。
     /// </summary>
-    public static IClosePositionLock ForContext(DbContext db)
+    public static IClosePositionLock ForContext(DbContext db, InProcessClosePositionLock nonRelationalFallback)
     {
         ArgumentNullException.ThrowIfNull(db);
+        ArgumentNullException.ThrowIfNull(nonRelationalFallback);
         if (!db.Database.IsRelational())
-            return InProcessClosePositionLock.Shared;
+            return nonRelationalFallback;
 
         var connectionString = db.Database.GetConnectionString();
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -44,7 +46,7 @@ public sealed class PostgresClosePositionLock(string connectionString, TimeSpan?
             transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
             // SET は値をパラメータに取れないため、整数のミリ秒を直に埋める（外からの入力ではない）。
-            var timeoutMs = (long)_waitLimit.TotalMilliseconds;
+            var timeoutMs = (long)Math.Ceiling(_waitLimit.TotalMilliseconds); // 1 以上（Validate が保証する）
             await using (var setTimeout = new NpgsqlCommand($"SET LOCAL lock_timeout = {timeoutMs}", connection, transaction))
                 await setTimeout.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
