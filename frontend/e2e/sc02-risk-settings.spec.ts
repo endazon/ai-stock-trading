@@ -7,6 +7,7 @@ import {
   MONITOR_SETTINGS,
   PRE_CLOSE_CONTROLS,
   RISK_SETTINGS,
+  RISK_STATUS,
   THEME_CONCENTRATION,
   WATCHLIST,
 } from './fixtures';
@@ -592,5 +593,318 @@ test.describe('SC-02 閉場前の統制とテーマの上限（#1407）', () => 
     const themes = page.getByRole('form', { name: 'テーマの定義の変更' });
     await expect(themes.getByLabel('テーマの名前')).toHaveValue(THEME_CONCENTRATION.effective[0]!.name);
     await expect(page.getByText(/保存した定義が構成の定義と食い違っています/)).toBeVisible();
+  });
+});
+
+// SC-02, FR-19, UC-06, ADR-0007, IADR-0086, #1412（網羅表 A-038）: 取引ガードの変更（`PUT /risk-controls/settings/guard`・全置換）。
+// 計画は 2026-10-22 の改定（planning#822）で「取引ガードは本画面で変更する」とした。危険な緩和（禁止の無効化・禁止銘柄の削除・
+// 信用買い／空売りの新たな有効化）は明示確認を要し、厳しくする方向は確認を要しない（非対称）。
+function guardForm(page: Page) {
+  return page.getByRole('form', { name: '取引ガードの変更' });
+}
+
+test.describe('SC-02 取引ガードの変更（#1412）', () => {
+  test('商品種別 3 値と市場 2 値を現在値で表示し、厳しくする変更は理由だけで保存できる（PUT 200）', async ({ page }) => {
+    let putPath: string | null = null;
+    let putBody: unknown = null;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /risk-controls/settings/guard': (route) => {
+        putPath = new URL(route.request().url()).pathname;
+        putBody = route.request().postDataJSON();
+        return { status: 200, body: RISK_SETTINGS };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = guardForm(page);
+
+    // FR-19, ADR-0016 決定1: 商品種別は 3 値（現物・信用買い・空売り）。現在値（契約フィクスチャ）は現物だけが有効。
+    await expect(form.getByRole('checkbox', { name: '現物' })).toBeChecked();
+    await expect(form.getByRole('checkbox', { name: '信用買い' })).not.toBeChecked();
+    await expect(form.getByRole('checkbox', { name: '空売り' })).not.toBeChecked();
+    await expect(form.getByRole('checkbox', { name: '日本' })).toBeChecked();
+    await expect(form.getByRole('checkbox', { name: '米国' })).toBeChecked();
+
+    // 理由が空なら保存できない（FR-13 の設定変更の一般則）。
+    const save = form.getByRole('button', { name: '保存' });
+    await expect(save).toBeDisabled();
+
+    // 米国を無効にする＝厳しくする方向。危険の確認は出ない。
+    await form.getByRole('checkbox', { name: '米国' }).uncheck();
+    await expect(form.getByRole('alert')).toHaveCount(0);
+    await form.getByLabel('変更理由').fill('米国の取引を止める');
+    await save.click();
+
+    await expect(form.getByText('保存しました。')).toBeVisible();
+    expect(putPath).toBe('/bff/risk-controls/settings/guard');
+    expect(putBody).toEqual({
+      enabledProductTypes: RISK_SETTINGS.guard.enabledProductTypes,
+      enabledMarkets: [0],
+      bannedSymbols: RISK_SETTINGS.guard.bannedSymbols,
+      preventSameDayReentry: true,
+      prohibitManipulativeOrderPatterns: true,
+      reason: '米国の取引を止める',
+    });
+  });
+
+  test('危険な緩和（同日再エントリー禁止の無効化）は確認するまで PUT を送らない', async ({ page }) => {
+    let putBody: { preventSameDayReentry?: boolean } | null = null;
+    let putCount = 0;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /risk-controls/settings/guard': (route) => {
+        putCount += 1;
+        putBody = route.request().postDataJSON();
+        return { status: 200, body: RISK_SETTINGS };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = guardForm(page);
+
+    await form.getByRole('checkbox', { name: '同日再エントリー禁止' }).uncheck();
+    await form.getByLabel('変更理由').fill('検証のため');
+
+    const danger = form.getByRole('alert').filter({ hasText: '取引ガードを緩めます' });
+    await expect(danger).toContainText('同日再エントリー禁止を無効化');
+    const save = form.getByRole('button', { name: '保存' });
+    await expect(save).toBeDisabled();
+    // Enter での送信も同じ関門で止まる（ボタンの無効化と送信処理の二重の防御）。
+    await form.getByLabel('変更理由').press('Enter');
+    expect(putCount).toBe(0);
+
+    await danger.getByRole('checkbox', { name: '上記の危険な変更を確認しました' }).check();
+    await save.click();
+
+    await expect(form.getByText('保存しました。')).toBeVisible();
+    expect(putCount).toBe(1);
+    expect(putBody!.preventSameDayReentry).toBe(false);
+  });
+
+  test('検証エラー（PUT 400）は入力の誤りとサーバの理由を表示し、再試行しない', async ({ page }) => {
+    let putCount = 0;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /risk-controls/settings/guard': () => {
+        putCount += 1;
+        return {
+          status: 400,
+          body: { title: '入力内容に誤りがあります。', detail: '現金口座では信用買いを有効化できません。' },
+        };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = guardForm(page);
+
+    // 信用買いの新たな有効化は危険な緩和（確認を要する）。口座が対応しないためサーバが 400 で拒む（FR-19, ADR-0021 決定4-4）。
+    await form.getByRole('checkbox', { name: '信用買い' }).check();
+    await form.getByRole('checkbox', { name: '上記の危険な変更を確認しました' }).check();
+    await form.getByLabel('変更理由').fill('信用買いを試す');
+    await form.getByRole('button', { name: '保存' }).click();
+
+    const alert = form.getByRole('alert').filter({ hasText: '入力内容に誤りがあります。' });
+    await expect(alert).toContainText('現金口座では信用買いを有効化できません。');
+    await expect(form.getByText('保存しました。')).toHaveCount(0);
+    expect(putCount).toBe(1);
+  });
+
+  test('競合（PUT 409）は競合の旨を表示し、自動で再試行しない', async ({ page }) => {
+    let putCount = 0;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /risk-controls/settings/guard': () => {
+        putCount += 1;
+        return { status: 409, body: { title: '競合', detail: '競合が発生しました。' } };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = guardForm(page);
+
+    await form.getByRole('checkbox', { name: '米国' }).uncheck();
+    await form.getByLabel('変更理由').fill('米国の取引を止める');
+    await form.getByRole('button', { name: '保存' }).click();
+
+    await expect(form.getByRole('alert').filter({ hasText: '競合' })).toBeVisible();
+    // 画面の再描画を待ってから数える（再試行が遅れて飛ぶ経路も拾う）。
+    await expect(form.getByRole('button', { name: '保存' })).toBeEnabled();
+    expect(putCount).toBe(1);
+  });
+});
+
+// SC-02, FR-10, FR-20, UC-06, ADR-0040 決定1・決定3, IADR-0422, #1412（網羅表 A-037・A-039）: 損切りの実行機構（S0〜S3）。
+// 計画: moomoo SIMULATE に限り S0 以外を選べる。**設定上の発注先が moomoo REAL の間は S0 以外を選べず、理由を示す。**
+// **逆方向も止める**——S0 以外のまま発注先を REAL へ切り替える操作は、実弾切替の確認モーダルへ進ませない（警告モーダル 6）。
+function stopLossForm(page: Page) {
+  return page.getByRole('form', { name: '損切りの実行機構の変更' });
+}
+
+test.describe('SC-02 損切りの実行機構（#1412）', () => {
+  test('SIMULATE では 4 値を選べ、理由を入れて保存すると PUT する（200・本文 {method, reason}）', async ({ page }) => {
+    let putPath: string | null = null;
+    let putBody: unknown = null;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /risk-controls/settings/stop-loss-method': (route) => {
+        putPath = new URL(route.request().url()).pathname;
+        putBody = route.request().postDataJSON();
+        return { status: 200, body: RISK_SETTINGS };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = stopLossForm(page);
+
+    // 既定の発注先は moomoo SIMULATE（RISK_SETTINGS.brokerProvider = 2）。4 値とも選べる。
+    const radios = form.getByRole('radio');
+    await expect(radios).toHaveCount(4);
+    for (let i = 0; i < 4; i += 1) await expect(radios.nth(i)).toBeEnabled();
+    await expect(form.getByRole('radio', { name: 'S0 ブローカー側逆指値（既定）' })).toBeChecked();
+    await expect(form.getByText(/S0（ブローカー側逆指値）以外を選べません/)).toHaveCount(0);
+
+    // 未変更・理由が空のどちらでも保存できない。
+    const save = form.getByRole('button', { name: '損切りの実行機構を保存' });
+    await expect(save).toBeDisabled();
+    await form.getByRole('radio', { name: 'S1 ソフトウェア逆指値' }).check();
+    await expect(save).toBeDisabled();
+
+    await form.getByLabel('手法の変更理由').fill('S1 を検証する');
+    await save.click();
+
+    await expect(form.getByText('損切りの実行機構を保存しました。')).toBeVisible();
+    expect(putPath).toBe('/bff/risk-controls/settings/stop-loss-method');
+    expect(putBody).toEqual({ method: 1, reason: 'S1 を検証する' });
+  });
+
+  test('検証エラー（PUT 400）は入力の誤りを表示し、再試行しない', async ({ page }) => {
+    let putCount = 0;
+    await installBff(page, {
+      ...defaultBff(),
+      // サーバ（UpdateStopLossMethodEndpoint）の 400 の本文の形。別の経路で発注先が実弾へ変わっていた場合に返る。
+      'PUT /risk-controls/settings/stop-loss-method': () => {
+        putCount += 1;
+        return {
+          status: 400,
+          body: {
+            error: '損切りの実行機構の変更を受理できません。',
+            details: ['発注先が実弾（moomoo REAL）の間は、損切りの実行機構を S0（ブローカー側逆指値）以外にできません。'],
+          },
+        };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = stopLossForm(page);
+
+    await form.getByRole('radio', { name: 'S2 逆指値なしの建玉を許容' }).check();
+    await form.getByLabel('手法の変更理由').fill('S2 を検証する');
+    await form.getByRole('button', { name: '損切りの実行機構を保存' }).click();
+
+    await expect(form.getByRole('alert').filter({ hasText: '入力内容に誤りがあります。' })).toBeVisible();
+    await expect(form.getByText('損切りの実行機構を保存しました。')).toHaveCount(0);
+    expect(putCount).toBe(1);
+  });
+
+  test('競合（PUT 409）は競合の旨を表示し、自動で再試行しない', async ({ page }) => {
+    let putCount = 0;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /risk-controls/settings/stop-loss-method': () => {
+        putCount += 1;
+        return { status: 409, body: { title: '競合', detail: '競合が発生しました。' } };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = stopLossForm(page);
+
+    await form.getByRole('radio', { name: 'S3 他のブローカー側注文種別' }).check();
+    await form.getByLabel('手法の変更理由').fill('S3 を検証する');
+    await form.getByRole('button', { name: '損切りの実行機構を保存' }).click();
+
+    await expect(form.getByRole('alert').filter({ hasText: '競合' })).toBeVisible();
+    await expect(form.getByRole('button', { name: '損切りの実行機構を保存' })).toBeEnabled();
+    expect(putCount).toBe(1);
+  });
+
+  // 🔴 A-037（P0）: 実弾の間は S0 以外を選べない（ADR-0040 決定1）。
+  test('発注先が REAL の間は S1〜S3 を選べず、選べない理由を示し、PUT を送らない', async ({ page }) => {
+    let putCount = 0;
+    const live = { ...RISK_SETTINGS, brokerProvider: 1 };
+    await installBff(page, {
+      ...defaultBff(),
+      'GET /risk-controls/settings': { status: 200, body: live },
+      'GET /risk-controls/status': { status: 200, body: { ...RISK_STATUS, brokerProvider: 1 } },
+      'PUT /risk-controls/settings/stop-loss-method': () => {
+        putCount += 1;
+        return { status: 200, body: live };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = stopLossForm(page);
+
+    await expect(form.getByRole('radio', { name: 'S0 ブローカー側逆指値（既定）' })).toBeEnabled();
+    await expect(form.getByRole('radio', { name: 'S0 ブローカー側逆指値（既定）' })).toBeChecked();
+    for (const name of ['S1 ソフトウェア逆指値', 'S2 逆指値なしの建玉を許容', 'S3 他のブローカー側注文種別']) {
+      await expect(form.getByRole('radio', { name })).toBeDisabled();
+    }
+    await expect(form.getByText(/発注先が実弾（moomoo REAL）の間は、S0（ブローカー側逆指値）以外を選べません/)).toBeVisible();
+
+    // 理由を入れても、S0 のまま（未変更）では送れない。無効な選択肢は強制クリックしても選ばれない。
+    await form.getByLabel('手法の変更理由').fill('S1 にしたい');
+    await form.getByRole('radio', { name: 'S1 ソフトウェア逆指値' }).click({ force: true });
+    await expect(form.getByRole('radio', { name: 'S1 ソフトウェア逆指値' })).not.toBeChecked();
+    await expect(form.getByRole('button', { name: '損切りの実行機構を保存' })).toBeDisabled();
+    await form.getByLabel('手法の変更理由').press('Enter');
+    expect(putCount).toBe(0);
+  });
+
+  // 🔴 A-037（P0）の逆方向: S0 以外のまま実弾へ進めない（警告モーダル 6。確認操作が揃っていても切り替えない）。
+  test('S0 以外のまま REAL を選ぶと理由を示し、確認モーダルへ進めず PUT broker-provider を送らない', async ({ page }) => {
+    let putCount = 0;
+    await installBff(page, {
+      ...defaultBff(),
+      'GET /risk-controls/settings': { status: 200, body: { ...RISK_SETTINGS, stopLossMethod: 1 } },
+      'PUT /risk-controls/settings/broker-provider': () => {
+        putCount += 1;
+        return { status: 200, body: { settings: RISK_SETTINGS } };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = page.getByRole('form', { name: '発注先の変更' });
+
+    await form.getByRole('radio', { name: /moomoo REAL/ }).check();
+    await form.getByLabel('変更理由').fill('実弾へ移行する');
+
+    await expect(
+      form.getByRole('alert').filter({ hasText: '先に損切りの実行機構を S0（ブローカー側逆指値）へ戻してください。' }),
+    ).toContainText('S1 ソフトウェア逆指値');
+    await expect(form.getByRole('button', { name: '実弾への切替を確認する' })).toBeDisabled();
+    // Enter での送信もモーダルを開かない（送信処理の側の関門）。
+    await form.getByLabel('変更理由').press('Enter');
+    await expect(page.getByRole('dialog', { name: '実弾（moomoo REAL）への切替の確認' })).toHaveCount(0);
+    expect(putCount).toBe(0);
+  });
+
+  // 対照: S0 であれば同じ操作でモーダルへ進む（上の関門が損切りの実行機構だけに依ることを示す）。
+
+  test('対照: S0 のまま REAL を選ぶと確認モーダルへ進める', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = page.getByRole('form', { name: '発注先の変更' });
+
+    await form.getByRole('radio', { name: /moomoo REAL/ }).check();
+    await form.getByLabel('変更理由').fill('実弾へ移行する');
+    await expect(form.getByText('先に損切りの実行機構を S0（ブローカー側逆指値）へ戻してください。', { exact: false })).toHaveCount(0);
+    await form.getByRole('button', { name: '実弾への切替を確認する' }).click();
+    await expect(page.getByRole('dialog', { name: '実弾（moomoo REAL）への切替の確認' })).toBeVisible();
+  });
+});
+
+// SC-02, FR-20, UC-06, #1412（網羅表 A-040）: 運用段階は参照表示であり、本画面から変更しない（段階の昇格の承認は Discord Bot）。
+// 網羅表の A-040 は「ガード・Stage は参照のみ」だが、ガードは計画の改定（planning#822）で変更可能になった（上の A-038）。
+test.describe('SC-02 運用段階と発注先（参照）（#1412）', () => {
+  test('参照の区画には入力要素が無い', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+
+    const panel = page.getByRole('heading', { name: '運用段階と発注先（参照）' }).locator('xpath=..');
+    await expect(panel.getByText('段階の既定発注先')).toBeVisible();
+    await expect(panel.locator('input, select, textarea, button, form')).toHaveCount(0);
   });
 });
