@@ -41,6 +41,10 @@ import { QueryPhase } from '@ai-stock-trading/components/QueryPhase';
 // 置き換えてしまう）。**0 件と失敗の区別は保つ**——空の判定は成功したデータに対してだけ行い、
 // 「監視銘柄はありません。」は成功経路の中でしか描かれない。
 
+// NFR-19, #1414: フォーカスの着地点として JSX と効果の両方から引く id（片方だけ変えて壊さないため定数にする）。
+const DELETE_REASON_INPUT_ID = 'wl-delete-reason';
+const NEW_SYMBOL_INPUT_ID = 'wl-new-symbol';
+
 // (Symbol, Market) の同一性キー。区切りは銘柄コードに現れない縦棒を用いる（削除確認の対象特定に使う）。
 function keyOf(s: MonitoredSymbol): string {
   return `${s.symbol}|${s.market}`;
@@ -90,20 +94,28 @@ export function WatchlistForm() {
 
   // 🔴 NFR-19, #1414（WCAG 2.4.3 フォーカス順序・2.1.1 キーボード）: **確認パネルの開閉でフォーカスを失わない。**
   // 行の「削除」は確認中に無効化されるため、押した直後にフォーカスが `<body>` へ落ちていた（E2E で実測）。
-  // キーボードの利用者は確認パネルへ戻るのに頁の先頭から Tab を辿り直すことになる。開いたら削除理由へ、
-  // 取り消したら押した行の「削除」へ戻す（削除し終えて行が消えたら、残る先頭の行の「削除」へ）。
+  // キーボードの利用者は確認パネルへ戻るのに頁の先頭から Tab を辿り直すことになる。着地点は次のとおり。
+  //   - 開いたら削除理由へ。
+  //   - 取り消したら、押した行の「削除」へ。
+  //   - 削除し終えたら、**削除した行を探さず**、残る行の先頭の「削除」へ（行が無ければ追加フォームの銘柄コードへ）。
+  //     削除した行は一覧の再取得まで DOM に残り得るため、そこへ当てると再取得で消えた時点で `<body>` へ落ちる
+  //     （#1467 の AI レビュー）。
   // 要素は id とデータ属性で引く（`@platform/ui` の `Input` は単独リポのスタブでは ref を受けないため）。
-  const returnFocusKey = useRef<string | null>(null);
+  const focusAfterClose = useRef<{ kind: 'cancelled' | 'deleted'; key: string } | null>(null);
   useEffect(() => {
     if (pendingKey !== null) {
-      document.getElementById('wl-delete-reason')?.focus();
+      document.getElementById(DELETE_REASON_INPUT_ID)?.focus();
       return;
     }
-    const key = returnFocusKey.current;
-    if (key === null) return;
-    returnFocusKey.current = null;
+    const target = focusAfterClose.current;
+    if (target === null) return;
+    focusAfterClose.current = null;
     const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button[data-watchlist-delete]'));
-    (buttons.find((b) => b.dataset.watchlistDelete === key) ?? buttons[0])?.focus();
+    const next =
+      target.kind === 'cancelled'
+        ? buttons.find((b) => b.dataset.watchlistDelete === target.key)
+        : buttons.find((b) => b.dataset.watchlistDelete !== target.key);
+    (next ?? document.getElementById(NEW_SYMBOL_INPUT_ID))?.focus();
   }, [pendingKey]);
 
   const canAdd = newSymbol.trim() !== '' && newReason.trim() !== '' && !addSymbol.isPending;
@@ -134,12 +146,12 @@ export function WatchlistForm() {
   function beginDelete(target: MonitoredSymbol): void {
     // 削除は破壊的なため、行の「削除」では確定せず確認パネルを開く（明示確認・IADR-0090 決定 3）。
     setPendingKey(keyOf(target));
-    returnFocusKey.current = keyOf(target);
     setDeleteReason('');
     setDeleteError(null);
   }
 
   function cancelDelete(): void {
+    if (pendingKey !== null) focusAfterClose.current = { kind: 'cancelled', key: pendingKey };
     setPendingKey(null);
     setDeleteReason('');
     setDeleteError(null);
@@ -157,6 +169,7 @@ export function WatchlistForm() {
         market: target.market,
         reason: deleteReason.trim(),
       });
+      focusAfterClose.current = { kind: 'deleted', key: keyOf(target) };
       setPendingKey(null);
       setDeleteReason('');
       setAddNotice(null);
@@ -243,10 +256,10 @@ export function WatchlistForm() {
                   <p role="alert" className="text-[11px] text-danger">
                     {`${pendingTarget.symbol}（${marketLabel(pendingTarget.market)}）${i18n._(msg`を監視から削除します。理由を入力して確定してください。`)}`}
                   </p>
-                  <Label htmlFor="wl-delete-reason">{i18n._(msg`削除理由`)}</Label>
+                  <Label htmlFor={DELETE_REASON_INPUT_ID}>{i18n._(msg`削除理由`)}</Label>
                   {/* 削除理由は確認パネル内でのみ必須にする。追加フォームの送信を妨げないよう独立した入力にする。 */}
                   <Input
-                    id="wl-delete-reason"
+                    id={DELETE_REASON_INPUT_ID}
                     value={deleteReason}
                     onChange={(e) => setDeleteReason(e.target.value)}
                     required
@@ -257,7 +270,10 @@ export function WatchlistForm() {
                       type="button"
                       variant="danger"
                       onClick={() => void confirmDelete(pendingTarget)}
-                      disabled={deleteReason.trim() === '' || removeSymbol.isPending}
+                      // NFR-19, #1467: 送信中は `disabled` にしない（押した要素が無効になるとフォーカスが <body> へ落ちる）。
+                      // 二重送信は confirmDelete が isPending で止める。支援技術には aria-disabled で伝える。
+                      disabled={deleteReason.trim() === ''}
+                      aria-disabled={removeSymbol.isPending || undefined}
                     >
                       {i18n._(msg`監視から削除`)}
                     </Button>
@@ -281,9 +297,9 @@ export function WatchlistForm() {
                   </legend>
                   <div className="flex flex-wrap items-end gap-2">
                     <div>
-                      <Label htmlFor="wl-new-symbol">{i18n._(msg`監視銘柄コード`)}</Label>
+                      <Label htmlFor={NEW_SYMBOL_INPUT_ID}>{i18n._(msg`監視銘柄コード`)}</Label>
                       <Input
-                        id="wl-new-symbol"
+                        id={NEW_SYMBOL_INPUT_ID}
                         value={newSymbol}
                         onChange={(e) => setNewSymbol(e.target.value)}
                       />

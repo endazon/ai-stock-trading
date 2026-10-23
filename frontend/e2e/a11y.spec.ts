@@ -226,4 +226,57 @@ test.describe('キーボード経路（#1414）', () => {
     expect(bodies).toEqual([{ symbol: 'AAPL', market: 1, reason: '監視を終える' }]);
     await expect(watchlistRowDelete(page, '7203')).toBeFocused();
   });
+
+  // #1467 の AI レビュー 🟡: 削除の成功後に一覧の再取得が遅れても、フォーカスを <body> へ落とさない
+  // （キーボードの利用者の位置を失わない）。再取得を 1.5 秒遅らせ、その間と後の両方を見る。
+  test('監視銘柄の削除確認: 削除後の再取得が遅れても、フォーカスは <body> へ落ちず、残る行へ移る', async ({ page }) => {
+    let watchlist: { symbol: string; market: number }[] = [...WATCHLIST];
+    let deleted = false;
+    await openAsOwner(page, '/settings/risk', 'リスク設定', {
+      ...defaultBff(),
+      'GET /monitor/watchlist': async () => {
+        if (deleted) await new Promise((resolve) => setTimeout(resolve, 1_500));
+        return { status: 200, body: watchlist };
+      },
+      'DELETE /monitor/watchlist': () => {
+        deleted = true;
+        watchlist = watchlist.filter((w) => w.symbol !== 'AAPL');
+        return { status: 200, body: watchlist };
+      },
+    });
+
+    await watchlistRowDelete(page, 'AAPL').focus();
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('監視を終える');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Enter');
+
+    // 送信中（DELETE の応答の後、再取得の完了まで 1.5 秒）は、押した「監視から削除」にフォーカスが残る。
+    // 以前は押したボタンが送信中に無効化され、この間フォーカスが <body> にあった（実測）。
+    const commit = deleteConfirm(page).getByRole('button', { name: '監視から削除' });
+    await expect(commit).toBeFocused();
+    await expect(commit).toHaveAttribute('aria-disabled', 'true');
+    // 終わった後は、削除していない行の「削除」へ移る（削除した行を探さない）。
+    await expect(watchlistRowDelete(page, '7203')).toBeFocused();
+    await expect(page.getByRole('table', { name: '監視銘柄' }).getByText('AAPL')).toHaveCount(0);
+    await expect(watchlistRowDelete(page, '7203')).toBeFocused();
+  });
+
+  // 同じ 🟡 の残る半分: 削除の成功後も、削除した行が DOM に残っていることがある（再取得が古い一覧を返す・
+  // 一覧の反映が遅れる）。そこへフォーカスを当てると、行が消えた時点で <body> へ落ちる。削除した行は探さない。
+  test('監視銘柄の削除確認: 削除した行が一覧に残っていても、そこではなく残る行へフォーカスを移す', async ({ page }) => {
+    await openAsOwner(page, '/settings/risk', 'リスク設定');
+    // defaultBff() の再取得は元の 2 行（AAPL を含む）を返し続ける。
+
+    await watchlistRowDelete(page, 'AAPL').focus();
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('監視を終える');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Enter');
+
+    await expect(deleteConfirm(page)).toHaveCount(0);
+    await expect(watchlistRowDelete(page, '7203')).toBeFocused();
+    await expect(watchlistRowDelete(page, 'AAPL')).not.toBeFocused();
+  });
 });
+
