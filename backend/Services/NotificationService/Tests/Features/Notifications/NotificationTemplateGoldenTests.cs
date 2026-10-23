@@ -163,6 +163,26 @@ public class NotificationTemplateGoldenTests
                 "Llm 費用が月次上限の 100% に到達しました（2026-08・Halted）。",
                 NotificationSeverity.Critical)),
 
+        // 🔴 T-10-3045, FR-10, #1423 M-3, ADR-0073 決定3: 基準資金の観測の欠けによる新規建ての停止（リスク統制の発動・緊急度 高）。
+        // 止めていないもの（手仕舞い・損切り）と自動解除が本文から欠けると、利用者は建玉の扱いと再開の要否を誤る。
+        ["CapitalBaselineObservationMissing"] = (
+            new CapitalBaselineObservationMissing(new DateOnly(2026, 8, 31), new DateOnly(2026, 8, 29), false, T),
+            new NotificationMessage(
+                "リスク統制: 基準資金を照会できず新規建てを停止",
+                "口座照会（基準資金）が直前の米国東部暦日に 1 件も成功していません（最後の観測 2026-08-29・判定日 2026-08-31）。"
+                    + "**古い基準資金では統制を判定しないため、新規建てを止めています。手仕舞い・損切りは止めていません。**"
+                    + "口座照会・発注執行の巡回・ブローカーの接続を確認してください。直前の暦日の観測が成功すれば自動で解除されます。",
+                NotificationSeverity.Critical)),
+
+        ["CapitalBaselineObservationMissing/鮮度超過"] = (
+            new CapitalBaselineObservationMissing(new DateOnly(2026, 8, 31), new DateOnly(2026, 8, 25), true, T),
+            new NotificationMessage(
+                "リスク統制: 基準資金を照会できず新規建てを停止",
+                "口座照会（基準資金）が直前の米国東部暦日に 1 件も成功していません（最後の観測 2026-08-25・判定日 2026-08-31・鮮度の上限も超過）。"
+                    + "**古い基準資金では統制を判定しないため、新規建てを止めています。手仕舞い・損切りは止めていません。**"
+                    + "口座照会・発注執行の巡回・ブローカーの接続を確認してください。直前の暦日の観測が成功すれば自動で解除されます。",
+                NotificationSeverity.Critical)),
+
         ["DailyPolicyUnconfirmed"] = (
             new DailyPolicyUnconfirmed(new DateOnly(2026, 8, 28), T),
             new NotificationMessage(

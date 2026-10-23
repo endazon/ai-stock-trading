@@ -668,6 +668,17 @@ public static class NotificationFormatter
     private static string UnsentPurposes(string purpose, IReadOnlyDictionary<string, int>? byPurpose) =>
         byPurpose is { Count: > 0 } ? LlmGatewayUnsent.FormatBreakdown(byPurpose) : $"用途 {purpose}";
 
+    // 🔴 FR-10, FR-09, SC-03, #1423 M-3, ADR-0073 決定3, IADR-0581: 基準資金の口座照会が直前の米国東部暦日に 1 件も成功せず、
+    // 新規建てを拒否している。**リスク統制の発動**（新規建てを止める）であり、緊急度は高＝Critical（FxRateStale の停止側と同じ重み）。
+    // 発行側が同じ取引日につき 1 回に抑える。止めていないもの（手仕舞い・損切り）と、自動で解除されることを本文に書く。
+    public static NotificationMessage From(CapitalBaselineObservationMissing e) => new(
+        "リスク統制: 基準資金を照会できず新規建てを停止",
+        $"口座照会（基準資金）が直前の米国東部暦日に 1 件も成功していません（最後の観測 {e.LatestObservedTradingDay:yyyy-MM-dd}・"
+            + $"判定日 {e.TradingDay:yyyy-MM-dd}{(e.Stale ? "・鮮度の上限も超過" : string.Empty)}）。"
+            + "**古い基準資金では統制を判定しないため、新規建てを止めています。手仕舞い・損切りは止めていません。**"
+            + "口座照会・発注執行の巡回・ブローカーの接続を確認してください。直前の暦日の観測が成功すれば自動で解除されます。",
+        NotificationSeverity.Critical);
+
     // UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップ。確定を促す注意喚起（Warning）。
     // 日報が未確定の間は取引が見送られ続けるため、利用者に確定を促す（同一営業日内は 1 回に抑止済み・IADR-0096）。
     public static NotificationMessage From(DailyPolicyUnconfirmed e) => new(

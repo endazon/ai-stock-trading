@@ -299,6 +299,16 @@ public sealed class PositionCloseAbandonedAuditHandler(IAuditEventStore store, I
     }
 }
 
+// FR-10, FR-11, #1423 M-3, ADR-0073, IADR-0581: 基準資金の観測の欠けによる新規建ての拒否を中央監査台帳へ記録する。
+public sealed class CapitalBaselineObservationMissingAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(CapitalBaselineObservationMissing message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップ（取引判断 #11）を中央監査台帳へ記録する（全イベントの時系列記録・FR-11）。
 public sealed class DailyPolicyUnconfirmedAuditHandler(IAuditEventStore store, IClock clock)
 {

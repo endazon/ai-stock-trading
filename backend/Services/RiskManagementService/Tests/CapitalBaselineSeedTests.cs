@@ -39,26 +39,41 @@ public class CapitalBaselineSeedTests
         return collapsed;
     }
 
-    // T-10-682（プロパティベース）: 採用しているさかのぼり日数では、走査区間のどの分にも破れが無い。
-    // 48 時間前は暦日（最長 25 時間）を必ず 1 日以上またぐため、当日と同じ米国東部暦日には落ちない。
+    // T-10-682（プロパティベース。#1423 M-3 で書き直し）: 仕込みの観測は、走査区間の**どの時刻を起点にしても
+    // 直前の米国東部暦日**に落ちる。#1423 M-3（ADR-0073 決定1）以降、2 暦日前の行は「観測の欠け」として未供給になる
+    // ため、旧来の「当日より前でありさえすればよい（48 時間前）」では足りない。7 分刻み（夏時間の切り替えの前後を含む）。
     [Fact]
-    public void 前取引日シードは_どの瞬間でも_当日より前の米国東部暦日に落ちる()
+    public void 前取引日シードは_どの瞬間でも_直前の米国東部暦日に落ちる()
     {
-        var collapsed = CollapsingInstants(RiskWorkerWebApplicationFactory.CapitalBaselineSeedDaysAgo);
+        var broken = new List<DateTimeOffset>();
+        for (var now = SweepFrom; now < SweepTo; now = now.AddMinutes(7))
+        {
+            var today = TradingDay.Of(now, Market.UnitedStates);
+            var seeded = TradingDay.Of(
+                RiskWorkerWebApplicationFactory.PreviousTradingDayObservation(now), Market.UnitedStates);
+            if (seeded != today.AddDays(-1))
+                broken.Add(now);
+        }
 
-        collapsed.Should().BeEmpty(
-            "シードが当日の取引日に落ちると EfCapitalBaselineStore.GetCurrent() が null を返し、"
-            + "新規建てが CapitalBaselineUnavailable で止まる");
+        broken.Should().BeEmpty(
+            "シードが当日へ落ちれば行が判定から外れ、2 暦日前へ落ちれば観測の欠けとして未供給になる（いずれも "
+            + "新規建てが CapitalBaselineUnavailable で止まる）");
     }
 
     // T-10-682（続き）: 前取引日であるだけでは足りない。鮮度上限（既定 4 日）を超えると
-    // GetCurrent() は同じく null を返すため、さかのぼりは上限の内側でなければならない。
+    // GetCurrent() は同じく null を返すため、観測は上限の内側でなければならない（直前の暦日なら最長でも 2 日弱）。
     [Fact]
     public void 前取引日シードは_基準資金の鮮度上限の内側に収まる()
     {
-        var age = TimeSpan.FromDays(RiskWorkerWebApplicationFactory.CapitalBaselineSeedDaysAgo);
+        var worst = TimeSpan.Zero;
+        for (var now = SweepFrom; now < SweepFrom.AddDays(14); now = now.AddMinutes(7))
+        {
+            var age = now - RiskWorkerWebApplicationFactory.PreviousTradingDayObservation(now);
+            if (age > worst)
+                worst = age;
+        }
 
-        age.Should().BeLessThan(new CapitalBaselineOptions().MaxAge,
+        worst.Should().BeLessThan(new CapitalBaselineOptions().MaxAge,
             "鮮度上限を超えた観測は「照会できていない」と同じに扱われる（IADR-0354 決定4）");
     }
 

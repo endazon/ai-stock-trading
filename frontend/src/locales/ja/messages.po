@@ -1354,6 +1354,11 @@ msgstr "数量"
 msgid "新規建てのみ"
 msgstr "新規建てのみ"
 
+#. placeholder {0}: view.capitalBaselineLatestTradingDay ?? METRIC_NOT_SUPPLIED_TEXT
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "新規建てを停止中: 直前の米国東部暦日に口座照会（基準資金）が成功していません（最後の観測: {0}）。手仕舞い・損切りは止めていません。直前の暦日の観測が成功すれば自動で解除されます。"
+msgstr "新規建てを停止中: 直前の米国東部暦日に口座照会（基準資金）が成功していません（最後の観測: {0}）。手仕舞い・損切りは止めていません。直前の暦日の観測が成功すれば自動で解除されます。"
+
 #: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
 msgid "方向"
 msgstr "方向"

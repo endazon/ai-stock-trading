@@ -145,11 +145,16 @@ public class CapitalBaselineTests
         zero.Should().Contain(RejectionReason.ShortExposureExceeded);
     }
 
-    // T-10-511: 鮮度（実装判断・IADR-0354 決定4）。既定 4 日。**境界の両側**を採る。
+    // T-10-511: 鮮度（実装判断・IADR-0354 決定4）。既定 4 日。
+    // 🔴 #1423 M-3, ADR-0073 決定1, IADR-0581 決定2: **新規建ての可否は「直前の米国東部暦日の観測があるか」で決まり、
+    // 4 日の鮮度はそれに包まれる。** 旧 T-10-511 の「ちょうど 4 日前の観測は使える」は成り立たなくなった（2 暦日前で既に止まる）。
+    // 鮮度切れは帰結の区別（UnavailableStale）としてだけ残る。
     [Theory]
-    [InlineData(4, true)]  // ちょうど 4 日前の観測は使える
-    [InlineData(5, false)] // 超えたら「照会できていない」と同じ扱い
-    public void 鮮度が切れた観測は基準資金として採らない(int daysAgo, bool supplied)
+    [InlineData(1, true, nameof(CapitalBaselineReadOutcome.Supplied))]
+    [InlineData(2, false, nameof(CapitalBaselineReadOutcome.UnavailableMissingPreviousDay))]
+    [InlineData(4, false, nameof(CapitalBaselineReadOutcome.UnavailableMissingPreviousDay))]
+    [InlineData(5, false, nameof(CapitalBaselineReadOutcome.UnavailableStale))]
+    public void 鮮度が切れた観測は基準資金として採らない(int daysAgo, bool supplied, string outcome)
     {
         var dbName = Guid.NewGuid().ToString();
         var observedAt = Now.AddDays(-daysAgo);
@@ -159,6 +164,7 @@ public class CapitalBaselineTests
         store.Record(3_000m, observedAt);
 
         (store.GetCurrent() is not null).Should().Be(supplied);
+        store.Read().Outcome.ToString().Should().Be(outcome);
     }
 
     // T-10-515, FR-10, #869, IADR-0354 決定7: **0 以下の行は「判定できる値」として扱わない。**
@@ -217,9 +223,9 @@ public class CapitalBaselineTests
     // 取引日で最新の行）は**前取引日の正の行を返し続け**、鮮度（既定 4 日）が切れるまで
     // **新規建ては止まらない**。
     //
-    // 🔴 **これは「読めなかった日があっても前取引日の値を使う」という設計（鮮度 4 日の存在理由そのもの）
-    // の帰結であり、意図した挙動である。** 本テストは「**残高 0 なら結局は新規建てが通らない**」という
-    // **誤った理解**が記録へ戻らないように、実際の向きを固定する（残高 0 を検知して止めるかは #889 で別途扱う）。
+    // 🔴 #1423 M-3, ADR-0073（2026-10-24 改め）: **止まらないのは残高 0 の「当日」だけである。** 当日の行は元々判定に
+    // 使わないため、当日のうちは前暦日の正の値で新規建てが通る（当日のうちに止めるかは別の裁定で、ADR-0073 の射程の外）。
+    // 0 の日が明ければ、その暦日の行が無いので翌暦日から止まる（下の T-10-2400 系が固定する）。
     [Fact]
     public void 供給側が0を弾いた日は前取引日の正の値が使われ続ける_新規建ては止まらない()
     {
@@ -234,7 +240,7 @@ public class CapitalBaselineTests
         baseline.Should().NotBeNull("0 の日は行が書かれないため、前取引日の行がそのまま残る");
         baseline!.EquityInBase.Should().Be(100_000m);
         RiskEvaluator.Evaluate(Entry(100m), Settings(), Snapshot(baseline.EquityInBase))
-            .IsApproved.Should().BeTrue("鮮度が切れるまでは古い正の分母で新規建てが通る（受け入れた残余リスク）");
+            .IsApproved.Should().BeTrue("0 を返した当日のうちは前暦日の正の分母で新規建てが通る（ADR-0073 の射程の外）");
     }
 
     // T-10-516（対の否定形・**2 つの門の非対称**）: 🔴 **人手で 0 を 1 行入れた場合は止まる。**
@@ -259,13 +265,13 @@ public class CapitalBaselineTests
     // 平常どおり動いて見え、人手投入の 0 は黙って `null` になるだけだった。**気づけなければ止まらない**
     // （issue の方向 3 の害そのもの）ため、裁定がどちらへ転んでも観測は前提条件である。
     //
-    // 🔴 **門は変えない。** どの帰結でも `GetCurrent()` が返す値は従来と同じであることを併せて表明する。
+    // 🔴 #1423 M-3, ADR-0073 決定1・2, IADR-0581: **門を変えた。** 直前の暦日の観測が欠けたら未供給（新規建ての拒否）である。
     [Theory]
     // 前取引日（1 日前）の行がある＝平常。
     [InlineData("previous-day", nameof(CapitalBaselineReadOutcome.Supplied), true)]
-    // 🔴 2 日前の行しかない＝直前の取引日の観測が 1 件も届いていない（残高 0 の日・照会障害・プロセス停止）。
-    //    **値は返るので新規建ては通り続ける。** #889 の症状そのものである。
-    [InlineData("gap", nameof(CapitalBaselineReadOutcome.SuppliedWithGap), true)]
+    // 🔴 2 日前の行しかない＝直前の暦日の観測が 1 件も成功していない（残高 0 の日・照会障害・プロセス停止）。
+    //    #1423 M-3 以降は**未供給**（新規建ての拒否）。旧来は値を返し新規建てが通り続けた（#889 の症状・旧 SuppliedWithGap）。
+    [InlineData("gap", nameof(CapitalBaselineReadOutcome.UnavailableMissingPreviousDay), false)]
     [InlineData("none", nameof(CapitalBaselineReadOutcome.UnavailableNoRow), false)]
     [InlineData("stale", nameof(CapitalBaselineReadOutcome.UnavailableStale), false)]
     [InlineData("non-positive", nameof(CapitalBaselineReadOutcome.UnavailableNonPositive), false)]
@@ -297,25 +303,25 @@ public class CapitalBaselineTests
 
         var baseline = store.GetCurrent();
 
-        (baseline is not null).Should().Be(supplied, "本変更は観測だけで、門（返す値）は変えていない");
+        (baseline is not null).Should().Be(supplied, "直前の暦日の観測が無ければ未供給である（ADR-0073 決定1）");
         capture.TagValuesOf(BusinessMetricNames.RiskCapitalBaselineReads, BusinessMetricNames.TagOutcome)
             .Should().Equal(expectedOutcome);
     }
 
-    // T-10-668（続き）: 🔴 **観測の欠落は警告として残る。** 計器だけだと、ダッシュボードを見ていない間は
-    // 「古い分母で統制が回っている」ことに気づけない。値が返っている状態なので、他に異常の兆候が出ない。
+    // T-10-668（続き・#1423 M-3 で改め）: 🔴 **観測の欠けで止めたことは警告として残る。** 止まった理由が
+    // ログから読めなければ、運用は「なぜか未供給」としか見えない（#889 が人手の 0 について直したのと同じ）。
     [Fact]
-    public void 観測に欠落があるまま供給したときは警告が残る()
+    public void 観測に欠落があるときは未供給とし警告が残る()
     {
         using var db = NewContext(Guid.NewGuid().ToString());
         var logger = new RecordingLogger<EfCapitalBaselineStore>();
         var store = NewStore(db, logger: logger);
         store.Record(100_000m, Now.AddDays(-3));
 
-        store.GetCurrent()!.EquityInBase.Should().Be(100_000m, "門は変えていない（値は返る）");
+        store.GetCurrent().Should().BeNull("直前の米国東部暦日の観測が無い（ADR-0073 決定1）");
 
         logger.Entries.Should().ContainSingle(e =>
-            e.Level == LogLevel.Warning && e.Message.Contains("直前の取引日の観測ではありません"));
+            e.Level == LogLevel.Warning && e.Message.Contains("直前の米国東部暦日の観測がないため未供給"));
     }
 
     // T-10-668（続き・否定形）: **平常の読み出しではログを出さない。**

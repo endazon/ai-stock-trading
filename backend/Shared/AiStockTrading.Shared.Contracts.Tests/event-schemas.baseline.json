@@ -80,6 +80,12 @@
     "Symbol": "String",
     "UnexplainedQuantity": "Int32"
   },
+  "CapitalBaselineObservationMissing": {
+    "LatestObservedTradingDay": "DateOnly",
+    "OccurredAt": "DateTimeOffset",
+    "Stale": "Boolean",
+    "TradingDay": "DateOnly"
+  },
   "CloseReducedForInFlightCloses": {
     "ApprovedQuantity": "Int32",
     "BrokerClosableQuantity": "Int32",
