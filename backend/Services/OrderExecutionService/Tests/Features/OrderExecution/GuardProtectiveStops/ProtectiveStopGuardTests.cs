@@ -298,12 +298,16 @@ public class ProtectiveStopGuardTests
 
         public bool Held { get; private set; }
 
+        /// <summary>直列化を取れた瞬間に呼ばれる（直列化を待つ間に他の経路が約定した、を作る）。</summary>
+        public Action? OnAcquired { get; set; }
+
         public Task<IAsyncDisposable> AcquireAsync(ClosePositionKey key, CancellationToken cancellationToken)
         {
             if (unavailable)
                 throw new ClosePositionLockUnavailableException(key, "試験");
             Acquired.Add(key);
             Held = true;
+            OnAcquired?.Invoke();
             return Task.FromResult<IAsyncDisposable>(new Release(this));
         }
 
@@ -353,6 +357,53 @@ public class ProtectiveStopGuardTests
         blockedResult.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle()
             .Which.Remediation.Should().Be(ProtectiveStopRemediation.None, "人手対応を求める（無音にしない）");
         blockedStops.Find(unavailableStop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active, "次の巡回で撃ち直す");
+    }
+
+    // 🔴 T-10-3011, NFR, FR-10, #1446, IADR-0575 決定 3（2026-10-23 追記）: ガードは直列化を取った後に建玉を照会し直し、
+    // 送る数量を min(巡回の先頭の数量, 照会し直した決済方向の建玉) にする。直列化を待つ間に他の経路（判断の決済・S1）が約定していれば、
+    //   一部約定（10 → 4 株）→ 4 株だけ送る／全量約定（→ 0 株）→ 送らず記録は Active のまま・保護喪失の通知も出さない／
+    //   照会できない → 送らず人手対応（None）。古い数量のまま送ると、押さえない証券会社では超過の売り（反対建玉）になる。
+    [Theory]
+    [InlineData(4, 4)]
+    [InlineData(0, 0)]
+    [InlineData(-1, 0)] // -1 = 照会できない（null）
+    public async Task T_10_3011_直列化を待つ間に他の決済が約定したら照会し直した数量を超えて送らない(int heldAfterWait, int expectedSent)
+    {
+        var closeLock = new RecordingCloseLock();
+        var stop = ActiveStop();
+        var (guard, broker, stops, _) = NewGuard(stop, closeLock);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Cancelled);
+        broker.Positions = [Long(10)];
+        broker.RejectReplacement = true;
+        closeLock.OnAcquired = () => broker.Positions = heldAfterWait switch
+        {
+            < 0 => null,
+            0 => [],
+            _ => [Long(heldAfterWait)],
+        };
+
+        var result = await guard.RunOnceAsync(10);
+
+        broker.MarketCloseCount.Should().Be(expectedSent > 0 ? 1 : 0);
+        if (expectedSent > 0)
+        {
+            broker.LastCloseIntent!.Quantity.Should().Be(expectedSent, "🔴 照会し直した建玉を超えて売らない");
+            result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle()
+                .Which.Quantity.Should().Be(expectedSent, "通知・台帳の数量も送った数量");
+        }
+        else if (heldAfterWait == 0)
+        {
+            result.Events.OfType<ProtectiveStopCoverageLost>().Should().BeEmpty("建玉はもう無い（次の巡回が完了させる）");
+            stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+        }
+        else
+        {
+            result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle()
+                .Which.Remediation.Should().Be(ProtectiveStopRemediation.None, "照会できなければ送らず人手対応を求める");
+            stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+        }
+
+        closeLock.Held.Should().BeFalse();
     }
 
     [Fact]

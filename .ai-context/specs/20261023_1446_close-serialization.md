@@ -51,7 +51,7 @@ AST の共通配線（`UseAiStockTradingRabbitMq`）と同じ形（`DisableConve
 | `OrderExecutionAppService` の決済（`:436-439`。指値／成行） | 承認（`OrderApproved`）の受信。判断・利用者の手仕舞い・自動縮小・閉場前の手仕舞い（IADR-0561）が同じ口 | 建玉照会・処理中の決済の記録 | **直列化する**（決定 1。照会から記録の保存まで） |
 | `SoftwareStopExecutor.TryCloseCoreAsync` の成行（S1） | `StopLossTriggeredHandler`（別キュー）と常駐ガードの撃ち直し | 建玉照会・処理中の判断／利用者の決済の記録 | **直列化する**（決定 1。ガードの巡回の先頭の照会は使わず、直列化の後に照会し直す） |
 | `OrderExecutionAppService.CloseUnprotectedPositionAsync`（保護喪失の成行手仕舞い） | 承認のエントリー・突合（`OrderReservationReconciler`→`ProtectAsync`）・約定追跡（`OrderFillPoller`→`ResolveUnconfirmedEntryCancelAsync`） | 自分のエントリーの約定だけ | **直列化する**（決定 3。後から来る判断の決済・S1 がこの記録を読むため） |
-| `ProtectiveStopGuard.ReplaceOrCloseAsync` の成行の手仕舞い | 常駐ガードの巡回 | 巡回の先頭の照会 | **直列化する**（決定 3。数量は読み直さない＝残余） |
+| `ProtectiveStopGuard.ReplaceOrCloseAsync` の成行の手仕舞い | 常駐ガードの巡回 | 巡回の先頭の照会（［2026-10-23 追記 / PR #1447 の再レビュー］直列化の後に照会し直す） | **直列化する**（決定 3。数量は min(先頭, 照会し直し)） |
 | エントリー（Open）の送信 | 承認の受信 | — | 対象外（決済ではない。新規建ての審査の直列化は IADR-0529） |
 | 保護逆指値（`PlaceStopOrderAsync`・`PlaceAlternativeStopOrderAsync`）の初回・張り直し | 承認・ガード | — | **対象外**: 保護レグは処理中の決済として差し引かない（ADR-0050 決定 1）。直列にしても差し引きの算術は変わらない。売れる数量を押さえるかは決定 3 の実弾の確認 |
 | 突合（`OrderReservationReconciler`） | 常駐 | — | 自分では送らない（保護喪失の成行は上の行で直列化される） |
@@ -86,6 +86,7 @@ IADR-0575 決定 1〜4。比較（(a) リスナの明示 / (b) DB advisory lock 
 | 取れないときは送らない（承認・S1）。新規建ては直列化を使わない | T-10-3007 |
 | 本番の組み立てで 3 つの組み立てが同じ直列化を受け取り、関係 DB なら advisory lock を選ぶ。InMemory のホストでも 3 つは同じセマフォで、別のホストとは共有しない | T-10-3008（変異 CS3） |
 | ガードの成行は直列化を握って送り、取れなければ送らない | T-10-3009 |
+| ガードは直列化を待つ間に他の経路が約定したら、照会し直した数量を超えて送らない（一部・全量・照会不能） | T-10-3011（変異 CS4: 照会し直しの数量を使わない → 赤） |
 | 実 DB のロックが別の接続（Pod）をまたいで待たせ、上限・不達で取れない例外になり、後発が先発の書き込みを読める | T-10-3010（Testcontainers の結合試験） |
 | 既存の試験の契約を壊さない | 既存の T-10-796（楽観並行の後ろ盾は別の直列化を渡して窓を作る）・T-10-1820・T-10-1770・T-10-358（S1 は直列化の後に照会し直す）を追随 |
 
