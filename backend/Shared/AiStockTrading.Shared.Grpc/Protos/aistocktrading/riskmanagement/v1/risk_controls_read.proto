@@ -284,6 +284,9 @@ enum EntryBlocker {
   // #1286 / IADR-0521 決定 4: 全注文の拒否（any_order にだけ現れる。送り手の `OrderStateBlockers`）。
   ENTRY_BLOCKER_MARKET_DISABLED = 9;
   ENTRY_BLOCKER_BANNED_SYMBOL = 10;
+  // #1433 / IADR-0572 決定1: 閉場前の新規建ての締め切り（ADR-0070）・テーマの同時保有の上限（ADR-0071）。long_side / short_side に現れる。
+  ENTRY_BLOCKER_PRE_CLOSE_ENTRY_CUTOFF = 11;
+  ENTRY_BLOCKER_THEME_CONCENTRATION_EXCEEDED = 12;
 }
 
 // 1 方向の理由の一覧。🔴 入れ物の欠落は「不明」、空の入れ物は「確定する拒否は無い」。

@@ -266,6 +266,9 @@ public static class RiskReadWireMapping
         RejectionReason.TradingPaused => Proto.EntryBlocker.TradingPaused,
         RejectionReason.StoppedOutSameDay => Proto.EntryBlocker.StoppedOutSameDay,
         RejectionReason.DecisionExitSameDay => Proto.EntryBlocker.DecisionExitSameDay,
+        // #1433, IADR-0572 決定1: 閉場前の新規建ての締め切り・テーマの同時保有の上限。
+        RejectionReason.PreCloseEntryCutoff => Proto.EntryBlocker.PreCloseEntryCutoff,
+        RejectionReason.ThemeConcentrationExceeded => Proto.EntryBlocker.ThemeConcentrationExceeded,
         RejectionReason.GoodFaithViolationLimitReached => Proto.EntryBlocker.GoodFaithViolationLimitReached,
         RejectionReason.MaxPositionsExceeded => Proto.EntryBlocker.MaxPositionsExceeded,
         RejectionReason.DailyLossLimitReached => Proto.EntryBlocker.DailyLossLimitReached,

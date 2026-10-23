@@ -19,5 +19,11 @@ public interface IInFlightCloseProvider
 /// <summary>
 /// #1338, IADR-0535: 処理中の決済の照会結果。<see cref="Covered"/> が true のときだけ、決済の結論は発注にならない
 /// （発注執行が InFlightCloseCoversPosition で見送る）。<see cref="OrderIds"/> は数えた処理中の決済の注文 ID（ログ用）。
+/// <para>
+/// 🔴 #1434, IADR-0572 決定2: <see cref="BrokerClosableQuantity"/> は発注執行がブローカーから照会した決済方向の建玉（照会したときだけ。null＝不明）。
+/// 0 は「ブローカーは決済方向の建玉を持っていない」という観測であり、決済の結論は発注執行の決済のゲート（建玉なし）が見送る。
+/// 台帳（判断の保有の読み元）は約定の射影が届くまで遅れるので、決済の約定の直後はこちらが先に 0 になる。
+/// </para>
 /// </summary>
-public sealed record InFlightCloseCoverage(bool Covered, int InFlightQuantity, IReadOnlyList<string> OrderIds);
+public sealed record InFlightCloseCoverage(
+    bool Covered, int InFlightQuantity, IReadOnlyList<string> OrderIds, int? BrokerClosableQuantity = null);

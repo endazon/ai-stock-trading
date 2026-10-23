@@ -380,15 +380,18 @@ public class HeldAddOnBlockersTests
         [
             RejectionReason.KillSwitchActive, RejectionReason.TradingPaused, RejectionReason.StoppedOutSameDay,
             RejectionReason.DecisionExitSameDay,
+            RejectionReason.PreCloseEntryCutoff, RejectionReason.ThemeConcentrationExceeded,
             RejectionReason.GoodFaithViolationLimitReached, RejectionReason.MaxPositionsExceeded,
             RejectionReason.DailyLossLimitReached, RejectionReason.MaxDrawdownReached,
         ];
         // T-10-2319, #1176, IADR-0495 決定3: 判断由来の決済の後の同日・同方向を足して 8 理由。
-        all.Should().BeEquivalentTo(EntryStateBlockers.Determinable, "口が返し得る 8 理由をすべて名付ける");
+        // T-10-2989, #1433, IADR-0572 決定1: 閉場前の締め切り・テーマの同時保有の上限を足して 10 理由。
+        all.Should().BeEquivalentTo(EntryStateBlockers.Determinable, "口が返し得る 10 理由をすべて名付ける");
         var blocked = TradeDecisionPromptBuilder.Build(
             trigger, Policy, context, held: held, working: WorkingEntryOrders.None, addOnBlockers: all);
         blocked.Should().Contain(
             "（理由: 全停止（kill switch）中・取引の一時停止中・本日この方向で損切り済み・本日この方向で判断による手仕舞い（利確など）済み・"
+            + "閉場前の新規建ての締め切りに入った・同じテーマの銘柄の同時保有の上限に到達・"
             + "Good Faith Violation の件数が停止基準に到達・保有建玉数の上限に到達・日次損失上限に到達・最大ドローダウンに到達）");
         TradeDecisionPromptBuilder.EntryBlockerLabel(RejectionReason.BannedSymbol).Should().Be("BannedSymbol", "対象外は名前のまま");
     }

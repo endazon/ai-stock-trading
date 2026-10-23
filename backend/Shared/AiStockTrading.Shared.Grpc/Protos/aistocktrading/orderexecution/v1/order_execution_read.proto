@@ -14,7 +14,8 @@
 //   - 金額は**不変文化の 10 進文字列**（IADR-0331 決定 2）。空・欠落は不明。日付は `yyyy-MM-dd`。
 //
 // ■ 運ぶ項目（IADR-0427 決定 4）
-//   **移した呼び出し元が読む項目だけ**を運ぶ（借株可否の `observedAt`、日足の `from` / `to`、処理中の決済の `closableQuantity`・`decisionIds` は運ばない）。
+//   **移した呼び出し元が読む項目だけ**を運ぶ（借株可否の `observedAt`、日足の `from` / `to`、処理中の決済の `decisionIds` は運ばない）。
+//   ［2026-10-23 / #1434・IADR-0572 決定2］処理中の決済の `closableQuantity` は取引判断が読むようになったので運ぶ（`closable_quantity`）。
 //   足すのはフィールド追加＝非破壊である。
 //
 // ■ 🔴 message 名を送り手（OrderExecutionService）の C# の型名と同じにしない（`ShortPermitView` ではなく `GetShortPermitResponse`、
@@ -142,4 +143,6 @@ message GetInFlightClosesResponse {
   optional string unknown_reason = 5;
   optional int32 in_flight_quantity = 6;
   repeated string order_ids = 7;
+  // #1434 / IADR-0572 決定2: ブローカーの決済方向の建玉（照会したときだけ。照会していなければ欠落＝不明）。
+  optional int32 closable_quantity = 8;
 }

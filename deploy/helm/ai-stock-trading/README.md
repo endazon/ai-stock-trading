@@ -1095,14 +1095,45 @@ Pod はサイドカー未注入（平文）のため、AST→基盤方向の HTT
 に RST で全断している（逆方向・MSP BFF→AST は到達可能）。🔴 **本設定点は受け皿であり、実クラスタでの
 有効化・疎通確認は未了**（IADR-0314 は Proposed のまま。再測定手順は同 IADR 参照）。
 
+**連結ローカル（`scripts/k8s-local-deploy.sh`）では `AST_MESH_INJECTION` で選ぶ**（IADR-0570。Refs GHSA-j4qv-2w99-xg5p）。
+helm を手で `--set` しない —— 起動器は `--reuse-values` を使わないため、手で与えた値は次の配備で外れる。
+
+```bash
+AST_MESH_INJECTION=1 scripts/k8s-local-deploy.sh      # メッシュへ入れる（以後の再実行は未指定で引き継ぐ）
+scripts/k8s-local-deploy.sh                           # 未指定: 現行のリリースの値を引き継ぐ（新規・未宣言なら無効）
+AST_MESH_INJECTION=0 scripts/k8s-local-deploy.sh      # メッシュから外す
+```
+
+| `AST_MESH_INJECTION` | helm へ渡す値 | 名前空間の `istio-injection` | 手順 5 の作り直し |
+| --- | --- | --- | --- |
+| `1`（`true`） | `mesh.sidecarInjection.enabled=true` ＋ `excludeOpend=true` | 無ければ貼る | 状態が変わった回は OpenD を除く**全件**（絞り込みがあっても） |
+| `0`（`false`） | `mesh.sidecarInjection.enabled=false` | あれば剥がす | 同上 |
+| 未指定・前回 `true` / `false` | 前回の値（有効なら `excludeOpend=true` も） | 有効なら無ければ貼る。無効なら触らない（手で貼ったラベルが残れば WARN） | 同上 |
+| 未指定・前回に宣言なし（新規・本変更より前の配備） | 何も足さない（chart 既定の無効。従来と同じ引数） | 触らない | 従来どおり |
+| それ以外（空・`yes` 等） | — | — | exit 2（何もしない） |
+
+- **helm upgrade が失敗したら、`AST_MESH_INJECTION=1` か `0` を明示して再実行する。** ラベルは upgrade の前に変えるため、失敗すると
+  「ラベルは新しい状態・chart の値は前回のまま」が残り得る（起動器は失敗時に同じ案内を出す。ロールバックはしない）。
+- **前回リリースの値が真偽値として読めないときは止まる**（黙って無効へ戻さない）。`AST_MESH_INJECTION` を明示すれば進む。
+- **OpenD は常に注入対象外**（作り直さない）。chart は `excludeOpend=true` なら **`enabled` に依らず** OpenD の Pod へ
+  `sidecar.istio.io/inject: "false"` を描くので、注入の切り替えで OpenD の Pod テンプレートは変わらない（`helm.yml` の
+  IADR-0570 の検査が両方の描画を突き合わせる）。起動器は有効なとき `excludeOpend=true` を必ず渡し、手順 5 でも OpenD を作り直さない。
+  🔴 **この注釈を初めて描く配備（本変更を入れた最初の配備）では、`opend.enabled=true` なら OpenD の Pod テンプレートが 1 度だけ変わり、
+  OpenD が作り直される**（認証済みのセッションが切れ、再検証が要り得る）。閉場後に行い、前後で `helm-release-drift.js` の
+  1 行目が OpenD の差（注釈 1 つ）だけであることを確かめる。以後の注入の切り替えでは変わらない。
+- 注入は Pod の作成時にしか効かない。状態が変わった回に起動器が全件を作り直すのはそのためである（OpenD を除く）。
+
+起動器を使わず helm を直接使う構成（`namespace.create=true` で chart が名前空間を持つ）では:
+
 ```bash
 helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
   --set mesh.sidecarInjection.enabled=true
-kubectl -n ai-stock-trading rollout restart deployment   # 既存 Pod への遡及適用は無い
+kubectl -n ai-stock-trading rollout restart deployment   # 既存 Pod への遡及適用は無い（OpenD は除いて個別に）
 ```
 
 - **`namespace.create=false`（namespace を本チャートが所有しない構成）のときはラベルが描画されない。**
-  その場合は運用側で対象 namespace へ手動で `istio-injection=enabled` を付ける。
+  連結ローカルの起動器はこの構成で、ラベルは起動器が `AST_MESH_INJECTION` に従って貼る・剥がす（上の表）。
+  それ以外の構成では運用側で対象 namespace へ手動で `istio-injection=enabled` を付ける。
 - **OpenD は既定でサイドカー注入対象外**（`mesh.sidecarInjection.excludeOpend: true`）。独自プロトコル
   （TCP 11111・常駐 1 セッション）であり HTTP でないためメッシュの恩恵が無く、Envoy 傍受で常駐 TCP
   接続の挙動が変わるリスクの方が上回る（IADR-0314 決定2）。含めたい場合は `excludeOpend=false`。
@@ -1117,8 +1148,9 @@ kubectl -n ai-stock-trading rollout restart deployment   # 既存 Pod への遡�
   手順⑤）。
 - **確認コマンド**（有効化後）:
   ```bash
-  kubectl -n ai-stock-trading get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[*].name}{"\n"}{end}'
-  # istio-proxy が opend 以外の全 Pod に含まれ、opend には含まれないこと（excludeOpend=true の既定）
+  kubectl -n ai-stock-trading get pods -o custom-columns='NAME:.metadata.name,INIT:.spec.initContainers[*].name,CONTAINERS:.spec.containers[*].name'
+  # istio-proxy が opend 以外の全 Pod に含まれ、opend には含まれないこと（excludeOpend=true の既定）。
+  # ネイティブサイドカー（k8s 1.29+）では istio-proxy は INIT（initContainers）の列に出る。
   ```
 - **退行観点**（有効化前に確認すること）: OpenD（moomoo セッション TCP 11111 が継続すること）／
   RabbitMQ（AMQP 5672 の接続断が無いこと）／Postgres（5432 の接続断が無いこと）／Keycloak

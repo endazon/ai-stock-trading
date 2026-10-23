@@ -219,7 +219,8 @@ public static class RiskEvaluator
         // 方針の「終盤は新規建てを控える」は判断のプロンプトに時刻が無く効かなかった（PoC 2026-10-19 の MARA）——方針の文言に頼らない。
         // **手仕舞い（Close）は止めない**（isEntry の短絡。ADR-0009）。preCloseCutoff が null（＝この呼び出し元は供給していない）なら評価しない。
         // 本番の呼び出し元（OrderScreeningService）は新規建てで**常に**供給する（締め切りの構成は必須依存。IADR-0163 決定2）。
-        if (isEntry && preCloseCutoff is { IsWithinCutoff: true })
+        // #1433, IADR-0572 決定1: 述語は新規建ての可否の口と同じ関数（EntryStateBlockers.PreCloseCutoff）。
+        if (isEntry && EntryStateBlockers.PreCloseCutoff(preCloseCutoff))
         {
             reasons.Add(RejectionReason.PreCloseEntryCutoff);
         }
@@ -229,8 +230,8 @@ public static class RiskEvaluator
         // 他銘柄の保有が無く効かなかった（PoC 2026-10-16 に MARA・MSTR・COIN・HOOD を次々と建てた）——方針の文言に頼らず、設定値の定義で強制する。
         // **手仕舞い（Close）は止めない**（isEntry の短絡）。themes が null（＝この呼び出し元は供給していない）なら評価しない。
         // 本番の呼び出し元（OrderScreeningService）は**常に**供給する（定義は必須依存。IADR-0163 決定2）。
-        if (isEntry && themes is not null
-            && themes.Exceeded(intent.Symbol, intent.Market, snapshot.HeldOrPendingSymbols).Count > 0)
+        // #1433, IADR-0572 決定1: 述語は新規建ての可否の口と同じ関数（EntryStateBlockers.ThemeConcentration）。
+        if (isEntry && EntryStateBlockers.ThemeConcentration(themes, intent.Symbol, intent.Market, snapshot))
         {
             reasons.Add(RejectionReason.ThemeConcentrationExceeded);
         }
