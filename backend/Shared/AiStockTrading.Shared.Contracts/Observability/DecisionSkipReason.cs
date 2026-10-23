@@ -154,4 +154,9 @@ public enum DecisionSkipReason
     /// </para>
     /// </summary>
     BrokerPositionClosed,
+    /// <summary>
+    /// 🔴 NFR-13, #1423 M-5, ADR-0074 決定2, IADR-0582: 月次 LLM 費用上限の 100% に達して停止中のため、LLM を呼ぶ前に見送った
+    /// （<c>DecisionForgoneBeforeLlmReason.LlmCostCapHalted</c> と同名）。定時・価格変動の両方。
+    /// </summary>
+    LlmCostCapHalted,
 }

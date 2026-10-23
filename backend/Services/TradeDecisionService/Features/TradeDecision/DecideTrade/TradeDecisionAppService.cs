@@ -48,8 +48,13 @@ public sealed class TradeDecisionAppService(
     MinimumEntryNotionalOptions? minimumEntryNotional = null,
     IInFlightCloseProvider? inFlightCloses = null,
     IMarketCalendar? marketCalendar = null,
-    IHeldSymbolsProvider? holdings = null)
+    IHeldSymbolsProvider? holdings = null,
+    ILlmCostHaltGate? costHalt = null)
 {
+    // 🔴 NFR-13, UC-02, #1423 M-5, ADR-0074 決定1・2, IADR-0582: 月次 LLM 費用上限の 100% 到達（Halted）の照会口。
+    // 未指定＝NoOp（常に停止していない＝従来どおり）。本番は Program.cs が CostControl:BaseUrl のときだけ Http を渡す。
+    private readonly ILlmCostHaltGate _costHalt = costHalt ?? new NoOpLlmCostHaltGate();
+
     // FR-04, FR-10, #1397, IADR-0562 決定 3: プロンプトの「保有中の全銘柄」の供給口。未指定＝節を出さない（従来のプロンプト）。
     // 本番は DI が保有照会と同じ実装（IHeldSymbolsProvider）を渡す。照会できなければ節は「不明」と書く。
     private readonly IHeldSymbolsProvider? _holdings = holdings;
@@ -268,6 +273,7 @@ public sealed class TradeDecisionAppService(
         DecisionForgoneBeforeLlmReason.ExitOnlyWithoutHolding => DecisionSkipReason.ExitOnlyWithoutHolding,
         DecisionForgoneBeforeLlmReason.InFlightCloseCoversPosition => DecisionSkipReason.InFlightCloseCoversPosition,
         DecisionForgoneBeforeLlmReason.BrokerPositionClosed => DecisionSkipReason.BrokerPositionClosed,
+        DecisionForgoneBeforeLlmReason.LlmCostCapHalted => DecisionSkipReason.LlmCostCapHalted,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "LLM を呼ぶ前の見送りの理由ではない"),
     };
 
@@ -308,6 +314,19 @@ public sealed class TradeDecisionAppService(
         DecisionTrigger trigger, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(trigger);
+
+        // 🔴 NFR-13, FR-02, UC-01, UC-02, #1423 M-5, ADR-0074 決定1・2, IADR-0582: 月次 LLM 費用上限の 100% に達して停止中なら、
+        // **定時・価格変動の両方の判断を LLM の前で見送る**（新規建ても保有中の銘柄の出口の判断も）。合流点の先頭に置くのは、
+        // 以降の照会（方針・サイジング・現在値）も要らず、どの見送りよりも広い理由だからである。
+        // LLM を使わない保護（損切り・利用者の手仕舞い・閉場前の手仕舞い・維持率割れの自動縮小）は本経路を通らないので止まらない。
+        // 照会の失敗は「停止していない」へ倒す（判断を続ける。IADR-0031 と同じ判断）。解除は費用統制の月替わり（費用計上月＝UTC の暦月。CostControlAppService.MonthKey）で自動。
+        if (await _costHalt.IsHaltedAsync(cancellationToken).ConfigureAwait(false))
+        {
+            logger.LogInformation("月次 LLM 費用上限の 100% に達して停止中のため、LLM を呼ぶ前に見送ります: {Symbol} trigger={Trigger}",
+                trigger.Symbol, trigger.MetricTrigger);
+            return await SkipBeforeLlmAsync(trigger, DecisionForgoneBeforeLlmReason.LlmCostCapHalted, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         // FR-07: 確定済み日報の方針が無ければ取引しない（確定前方針は不適用）。IADR-0028: 報告書サービスを同期照会（依存先障害は null）。
         var policy = await policyProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);

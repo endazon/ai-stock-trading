@@ -36,6 +36,10 @@
          記録まで続けて確かめるためのテスト専用参照。`Program` の曖昧を避けて extern alias で参照する
          （ReportService.Tests と同じ別名 AuditWorker）。 -->
     <ProjectReference Include="..\..\AuditService\AuditService.csproj" Aliases="AuditWorker" />
+    <!-- NFR-13, #1423 M-5, IADR-0420, IADR-0582: 費用統制の判定（GET /costs/state）の契約テスト（T-10-3053）が送り手の本物の型
+         （CostControlDecision）を直列化するためのテスト専用参照。`Program` の曖昧を避けて extern alias で参照する
+         （情報収集のテストと同じ別名 CostControlWorker）。 -->
+    <ProjectReference Include="..\..\CostControlService\CostControlService.csproj" Aliases="CostControlWorker" />
     <!-- ADR-0013, IADR-0129, #354: 本番と同じ Wolverine 配線（UseAiStockTradingRabbitMq）でホストを起こして検証するため、
          共通配線ヘルパを持つ shim をテストからのみ参照する（ハンドラのランタイム生成 RuntimeCompilation も同経路で入る）。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />

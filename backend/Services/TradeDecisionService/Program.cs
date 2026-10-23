@@ -54,6 +54,8 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     .AddPortFromBaseUrl("sizing-context", builder.Configuration["RiskManagement:BaseUrl"], "http", "placeholder")
     .AddPortFromBaseUrl("knowledge-base-search", builder.Configuration["KnowledgeBase:Search:BaseUrl"], "http", "noop")
     .AddPortFromBaseUrl("assumptions", builder.Configuration["Configuration:BaseUrl"], "http", "placeholder")
+    // NFR-13, #1423 M-5, IADR-0582: 月次 LLM 費用上限の停止の照会口（CostControl:BaseUrl 設定時=http、未設定=noop）。
+    .AddPortFromBaseUrl("cost-halt", builder.Configuration["CostControl:BaseUrl"], "http", "noop")
     // FR-02, IADR-0095/0078 決定4: 監視銘柄（watchlist）供給の選択中実装を自己申告する。MarketMonitor:BaseUrl 設定時=http
     // （権威源 GET /monitor/watchlist へ s2s 照会）、未設定/不正=configuration（未結線の構成ベース）。introspection から結線状態を判別可能にする。
     .AddPortFromBaseUrl("watchlist", builder.Configuration["MarketMonitor:BaseUrl"], "http", "configuration")
@@ -588,6 +590,22 @@ builder.Services.AddScoped<IFxRateProvider>(sp => new MarketFxRateProvider(
 // **構築時に読む**ので、読めない値・範囲外（0 未満・0.25 超）はここで例外になり起動が止まる（fail-fast）。0 は統制を外す明示の値。
 builder.Services.AddSingleton(MinimumEntryNotionalOptionsLoader.FromConfiguration(builder.Configuration));
 
+// 🔴 NFR-13, FR-02, UC-02, #1423 M-5, ADR-0074 決定1・2, IADR-0582: 月次 LLM 費用上限の 100% 到達（Halted）の照会口。
+// 情報収集と同じ GET /costs/state（OwnerOrService・trading-service の s2s）。CostControl:BaseUrl 未設定/不正 URI は NoOp
+// （常に停止していない＝従来どおり）。判断のたびに 1 回照会する（短いタイムアウト。失敗は停止していない側へ倒す）。
+builder.Services.AddHttpClient("cost", c => c.Timeout = TimeSpan.FromSeconds(3))
+    .AddAiStockTradingServiceToken(builder.Configuration);
+builder.Services.AddSingleton<NoOpLlmCostHaltGate>();
+builder.Services.AddScoped<ILlmCostHaltGate>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["CostControl:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return sp.GetRequiredService<NoOpLlmCostHaltGate>();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("cost");
+    http.BaseAddress = uri;
+    return new HttpLlmCostHaltGate(http, sp.GetRequiredService<ILogger<HttpLlmCostHaltGate>>());
+});
 builder.Services.AddScoped<TradeDecisionAppService>();
 
 // FR-04, FR-15, NFR（費用）, ADR-0033 決定2/決定4/決定5, #632, IADR-0318: Stage 0 の記録（AI 判断の記録・再生）。

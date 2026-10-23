@@ -81,4 +81,10 @@ public enum DecisionForgoneBeforeLlmReason
     /// 決済の結論は発注執行の決済のゲートが建玉なしで見送り、新規建ての結論も見送られるため、LLM の結論に依らず発注にならない。
     /// </summary>
     BrokerPositionClosed,
+    /// <summary>
+    /// 🔴 NFR-13, FR-02, #1423 M-5, ADR-0074 決定1・2, IADR-0582: 月次 LLM 費用上限の 100% に達して停止中（Halted）。
+    /// 定時・価格変動のどちらの判断も、新規建ても保有中の銘柄の出口の判断も、LLM を呼ぶ前に見送る。
+    /// LLM を使わない保護（損切り・利用者の手仕舞い・閉場前の手仕舞い・維持率割れの自動縮小）は本見送りを通らない。
+    /// </summary>
+    LlmCostCapHalted,
 }

@@ -3,13 +3,13 @@ title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-10-23
+updated: 2026-10-24
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07, NFR, FR-02]
-adrs: [ADR-0001, ADR-0003, ADR-0040, ADR-0049]
-iadrs: [IADR-0580, IADR-0572, IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483, IADR-0487, IADR-0495, IADR-0500, IADR-0521, IADR-0534, IADR-0569]
+ids: [NFR-13, UC-02, FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07, NFR, FR-02]
+adrs: [ADR-0074, ADR-0001, ADR-0003, ADR-0040, ADR-0049]
+iadrs: [IADR-0582, IADR-0580, IADR-0572, IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483, IADR-0487, IADR-0495, IADR-0500, IADR-0521, IADR-0534, IADR-0569]
 specs: [20261023_1454_stop-filled-before-entry, 20261023_1433_1434_llm-precheck-cutoff-theme-and-closed-position, 20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id, 20261002_1111_decision-final-failure-record, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261013_1330_approved-close-not-external-reduction]
 issues: [#1454, #1434, #17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148, #1111, #1164, #1176, #1174, #1286, #1330]
 -->
@@ -152,6 +152,9 @@ issues: [#1454, #1434, #17, #18, #809, #819, #820, #821, #848, #849, #1002, #853
   `BrokerPositionClosed` は、保有中（台帳）の銘柄で、判断由来の決済が約定した直後に発注執行がブローカーの決済方向の建玉を 0 と観測し、
   かつ買い増し・売り増しも LLM の後で必ず見送られると分かっているときに出る（台帳は約定の射影が届くまで保有中のままである。決済の結論は発注執行の決済のゲートが建玉なしで見送る）。
   🔴 従来その判断は LLM を呼び、LLM の後の読み直しで台帳が追いついた保有 0 により裸の新規売りの見送り（`TradeDecisionHeld`・理由 `NakedShortOpen`）として残っていた。その一部がこちらへ移る。
+  `LlmCostCapHalted` は、月次 LLM 費用上限の 100% に達して費用統制が停止中のときに、定時・価格変動の**どちらの判断でも**判断の入口で出る
+  （新規建ても保有中の銘柄の出口の判断も見送る。損切り・利用者の手仕舞い・閉場前の手仕舞い・維持率割れの自動縮小は判断を経ないので止まらない）。
+  🔴 従来、価格変動の判断は上限の後も LLM を呼んでいた（定時は情報収集が止まるので判断自体が起きない）。解除は費用統制の月替わりで自動。
 - 取引判断が LLM の結論を得た**後**に見送った事実（`TradeDecisionHeld`。要約「判断後の見送り（理由）判断時点価格」）のうち、理由
   `AddOnBlockedByRiskControls` は、保有中の銘柄で LLM が買い増し・売り増しを返したが、LLM を呼ぶ前に読んだリスク管理の新規建ての可否の口が
   その方向を塞いでいると答えていたときに出る（発注しない）。🔴 **従来はその買い増しが審査で拒否され `OrderRejected` として残っていた**
