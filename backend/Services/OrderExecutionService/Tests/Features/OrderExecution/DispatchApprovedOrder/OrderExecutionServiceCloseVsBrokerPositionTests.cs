@@ -117,6 +117,25 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         drift.Kind.Should().Be(PositionDriftKind.LedgerOnly);
     }
 
+    // 🔴 T-10-3015（否定形）, FR-10, #1449（親 #1423 L-1）, IADR-0576 決定1: **建玉照会の能力を持つアダプタだけを渡す組み立てでも
+    // 決済の建玉ゲートが効く。** 是正前はゲートの有効判定がコンストラクタ引数 brokerPositions を直接見ており、省略すると
+    // （フィールド _positions はアダプタそのものを指すのに）ゲートと処理中の決済の差し引きが黙って外れ、保有 0 からの売りが出た。
+    [Fact]
+    public async Task 建玉照会の口を省略しアダプタだけを渡す組み立てでもブローカーに建玉が無い決済は発注されない()
+    {
+        var broker = new FakePositionAwareBroker([]);
+        var store = new InMemoryExecutedOrderStore();
+        var reservations = new InMemoryOrderReservationStore();
+        var service = new AppSvc(broker, store, reservations, new FakeClock()); // brokerPositions を渡さない
+
+        var result = await service.ExecuteAsync(Approved(CloseIntent()));
+
+        broker.PositionQueryCount.Should().Be(1, "アダプタそのものの建玉照会でゲートを判定する");
+        broker.Placed.Should().BeEmpty("保有 0 からの売り（裸のショート）を出してはならない");
+        result.Forgone!.Reason.Should().Be(OrderDispatchForgoneReason.BrokerPositionAbsent);
+        store.GetAll().Should().BeEmpty();
+    }
+
     // 🔴 T-10-495（否定形・最重要）: **実建玉に満たない決済は実建玉の範囲へ縮めて送る。**
     // 見送りに倒すと、実在する 100 株の手仕舞いまで塞いでしまう（FR-10 に反する）。
     [Fact]

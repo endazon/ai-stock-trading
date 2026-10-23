@@ -234,7 +234,7 @@ public class ProtectiveStopOptimisticConcurrencyTests
         var other = TriggeredStop(guard, new InMemoryExecutedOrderStore(), 10);
         guard.Find(other.EntryDecisionId).Should().NotBeNull();
 
-        // 無条件の保存（常駐ガードの S0 経路が使う）は、追跡している写しが古くても通り、版を進める。
+        // 無条件の保存（新しい行を作る経路が使う。常駐ガードは #1449 で読み直して当て直す形へ移った）は、追跡している写しが古くても通り、版を進める。
         var handlerTracked = handler.Find(stop.EntryDecisionId)!; // handler の追跡は版 1 のまま（古い）
         handlerTracked.Version.Should().Be(1);
         handler.Save(handlerTracked with { UpdatedAt = Now.AddMinutes(1) });

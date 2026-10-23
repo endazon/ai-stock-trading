@@ -326,8 +326,7 @@ public sealed class ProtectiveStopGuard(
         if (remaining <= 0)
         {
             // 建玉が生じなかった、または外部要因で自分の建玉が消えた。保護の役目を終える（ブローカーに取り消す注文は無い）。
-            MarkCompleted(current);
-            return Outcome.Completed;
+            return MarkCompleted(current) ? Outcome.Completed : Outcome.Unknown;
         }
 
         return Outcome.StillActive;
@@ -373,10 +372,7 @@ public sealed class ProtectiveStopGuard(
 
             // 建玉消滅（owner 手仕舞い・自動縮小・強制買戻し等）: 残存逆指値を取り消す。
             // 決済済み建玉に残る注文が発火すると**反対方向の建玉を生む**（業務フロー 02 補足の二重決済問題）。
-            await broker.CancelOrderAsync(stop.StopOrderId, cancellationToken).ConfigureAwait(false);
-            RenewStopLegTracking(stop); // #958, IADR-0406 決定3: 取消の直前までの部分約定を約定追跡に拾わせる。
-            MarkCompleted(stop);
-            return Outcome.Completed;
+            return await CancelOrphanedStopAndConfirmAsync(stop, cancellationToken).ConfigureAwait(false);
         }
 
         if (order.Status == OrderStatus.Filled)
@@ -390,8 +386,7 @@ public sealed class ProtectiveStopGuard(
             // OrderExecuted が一度も出ずに台帳へ届かない（ガードと約定追跡は別々の巡回で、どちらが先かは決まらない）。
             // 進めるのは非終端の記録の時刻だけで、約定追跡が既に反映していれば何もしない。
             RenewStopLegTracking(stop);
-            MarkCompleted(stop);
-            return Outcome.Completed;
+            return MarkCompleted(stop) ? Outcome.Completed : Outcome.Unknown;
         }
 
         // 失効（Cancelled / Rejected / Expired）。
@@ -408,13 +403,58 @@ public sealed class ProtectiveStopGuard(
             if (await HoldUnlessPositionGoneAsync(stop, active, events, cancellationToken).ConfigureAwait(false) is { } held)
                 return held;
 
-            MarkCompleted(stop); // 建玉も無い: 保護対象が消えている。
-            return Outcome.Completed;
+            // 建玉も無い: 保護対象が消えている。#1449: 並行に更新されていたら閉じない（次の巡回で評価し直す）。
+            return MarkCompleted(stop) ? Outcome.Completed : Outcome.Unknown;
         }
 
         // 建玉が残っているのに逆指値が無い: 再発注する。不可なら成行で手仕舞う（業務フロー 02 の表）。
         return await ReplaceOrCloseAsync(stop, Math.Min(remaining, stop.Quantity), events, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    // 🔴 FR-10, UC-02, #1449（親 #1423 L-2）, IADR-0576 決定2: 建玉が消えた後の残存逆指値を取り消し、**照会で終端を確かめてから**記録を完了させる。
+    // 取消の要求が返ったことは取り消せたことではない（届いていない・取消待ち・取消の窓で約定）。確かめずに記録を閉じると、生きている逆指値を
+    // 誰も見なくなる（発火すれば反対建玉。処理中の決済の除外〔InFlightCloses〕も Active の記録のレグに限るので、判断の決済を縮める側へ倒れる）。
+    //   - 終端・約定 0 以上で未約定残が二度と約定しない（取消・失効・拒否）→ 取消の直前までの部分約定を約定追跡に拾わせ、完了する。
+    //   - 約定済み（取消の窓で約定した）→ 約定として扱う: 約定追跡の起点を進め（台帳へは約定追跡が届ける）、完了する。
+    //     建玉 0 のところで逆指値が約定した＝反対方向の建玉が生じ得るので Error を残す（帰属不明の建玉の検知が次の巡回で拾う）。
+    //   - 照会が null・非終端（取消待ち）→ **完了させない**。次の巡回は同じ評価に入り、まだ生きていれば取り消し直し、終端なら上の失効・約定の分岐で閉じる。
+    // 取消が「約定済み・未知の ID」（ポートの契約の InvalidOperationException）で失敗しても、照会して判断する（約定済みなら約定として扱える）。
+    private async Task<Outcome> CancelOrphanedStopAndConfirmAsync(ProtectiveStopOrder stop, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await broker.CancelOrderAsync(stop.StopOrderId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex,
+                "保護逆指値ガード: 建玉の無い逆指値の取消が「約定済み・未知の注文」で失敗しました。照会して終端を確かめます: "
+                + "EntryDecisionId={EntryDecisionId} StopOrderId={StopOrderId} 銘柄={Symbol}",
+                stop.EntryDecisionId, stop.StopOrderId, stop.Symbol);
+        }
+
+        var after = await broker.GetOrderAsync(stop.StopOrderId, cancellationToken).ConfigureAwait(false);
+        if (after is null || OrderStatusLifecycle.IsPending(after.Status))
+        {
+            _logger.LogWarning(
+                "保護逆指値ガード: 建玉の無い逆指値の取消を確認できません（{Observed}）。記録は閉じずに次の巡回で確かめ直します: "
+                + "EntryDecisionId={EntryDecisionId} StopOrderId={StopOrderId} 銘柄={Symbol}",
+                after is null ? "照会不能" : $"状態 {after.Status}", stop.EntryDecisionId, stop.StopOrderId, stop.Symbol);
+            return Outcome.Unknown;
+        }
+
+        if (after.Status == OrderStatus.Filled)
+        {
+            _logger.LogError(
+                "保護逆指値ガード: 建玉の無い逆指値が取消の前に約定しました（約定 {Filled} 株）。約定として扱います（台帳へは約定追跡が届けます）。"
+                + "反対方向の建玉が生じている可能性があります。証券会社の画面で建玉を確認してください: "
+                + "EntryDecisionId={EntryDecisionId} StopOrderId={StopOrderId} 銘柄={Symbol}",
+                after.FilledQuantity, stop.EntryDecisionId, stop.StopOrderId, stop.Symbol);
+        }
+
+        RenewStopLegTracking(stop); // #958, IADR-0406 決定3: 取消の直前まで（または取消の窓）の約定を約定追跡に拾わせる。
+        return MarkCompleted(stop) ? Outcome.Completed : Outcome.Unknown;
     }
 
     private async Task<Outcome> ReplaceOrCloseAsync(
@@ -544,7 +584,8 @@ public sealed class ProtectiveStopGuard(
                 // #853, IADR-0428 決定1: 相 4（確定）。結果を保存してから予約を確定する。
                 reservations.MarkCompleted(stopDecisionId, newStop.OrderId, now);
 
-                stops.Save(stop with
+                // #1449, IADR-0576 決定3: 最新の行へこの張り直しの列だけを当て直す（古い写しで他の列を巻き戻さない）。
+                ReapplyAfterBrokerAction(stop, current => current with
                 {
                     StopDecisionId = stopDecisionId,
                     StopOrderId = newStop.OrderId,
@@ -554,7 +595,7 @@ public sealed class ProtectiveStopGuard(
                     RemainingProtected = quantity,
                     Attempt = attempt,
                     UpdatedAt = now,
-                });
+                }, "逆指値の張り直し");
 
                 // #857, IADR-0369 決定3: 保護を張り直せた＝手仕舞いを撃ち直す理由が消えた。数えを 0 へ戻す
                 //（次にまた失効して拒否されたら、改めて 3 回試す）。
@@ -742,7 +783,9 @@ public sealed class ProtectiveStopGuard(
         if (record is { OrderId.Length: > 0 })
         {
             var adopted = stop with { StopOrderId = record.OrderId, UpdatedAt = now };
-            stops.Save(adopted);
+            // #1449, IADR-0576 決定3: 採用した注文 ID だけを最新の行へ当て直す（古い写しで他の列を巻き戻さない）。
+            ReapplyAfterBrokerAction(
+                stop, current => current with { StopOrderId = record.OrderId, UpdatedAt = now }, "突合で確かめた逆指値の注文 ID の採用");
             _heldCloseNotifications.Forget(stop.StopDecisionId);
 
             if (record.Status is OrderStatus.Accepted or OrderStatus.PartiallyFilled or OrderStatus.Filled)
@@ -791,8 +834,7 @@ public sealed class ProtectiveStopGuard(
             if (await HoldUnlessPositionGoneAsync(stop, active, events, cancellationToken).ConfigureAwait(false) is { } held)
                 return held;
 
-            MarkCompleted(stop);
-            return Outcome.Completed;
+            return MarkCompleted(stop) ? Outcome.Completed : Outcome.Unknown;
         }
 
         return await ReplaceOrCloseAsync(stop, Math.Min(remaining, stop.Quantity), events, cancellationToken)
@@ -966,7 +1008,16 @@ public sealed class ProtectiveStopGuard(
             Attempt = attempt,
             UpdatedAt = clock.UtcNow,
         };
-        stops.Save(pending);
+        // #1449, IADR-0576 決定3: 送信結果待ちへの移行の列だけを最新の行へ当て直す（古い写しで他の列を巻き戻さない）。
+        ReapplyAfterBrokerAction(stop, current => current with
+        {
+            StopDecisionId = stopDecisionId,
+            StopOrderId = string.Empty,
+            Quantity = quantity,
+            RemainingProtected = quantity,
+            Attempt = attempt,
+            UpdatedAt = pending.UpdatedAt,
+        }, "逆指値の送信結果待ちへの移行");
         AddHeldStopNotification(pending, quantity, stopDecisionId, closeIntent, events);
         return Outcome.Unknown;
     }
@@ -991,7 +1042,10 @@ public sealed class ProtectiveStopGuard(
     {
         // 解決した。以後は再通知しない・撃ち直しの数えも捨てる（#857）。#938: 捨てるのは MarkCompleted が行う
         // （記録を完了させる全経路で同じ出口を通る）。
-        MarkCompleted(stop);
+        // #1449, IADR-0576 決定3（PR #1450 の AI レビュー 🟡）: 並行に更新されていて閉じられなかった巡回では事実を出さない
+        // （記録は Active のまま。次の巡回は同じ試行の記録〔上の (a)〕からここへ戻り、閉じられた巡回で 1 回だけ出す）。
+        if (!MarkCompleted(stop))
+            return Outcome.Unknown;
         events.Add(new ProtectiveStopCoverageLost(
             stop.EntryDecisionId, stop.Symbol, stop.Market,
             ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.PositionClosed,
@@ -1015,7 +1069,8 @@ public sealed class ProtectiveStopGuard(
         // #938: この手仕舞いレグは拒否と確定した（据え置いていたなら突合が解決した）。試行が進むとこのキーはもう引かれない。
         _heldCloseNotifications.Forget(closeDecisionId);
 
-        stops.Save(stop with { Attempt = attempt, UpdatedAt = now });
+        // #1449, IADR-0576 決定3: 試行番号の前進だけを最新の行へ当て直す（古い写しで他の列を巻き戻さない）。
+        ReapplyAfterBrokerAction(stop, current => current with { Attempt = attempt, UpdatedAt = now }, "拒否された成行の試行の前進");
 
         _logger.LogError(
             "保護逆指値ガード: 成行手仕舞いが拒否されました（確認できた拒否・状態 {Status}・{Rejections} 回目）。"
@@ -1125,11 +1180,83 @@ public sealed class ProtectiveStopGuard(
     // 記憶（拒否の数えと通知時刻・据え置きの通知時刻）も捨てる。従来は Replaced と CompleteAsClosed でしか捨てず、
     // 建玉消滅→取消・逆指値の Filled・失効かつ建玉 0 の完了では再起動まで残った（誤動作ではないが辞書が単調に増える）。
     // 保存の後に捨てる——保存が例外で落ちたら記録は Active のままなので、記憶も残すのが正しい。
-    private void MarkCompleted(ProtectiveStopOrder stop)
+    //
+    // 🔴 FR-10, #1449（親 #1423 L-2）, IADR-0576 決定3: **楽観並行で書く**（ProtectiveStopStoreUpdates.Update＝保存先の最新を読み直して当て直す）。
+    // 無条件の上書き（Save）は、評価の間に並行に進んだ状態（約定の確定・外部要因の観測・取り込み・張り直し）を古い写しで巻き戻し得る。
+    // 完了は「観測した写しのレグ」についての判断なので、最新の行が**同じレグ**（StopDecisionId・StopOrderId・試行番号）のときだけ当てる。
+    //   - 最新が既に Active でない → 書かない（誰かが閉じた。完了として扱う）。
+    //   - レグが変わっている → 書かない（古い観測で新しいレグを閉じない）。false ＝次の巡回で最新の行を評価し直す。
+    //   - ソフトウェア逆指値（S1）は、最新の残保護数量が 0 以下で未確定の外部要因が無いときだけ（完了の条件を最新の行で判定し直す）。
+    // 衝突が続いた（ProtectiveStopConcurrencyException）ときは例外のまま上げる（巡回の 1 件の失敗として数え、記録は Active のまま次の巡回へ）。
+    private bool MarkCompleted(ProtectiveStopOrder stop)
     {
-        stops.Save(stop with { State = ProtectiveStopState.Completed, UpdatedAt = clock.UtcNow });
+        var now = clock.UtcNow;
+        var latest = stops.Update(stop.EntryDecisionId, current =>
+        {
+            if (current.State != ProtectiveStopState.Active)
+                return current;
+            if (!IsSameLeg(current, stop))
+                return null;
+            if (current.IsSoftwareStop
+                && (current.RemainingProtected is not { } remaining || remaining > 0 || current.HasUnconfirmedExternalReduction))
+                return null;
+            return current with { State = ProtectiveStopState.Completed, UpdatedAt = now };
+        });
+
+        if (latest is not { State: not ProtectiveStopState.Active })
+        {
+            _logger.LogWarning(
+                "保護逆指値ガード: 保護記録が評価の間に並行に更新されていたため、完了させませんでした（古い写しで上書きしません）。"
+                + "次の巡回で最新の記録を評価し直します: EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+                stop.EntryDecisionId, stop.Symbol);
+            return false;
+        }
+
         _closeRejections.Forget(stop.EntryDecisionId);
         _heldCloseNotifications.ForgetEntry(stop.EntryDecisionId);
+        return true;
+    }
+
+    // #1449, IADR-0576 決定3: 2 つの写しが同じ保護レグを指すか（完了・試行の前進の当て直しの条件）。
+    private static bool IsSameLeg(ProtectiveStopOrder current, ProtectiveStopOrder observed) =>
+        current.Attempt == observed.Attempt
+        && current.StopDecisionId == observed.StopDecisionId
+        && string.Equals(current.StopOrderId, observed.StopOrderId, StringComparison.Ordinal);
+
+    // 🔴 FR-10, #1449（親 #1423 L-2）, IADR-0576 決定3: ブローカーへの操作（逆指値の張り直し・送信・成行の拒否の確定）の**後**に書く
+    // 保護記録の更新。無条件の上書き（Save）をやめ、保存先の最新を読み直して**この操作が変えた列だけ**を当て直す（並行に進んだ他の列
+    // ——残保護数量の確定・外部要因の観測・帰属不明の通知の印など——を古い写しで巻き戻さない）。ブローカーの事実を記録から落とさないため、
+    // 列の当て直しには条件を付けない（IADR-0396 が Save を残した理由＝「保存を落とすと実在する注文と記録が食い違う」を保つ）。
+    // 行が無い（消えた）ときは書けない——Error を残す（ストアは行を消さないので、平常では起きない）。
+    // 🔴 #1449（PR #1450 の AI レビュー 🟡）, IADR-0576 決定3: 当て直しの衝突が尽きたら（ProtectiveStopConcurrencyException）、**この経路に限り**
+    // 最後に読んだ最新の行へ列を当てて無条件に保存する（実在する注文と記録の食い違いを作らない方を取る）。Warning を残す。
+    // 完了（MarkCompleted）は例外のまま上げる（閉じない側は次の巡回で評価し直せる）。
+    private void ReapplyAfterBrokerAction(
+        ProtectiveStopOrder stop, Func<ProtectiveStopOrder, ProtectiveStopOrder> apply, string action)
+    {
+        ProtectiveStopOrder? written;
+        try
+        {
+            written = stops.Update(stop.EntryDecisionId, apply);
+        }
+        catch (ProtectiveStopConcurrencyException ex)
+        {
+            written = stops.Find(stop.EntryDecisionId) is { } latest ? apply(latest) : null;
+            if (written is not null)
+                stops.Save(written);
+            _logger.LogWarning(ex,
+                "保護逆指値ガード: {Action} の記録が並行更新と衝突し続けたため、最新の行へ当てて無条件に保存しました"
+                + "（証券会社の注文を記録から落とさないため）: EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+                action, stop.EntryDecisionId, stop.Symbol);
+        }
+
+        if (written is null)
+        {
+            _logger.LogError(
+                "保護逆指値ガード: 保護記録が見つからないため、{Action} を記録できませんでした。証券会社の画面で注文を確認してください: "
+                + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+                action, stop.EntryDecisionId, stop.Symbol);
+        }
     }
 
     // 🔴 #938, IADR-0369（2026-09-25 追記）: **ガードの外で完了した記録**（乖離の取り込み・ProtectiveStopDriftAdopter）の記憶を捨てる。
