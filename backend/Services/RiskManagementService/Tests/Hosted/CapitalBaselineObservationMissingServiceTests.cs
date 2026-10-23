@@ -86,7 +86,9 @@ public class CapitalBaselineObservationMissingServiceTests
             (await service.RunOnceAsync(CancellationToken.None)).Should().BeTrue("翌取引日は改めて知らせる");
         });
 
-        var sent = session.Sent.MessagesOf<CapitalBaselineObservationMissing>().ToList();
+        // 追跡が記録する送信の順は発行の順を保証しない（全件実行で入れ替わることを実測した）。本体も順序を約束しない
+        // —— 取引日ごとに独立した 1 通であり、受け手（通知・監査）は順序に依存しない。よって取引日で並べてから見る。
+        var sent = session.Sent.MessagesOf<CapitalBaselineObservationMissing>().OrderBy(m => m.TradingDay).ToList();
         sent.Should().HaveCount(2);
         sent[0].Should().BeEquivalentTo(new { TradingDay = Monday, LatestObservedTradingDay = Friday, Stale = false });
         sent[1].Stale.Should().BeTrue("鮮度切れ（巡回の長い停止）も欠けとして知らせ、区別を載せる");

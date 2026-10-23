@@ -320,8 +320,6 @@ public static class AuditEntryFactory
                 + $"({(string.IsNullOrEmpty(e.ExcludedInputKinds) ? "種別不明" : e.ExcludedInputKinds)})";
     }
 
-    // UC-01, FR-09, FR-07, FR-11, #210: 日報未確定による取引スキップ。注文/市場相関を持たないため "daily-policy" の
-    // 決定的 GUID を相関にする（日報未確定の見送りが同一相関で束ねられ、監査照会でまとめて辿れる）。
     // FR-10, FR-11, #1423 M-3, ADR-0073 決定1〜3, IADR-0581: 基準資金の口座照会の欠けによる新規建ての拒否。
     // 銘柄に依らない統制の状態であり、取引日ごとに 1 件（発行側が抑える）。相関は固定キーで束ねる（日報未確定と同じ形）。
     public static AuditEntry From(CapitalBaselineObservationMissing e, Guid id, DateTimeOffset recordedAt) => new(
@@ -330,6 +328,8 @@ public static class AuditEntryFactory
             + $"最後の観測 {e.LatestObservedTradingDay:yyyy-MM-dd}{(e.Stale ? "・鮮度超過" : string.Empty)}）",
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // UC-01, FR-09, FR-07, FR-11, #210: 日報未確定による取引スキップ。注文/市場相関を持たないため "daily-policy" の
+    // 決定的 GUID を相関にする（日報未確定の見送りが同一相関で束ねられ、監査照会でまとめて辿れる）。
     public static AuditEntry From(DailyPolicyUnconfirmed e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(DailyPolicyUnconfirmed), AuditCorrelation.From("daily-policy"), Symbol: null,
         $"日報未確定により取引を見送り（営業日 {e.BusinessDay:yyyy-MM-dd}）",
