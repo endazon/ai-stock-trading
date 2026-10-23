@@ -173,7 +173,8 @@ public class ProtectiveStopGuardTests
             OrderStatusLifecycle.IsTerminal(status) ? Now : null);
 
     private static (ProtectiveStopGuard Guard, GuardBroker Broker, InMemoryProtectiveStopOrderStore Stops,
-        InMemoryExecutedOrderStore Store) NewGuard(ProtectiveStopOrder stop, IClosePositionLock? closeLock = null)
+        InMemoryExecutedOrderStore Store) NewGuard(
+            ProtectiveStopOrder stop, IClosePositionLock? closeLock = null, ContendedStopStore? contended = null)
     {
         var broker = new GuardBroker();
         var stops = new InMemoryProtectiveStopOrderStore();
@@ -186,8 +187,47 @@ public class ProtectiveStopGuardTests
             stop.ProductType, PositionEffect.Open, stop.Quantity, 1_000m, stop.Quantity, 1_000m, OrderStatus.Filled, 0m,
             Now.AddMinutes(-5)));
         return (new ProtectiveStopGuard(
-            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance,
-            closeLock: closeLock), broker, stops, store);
+            broker, broker, contended is null ? stops : contended.Attach(stops), store, new InMemoryOrderReservationStore(),
+            new FakeClock(), AlwaysOpenSessionGate.Instance, closeLock: closeLock), broker, stops, store);
+    }
+
+    // #1449（PR #1450 の AI レビュー 🟡）: 楽観並行の保存（TrySave）だけを衝突させ続けられるストア（他は内側へ委ねる）。
+    private sealed class ContendedStopStore : IProtectiveStopOrderStore
+    {
+        private InMemoryProtectiveStopOrderStore _inner = null!;
+        public bool AlwaysConflict { get; set; }
+        public int ConflictCount { get; private set; }
+
+        public ContendedStopStore Attach(InMemoryProtectiveStopOrderStore inner)
+        {
+            _inner = inner;
+            return this;
+        }
+
+        public void Save(ProtectiveStopOrder stop) => _inner.Save(stop);
+
+        public bool TrySave(ProtectiveStopOrder stop)
+        {
+            if (!AlwaysConflict)
+                return _inner.TrySave(stop);
+            ConflictCount++;
+            return false;
+        }
+
+        public ProtectiveStopOrder? Find(Guid entryDecisionId) => _inner.Find(entryDecisionId);
+        public IReadOnlyList<ProtectiveStopOrder> FindActive(int batchSize) => _inner.FindActive(batchSize);
+        public IReadOnlyList<ProtectiveStopOrder> FindActiveFor(string symbol, Market market, TradeSide entrySide) =>
+            _inner.FindActiveFor(symbol, market, entrySide);
+        public IReadOnlyList<ProtectiveStopOrder> FindOpenFor(string symbol, Market market, TradeSide entrySide) =>
+            _inner.FindOpenFor(symbol, market, entrySide);
+        public IReadOnlyList<ProtectiveStopOrder> FindActiveSoftwareStops(string symbol, Market market, TradeSide entrySide) =>
+            _inner.FindActiveSoftwareStops(symbol, market, entrySide);
+        public IReadOnlyList<ProtectiveStopOrder> FindRecentFor(string symbol, Market market, TradeSide entrySide, int limit) =>
+            _inner.FindRecentFor(symbol, market, entrySide, limit);
+        public IReadOnlyList<ProtectiveStopOrder> FindCompletedSoftwareStops(
+            string symbol, Market market, TradeSide entrySide, int limit) =>
+            _inner.FindCompletedSoftwareStops(symbol, market, entrySide, limit);
+        public IReadOnlyList<ProtectiveStopOrder> FindUnattributedNotified(int limit) => _inner.FindUnattributedNotified(limit);
     }
 
     private static BrokerPositionSnapshot Long(int qty) => new("AAPL", Market.UnitedStates, qty, 1_000m);
@@ -231,13 +271,14 @@ public class ProtectiveStopGuardTests
     // 是正前は CancelOrderAsync が返った直後に完了させていた——取消が効いていない（届いていない・取消待ち）逆指値を誰も見なくなり、
     // 発火すれば反対建玉になる。照会が非終端（取消待ち）・照会不能のどちらでも Active のまま次の巡回で確かめ直し、終端が見えた巡回で閉じる。
     [Theory]
-    [InlineData(false)] // 照会では生きたまま（取消待ち）
-    [InlineData(true)]  // 照会不能（null）
-    public async Task 建玉が消えた逆指値の取消を照会で確かめられないうちは記録を完了させない(bool queryUnavailable)
+    [InlineData(OrderStatus.Accepted, false)]        // 照会では生きたまま（取消待ち）
+    [InlineData(OrderStatus.Accepted, true)]         // 照会不能（null）
+    [InlineData(OrderStatus.PartiallyFilled, false)] // 一部約定のまま取消待ち
+    public async Task 建玉が消えた逆指値の取消を照会で確かめられないうちは記録を完了させない(OrderStatus working, bool queryUnavailable)
     {
         var stop = ActiveStop();
         var (guard, broker, stops, _) = NewGuard(stop);
-        broker.Orders["stop-1"] = StopOrder(OrderStatus.Accepted);
+        broker.Orders["stop-1"] = StopOrder(working);
         broker.Positions = [];
         broker.CancelLeavesWorking = true;
         if (queryUnavailable)
@@ -253,7 +294,7 @@ public class ProtectiveStopGuardTests
         // 次の巡回: 逆指値はまだ生きている（照会できるようになった）→ 取り消し直し、今度は終端（取消済み）が見えて閉じる。
         broker.AfterCancel = null;
         broker.CancelLeavesWorking = false;
-        broker.Orders["stop-1"] = StopOrder(OrderStatus.Accepted);
+        broker.Orders["stop-1"] = StopOrder(working);
 
         var second = await guard.RunOnceAsync(10);
 
@@ -343,6 +384,61 @@ public class ProtectiveStopGuardTests
         row.Attempt.Should().Be(2);
         row.StalledNotifiedAt.Should().Be(Now.AddMinutes(-1), "並行に書かれた列を古い写しで巻き戻さない");
         row.CloseFailures.Should().Be(2);
+    }
+
+    // 🔴 T-10-3016, FR-10, #1449（PR #1450 の AI レビュー 🟡）, IADR-0576 決定3: **ブローカーへの操作の後の記録は、当て直しの衝突が尽きても落とさない。**
+    // 張り直した逆指値の注文 ID が記録に無いと、実在する注文を誰も見ない（失効の検知も建玉消滅時の取消も外れる）。衝突が尽きたら最新の行へ当てて無条件に保存する。
+    [Fact]
+    public async Task 張り直しの記録は当て直しの衝突が尽きても新しい注文IDを記録に残す()
+    {
+        var stop = ActiveStop();
+        var contended = new ContendedStopStore();
+        var (guard, broker, stops, _) = NewGuard(stop, contended: contended);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Expired);
+        broker.Positions = [Long(10)];
+        broker.AfterStopPlace = () => contended.AlwaysConflict = true;
+
+        var result = await guard.RunOnceAsync(10);
+
+        contended.ConflictCount.Should().BeGreaterThanOrEqualTo(ProtectiveStopStoreUpdates.MaxAttempts, "当て直しを使い切ってから無条件の保存へ倒す");
+        result.Replaced.Should().Be(1);
+        result.Failed.Should().Be(0);
+        var row = stops.Find(stop.EntryDecisionId)!;
+        row.StopOrderId.Should().Be("stop-re-1", "証券会社に実在する注文を記録から落とさない");
+        row.Attempt.Should().Be(2);
+        row.State.Should().Be(ProtectiveStopState.Active);
+    }
+
+    // 🔴 T-10-3017, FR-10, #1449（PR #1450 の AI レビュー 🟡）, IADR-0576 決定3: **成行で手仕舞えた事実は、記録を閉じられた巡回で 1 回だけ出す。**
+    // 成行を送る間に別の書き手がレグの注文 ID を書き換え、1 回目の完了が外れる。次の巡回は同じ試行の記録から閉じ直し、そこで初めて出す。
+    [Fact]
+    public async Task 成行の手仕舞いの完了が並行更新で外れても保護喪失の事実は合計1回だけ出る()
+    {
+        var stop = ActiveStop();
+        var (guard, broker, stops, _) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Expired);
+        broker.Orders["stop-other"] = StopOrder(OrderStatus.Expired) with { OrderId = "stop-other" };
+        broker.Positions = [Long(10)];
+        broker.RejectReplacement = true;
+        broker.BeforeMarketClose = () =>
+            stops.TrySave(stops.Find(stop.EntryDecisionId)! with { StopOrderId = "stop-other" }).Should().BeTrue();
+
+        var first = await guard.RunOnceAsync(10);
+
+        broker.MarketCloseCount.Should().Be(1);
+        first.ClosedOut.Should().Be(0);
+        first.Events.OfType<ProtectiveStopCoverageLost>()
+            .Where(e => e.Remediation == ProtectiveStopRemediation.PositionClosed).Should().BeEmpty("閉じられなかった巡回では出さない");
+        stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+
+        broker.BeforeMarketClose = null;
+        var second = await guard.RunOnceAsync(10);
+
+        broker.MarketCloseCount.Should().Be(1, "同じ試行の記録から閉じ直す（成行を重ねない）");
+        second.ClosedOut.Should().Be(1);
+        second.Events.OfType<ProtectiveStopCoverageLost>()
+            .Where(e => e.Remediation == ProtectiveStopRemediation.PositionClosed).Should().ContainSingle();
+        stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
     }
 
     [Fact]

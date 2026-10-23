@@ -1042,15 +1042,14 @@ public sealed class ProtectiveStopGuard(
     {
         // 解決した。以後は再通知しない・撃ち直しの数えも捨てる（#857）。#938: 捨てるのは MarkCompleted が行う
         // （記録を完了させる全経路で同じ出口を通る）。
-        // #1449, IADR-0576 決定3: 並行に更新されていて閉じられなくても、成行は送った（記録済み）ので事実は出す（AppendApproval は冪等）。
-        // 記録は Active のまま残り、次の巡回は同じ試行の記録（上の (a)）からここへ戻って閉じ直す。
-        var completed = MarkCompleted(stop);
+        // #1449, IADR-0576 決定3（PR #1450 の AI レビュー 🟡）: 並行に更新されていて閉じられなかった巡回では事実を出さない
+        // （記録は Active のまま。次の巡回は同じ試行の記録〔上の (a)〕からここへ戻り、閉じられた巡回で 1 回だけ出す）。
+        if (!MarkCompleted(stop))
+            return Outcome.Unknown;
         events.Add(new ProtectiveStopCoverageLost(
             stop.EntryDecisionId, stop.Symbol, stop.Market,
             ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.PositionClosed,
             quantity, closeDecisionId, closeIntent, clock.UtcNow));
-        if (!completed)
-            return Outcome.Unknown;
         return Outcome.ClosedOut;
     }
 
@@ -1229,10 +1228,29 @@ public sealed class ProtectiveStopGuard(
     // ——残保護数量の確定・外部要因の観測・帰属不明の通知の印など——を古い写しで巻き戻さない）。ブローカーの事実を記録から落とさないため、
     // 列の当て直しには条件を付けない（IADR-0396 が Save を残した理由＝「保存を落とすと実在する注文と記録が食い違う」を保つ）。
     // 行が無い（消えた）ときは書けない——Error を残す（ストアは行を消さないので、平常では起きない）。
+    // 🔴 #1449（PR #1450 の AI レビュー 🟡）, IADR-0576 決定3: 当て直しの衝突が尽きたら（ProtectiveStopConcurrencyException）、**この経路に限り**
+    // 最後に読んだ最新の行へ列を当てて無条件に保存する（実在する注文と記録の食い違いを作らない方を取る）。Warning を残す。
+    // 完了（MarkCompleted）は例外のまま上げる（閉じない側は次の巡回で評価し直せる）。
     private void ReapplyAfterBrokerAction(
         ProtectiveStopOrder stop, Func<ProtectiveStopOrder, ProtectiveStopOrder> apply, string action)
     {
-        if (stops.Update(stop.EntryDecisionId, apply) is null)
+        ProtectiveStopOrder? written;
+        try
+        {
+            written = stops.Update(stop.EntryDecisionId, apply);
+        }
+        catch (ProtectiveStopConcurrencyException ex)
+        {
+            written = stops.Find(stop.EntryDecisionId) is { } latest ? apply(latest) : null;
+            if (written is not null)
+                stops.Save(written);
+            _logger.LogWarning(ex,
+                "保護逆指値ガード: {Action} の記録が並行更新と衝突し続けたため、最新の行へ当てて無条件に保存しました"
+                + "（証券会社の注文を記録から落とさないため）: EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+                action, stop.EntryDecisionId, stop.Symbol);
+        }
+
+        if (written is null)
         {
             _logger.LogError(
                 "保護逆指値ガード: 保護記録が見つからないため、{Action} を記録できませんでした。証券会社の画面で注文を確認してください: "
