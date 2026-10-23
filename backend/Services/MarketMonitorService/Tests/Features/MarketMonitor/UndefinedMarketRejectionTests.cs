@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Composition;
 using AwesomeAssertions;
 using MarketMonitorService.Domain;
 using MarketMonitorService.Features.MarketMonitor;
@@ -107,9 +108,13 @@ public class UndefinedMarketRejectionTests
         await using var seeded = new SeededFactory(market);
         using var factory = seeded.Build();
 
-        var act = () => factory.CreateClient();
+        // NFR, #1437, IADR-0571: 起動の検証の例外は StartupValidationProbe で読む（factory.CreateClient の例外の型は、アプリ側の
+        // ホスト破棄と試験側の問い合わせの走る順で ObjectDisposedException にもなり得る）。
+        var outcome = factory.ProbeStartupValidation();
 
-        act.Should().Throw<OptionsValidationException>().WithMessage("*Monitor:SeedSymbols*未定義の市場*");
+        outcome.ValidationFailure.Should().BeOfType<OptionsValidationException>()
+            .Which.Message.Should().Match("*Monitor:SeedSymbols*未定義の市場*");
+        outcome.StartFailure.Should().NotBeNull("起動の検証の失敗で起動は止まる");
     }
 
     // 陽性対照: 列挙名（UnitedStates）と定義済みの番号（1）は起動し、シードに使われる。
