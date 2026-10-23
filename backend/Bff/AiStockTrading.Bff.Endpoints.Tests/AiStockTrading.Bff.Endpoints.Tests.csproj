@@ -20,5 +20,7 @@
     <!-- TestServer（Microsoft.AspNetCore.TestHost）を推移的に参照する。 -->
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <ProjectReference Include="..\AiStockTrading.Bff.Endpoints\AiStockTrading.Bff.Endpoints.csproj" />
+    <!-- SC-04, #1413, IADR-0146: `GET /bff/opend-auth/state` の契約フィクスチャ（フロントが読む実応答）を生成・突合する。 -->
+    <ProjectReference Include="..\..\TestSupport\AiStockTrading.TestSupport.ContractFixtures\AiStockTrading.TestSupport.ContractFixtures.csproj" />
   </ItemGroup>
 </Project>

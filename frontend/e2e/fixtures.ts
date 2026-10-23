@@ -139,23 +139,11 @@ export const STAGE_GATE: StageGateStatus = {
 export const RISK_SETTINGS_PAPER = { ...RISK_SETTINGS, brokerProvider: 0 };
 export const RISK_STATUS_PAPER = { ...RISK_STATUS, brokerProvider: 0 };
 
-// SC-04, FR-09, FR-11, UC-06, ADR-0024, #1412: OpenD ゲートウェイの状態（SMS 検証コード待ち）。
-// **契約フィクスチャがまだ無い**（バックエンドの生成対象は risk-controls / monitor だけ）ため、型
-// `OpendAuthStateView` で形を縛った literal で置く。値は `access.test.tsx` の待機中の状態と同じにした。
+// SC-04, FR-09, FR-11, UC-06, ADR-0024, #1412, #1413, IADR-0146: OpenD ゲートウェイの状態（SMS 検証コード待ち）。
+// **BFF の実応答（契約フィクスチャ）**である。バックエンドの `OpendAuthContractFixtureTests` が生成・突合し、
+// 型としての突合は `src/features/sc04-opend-auth/types/contract.test.ts` がコンパイル時に行う。
 // 「待機していない」「供給が無い」の描き分けは SC-04 の spec が spread で上書きする。
-export const OPEND_AUTH_STATE_WAITING: OpendAuthStateView = {
-  promptAvailability: 0,
-  prompt: 'phone',
-  connection: 'waiting',
-  captchaAvailable: false,
-  lastLoginAtAvailability: 0,
-  lastLoginAt: '2026-09-09T21:02:00Z',
-  deviceTrustAvailability: 0,
-  deviceTrustPersisted: true,
-  egressStabilityAvailability: 0,
-  egressStable: true,
-  detail: null,
-};
+export const OPEND_AUTH_STATE_WAITING: OpendAuthStateView = loadContract<OpendAuthStateView>('opend-auth.state.json');
 
 // 既定の全ハンドラ（各画面の正常系）。個々のテストは spread で必要なキーだけ上書きする。
 export function defaultBff(): BffConfig {
