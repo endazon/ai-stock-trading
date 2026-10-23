@@ -486,7 +486,7 @@ public sealed class SoftwareStopExecutor(
         // 代わりに**処理中の決済を差し引いた残りだけを送る**（判断側の IADR-0461 と同じ物差し）。送らないと証券会社が「建玉が足りない」で
         // 拒否し、押さえない証券会社では同じ株を二重に売る。生きている利用者・自動縮小の決済が無ければ何もしない（従来の挙動）。
         var netted = await NetOwnerClosesAsync(current, cancellationToken).ConfigureAwait(false);
-        if (netted.Kind == OwnerCloseNetting.PositionsUnknown)
+        if (netted.Kind == OwnerCloseNettingKind.PositionsUnknown)
         {
             _logger.LogWarning(
                 "ソフトウェア逆指値の決済を据え置きます（処理中の利用者の手仕舞い・維持率割れの自動縮小を差し引くための建玉照会が不明です）。"
@@ -495,7 +495,7 @@ public sealed class SoftwareStopExecutor(
             return SoftwareStopCloseOutcome.Deferred;
         }
 
-        if (netted.Kind == OwnerCloseNetting.Applied && netted.Sendable < quantity)
+        if (netted.Kind == OwnerCloseNettingKind.Applied && netted.Sendable < quantity)
         {
             if (netted.Sendable <= 0)
             {
@@ -667,122 +667,20 @@ public sealed class SoftwareStopExecutor(
             stop, broker, stops, store, clock, _logger, "ソフトウェア逆指値の決済", cancellationToken);
 
     // 🔴 FR-10, UC-06, ADR-0050 決定1, #1222, IADR-0515 決定4: 取り消さなかった利用者の手仕舞い・維持率割れの自動縮小が生きているとき、
-    // **送れる数量＝決済方向の建玉 − 処理中の決済の残りの合計**を返す（判断側 IADR-0461 の CountInFlightClosesAsync と同じ物差し）。
-    //   - 処理中の決済: 同じ銘柄・市場・決済の方向の非終端の Close の記録のうち、**ブローカー側の保護逆指値レグ（S0 / S3）を除いた**もの
-    //     （S1 の決済〔自分の前の試行・他の記録〕・保護喪失の成行手仕舞い・利用者・自動縮小）。保護レグは SIMULATE では売れる数量を押さえない
-    //     （IADR-0461 と同じ。押さえるかは ADR-0050 決定 3 の実弾の確認項目）。残り＝記録の数量 − 約定（記録と照会の大きい方）。
-    //   - 🔴 **証券会社が生きていると答えたものだけを数える**。確かめられない（null・例外）・終端は数えない＝差し引かずに送る側（損切りを止めない）。
-    //   - 生きている利用者・自動縮小の決済が 1 本も無ければ NotApplicable（建玉照会を増やさない・従来の挙動）。
-    //   - 🔴 **猶予（NettedCloseGrace）はここでは見ない。** 取消の段が取り消さなかった生きている利用者・自動縮小の決済はすべて引く。
-    //     取消の段と別に時計を読んで猶予を判定すると、1 回の試行の中で猶予をまたいだ決済が「取消の段では猶予の内・ここでは猶予の外」になり、
-    //     取り消しも差し引きもされずに全量を送る（独立監査 R1。押さえない証券会社では二重に売る）。猶予を過ぎて取り消した決済は終端なので数えない。
-    //   - 照会の順は「記録 → 注文照会 → 建玉照会（新しく）」。間に約定が進むと建玉は約定の後・残りは約定の前になり、**差し引き過ぎる**
-    //     （少なく売り、残りは次の巡回で売る）。逆の順は差し引き不足（二重に売り得る）になるので採らない（作業仕様書の窓の表）。
-    //   - 記録の読み出しの失敗は NotApplicable（差し引かずに送る。是正前と同じ側）。建玉照会の不明は PositionsUnknown（据え置き）。
-    private async Task<OwnerCloseNettingResult> NetOwnerClosesAsync(
-        ProtectiveStopOrder stop, CancellationToken cancellationToken)
-    {
-        List<ExecutionRecord> candidates;
-        try
-        {
-            var pending = store.FindPendingCloses(stop.Symbol, stop.Market, stop.CloseSide);
-            if (!pending.Any(DecisionCloseYield.IsOwnerOrigin))
-                return OwnerCloseNettingResult.NotApplicable;
-
-            var legDecisionIds = new HashSet<Guid>();
-            var legOrderIds = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var row in stops.FindRecentFor(stop.Symbol, stop.Market, stop.EntrySide, NettingScanLimit).Append(stop))
+    // **送れる数量＝決済方向の建玉 − 処理中の決済の残りの合計**を返す。#1452, IADR-0578: 段の本体はガードの成行手仕舞いと共通
+    // （OwnerCloseNetting。挙動は IADR-0515 決定4 のまま移設した）。建玉は自分で照会し、成否を報告する（IADR-0462 決定2）。
+    private Task<OwnerCloseNettingResult> NetOwnerClosesAsync(ProtectiveStopOrder stop, CancellationToken cancellationToken) =>
+        OwnerCloseNetting.NetAsync(
+            stop, broker, stops, store,
+            async ct =>
             {
-                if (row.IsSoftwareStop)
-                    continue; // S1 はブローカーへ逆指値を出さない（StopDecisionId は注文に対応しない）。
-                legDecisionIds.Add(row.StopDecisionId);
-                if (!string.IsNullOrEmpty(row.StopOrderId))
-                    legOrderIds.Add(row.StopOrderId);
-                for (var attempt = 1; attempt <= Math.Max(row.Attempt, 0) + 1; attempt++)
-                    legDecisionIds.Add(ProtectiveStopIds.StopDecisionId(row.EntryDecisionId, attempt));
-            }
-
-            candidates = pending
-                .Where(r => !legDecisionIds.Contains(r.DecisionId) && !legOrderIds.Contains(r.OrderId))
-                .ToList();
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex,
-                "処理中の利用者の手仕舞い・維持率割れの自動縮小を読めませんでした（差し引かずに送ります。証券会社に拒否され得ます）。"
-                    + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
-                stop.EntryDecisionId, stop.Symbol);
-            return OwnerCloseNettingResult.NotApplicable;
-        }
-
-        var inFlight = 0;
-        var ownerCloses = new List<Guid>();
-        foreach (var record in candidates)
-        {
-            var live = await TryGetOrderAsync(record.OrderId, cancellationToken).ConfigureAwait(false);
-            if (live is null || OrderStatusLifecycle.IsTerminal(live.Status))
-                continue;
-
-            var remaining = record.Quantity - Math.Max(record.FilledQuantity, live.FilledQuantity);
-            if (remaining <= 0)
-                continue;
-
-            inFlight += remaining;
-            if (DecisionCloseYield.IsOwnerOrigin(record))
-                ownerCloses.Add(record.DecisionId);
-        }
-
-        if (ownerCloses.Count == 0)
-            return OwnerCloseNettingResult.NotApplicable;
-
-        // 建玉は注文照会の**後**に照会し直す（上の順の理由）。ガードの巡回の先頭のスナップショットは使わない。
-        var query = await PositionQueries.QueryAsync(positions!, cancellationToken).ConfigureAwait(false);
-        await _positionQueryHealth.ReportAsync(
-                PositionQuerySource.SoftwareStopClose, query.Positions is not null, query.ReportedFailureKind)
-            .ConfigureAwait(false);
-        if (query.Positions is null)
-            return new OwnerCloseNettingResult(OwnerCloseNetting.PositionsUnknown, 0, 0, 0, ownerCloses);
-
-        // 決済方向の建玉を方向ごとに数える（判断側の BrokerHeldPositionGate と同じ数え方。ネットは使わない）。
-        var closable = query.Positions
-            .Where(p => p.Symbol == stop.Symbol && p.Market == stop.Market
-                && (stop.CloseSide == TradeSide.Sell ? p.Quantity > 0 : p.Quantity < 0))
-            .Sum(p => Math.Abs(p.Quantity));
-        return new OwnerCloseNettingResult(
-            OwnerCloseNetting.Applied, Math.Max(0, closable - inFlight), closable, inFlight, ownerCloses);
-    }
-
-    // #1222, IADR-0515: 利用者の手仕舞い・維持率割れの自動縮小を差し引いた結果。
-    private enum OwnerCloseNetting
-    {
-        /// <summary>生きている利用者・自動縮小の決済が無い・読めない（従来どおり送る）。</summary>
-        NotApplicable,
-
-        /// <summary>差し引いた（Sendable が送れる数量）。</summary>
-        Applied,
-
-        /// <summary>差し引くための建玉照会が不明（据え置く）。</summary>
-        PositionsUnknown,
-    }
-
-    private readonly record struct OwnerCloseNettingResult(
-        OwnerCloseNetting Kind, int Sendable, int Closable, int InFlight, IReadOnlyList<Guid> OwnerCloseDecisionIds)
-    {
-        public static readonly OwnerCloseNettingResult NotApplicable = new(OwnerCloseNetting.NotApplicable, 0, 0, 0, []);
-    }
-
-    private async Task<BrokerOrder?> TryGetOrderAsync(string orderId, CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await broker.GetOrderAsync(orderId, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogWarning(ex, "処理中の判断の手仕舞いの状態を照会できません。OrderId={OrderId}", orderId);
-            return null;
-        }
-    }
+                var query = await PositionQueries.QueryAsync(positions!, ct).ConfigureAwait(false);
+                await _positionQueryHealth.ReportAsync(
+                        PositionQuerySource.SoftwareStopClose, query.Positions is not null, query.ReportedFailureKind)
+                    .ConfigureAwait(false);
+                return query.Positions;
+            },
+            _logger, "ソフトウェア逆指値の決済", cancellationToken);
 
     // エントリーの約定数量。
     // 🔴 #820 の監査: 記録が無い行の数量で決済すると、同じ銘柄の**別のエントリーの建玉**を売る（実測: 孤立行 1 件＋
