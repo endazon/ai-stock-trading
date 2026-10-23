@@ -320,7 +320,7 @@ public sealed class TradeDecisionAppService(
         // **定時・価格変動の両方の判断を LLM の前で見送る**（新規建ても保有中の銘柄の出口の判断も）。合流点の先頭に置くのは、
         // 以降の照会（方針・サイジング・現在値）も要らず、どの見送りよりも広い理由だからである。
         // LLM を使わない保護（損切り・利用者の手仕舞い・閉場前の手仕舞い・維持率割れの自動縮小）は本経路を通らないので止まらない。
-        // 照会の失敗は「停止していない」へ倒す（判断を続ける。IADR-0031 と同じ判断）。解除は費用統制の月替わり（費用計上月＝UTC の暦月。CostControlAppService.MonthKey）で自動。
+        // 照会の失敗は「停止していない」へ倒す（判断を続ける。IADR-0031 と同じ判断）。解除は費用統制の月替わり（費用計上月＝JST の暦月。CostControlAppService.MonthKey・#1461 / IADR-0584）で自動。
         if (await _costHalt.IsHaltedAsync(cancellationToken).ConfigureAwait(false))
         {
             logger.LogInformation("月次 LLM 費用上限の 100% に達して停止中のため、LLM を呼ぶ前に見送ります: {Symbol} trigger={Trigger}",

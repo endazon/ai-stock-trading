@@ -35,8 +35,9 @@ public class LlmCostIncurredConsumerTests
 {
     private const string ServiceName = "ai-stock-trading.cost-control-service";
 
+    // #1461, IADR-0584: 費用計上月は JST の年月（本番と同じ導出を使う。UTC で求めると JST の月初 9 時間に食い違って落ちる）。
     private static string CurrentMonth() =>
-        DateTimeOffset.UtcNow.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+        CostControlService.Features.CostControl.CostControlAppService.MonthKey(DateTimeOffset.UtcNow);
 
     // withProductionMessaging=true: 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。
     // false: 再試行方針を持たない素の構成（旧 MassTransit テストが素の AddMassTransitTestHarness を使い、

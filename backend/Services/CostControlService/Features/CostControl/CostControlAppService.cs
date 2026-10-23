@@ -11,8 +11,13 @@ namespace CostControlService.Features.CostControl;
 // FR-17, IADR-0065: 上限は利用者が設定サービスで変更しうるため、都度 ICostLimitsProvider から解決する（非同期）。
 public sealed class CostControlAppService(ICostLedger ledger, ICostLimitsProvider limitsProvider, IClock clock)
 {
-    // 費用計上月（UTC の年月）。月をまたぐと累計はリセットされる（GetMonthlyTotal が月で絞るため）。
-    public static string MonthKey(DateTimeOffset instant) => instant.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+    // 🔴 NFR-13, ADR-0057 決定3, #1461, IADR-0584 決定1: 費用計上月（**JST の年月**）。計画は月次 LLM 費用上限の「月」を JST の暦月と定める
+    // （毎月 1 日 0:00 JST に累計が 0 へ戻る）。以前は UTC の年月で、JST の 1 日 0:00〜9:00 の計上が前月の累計に入っていた。
+    // 月をまたぐと累計はリセットされる（GetMonthlyTotal が月で絞るため）。JST は夏時間を持たないので固定の +09:00 で求める。
+    public static readonly TimeSpan JstOffset = TimeSpan.FromHours(9);
+
+    public static string MonthKey(DateTimeOffset instant) =>
+        instant.ToOffset(JstOffset).ToString("yyyy-MM", CultureInfo.InvariantCulture);
 
     public async ValueTask<RecordCostResult> RecordAsync(
         CostCategory category, decimal amount, CancellationToken cancellationToken = default)

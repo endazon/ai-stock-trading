@@ -87,3 +87,5 @@ plan_refs:
 - `helm.yml` は `scripts/check-decision-volume-parity.js` の変更では起動しない（起動条件を変えないため）。判定の変更は `scripts.repo.test.js`（CI の scripts-tests）が試験する。
 - §13 の累計は費用統制が計上した時刻（`RecordedAt`）で切る。LLM の呼び出しから計上までの遅れ（メッセージの配送）の分だけ、窓の終端の近くで §12 と食い違い得る。
 - §13 は `AST_PSQL` の利用者が `cost_control_svc` と `configuration_svc` を読めることを前提にする（ローカル k3s の `ai` 利用者は読める）。
+
+［2026-10-24 追記 / #1461］費用統制の費用計上月を JST の暦月へ改めた（計画 ADR-0057 決定 3 の追随・[IADR-0584](./IADR-0584_cost-month-key-jst.md)）。本文中の「UTC の暦月」は、それ以前の実装の記述である。

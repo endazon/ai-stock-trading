@@ -66,6 +66,8 @@ public sealed class EfCostLedger(CostControlDbContext db) : ICostLedger
 
     // 月キー "yyyy-MM"（常に CostControlAppService.MonthKey 由来）から決定的な bigint を導出する。プロセス跨ぎで安定
     // （複数レプリカでも同月は同キーで直列化）＝ string.GetHashCode（プロセス毎ランダム）は用いない。
+    // #1461, IADR-0584 決定3: 月キーの導出が JST になっても書式は "yyyy-MM" のままなので、値は yyyy×100＋MM で月ごとに一意・安定である
+    // （同じ値が UTC 由来の月と JST 由来の月の両方を指す瞬間は、移行の配備中だけ。そのときも同じ月キーの計上を直列化するだけで害は無い）。
     private static long AdvisoryKey(string month)
     {
         var parts = month.Split('-');

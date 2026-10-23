@@ -2,7 +2,7 @@ using CostControlService.Domain;
 
 namespace CostControlService.Infrastructure.Persistence;
 
-// NFR（費用）, IADR-0027: 費用計上の行モデル（追記専用）。専有 DB（cost_control_svc）に配置する。Month は "yyyy-MM"。
+// NFR（費用）, IADR-0027: 費用計上の行モデル（追記専用）。専有 DB（cost_control_svc）に配置する。Month は "yyyy-MM"（JST の年月。#1461 / IADR-0584。それ以前の行は移行で RecordedAt から引き直した）。
 public sealed class CostEntryRow
 {
     public Guid Id { get; set; }

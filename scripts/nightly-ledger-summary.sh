@@ -324,10 +324,11 @@ BEGIN TRANSACTION READ ONLY;
 SET LOCAL TIME ZONE 'Asia/Tokyo';
 
 \echo '== 13. 当月の LLM 費用と月次上限に対する使用率（費用統制の台帳。上限は設定サービスの前提条件）'
-\echo '-- 月は費用統制と同じ UTC の暦月で、窓の終端（現在時刻より後なら現在時刻）の月。累計はその月の頭から窓の終端までに計上された分'
+\echo '-- 月は費用統制と同じ JST の暦月で、窓の終端（現在時刻より後なら現在時刻）の月。累計はその月の頭から窓の終端までに計上された分'
 \echo '-- llm_governed_jpy が上限の対象（取引判断）。llm_uncapped_jpy は対象外（報告書・情報収集など。抑制しない）'
 WITH m AS (
-  SELECT to_char((LEAST(:'to'::timestamptz, now()) - interval '1 microsecond') AT TIME ZONE 'UTC', 'YYYY-MM') AS month,
+  -- #1461, IADR-0584: 費用統制の費用計上月は JST の年月（CostControlAppService.MonthKey）。同じ導出で月を選ぶ。
+  SELECT to_char((LEAST(:'to'::timestamptz, now()) - interval '1 microsecond') AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM') AS month,
          LEAST(:'to'::timestamptz, now()) AS until_at,
          NULLIF(:'llm_limit', '')::numeric AS lim
 ), s AS (
