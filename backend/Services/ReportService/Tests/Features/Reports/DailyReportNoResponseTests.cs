@@ -99,6 +99,54 @@ public class DailyReportNoResponseTests
         resumed.PeriodKey.Should().Be("daily-2026-07-10");
     }
 
+    // T-10-3055（続き・PR #1462 の AI レビュー 🟡）: 設定が継続なら、方針の照会は無応答の評価をしない（未確定の行を引かない）。
+    // 停止なら引く（対の肯定形）。
+    [Theory]
+    [InlineData(NoResponseBehavior.ContinueLastConfirmed, 0)]
+    [InlineData(NoResponseBehavior.Halt, 1)]
+    public void 継続の設定では方針の照会が無応答の評価をしない(NoResponseBehavior behavior, int expectedLookups)
+    {
+        var (inner, clock) = Pending();
+        clock.UtcNow = FridayOpen.AddHours(1);
+        var store = CountingStore.Wrap(inner, out var counter);
+        var svc = new AppSvc(store, clock, noResponse: Evaluator(store, clock, behavior));
+
+        var policy = svc.GetConfirmedDailyPolicy()!;
+
+        policy.NoResponseHalted.Should().Be(behavior == NoResponseBehavior.Halt);
+        counter.Count(nameof(IReportStore.GetLatestUnconfirmed)).Should().Be(expectedLookups);
+    }
+
+    // IReportStore の呼び出しを数える透過の包み（DispatchProxy）。
+    public class CountingStore : System.Reflection.DispatchProxy
+    {
+        private IReportStore _inner = null!;
+        private readonly Dictionary<string, int> _calls = [];
+
+        public int Count(string method) => _calls.GetValueOrDefault(method);
+
+        public static IReportStore Wrap(IReportStore inner, out CountingStore counter)
+        {
+            var proxy = Create<IReportStore, CountingStore>();
+            counter = (CountingStore)(object)proxy;
+            counter._inner = inner;
+            return proxy;
+        }
+
+        protected override object? Invoke(System.Reflection.MethodInfo? targetMethod, object?[]? args)
+        {
+            _calls[targetMethod!.Name] = Count(targetMethod.Name) + 1;
+            try
+            {
+                return targetMethod.Invoke(_inner, args);
+            }
+            catch (System.Reflection.TargetInvocationException ex) when (ex.InnerException is not null)
+            {
+                throw ex.InnerException;
+            }
+        }
+    }
+
     // T-10-3055（続き）: 効いている日報の再確定（/policy の改訂の下書き。開始日は効いている日報と同じ）は「無応答」ではない。
     [Fact]
     public void 効いている日報の再確定の下書きは承認待ちに数えない()

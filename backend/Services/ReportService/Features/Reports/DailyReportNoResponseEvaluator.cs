@@ -11,6 +11,12 @@ namespace ReportService.Features.Reports;
 // - 結果は ReportNoResponsePolicy.Decide に従う（期限内＝応答待ち・期限超過＝設定どおり。既定は継続）。
 public sealed class DailyReportNoResponseEvaluator(IReportStore store, IClock clock, ReportNoResponseSettings settings)
 {
+    /// <summary>
+    /// 設定が「停止」か。継続（既定）なら停止の印は立ち得ないので、方針の照会はこれを見て評価（2 回の照会）を省く
+    /// （PR #1462 の AI レビュー。通知の常駐は継続でも評価する）。
+    /// </summary>
+    public bool HaltConfigured => settings.Behavior == NoResponseBehavior.Halt;
+
     public DailyReportNoResponseStatus Evaluate()
     {
         var pending = store.GetLatestUnconfirmed(ReportKind.Daily);

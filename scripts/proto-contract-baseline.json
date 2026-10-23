@@ -910,6 +910,11 @@
               "type": "string",
               "label": "optional"
             },
+            "no_response_halted": {
+              "number": 5,
+              "type": "bool",
+              "label": "optional"
+            },
             "period_key": {
               "number": 3,
               "type": "string",

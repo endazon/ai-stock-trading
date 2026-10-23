@@ -110,7 +110,8 @@ public sealed class ReportAppService(
                 latest.Report.PeriodStart, latest.Report.PolicySummary, latest.Report.AssumptionsVersion,
                 latest.Report.PeriodKey, latest.Version,
                 // FR-07, #1423 M-6, ADR-0075 決定1, IADR-0583 決定3: 方針は返したまま、停止の印を載せる。
-                NoResponseHalted: noResponse?.Evaluate().Halted == true);
+                // 設定が継続（既定）なら印は立ち得ないので評価しない（判断ごとの照会に DB の引きを足さない）。
+                NoResponseHalted: noResponse is { HaltConfigured: true } && noResponse.Evaluate().Halted);
     }
 
     /// <summary>
