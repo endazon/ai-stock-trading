@@ -196,6 +196,8 @@ spec:
               value: {{ $o.authGateway.rateLimitMaxSubmissions | quote }}
             - name: OpendAuth__RateLimitWindowSeconds
               value: {{ $o.authGateway.rateLimitWindowSeconds | quote }}
+            - name: OpendAuth__ResendIntervalSeconds
+              value: {{ $o.authGateway.resendIntervalSeconds | default 60 | quote }}
             {{- /* NFR, IADR-0566: 呼び出し元の検証。値ではなくファイルの場所を渡す（Secret を回しても Pod を作り直さない）。 */}}
             - name: OpendAuth__CallerSecretFile
               value: {{ printf "%s/%s" $o.authGateway.callerSecret.mountPath $o.authGateway.callerSecret.secretKey | quote }}

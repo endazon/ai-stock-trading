@@ -361,10 +361,50 @@ public class OpendAuthBffTests
         host.Upstream.Requests.Single(r => r.Path.Contains("resend", StringComparison.Ordinal))
             .Body.Should().BeNullOrEmpty();
 
-        // レート制限は上流が課す（暫定 60 秒に 1 回・実測待ち）。BFF はその 409 を透過する。
+        // 上流の 409（いま再送できない状態）は透過する。レート制限（上流の 429）は下の試験で押さえる。
         host.Upstream.ResendStatus = HttpStatusCode.Conflict;
         var limited = await host.SendAsync("POST", "/bff/opend-auth/resend", roles: OpendAuthTestHost.OwnerRole);
         limited.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    // #1456, SC-04, IADR-0579: レート制限は上流（サイドカー）が課し、429 と Retry-After で返す。
+    // BFF は画面が残り秒数を示せる形（409・rate_limited・retryAfterSeconds）へ写す。
+    // 以前は 429 が「その他」として 503（供給が無い）へ倒れ、画面は「到達できない」と述べていた。
+    [Theory]
+    [InlineData("/bff/opend-auth/resend")]
+    [InlineData("/bff/opend-auth/code")]
+    public async Task 上流のレート制限は残り秒数つきの409へ写す(string path)
+    {
+        await using var host = await OpendAuthTestHost.StartAsync();
+        host.Upstream.State = Waiting("phone");
+        host.Upstream.ResendStatus = HttpStatusCode.TooManyRequests;
+        host.Upstream.VerifyStatus = HttpStatusCode.TooManyRequests;
+        host.Upstream.RetryAfter = TimeSpan.FromSeconds(42);
+
+        var resp = await host.SendAsync("POST", path, roles: OpendAuthTestHost.OwnerRole,
+            body: path.EndsWith("/code", StringComparison.Ordinal) ? """{"code":"123456"}""" : null);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        resp.Headers.RetryAfter!.Delta.Should().Be(TimeSpan.FromSeconds(42));
+        var body = JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement;
+        body.GetProperty("reason").GetString().Should().Be("rate_limited");
+        body.GetProperty("retryAfterSeconds").GetInt32().Should().Be(42);
+    }
+
+    [Fact]
+    public async Task 上流がRetryAfterを返さなければ残り秒数を推測で埋めない()
+    {
+        await using var host = await OpendAuthTestHost.StartAsync();
+        host.Upstream.ResendStatus = HttpStatusCode.TooManyRequests;
+        host.Upstream.RetryAfter = null;
+
+        var resp = await host.SendAsync("POST", "/bff/opend-auth/resend", roles: OpendAuthTestHost.OwnerRole);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        resp.Headers.RetryAfter.Should().BeNull();
+        var body = JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement;
+        body.GetProperty("reason").GetString().Should().Be("rate_limited");
+        body.GetProperty("retryAfterSeconds").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     // ---- 否定形: 禁止コマンドの経路が BFF に存在しない ----
@@ -572,6 +612,8 @@ internal sealed class OpendAuthStubHandler : HttpMessageHandler
     public HttpStatusCode VerifyStatus { get; set; } = HttpStatusCode.NoContent;
     public string? VerifyBody { get; set; }
     public HttpStatusCode ResendStatus { get; set; } = HttpStatusCode.NoContent;
+    /// <summary>#1456: 429 のときに載せる <c>Retry-After</c>（null なら載せない）。</summary>
+    public TimeSpan? RetryAfter { get; set; } = TimeSpan.FromSeconds(60);
     public byte[]? CaptchaBytes { get; set; } = [0x89, 0x50, 0x4E, 0x47];
     public bool Throw { get; set; }
 
@@ -604,16 +646,23 @@ internal sealed class OpendAuthStubHandler : HttpMessageHandler
         }
         if (path.EndsWith("/verify", StringComparison.Ordinal))
         {
-            var resp = new HttpResponseMessage(VerifyStatus);
+            var resp = WithRetryAfter(new HttpResponseMessage(VerifyStatus));
             if (VerifyBody is not null)
                 resp.Content = new StringContent(VerifyBody, Encoding.UTF8, "application/json");
             return resp;
         }
         if (path.EndsWith("/resend", StringComparison.Ordinal))
         {
-            return new HttpResponseMessage(ResendStatus);
+            return WithRetryAfter(new HttpResponseMessage(ResendStatus));
         }
         return new HttpResponseMessage(HttpStatusCode.NotFound);
+    }
+
+    private HttpResponseMessage WithRetryAfter(HttpResponseMessage resp)
+    {
+        if (resp.StatusCode == HttpStatusCode.TooManyRequests && RetryAfter is { } wait)
+            resp.Headers.RetryAfter = new RetryConditionHeaderValue(wait);
+        return resp;
     }
 }
 

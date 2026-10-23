@@ -88,4 +88,31 @@ public class SubmissionRateLimiterTests
 
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
+
+    // #1456, IADR-0579: 再送だけの間隔が残り秒数を「両方が空くまで」にするための覗き見。
+    [Fact]
+    public void 待ちの覗き見は枠を消費しない()
+    {
+        var time = new FakeTimeProvider();
+        var limiter = Create(time);
+        limiter.TryAcquire(out _);
+        limiter.TryAcquire(out _);
+
+        for (var i = 0; i < 10; i++) limiter.CurrentWait().Should().Be(TimeSpan.Zero, "まだ 1 件取れる");
+
+        limiter.TryAcquire(out _).Should().BeTrue("覗き見は 3 件目の枠を使っていない");
+    }
+
+    [Fact]
+    public void 待ちの覗き見は最も古い1件が窓から外れるまでを返す()
+    {
+        var time = new FakeTimeProvider();
+        var limiter = Create(time);
+        for (var i = 0; i < 3; i++) limiter.TryAcquire(out _);
+        time.Advance(TimeSpan.FromSeconds(15));
+
+        limiter.CurrentWait().Should().Be(TimeSpan.FromSeconds(45));
+        limiter.TryAcquire(out var retryAfter).Should().BeFalse();
+        retryAfter.Should().Be(limiter.CurrentWait(), "取得の拒否と同じ値を返す");
+    }
 }

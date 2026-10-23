@@ -176,6 +176,15 @@ function disabledReason(view: OpendAuthStateView | null): string {
  * 🔴 **入力値を反射しない。** サーバも理由の符号しか返さない（コードは応答に載らない）。
  */
 function submissionErrorText(error: unknown): string {
+  // #1456: レート制限（投入と再送の合算・60 秒に 5 件）も 409 で返る。「入力を待っていない」と混ぜない。
+  const rateLimited = rateLimitRetryAfterSeconds(error);
+  if (rateLimited !== undefined) {
+    if (rateLimited === null) {
+      return i18n._(msg`送信の上限に達しました。しばらく待ってから送信してください。`);
+    }
+    const seconds = rateLimited;
+    return i18n._(msg`送信の上限に達しました。あと ${seconds} 秒待ってから送信してください。`);
+  }
   if (error instanceof ApiError && error.kind === 'conflict') {
     return i18n._(msg`いま OpenD は入力を待っていないため、送信できませんでした。`);
   }
@@ -186,10 +195,34 @@ function submissionErrorText(error: unknown): string {
 }
 
 function resendErrorText(error: unknown): string {
+  // #1456: 間隔はサーバ側が課し、残り秒数もサーバが数える（画面は間隔を自分で判定しない）。
+  const rateLimited = rateLimitRetryAfterSeconds(error);
+  if (rateLimited !== undefined) {
+    if (rateLimited === null) {
+      return i18n._(msg`再送の間隔制限に掛かりました。しばらく待ってから再送してください。`);
+    }
+    const seconds = rateLimited;
+    return i18n._(msg`再送の間隔制限に掛かりました。あと ${seconds} 秒待ってから再送してください。`);
+  }
   if (error instanceof ApiError && error.kind === 'conflict') {
     return i18n._(
       msg`再送の間隔制限に掛かったか、いま再送できない状態です。しばらく待って再度お試しください。`,
     );
   }
   return i18n._(msg`ゲートウェイへ到達できず、再送を要求できませんでした。`);
+}
+
+/**
+ * #1456: BFF のレート制限の拒否（409・`{ reason: 'rate_limited', retryAfterSeconds }`）から残り秒数を読む。
+ * レート制限でなければ `undefined`、レート制限だが秒数が無ければ `null`（推測で埋めない）。
+ */
+function rateLimitRetryAfterSeconds(error: unknown): number | null | undefined {
+  if (!(error instanceof ApiError) || error.kind !== 'conflict') return undefined;
+  const body = error.body;
+  if (typeof body !== 'object' || body === null) return undefined;
+  const { reason, retryAfterSeconds } = body as { reason?: unknown; retryAfterSeconds?: unknown };
+  if (reason !== 'rate_limited') return undefined;
+  return typeof retryAfterSeconds === 'number' && Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0
+    ? Math.ceil(retryAfterSeconds)
+    : null;
 }

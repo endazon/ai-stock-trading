@@ -54,4 +54,20 @@ public sealed class SubmissionRateLimiter(TimeProvider timeProvider, int maxSubm
             return true;
         }
     }
+
+    /// <summary>
+    /// #1456, IADR-0579: いま 1 件を取ろうとしたら待つ長さを返す（<b>枠を消費しない</b>）。取れるなら <see cref="TimeSpan.Zero"/>。
+    /// 再送だけの間隔（<see cref="ResendIntervalLimiter"/>）で拒否するとき、残り秒数を「両方が空くまで」にするために使う。
+    /// </summary>
+    public TimeSpan CurrentWait()
+    {
+        var now = timeProvider.GetUtcNow();
+        lock (_gate)
+        {
+            while (_accepted.Count > 0 && now - _accepted.Peek() >= Window) _accepted.Dequeue();
+            if (_accepted.Count < MaxSubmissions) return TimeSpan.Zero;
+            var wait = Window - (now - _accepted.Peek());
+            return wait > TimeSpan.Zero ? wait : TimeSpan.Zero;
+        }
+    }
 }

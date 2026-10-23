@@ -201,6 +201,57 @@ describe('SC-04 OpenD 認証操作画面（planning#594）', () => {
     });
   });
 
+  // #1456, IADR-0579: 再送だけの間隔（60 秒に 1 回）はサーバが課し、残り秒数もサーバが数える。
+  it('再送が間隔制限で拒否されたら残り秒数を示す', async () => {
+    mockApi(stateOf(), {
+      onResend: () => {
+        throw ApiError.fromStatus(409, [], { reason: 'rate_limited', retryAfterSeconds: 42 });
+      },
+    });
+    renderWithProviders(<OpendAuthPage />);
+
+    await screen.findByText('SMS 検証コード');
+    await userEvent.click(screen.getByRole('button', { name: 'SMS を再送' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '再送の間隔制限に掛かりました。あと 42 秒待ってから再送してください。',
+    );
+  });
+
+  it('レート制限の残り秒数が無ければ秒数を推測で示さない', async () => {
+    mockApi(stateOf(), {
+      onResend: () => {
+        throw ApiError.fromStatus(409, [], { reason: 'rate_limited', retryAfterSeconds: null });
+      },
+    });
+    renderWithProviders(<OpendAuthPage />);
+
+    await screen.findByText('SMS 検証コード');
+    await userEvent.click(screen.getByRole('button', { name: 'SMS を再送' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '再送の間隔制限に掛かりました。しばらく待ってから再送してください。',
+    );
+  });
+
+  it('送信が全体のレート制限で拒否されたら入力待ちでないとは述べず残り秒数を示す', async () => {
+    mockApi(stateOf(), {
+      onSubmit: () => {
+        throw ApiError.fromStatus(409, [], { reason: 'rate_limited', retryAfterSeconds: 15 });
+      },
+    });
+    renderWithProviders(<OpendAuthPage />);
+
+    await screen.findByText('SMS 検証コード');
+    await userEvent.type(screen.getByRole('textbox'), CODE);
+    await userEvent.click(screen.getByRole('button', { name: '送信' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '送信の上限に達しました。あと 15 秒待ってから送信してください。',
+    );
+    expect(document.body.textContent).not.toContain(CODE);
+  });
+
   // ---- 検証コードの値を残さない（NFR-05 の適用範囲の拡張） ----
 
   // 🔴 送信後に入力欄へ値が残っていると、画面を離れるまで肩越しに読める状態が続く。

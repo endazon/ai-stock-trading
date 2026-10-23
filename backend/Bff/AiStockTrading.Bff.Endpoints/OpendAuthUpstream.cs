@@ -112,7 +112,7 @@ internal static class OpendAuthUpstream
     /// <summary>画像 CAPTCHA の入力。待機中プロンプトが画像のときだけ。</summary>
     internal const string CommandInputPicVerifyCode = "input_pic_verify_code";
 
-    /// <summary>SMS の再送要求。レート制限（暫定 60 秒に 1 回・実測待ち）は上流が課す。</summary>
+    /// <summary>SMS の再送要求。レート制限は上流が課す（再送だけの間隔 60 秒に 1 回と、投入と合算した 60 秒に 5 件。いずれも暫定値・実測待ち。IADR-0579）。</summary>
     internal const string CommandRequestPhoneVerifyCode = "req_phone_verify_code";
 
     /// <summary>

@@ -861,6 +861,14 @@ msgid "再送の間隔制限に掛かったか、いま再送できない状態�
 msgstr "再送の間隔制限に掛かったか、いま再送できない状態です。しばらく待って再度お試しください。"
 
 #: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "再送の間隔制限に掛かりました。あと {seconds} 秒待ってから再送してください。"
+msgstr "再送の間隔制限に掛かりました。あと {seconds} 秒待ってから再送してください。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "再送の間隔制限に掛かりました。しばらく待ってから再送してください。"
+msgstr "再送の間隔制限に掛かりました。しばらく待ってから再送してください。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
 msgid "再送は 60 秒に 1 回まで（"
 msgstr "再送は 60 秒に 1 回まで（"
 
@@ -2147,6 +2155,14 @@ msgstr "送信した事実・日時・アクター・コマンド種別・結果
 #: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
 msgid "送信するコマンドは"
 msgstr "送信するコマンドは"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "送信の上限に達しました。あと {seconds} 秒待ってから送信してください。"
+msgstr "送信の上限に達しました。あと {seconds} 秒待ってから送信してください。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "送信の上限に達しました。しばらく待ってから送信してください。"
+msgstr "送信の上限に達しました。しばらく待ってから送信してください。"
 
 #: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
 msgid "送信の成否とログイン成功は Discord へ通知されます。"

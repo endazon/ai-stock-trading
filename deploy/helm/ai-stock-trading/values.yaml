@@ -211,6 +211,9 @@ opend:
     # 投入の流量制限（サービス全体で数える）。守っているのは moomoo の SMS 送信枠と総当たり耐性である。
     rateLimitMaxSubmissions: 5
     rateLimitWindowSeconds: 60
+    # #1456, IADR-0579: SMS の再送だけに課す最小の間隔（秒）。上の流量制限（投入と再送の合算）の内側に重ねる。
+    # 検証コードの投入は数えない。暫定値（OpenD 側の制限と SMS の到達所要の実測で置き換える）。
+    resendIntervalSeconds: 60
     # NFR, IADR-0566: 呼び出し元（基盤の BFF）の検証に使う共有シークレット。Secret の volume としてサイドカーだけにマウントする
     # （OpenD 本体にはマウントしない）。ファイルで渡すのは、値を回したときに OpenD の Pod を作り直さないため。
     # 🔴 Secret が無い・値が 32 文字未満のあいだ、サイドカーの 4 本の口はすべて 503 を返す（fail-closed）。Pod の起動は止めない

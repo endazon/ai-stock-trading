@@ -220,6 +220,7 @@ public class OpendAuthEndpointsTests : IDisposable
         (await response.Content.ReadAsStringAsync()).Should().Contain("stdin_unavailable");
     }
 
+    // #1456: 再送だけの間隔（②）が加わったため、① の上限は投入で埋める（再送の 3 連続は ② が 2 件目で止める）。
     [Fact]
     public async Task 窓あたりの上限を超えたら429で書かない()
     {
@@ -227,17 +228,125 @@ public class OpendAuthEndpointsTests : IDisposable
 
         for (var i = 0; i < 3; i++)
         {
-            (await PostResendAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await PostAsync("""{"code":"123456"}""")).StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
         var blocked = await PostResendAsync();
 
         blocked.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         blocked.Headers.RetryAfter.Should().NotBeNull("いつ再試行できるかを返す");
+        (await blocked.Content.ReadAsStringAsync()).Should().Contain("rate_limited");
         _factory.Writer.Lines.Should().HaveCount(3, "上限を超えた 4 件目は SMS 枠を消費しない");
 
         _factory.Time.Advance(TimeSpan.FromSeconds(60));
         (await PostResendAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // ---- #1456, SC-04, IADR-0579: 再送だけの間隔（② 60 秒に 1 回）-------------------------
+
+    // 受け入れ基準: 再送を 60 秒以内に 2 回送ると、2 回目がサーバ側で拒否される（画面は残り秒数を示す）。
+    [Fact]
+    public async Task 再送は60秒以内の2回目を429で拒み書かない()
+    {
+        _factory.GivenConsole(WaitingForPhone);
+        (await PostResendAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
+        _factory.Time.Advance(TimeSpan.FromSeconds(20));
+
+        var blocked = await PostResendAsync();
+
+        blocked.StatusCode.Should().Be(HttpStatusCode.TooManyRequests, "① と同じ拒否の形に揃える");
+        blocked.Headers.RetryAfter!.Delta.Should().Be(TimeSpan.FromSeconds(40), "残り秒数を返す");
+        (await blocked.Content.ReadAsStringAsync()).Should().Contain("resend_interval");
+        _factory.Writer.Lines.Should().ContainSingle("2 回目の再送は OpenD へ書かない（SMS を送らない）");
+    }
+
+    [Theory]
+    [InlineData(59, false)]
+    [InlineData(60, true)]
+    public async Task 再送の間隔の境界は60秒ちょうどで通す(int elapsedSeconds, bool expectedAccepted)
+    {
+        _factory.GivenConsole(WaitingForPhone);
+        (await PostResendAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
+        _factory.Time.Advance(TimeSpan.FromSeconds(elapsedSeconds));
+
+        var second = await PostResendAsync();
+
+        if (expectedAccepted)
+        {
+            second.StatusCode.Should().Be(HttpStatusCode.OK);
+            _factory.Writer.Lines.Should().HaveCount(2);
+        }
+        else
+        {
+            second.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+            second.Headers.RetryAfter!.Delta.Should().Be(TimeSpan.FromSeconds(1));
+            _factory.Writer.Lines.Should().HaveCount(1);
+        }
+    }
+
+    [Fact]
+    public async Task 再送の間隔の残りが端数なら切り上げて返す()
+    {
+        _factory.GivenConsole(WaitingForPhone);
+        (await PostResendAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
+        _factory.Time.Advance(TimeSpan.FromSeconds(59.5));
+
+        var blocked = await PostResendAsync();
+
+        // 切り捨てて 0 を返すと、画面は「いま再送できる」と示し、押すとまた拒否される。
+        blocked.Headers.RetryAfter!.Delta.Should().Be(TimeSpan.FromSeconds(1));
+    }
+
+    // 受け入れ基準: 検証（コード入力）は ② の対象外で、① の合算だけが効く。
+    [Fact]
+    public async Task 検証は再送の間隔に数えない()
+    {
+        _factory.GivenConsole(WaitingForPhone);
+        (await PostResendAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await PostAsync("""{"code":"123456"}""")).StatusCode.Should().Be(HttpStatusCode.OK, "再送の直後でも投入は通る");
+        (await PostAsync("""{"code":"654321"}""")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        _factory.Writer.Lines.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task 投入の後の最初の再送は間隔に掛からない()
+    {
+        _factory.GivenConsole(WaitingForPhone);
+        (await PostAsync("""{"code":"123456"}""")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await PostResendAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // 受け入れ基準: ① サービス全体のレート制限（投入と再送の合算）は残り、② はその内側に重なる。
+    [Fact]
+    public async Task 再送と投入は合算で上限に数える()
+    {
+        _factory.GivenConsole(WaitingForPhone);
+        (await PostResendAsync()).StatusCode.Should().Be(HttpStatusCode.OK);              // ① 1/3
+        (await PostAsync("""{"code":"123456"}""")).StatusCode.Should().Be(HttpStatusCode.OK); // ① 2/3
+        (await PostAsync("""{"code":"123456"}""")).StatusCode.Should().Be(HttpStatusCode.OK); // ① 3/3
+
+        var blocked = await PostAsync("""{"code":"123456"}""");
+
+        blocked.StatusCode.Should().Be(HttpStatusCode.TooManyRequests, "再送も ① の 1 件に数える");
+        (await blocked.Content.ReadAsStringAsync()).Should().Contain("rate_limited");
+        _factory.Writer.Lines.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task 間隔で拒否した再送は投入の枠を消費しない()
+    {
+        _factory.GivenConsole(WaitingForPhone);
+        (await PostResendAsync()).StatusCode.Should().Be(HttpStatusCode.OK); // ① 1/3
+        for (var i = 0; i < 5; i++)
+        {
+            (await PostResendAsync()).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        }
+
+        (await PostAsync("""{"code":"123456"}""")).StatusCode.Should().Be(HttpStatusCode.OK); // ① 2/3
+        (await PostAsync("""{"code":"123456"}""")).StatusCode.Should().Be(HttpStatusCode.OK); // ① 3/3
     }
 
     [Fact]

@@ -57,6 +57,10 @@ export function useSubmitVerificationCode() {
  * レート制限（暫定 60 秒に 1 回・**算定根拠が無く実測待ち**）はサーバ側が課し、
  * 抵触時は 409 が返る。画面はそれを表示するだけで、間隔を自分で判定しない
  * （判定を写すと、値が変わったときに片方だけ古くなる）。
+ *
+ * #1456: レート制限の 409 は本文 `{ reason: 'rate_limited', retryAfterSeconds }` を持つ
+ * （再送だけの間隔 60 秒に 1 回と、投入と合算した 60 秒に 5 件のどちらでも同じ形）。
+ * 残り秒数はサーバが数えた値をそのまま示す（`rateLimitRetryAfterSeconds`）。
  */
 export function useRequestResend() {
   const queryClient = useQueryClient();
