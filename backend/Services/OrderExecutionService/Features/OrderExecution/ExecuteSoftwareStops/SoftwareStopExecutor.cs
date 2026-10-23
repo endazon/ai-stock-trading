@@ -109,7 +109,7 @@ public sealed class SoftwareStopExecutor(
     /// （1 回の試行の中で猶予をまたいだ決済を、取り消しも差し引きもせずに素通りさせない）。
     /// 常駐ガードの巡回（30 秒）4 回分。成行（利用者の既定・#847）は通常この間に約定する。
     /// </summary>
-    public static readonly TimeSpan NettedCloseGrace = TimeSpan.FromMinutes(2);
+    public static readonly TimeSpan NettedCloseGrace = DecisionCloseYield.NettedCloseGrace;
 
     // 持ち分の確定・割り当て（IADR-0344 追記(4)）で参照する Active 行の上限。保有建玉数上限（既定 3）に対して十分大きい。
     private const int NettingScanLimit = 500;
@@ -471,9 +471,9 @@ public sealed class SoftwareStopExecutor(
         if (yieldDecisionCloses)
         {
             var yielded = await YieldDecisionClosesAsync(current, cancellationToken).ConfigureAwait(false);
-            if (yielded == DecisionCloseYield.AwaitingCancel)
+            if (yielded == DecisionCloseYieldResult.AwaitingCancel)
                 return SoftwareStopCloseOutcome.Deferred;
-            if (yielded == DecisionCloseYield.Changed)
+            if (yielded == DecisionCloseYieldResult.Changed)
             {
                 // 取り消した（または約定が進んでいた）＝建玉が動いたかもしれない。渡されたスナップショット（ガードの巡回の先頭）を
                 // 捨てて照会し直し、同じ試行を 1 回だけやり直す。一部約定していれば外部要因の観測がその巡回の上限を縮める（二重に売らない）。
@@ -660,162 +660,11 @@ public sealed class SoftwareStopExecutor(
             : new SoftwareStopCloseOutcome(SoftwareStopCloseKind.Rejected, null);
     }
 
-    // 🔴 FR-10, ADR-0050 決定1, #1121, IADR-0466: 同じ建玉を売る**判断の手仕舞い**（発注執行の非終端の Close の記録のうち、保護の機構が
-    // 出したものと、利用者の手仕舞い・維持率割れの自動縮小を除いた残り）を取り消す。
-    //   - 保護の機構が出したもの（取り消さない）: 同じ銘柄・市場・方向の保護記録（状態を問わない）の StopDecisionId・StopOrderId と、
-    //     試行 1..Attempt+1 の逆指値レグ・成行手仕舞い・S1 の決済の DecisionId。🔴 **保護レグを取り消すと保護そのものを外す。**
-    //     加えて、同じ銘柄・市場・方向のエントリーの記録から導いた、保護逆指値を張れなかった建玉の成行手仕舞い（試行 1）の DecisionId。
-    //   - 🔴 #1222, IADR-0515 決定3: 利用者の手仕舞い・維持率割れの自動縮小（記録の出どころが OwnerClose / MaintenanceMarginReduction で、
-    //     記録の時刻から NettedCloseGrace 以内）は取り消さない（NetOwnerClosesAsync が差し引く）。**出どころが分からない（null）記録は
-    //     判断の手仕舞いと同じく取り消す**（是正前と同じ側＝損切りを止めない）。猶予を過ぎて処理中のものも取り消す（約定しない指値で止めない）。
-    //   - 確かめられない（照会 null・例外）ものは取り消さない＝是正前と同じ（拒否され得るが撃ち直しは続く）。
-    //     環境の違う記録（照会が恒久的に null）で S1 を永遠に待たせないため、待つのは「生きている」と答えたものだけである。
-    //   - 取消の後に終端を確かめられなければ AwaitingCancel（据え置き）。確定前に送ると、売れる数量を押さえる証券会社では拒否され、
-    //     押さえない証券会社では判断の手仕舞いも約定して二重に売る（仕様書の取消の確認の表）。エントリーの取消（ResolveEntryAsync）と同じ倒し方。
-    //   - 記録は書かない（終端の記録・台帳の押さえの解放は約定追跡の OrderExecuted が行う＝書き手を 1 つに保つ）。出し直さない（IADR-0211 決定3）。
-    private async Task<DecisionCloseYield> YieldDecisionClosesAsync(ProtectiveStopOrder stop, CancellationToken cancellationToken)
-    {
-        List<ExecutionRecord> decisionCloses;
-        try
-        {
-            var mechanicalDecisionIds = new HashSet<Guid>();
-            var mechanicalOrderIds = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var row in stops.FindRecentFor(stop.Symbol, stop.Market, stop.EntrySide, NettingScanLimit)
-                .Append(stop))
-            {
-                mechanicalDecisionIds.Add(row.StopDecisionId);
-                if (!string.IsNullOrEmpty(row.StopOrderId))
-                    mechanicalOrderIds.Add(row.StopOrderId);
-                for (var attempt = 1; attempt <= Math.Max(row.Attempt, 0) + 1; attempt++)
-                {
-                    mechanicalDecisionIds.Add(ProtectiveStopIds.StopDecisionId(row.EntryDecisionId, attempt));
-                    mechanicalDecisionIds.Add(ProtectiveStopIds.CloseDecisionId(row.EntryDecisionId, attempt));
-                    mechanicalDecisionIds.Add(ProtectiveStopIds.SoftwareCloseDecisionId(row.EntryDecisionId, attempt));
-                }
-            }
-
-            // 🔴 保護逆指値を張れなかったエントリーの成行手仕舞い（OrderExecutionAppService.CloseUnprotectedPositionAsync。
-            // DecisionId＝CloseDecisionId(エントリー, 1)）は、保護記録が無いことがある（承認時の保護の文脈を書けなかった等）。
-            // 取り消すと出し直されず、逆指値の無い建玉が残る。エントリーの記録から同じ導出で見分ける。
-            foreach (var entry in store.FindRecentOpens(stop.Symbol, stop.Market, stop.EntrySide, NettingScanLimit))
-                mechanicalDecisionIds.Add(ProtectiveStopIds.CloseDecisionId(entry.DecisionId, attempt: 1));
-
-            var now = clock.UtcNow;
-            decisionCloses = store.FindPendingCloses(stop.Symbol, stop.Market, stop.CloseSide)
-                .Where(r => !mechanicalDecisionIds.Contains(r.DecisionId) && !mechanicalOrderIds.Contains(r.OrderId)
-                    && !IsNettedOwnerClose(r, now))
-                .ToList();
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex,
-                "処理中の判断の手仕舞いを読めませんでした（取り消さずに送ります。是正前と同じく、証券会社に拒否され得ます）。"
-                    + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
-                stop.EntryDecisionId, stop.Symbol);
-            return DecisionCloseYield.None;
-        }
-
-        var result = DecisionCloseYield.None;
-        foreach (var record in decisionCloses)
-        {
-            var live = await TryGetOrderAsync(record.OrderId, cancellationToken).ConfigureAwait(false);
-            if (live is null)
-                continue; // 確かめられない。取り消さない（是正前と同じ）。
-
-            if (OrderStatusLifecycle.IsTerminal(live.Status))
-            {
-                // 既に終わっていた（記録は約定追跡が書くまで古い）。約定が記録より進んでいれば建玉が動いている。
-                if (live.FilledQuantity > record.FilledQuantity && result == DecisionCloseYield.None)
-                    result = DecisionCloseYield.Changed;
-                continue;
-            }
-
-            // 🔴 FR-10, FR-09, UC-06, #1395, IADR-0560: **取消を送る前に**「S1 が取消を求めた」印を記録へ書く。
-            // 約定追跡がこの取消を観測して OrderExecuted(Cancelled) を出すとき、印を CancelledBySoftwareStop へ写し、
-            // リスク管理は「手仕舞いが約定せず終了・建玉が残っている」を出さない（建玉は直後の S1 の成行が決済する）。
-            // 送った後に書くと、その間に約定追跡が取消を観測したとき印の無い終端になる。
-            // 印の書き込みの失敗は取消を止めない（発注の挙動は変えない。印が無い＝従来どおり通知が出る側）。
-            try
-            {
-                store.MarkSoftwareStopCancelRequested(record.OrderId, clock.UtcNow);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogWarning(ex,
-                    "判断の手仕舞いに「ソフトウェア逆指値が取消を求めた」印を書けませんでした（取消は送ります。"
-                        + "この取消には「手仕舞いが約定せず終了」の通知が出ることがあります）。"
-                        + "EntryDecisionId={EntryDecisionId} 取消対象 DecisionId={DecisionId} OrderId={OrderId}",
-                    stop.EntryDecisionId, record.DecisionId, record.OrderId);
-            }
-
-            var cancelFailed = false;
-            try
-            {
-                await broker.CancelOrderAsync(record.OrderId, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                cancelFailed = true;
-                // 取消に失敗しても、既に終端（約定し切った等）なら次の照会で分かる。
-                _logger.LogWarning(ex,
-                    "ソフトウェア逆指値の決済の前に、判断の手仕舞いの取消に失敗しました（状態を照会します）。"
-                        + "EntryDecisionId={EntryDecisionId} 取消対象 DecisionId={DecisionId} OrderId={OrderId}",
-                    stop.EntryDecisionId, record.DecisionId, record.OrderId);
-            }
-
-            var after = await TryGetOrderAsync(record.OrderId, cancellationToken).ConfigureAwait(false);
-
-            // 🔴 #1395, IADR-0560 決定1（2026-10-20 追記）: 取消が失敗し、注文がまだ終わっていない（照会できない・非終端）なら印を戻す。
-            // 残すと、後で利用者が取り消したときの「手仕舞いが約定せず終了」まで黙る（主体は S1 ではない）。
-            // S1 は次の巡回で取り消し直し、そのときに印を書き直す。失敗しても板で取消が効いて終端していれば印は残す（S1 の取消）。
-            if (cancelFailed && (after is null || !OrderStatusLifecycle.IsTerminal(after.Status)))
-                ClearSoftwareStopCancelMark(stop, record);
-            if (after is null || !OrderStatusLifecycle.IsTerminal(after.Status))
-            {
-                _logger.LogWarning(
-                    "ソフトウェア逆指値の決済を据え置きます（同じ建玉を売る判断の手仕舞いの取消がまだ確定していません。次の巡回で確かめ直します）。"
-                        + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 取消対象 DecisionId={DecisionId} OrderId={OrderId} 数量={Quantity}",
-                    stop.EntryDecisionId, stop.Symbol, record.DecisionId, record.OrderId, record.Quantity);
-                result = DecisionCloseYield.AwaitingCancel;
-                continue;
-            }
-
-            _logger.LogWarning(
-                "ソフトウェア逆指値の決済の前に、同じ建玉を売る判断の手仕舞いを取り消しました（損切りを止めないため。出し直しはしません）。"
-                    + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 取消した DecisionId={DecisionId} OrderId={OrderId} 数量={Quantity} "
-                    + "約定済み={Filled} 状態={Status}",
-                stop.EntryDecisionId, stop.Symbol, record.DecisionId, record.OrderId, record.Quantity,
-                Math.Max(record.FilledQuantity, after.FilledQuantity), after.Status);
-            if (result == DecisionCloseYield.None)
-                result = DecisionCloseYield.Changed;
-        }
-
-        return result;
-    }
-
-    // 🔴 #1395, IADR-0560: 「S1 が取消を求めた」印を戻す。戻せなくても取消・決済は止めない（印が残る側の残余は IADR-0560）。
-    private void ClearSoftwareStopCancelMark(ProtectiveStopOrder stop, ExecutionRecord record)
-    {
-        try
-        {
-            store.ClearSoftwareStopCancelRequested(record.OrderId);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogWarning(ex,
-                "取消に失敗した判断の手仕舞いの「ソフトウェア逆指値が取消を求めた」印を戻せませんでした（この注文が後で取り消されても"
-                    + "「手仕舞いが約定せず終了」が出ないことがあります）。EntryDecisionId={EntryDecisionId} DecisionId={DecisionId} OrderId={OrderId}",
-                stop.EntryDecisionId, record.DecisionId, record.OrderId);
-        }
-    }
-
-    // 🔴 #1222, IADR-0515 決定3: 出どころが利用者の手仕舞い・維持率割れの自動縮小か。null（分からない）・TradeDecision は false。
-    private static bool IsOwnerOrigin(ExecutionRecord record) =>
-        record.ApprovalOrigin is OrderApprovalOrigin.OwnerClose or OrderApprovalOrigin.MaintenanceMarginReduction;
-
-    // 🔴 #1222, IADR-0515 決定3: 取消の段で取り消さずに残す決済か（利用者・自動縮小で、猶予の内）。差し引きの段はこれを使わない。
-    private static bool IsNettedOwnerClose(ExecutionRecord record, DateTimeOffset now) =>
-        IsOwnerOrigin(record) && now - record.ExecutedAt < NettedCloseGrace;
+    // 🔴 FR-10, ADR-0050 決定1, #1121, IADR-0466: 同じ建玉を売る**判断の手仕舞い**を取り消し、照会で終端を確かめる。
+    // #1448, IADR-0577: 段の本体はガードの成行手仕舞いと共通（DecisionCloseYield。挙動は IADR-0466 のまま移設した）。
+    private Task<DecisionCloseYieldResult> YieldDecisionClosesAsync(ProtectiveStopOrder stop, CancellationToken cancellationToken) =>
+        DecisionCloseYield.CancelAndConfirmAsync(
+            stop, broker, stops, store, clock, _logger, "ソフトウェア逆指値の決済", cancellationToken);
 
     // 🔴 FR-10, UC-06, ADR-0050 決定1, #1222, IADR-0515 決定4: 取り消さなかった利用者の手仕舞い・維持率割れの自動縮小が生きているとき、
     // **送れる数量＝決済方向の建玉 − 処理中の決済の残りの合計**を返す（判断側 IADR-0461 の CountInFlightClosesAsync と同じ物差し）。
@@ -837,7 +686,7 @@ public sealed class SoftwareStopExecutor(
         try
         {
             var pending = store.FindPendingCloses(stop.Symbol, stop.Market, stop.CloseSide);
-            if (!pending.Any(IsOwnerOrigin))
+            if (!pending.Any(DecisionCloseYield.IsOwnerOrigin))
                 return OwnerCloseNettingResult.NotApplicable;
 
             var legDecisionIds = new HashSet<Guid>();
@@ -879,7 +728,7 @@ public sealed class SoftwareStopExecutor(
                 continue;
 
             inFlight += remaining;
-            if (IsOwnerOrigin(record))
+            if (DecisionCloseYield.IsOwnerOrigin(record))
                 ownerCloses.Add(record.DecisionId);
         }
 
@@ -933,19 +782,6 @@ public sealed class SoftwareStopExecutor(
             _logger.LogWarning(ex, "処理中の判断の手仕舞いの状態を照会できません。OrderId={OrderId}", orderId);
             return null;
         }
-    }
-
-    // #1121, IADR-0466: 判断の手仕舞いを取り消す段の結果。
-    private enum DecisionCloseYield
-    {
-        /// <summary>取り消すものが無い・確かめられない（従来どおり送る）。</summary>
-        None,
-
-        /// <summary>取り消した・約定が進んでいた（建玉を照会し直して 1 回だけやり直す）。</summary>
-        Changed,
-
-        /// <summary>取消がまだ確定していない（据え置く）。</summary>
-        AwaitingCancel,
     }
 
     // エントリーの約定数量。

@@ -653,6 +653,181 @@ public class ProtectiveStopGuardTests
         closeLock.Held.Should().BeFalse();
     }
 
+    // ---- #1448, IADR-0577: ガードの成行の手仕舞いは、板に残る判断の決済を取り消して確かめてから送る ----
+
+    private const string DecisionCloseOrderId = "decision-close-1";
+
+    // 判断の全量の手仕舞い（指値・出どころ TradeDecision・未約定）を記録と証券会社の板に置く。
+    private static ExecutionRecord PlaceDecisionClose(
+        GuardBroker broker, InMemoryExecutedOrderStore store, int quantity = 10,
+        OrderApprovalOrigin? origin = OrderApprovalOrigin.TradeDecision, Guid? decisionId = null)
+    {
+        var record = new ExecutionRecord(
+            decisionId ?? Guid.NewGuid(), DecisionCloseOrderId, "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+            PositionEffect.Close, quantity, 1_010m, 0, 0m, OrderStatus.Accepted, 0m, Now.AddMinutes(-1), ApprovalOrigin: origin);
+        store.Save(record);
+        broker.Orders[DecisionCloseOrderId] = new BrokerOrder(
+            DecisionCloseOrderId,
+            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, BrokerProvider.MoomooSimulate,
+                quantity, 1_010m, PositionEffect.Close),
+            OrderStatus.Accepted, 0, 0m, Now, null);
+        return record;
+    }
+
+    // 板に残る（取り消されていない・終端でない）判断の決済の未約定の残り＋約定済みの分＋ガードの成行。未約定の売りを押さえない証券会社では、
+    // これが建玉を超えると両方が約定して反対建玉になる。
+    private static int TotalSells(GuardBroker broker)
+    {
+        var decision = broker.Orders[DecisionCloseOrderId]!;
+        var decisionSells = OrderStatusLifecycle.IsTerminal(decision.Status) ? decision.FilledQuantity : decision.Intent.Quantity;
+        return decisionSells + (broker.MarketCloseCount > 0 ? broker.LastCloseIntent!.Quantity : 0);
+    }
+
+    // 🔴 T-10-3018（#1448 受け入れ基準 1）, FR-10, ADR-0050 決定1, IADR-0577: 判断の決済（指値・10 株）が板に未約定で残る状態で、
+    // 逆指値が失効し張り直しも拒否された。ガードは判断の決済を取り消し、終端を確かめてから成行 10 株を送る。決済の合計は建玉 10 株を超えない。
+    // 変異（取消の段を外す）: 判断の決済 10 株＋成行 10 株＝20 株で赤。
+    [Fact]
+    public async Task T_10_3018_板に残る判断の決済を取り消してから成行を送り合計が建玉を超えない()
+    {
+        var stop = ActiveStop();
+        var (guard, broker, stops, store) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Cancelled);
+        broker.Positions = [Long(10)];
+        broker.RejectReplacement = true;
+        PlaceDecisionClose(broker, store);
+        var cancelledBeforeSend = false;
+        broker.BeforeMarketClose = () => cancelledBeforeSend = broker.Orders[DecisionCloseOrderId]!.Status == OrderStatus.Cancelled;
+
+        var result = await guard.RunOnceAsync(10);
+
+        broker.Cancelled.Should().Contain(DecisionCloseOrderId, "🔴 板に残る判断の決済を取り消す");
+        cancelledBeforeSend.Should().BeTrue("取消を照会で確かめてから成行を送る");
+        broker.MarketCloseCount.Should().Be(1);
+        broker.LastCloseIntent!.Quantity.Should().Be(10);
+        TotalSells(broker).Should().BeLessThanOrEqualTo(10, "🔴 決済の合計が建玉を超えない（押さえない証券会社で反対建玉にしない）");
+        ((IExecutedOrderStore)store).FindSoftwareStopCancelRequestedAt(DecisionCloseOrderId).Should().NotBeNull(
+            "成行に置き換えるための取消の印（手仕舞いが約定せず終了の通知を出さない）");
+        result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle()
+            .Which.Remediation.Should().NotBe(ProtectiveStopRemediation.None);
+        stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+    }
+
+    // 🔴 T-10-3019（#1448 受け入れ基準 2）, IADR-0577: 取消を受け付けても照会では生きたまま／取消の後に照会できない → 成行を送らず人手対応（None）。
+    // 記録は Active のまま（次の巡回で取り消し直す）。#1447 の「照会できなければ送らない」と同じ倒し方。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task T_10_3019_判断の決済の取消を確かめられなければ成行を送らず人手対応にする(bool stillWorking)
+    {
+        var stop = ActiveStop();
+        var (guard, broker, stops, store) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Cancelled);
+        broker.Positions = [Long(10)];
+        broker.RejectReplacement = true;
+        PlaceDecisionClose(broker, store);
+        if (stillWorking)
+            broker.CancelLeavesWorking = true;
+        else
+            broker.AfterCancel = () => broker.Orders.Remove(DecisionCloseOrderId); // 取消の後は照会不能（null）
+
+        var result = await guard.RunOnceAsync(10);
+
+        broker.Cancelled.Should().Contain(DecisionCloseOrderId);
+        broker.MarketCloseCount.Should().Be(0, "🔴 取消を確かめられなければ成行を送らない");
+        result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle()
+            .Which.Remediation.Should().Be(ProtectiveStopRemediation.None, "人手対応を求める（無音にしない）");
+        stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active, "次の巡回で取り消し直す");
+    }
+
+    // 🔴 T-10-3020（#1448 受け入れ基準 3）, IADR-0577: 取消の窓で判断の決済が一部（4 株）約定して取り消された → 建玉 6 株を照会し直して 6 株だけ送る。
+    // 全部約定した → 建玉 0 で送らず、記録は Active のまま（次の巡回が建玉 0 を見て完了させる）・保護喪失の通知も出さない。
+    // 変異（取消の後の照会し直しを外す）: 一部約定で 10 株を送り赤。
+    [Theory]
+    [InlineData(4, 6)]
+    [InlineData(10, 0)]
+    public async Task T_10_3020_取消の窓で判断の決済が約定したら照会し直した数量で送り0なら送らない(int filledInWindow, int expectedSent)
+    {
+        var stop = ActiveStop();
+        var (guard, broker, stops, store) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Cancelled);
+        broker.Positions = [Long(10)];
+        broker.RejectReplacement = true;
+        PlaceDecisionClose(broker, store);
+        broker.AfterCancel = () =>
+        {
+            var order = broker.Orders[DecisionCloseOrderId]!;
+            broker.Orders[DecisionCloseOrderId] = order with
+            {
+                Status = filledInWindow >= order.Intent.Quantity ? OrderStatus.Filled : OrderStatus.Cancelled,
+                FilledQuantity = filledInWindow,
+                AveragePrice = 1_010m,
+                CompletedAt = Now,
+            };
+            var left = 10 - filledInWindow;
+            broker.Positions = left > 0 ? [Long(left)] : [];
+        };
+
+        var result = await guard.RunOnceAsync(10);
+
+        broker.MarketCloseCount.Should().Be(expectedSent > 0 ? 1 : 0);
+        TotalSells(broker).Should().BeLessThanOrEqualTo(10, "🔴 判断の決済の約定分と成行の合計が建玉を超えない");
+        if (expectedSent > 0)
+        {
+            broker.LastCloseIntent!.Quantity.Should().Be(expectedSent, "🔴 取消の窓の約定を差し引いた建玉で送る");
+            result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle()
+                .Which.Quantity.Should().Be(expectedSent);
+        }
+        else
+        {
+            result.Events.OfType<ProtectiveStopCoverageLost>().Should().BeEmpty("建玉はもう無い（次の巡回が完了させる）");
+            stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+        }
+    }
+
+    // T-10-3021（#1448 受け入れ基準 4・退行なし）, IADR-0577: 判断の決済が無い／記録は非終端のまま古いが証券会社では既に終わっている
+    // （約定は進んでいない）／板に残るのが猶予の内の利用者の手仕舞い（OwnerClose。IADR-0515 決定3）だけ
+    // → 何も取り消さず、従来どおり全量を送る（利用者の決済の差し引きは #1452 で扱う）。
+    public enum PendingCloseCase
+    {
+        None,
+        StaleTerminalRecord,
+        OwnerCloseInGrace,
+    }
+
+    [Theory]
+    [InlineData(PendingCloseCase.None)]
+    [InlineData(PendingCloseCase.StaleTerminalRecord)]
+    [InlineData(PendingCloseCase.OwnerCloseInGrace)]
+    public async Task T_10_3021_判断の決済が無ければ取り消さず従来どおり全量を送る(PendingCloseCase pending)
+    {
+        var stop = ActiveStop();
+        var (guard, broker, _, store) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Cancelled);
+        broker.Positions = [Long(10)];
+        broker.RejectReplacement = true;
+        switch (pending)
+        {
+            case PendingCloseCase.StaleTerminalRecord:
+                PlaceDecisionClose(broker, store);
+                broker.Orders[DecisionCloseOrderId] = broker.Orders[DecisionCloseOrderId]! with
+                {
+                    Status = OrderStatus.Cancelled,
+                    CompletedAt = Now,
+                };
+                break;
+            case PendingCloseCase.OwnerCloseInGrace:
+                // 記録の時刻は 1 分前（猶予 NettedCloseGrace＝2 分の内）。証券会社では生きている。
+                PlaceDecisionClose(broker, store, origin: OrderApprovalOrigin.OwnerClose);
+                break;
+        }
+
+        await guard.RunOnceAsync(10);
+
+        broker.Cancelled.Should().BeEmpty("取り消すものが無い（猶予の内の利用者の手仕舞いは取り消さない）");
+        broker.MarketCloseCount.Should().Be(1);
+        broker.LastCloseIntent!.Quantity.Should().Be(10, "従来どおり全量を送る");
+    }
+
     [Fact]
     public async Task 失効かつ建玉なしは完了として記録する()
     {

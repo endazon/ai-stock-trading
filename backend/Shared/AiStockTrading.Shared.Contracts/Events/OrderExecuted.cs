@@ -22,6 +22,7 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // 立てるのは約定追跡だけ（S1 が取消を送る前に記録へ書いた印を読む）。末尾の省略可能な欄で、旧い発行元・旧いメッセージは false
 // （＝従来どおり「手仕舞いが約定せず終了」を出す側）。リスク管理はこれが true の取消を「手仕舞いが流れた」と通知しない
 // （建玉は S1 の成行が決済しており、通知は手仕舞い直し＝二重の売りを促す）。在庫の判定には使わない。
+// #1448, IADR-0577: 保護逆指値ガードの成行手仕舞いが同じ段で取り消した場合も true（名前は S1 のまま。値・型は変えない）。
 public record OrderExecuted(
     Guid DecisionId,
     string OrderId,
