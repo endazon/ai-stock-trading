@@ -1,6 +1,8 @@
 extern alias RiskManagementWorker;
 
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
+using AiStockTrading.TestSupport.Metrics;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.Messaging;
@@ -41,12 +43,17 @@ public class OrderExecutedRepublishPollingTests
         public DateTimeOffset UtcNow => Now;
     }
 
+    // 既定は全量約定。Accepted に挙げた注文は未約定のまま（変化なし）と答える。
     private sealed class FilledBroker : IBrokerAdapter
     {
+        public static readonly HashSet<string> Accepted = new(StringComparer.Ordinal) { "STALE-1" };
+
         public BrokerProvider Provider => BrokerProvider.MoomooSimulate;
 
         public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
-            Task.FromResult<BrokerOrder?>(new BrokerOrder(orderId, Intent(), OrderStatus.Filled, 100, 341m, default, Now.AddMinutes(-1)));
+            Task.FromResult<BrokerOrder?>(Accepted.Contains(orderId)
+                ? new BrokerOrder(orderId, Intent(), OrderStatus.Accepted, 0, 0m, default, null)
+                : new BrokerOrder(orderId, Intent(), OrderStatus.Filled, 100, 341m, default, Now.AddMinutes(-1)));
 
         public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default) =>
             throw new InvalidOperationException("追跡は発注しない。");
@@ -81,10 +88,12 @@ public class OrderExecutedRepublishPollingTests
     // 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す（OrderFillPollingServiceTests と同じ）。
     // ホストを作り直すことが「プロセスの再起動」に当たる（記録の店だけを引き継ぐ＝EF なら DB）。
     // failPublish: OrderExecuted の発行だけが投げる（障害の注入）。経路の解決で投げるので、PublishAsync が例外で返る。
-    private static Task<IHost> BuildHostAsync(IExecutedOrderStore store, bool failPublish = false) =>
+    private static Task<IHost> BuildHostAsync(IExecutedOrderStore store, bool failPublish = false, BusinessMetrics? metrics = null) =>
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                if (metrics is not null)
+                    opts.Services.AddSingleton(metrics);
                 opts.Services.AddSingleton<IClock, FakeClock>();
                 opts.Services.AddSingleton<IBrokerAdapter, FilledBroker>();
                 opts.Services.AddSingleton(store);
@@ -202,5 +211,50 @@ public class OrderExecutedRepublishPollingTests
 
         // 累積数量の単調 upsert（OrderId 単位）と、終端は初回だけ（IADR-0113 / IADR-0117）。
         ledger.GetFills().Should().ContainSingle().Which.Quantity.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task 再発行が投げ続けても巡回の残りの発行は止まらず件数が計器に残る()
+    {
+        // 発行待ちの印が立った終端の約定（前の巡回で発行し終えなかった）と、追跡上限を過ぎて非終端のまま残った注文。
+        var store = new InMemoryExecutedOrderStore();
+        var pendingDecision = Guid.NewGuid();
+        store.Save(Dispatched(pendingDecision));
+        store.UpdateOutcome("ORD-1", OrderStatus.Filled, 100, 341m, 0m, Now.AddMinutes(-1)).Should().BeTrue();
+        var stale = Dispatched(Guid.NewGuid()) with { OrderId = "STALE-1", ExecutedAt = Now.AddHours(-25) };
+        store.Save(stale);
+
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        using var host = await BuildHostAsync(store, failPublish: true, metrics: metrics);
+        var service = BuildService(host);
+
+        OrderFillPollResult result = null!;
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(
+            (Func<IMessageContext, Task>)(async _ => result = await service.PollOnceAsync(CancellationToken.None)));
+
+        result.Republished.Should().Be(1);
+        // 再発行の失敗で巡回を終えない: 打ち切りの事実は発行され、その印も書かれる（S1・後始末・照会し直しも同じ並び）。
+        session.Sent.MessagesOf<OrderFillTrackingAbandoned>().Should().ContainSingle().Which.OrderId.Should().Be("STALE-1");
+        store.FindTrackingExpired(Now.AddHours(-24), 10).Should().BeEmpty("打ち切りの印は発行の後に書かれた");
+        // 投げた約定の印は残り（次の巡回で再び試す）、件数が計器に出る。
+        store.FindOrderExecutedPublishPending(10).Select(r => r.OrderId).Should().Equal("ORD-1");
+        capture.ValuesOf(BusinessMetricNames.OrderExecutedPublishPending).Select(m => m.Value).Should().Equal(1d);
+    }
+
+    [Fact]
+    public async Task 発行し終えた巡回の末尾では滞留の件数は0である()
+    {
+        var store = new InMemoryExecutedOrderStore();
+        store.Save(Dispatched(Guid.NewGuid()));
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        using var host = await BuildHostAsync(store, metrics: metrics);
+
+        (await PollAndCaptureAsync(host)).Should().ContainSingle();
+
+        capture.ValuesOf(BusinessMetricNames.OrderExecutedPublishPending).Select(m => m.Value).Should().Equal(0d);
     }
 }

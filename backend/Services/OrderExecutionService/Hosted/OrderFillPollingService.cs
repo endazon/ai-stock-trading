@@ -5,6 +5,7 @@ using OrderExecutionService.Features.OrderExecution.CancelUnfilledDecisionCloses
 using OrderExecutionService.Features.OrderExecution.PollOrderFills;
 using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -103,9 +104,34 @@ public sealed class OrderFillPollingService(
         // singleton へ注入できないため、singleton の IWolverineRuntime から MessageBus を作って発行する。
         var bus = new MessageBus(runtime);
         var executedOrders = scope.ServiceProvider.GetRequiredService<IExecutedOrderStore>();
-        foreach (var executed in result.Executed)
+        for (var i = 0; i < result.Executed.Count; i++)
         {
-            await bus.PublishAsync(executed).ConfigureAwait(false);
+            var executed = result.Executed[i];
+
+            // 🔴 NFR, FR-10, #1442, IADR-0573 決定2: **再発行（先頭の Republished 件）の失敗は 1 件ごとに隔離する。**
+            // 恒常的に投げる 1 件で巡回の残り（S1 の再武装の通知・取消の確認待ちの後始末・打ち切り・照会し直し）が毎巡回止まると、
+            // 資金に関わる事象が届かなくなる。その記録は印を残したまま（次の巡回で再び試す）WRN を出して先へ進む。
+            // 再発行には、この巡回で後に続く事象（取消の確認待ちの後始末）が無い——後始末は終端化を観測したこの巡回の新しい約定にだけ付く。
+            // この巡回の新しい約定の失敗は従来どおり巡回を終える（後始末を OrderExecuted より先に出さない。IADR-0569 決定4）。
+            if (i < result.Republished)
+            {
+                try
+                {
+                    await bus.PublishAsync(executed).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogWarning(ex,
+                        "発行し終えていなかった約定の再発行に失敗しました（印は残し、次の巡回で再び試します。巡回の残りの発行は続けます）: "
+                            + "DecisionId={DecisionId} OrderId={OrderId} 状態={Status} 約定={Filled}",
+                        executed.DecisionId, executed.OrderId, executed.Status, executed.FilledQuantity);
+                    continue;
+                }
+            }
+            else
+            {
+                await bus.PublishAsync(executed).ConfigureAwait(false);
+            }
 
             // 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: **発行の後に**発行待ちの印を倒す（先に倒すと、発行に失敗した約定が
             // 二度と発行されない）。発行が投げたら以降は倒さずに巡回を終える——印は残り、次の巡回で再発行される。
@@ -117,7 +143,8 @@ public sealed class OrderFillPollingService(
             // イベントが 1 本も出ないため、発行の面での挙動は不変で、増えるのは警告ログ 1 行だけである。
             //
             // 🔴 **段 2（実費の供給）の前提**: 部分約定は同じ注文を複数の巡回で観測する。
-            // TradeExpenseRecorded の発行には TradeExpense.SourceId を鍵とした重複排除が要る。
+            // 🔴 #1442, IADR-0573: **再発行（発行し終えていなかった約定の送り直し）も同じ約定をもう一度ここへ通す。**
+            // TradeExpenseRecorded の発行には TradeExpense.SourceId を鍵とした重複排除が要る（再発行の分も対象）。
             // **実装するまで供給を有効にしない。**
             await RecordTradeExpensesAsync(tradeExpenses, bus, executed, cancellationToken).ConfigureAwait(false);
         }
@@ -154,6 +181,7 @@ public sealed class OrderFillPollingService(
         await RecheckAbandonedClosesAsync(poller, tradeExpenses, bus, executedOrders, clock.UtcNow, cancellationToken).ConfigureAwait(false);
         ReportPendingCloses(executedOrders, clock.UtcNow);
         await CancelUnfilledDecisionClosesAsync(scope.ServiceProvider, bus, cancellationToken).ConfigureAwait(false);
+        RecordPublishPending(scope.ServiceProvider, executedOrders);
 
         if (result.Updated > 0 || result.Unknown > 0 || result.Failed > 0 || result.Republished > 0)
             logger.LogInformation(
@@ -300,6 +328,22 @@ public sealed class OrderFillPollingService(
                 "判断由来の決済の指値は未約定ですが、取消の上限（1 建玉 1 日あたり）に達したため取り消しません（当日限り〔DAY〕の失効に任せます）: "
                     + "DecisionId={DecisionId} OrderId={OrderId} 銘柄={Symbol} 方向={Side} 発注={PlacedAt}",
                 r.DecisionId, r.OrderId, r.Symbol, r.Side, r.ExecutedAt);
+        }
+    }
+
+    // 🔴 NFR, FR-10, #1442, IADR-0573 決定3: 巡回の末尾で、発行し終えていない約定の件数を計器へ出す（平常は 0。続けば警報）。
+    // 計器が登録されていない構成（試験の最小ホスト）では何もしない。数えられなくても巡回は止めない（計器は記録しない）。
+    private void RecordPublishPending(IServiceProvider services, IExecutedOrderStore store)
+    {
+        if (services.GetService<BusinessMetrics>() is not { } metrics)
+            return;
+        try
+        {
+            metrics.RecordOrderExecutedPublishPending(store.CountOrderExecutedPublishPending());
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "発行し終えていない約定の件数を数えられませんでした（計器はこの巡回では記録しません）。");
         }
     }
 

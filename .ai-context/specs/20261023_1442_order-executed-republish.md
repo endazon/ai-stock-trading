@@ -66,7 +66,10 @@ updated: 2026-10-23
 
 ## 方式
 
-IADR-0573 決定 1（耐久アウトボックス・exchange を Durable・Solo・戻し口の構成）と決定 2（発行待ちの印・発行の後に状態一致で倒す・印から再発行）。比較は IADR-0573 §検討した選択肢。
+IADR-0573 決定 1（耐久アウトボックス・exchange を Durable・Solo・戻し口の構成）と決定 2（発行待ちの印・発行の後に状態一致で倒す・印から再発行・再発行の失敗の隔離）、
+決定 3（滞留の計器 `ast.order.executed_publish_pending` と警報 `AstOrderExecutedPublishPending`）。
+
+［2026-10-23 追記 / #1442］PR のレビュー（🟡 2 件・🟢 2 件）を受けて、決定 2 に再発行の失敗の隔離、決定 3（計器・警報・ダッシュボード）、残余 1（入れ替えの重なり）、残余 5（経費の段 2 の前提）を足した。比較は IADR-0573 §検討した選択肢。
 
 ## 受け入れ基準 → 試験
 
@@ -79,13 +82,17 @@ IADR-0573 決定 1（耐久アウトボックス・exchange を Durable・Solo�
 | RabbitMQ 断の後に約定が届く（親の試験の穴 5） | `OrderExecutionDurableOutboxE2ETests`（実コンテナ。Integration E2E） |
 | 境界: 発行の後に記録が進めば印は残る／同じ巡回で進めば 1 件／S1 の取消の印を落とさない／読み取りの失敗で追跡を止めない | `OrderExecutedPublishPendingTests` の各試験 |
 
-変異: (1) 再発行を積まない → 6 件赤（店・ポーラー・Worker）。(2) 印を発行の前に倒す → Worker の試験 1 件赤。(3) exchange を Durable にしない → E2E 赤（行が残る）。いずれも戻した。
+| 恒常的に発行が失敗する再発行 1 件で巡回の残りを止めない（レビュー 🟡 2） | `OrderExecutedRepublishPollingTests.再発行が投げ続けても巡回の残りの発行は止まらず件数が計器に残る` |
+| 滞留が計器に出る（平常は 0） | 同上・`…発行し終えた巡回の末尾では滞留の件数は0である` |
+
+変異: (4) 再発行の隔離を外す → 1 件赤（戻した）。(1) 再発行を積まない → 6 件赤（店・ポーラー・Worker）。(2) 印を発行の前に倒す → Worker の試験 1 件赤。(3) exchange を Durable にしない → E2E 赤（行が残る）。いずれも戻した。
 
 ## 影響範囲
 
 - 発注執行: `Program.cs`（永続化の配線）、`WolverineDurableOutbox`（新規）、`IExecutedOrderStore`（既定実装つきの 2 メソッド）・EF / InMemory の店、`ExecutedOrderRow`・移行、
   `OrderFillPoller`（再発行）、`OrderFillPollingService`（印を倒す）、パッケージ `WolverineFx.Postgresql`。
 - 試験: InMemory の `WebApplicationFactory` 18 箇所に `DisableAllWolverineMessagePersistence()`、既存 2 件をポーラーだけの試験として Worker の印を真似るよう直した（`BrokerStopLegFillTrackingTests`）。
+- 共有: `BusinessMetricNames.OrderExecutedPublishPending`・`BusinessMetrics.RecordOrderExecutedPublishPending`。可観測性の資産: 業務ダッシュボードのパネル 1 枚・警報 1 件。
 - 他サービス・計画・helm の値は変えない（既定 true のため環境変数は要らない）。
 
 ## PoC での確認（配備前の手順）

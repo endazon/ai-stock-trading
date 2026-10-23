@@ -325,6 +325,20 @@
           "legendFormat": "over-65s"
         }
       ]
+    },
+    {
+      "id": 22,
+      "title": "約定の発行: 発行し終えていない約定（約定追跡の巡回の末尾）",
+      "description": "約定追跡の巡回の末尾で数えた、発行待ちの印が立ったままの約定の件数。発行の後に印を倒すので平常は 0。0 でない値が巡回（既定 30 秒）をまたいで続くなら、その約定はリスク管理の台帳へ届いていない（再発行が失敗し続けている）。警報 AstOrderExecutedPublishPending が 10 分の継続で上がる。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 84, "w": 24, "h": 7 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "max(ast_order_executed_publish_pending)",
+          "legendFormat": "pending"
+        }
+      ]
     }
   ]
 }

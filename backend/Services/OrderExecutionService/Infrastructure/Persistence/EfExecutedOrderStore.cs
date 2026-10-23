@@ -350,6 +350,9 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
             .Select(r => ToRecord(r))];
     }
 
+    // 🔴 NFR, FR-10, #1442, IADR-0573 決定3: 発行待ちの印が立った記録の件数（滞留の計器）。
+    public int CountOrderExecutedPublishPending() => db.ExecutedOrders.Count(r => r.OrderExecutedPublishPending);
+
     // 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: 発行待ちの印を倒す（この 1 列だけ。今の状態・約定数が発行したものと同じときだけ）。
     public bool MarkOrderExecutedPublished(string orderId, OrderStatus status, int filledQuantity)
     {

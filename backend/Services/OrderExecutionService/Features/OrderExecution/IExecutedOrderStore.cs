@@ -220,6 +220,12 @@ public interface IExecutedOrderStore
     IReadOnlyList<ExecutionRecord> FindOrderExecutedPublishPending(int batchSize) => [];
 
     /// <summary>
+    /// 🔴 NFR, FR-10, #1442, IADR-0573 決定3: 発行待ちの印が立った記録の件数（滞留の計器。平常は巡回の末尾で 0）。
+    /// 既定の実装（試験用の包み型のためのもの）は 0 を返す。
+    /// </summary>
+    int CountOrderExecutedPublishPending() => 0;
+
+    /// <summary>
     /// 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: 発行待ちの印を倒す（<b>その 1 列だけ</b>）。記録の今の状態・約定数が
     /// 発行した <paramref name="status"/>・<paramref name="filledQuantity"/> と同じときだけ倒す——発行の後に記録がさらに進んでいれば
     /// 印を残し、進んだ状態を次の巡回で発行する。<b>発行の後に呼ぶ</b>（先に倒すと、発行に失敗した約定が二度と発行されない）。

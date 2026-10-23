@@ -125,6 +125,7 @@ issues: [#1442, #1395, #13, #24, #121, #131, #132, #137, #141, #243, #262, #263,
 | --- | --- | --- | --- |
 | 保有状況が不明なための新規建て見送り（`AstEntriesBlockedByUnknownHoldings`） | `ast_trade_cycle_decision_skips_total{reason=~"HoldingsUnknownOpen\|WorkingEntriesUnknownOpen"}` | 15 分窓で 1 件以上が **30 分継続** | Alertmanager（配備は基盤側の共有 overlay） |
 | 乖離の取り込みの追随の打ち切り（`AstDriftAdoptionFollowUpAbandoned`） | `ast_order_drift_adoption_followup_abandoned_total`（`reason`＝`positions-unknown` / `positions-query-failed`） | 15 分窓で 1 件以上が **1 分継続**（1 件で鳴る） | Alertmanager（配備は基盤側の共有 overlay） |
+| 発行し終えていない約定の滞留（`AstOrderExecutedPublishPending`） | `ast_order_executed_publish_pending`（約定追跡の巡回の末尾の件数） | 0 を超える状態が **10 分継続** | Alertmanager（配備は基盤側の共有 overlay） |
 
 - 🔴 **この閾値は実測を要しない。** 対象の見送りは保有照会が**実結線のときにしか立たず**、
   **平常時の期待値が 0 件**だからである。「N 分間に M 件」という形の閾値は実測してから決める
@@ -329,7 +330,11 @@ done
   ```
 
 - **ログ**: WRN `発行し終えていなかった約定を再発行します` は、前の巡回で発行し終えなかった約定を約定追跡が送り直した印である。リスク管理の台帳は二重に数えない。
-  監査台帳の行と Discord の「取引実行」は、まれに 2 件になり得る（発行は届いたが「発行済み」を書けなかったとき）。
+  監査台帳の行と Discord の「取引実行」は、まれに 2 件になり得る（発行は届いたが「発行済み」を書けなかったとき、または配備の入れ替えで新旧の発注執行が重なったとき）。
+  WRN `発行し終えていなかった約定の再発行に失敗しました` は、送り直しが失敗した印である（その約定は次の巡回で再び試す。巡回の残りの発行は止まらない）。
+- **滞留の検知**: 計器 `ast_order_executed_publish_pending`（巡回の末尾の件数。平常は 0）と警報 `AstOrderExecutedPublishPending`（0 を超える状態が 10 分続く）。
+  鳴ったら、上の WRN の DecisionId・OrderId と、確認クエリの 2 本目で残っている約定を見る。続く原因は多くの場合 DB への書き込みの失敗（`wolverine` スキーマ・接続）である。
+  証券会社の画面で該当の建玉を確かめ、台帳（リスク管理）とずれていれば建玉照会との乖離の取り込みで直す。
 - **戻し口**: 発注執行が起動しない・送信が止まる等の不具合のときは、発注執行の環境変数 `Messaging__DurableOutbox__Enabled=false` で保存をやめて再配備する
   （ブローカー断の間の送信は再び失われ得る。約定追跡の送り直しは残る）。
 

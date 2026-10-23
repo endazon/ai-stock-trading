@@ -216,6 +216,12 @@ public static class BusinessMetricNames
     /// </summary>
     public const string KLineDailyRequests = "ast.kline.daily_requests";
 
+    /// <summary>
+    /// 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定3: 約定追跡の巡回の末尾で数えた<b>発行し終えていない約定</b>（発行待ちの印が立った記録）の件数（直近の値）。
+    /// 発行の後に印を倒すので、平常は巡回の末尾で 0 である。0 でない値が巡回をまたいで続くなら、約定が台帳へ届いていない。
+    /// </summary>
+    public const string OrderExecutedPublishPending = "ast.order.executed_publish_pending";
+
     /// <summary>FR-04, FR-15, #1118, IADR-0467: 日足 K 線の取得の直後に照会した<b>取得枠の使用数</b>（<c>usedQuota</c>。直近の値）。</summary>
     public const string KLineQuotaUsed = "ast.kline.quota_used";
 
