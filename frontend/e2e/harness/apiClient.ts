@@ -36,8 +36,14 @@ export async function apiFetch<T>(path: string, req: ApiRequest = {}): Promise<T
 
   if (!res.ok) {
     // 400/409 は本文の詳細メッセージ（RFC7807）を抽出して伝える（platform と同挙動）。
-    const details = res.status === 400 || res.status === 409 ? await parseProblemDetails(res) : [];
-    throw ApiError.fromStatus(res.status, details);
+    // SC-04, #1413: **解析済みの本文も渡す**（platform の apiClient と同じ）。SC-04 はレート制限の 409
+    // （`{ reason: 'rate_limited', retryAfterSeconds }`。#1456）を本文で読み分ける。渡さないと E2E だけが
+    // 本番と違う文言（一般の競合）を描き、残り秒数の表示を検証できない。
+    const problem =
+      res.status === 400 || res.status === 409
+        ? await parseProblemDetails(res)
+        : { details: [], body: undefined };
+    throw ApiError.fromStatus(res.status, problem.details, problem.body);
   }
   if (res.status === 204) {
     return undefined as T;
@@ -47,7 +53,7 @@ export async function apiFetch<T>(path: string, req: ApiRequest = {}): Promise<T
 }
 
 // RFC7807 ValidationProblem / Problem 応答から人間可読なメッセージ群を抽出する（platform と同形）。
-async function parseProblemDetails(res: Response): Promise<string[]> {
+async function parseProblemDetails(res: Response): Promise<{ details: string[]; body: unknown }> {
   try {
     const bodyJson = (await res.clone().json()) as {
       errors?: Record<string, unknown>;
@@ -63,8 +69,8 @@ async function parseProblemDetails(res: Response): Promise<string[]> {
     }
     if (out.length === 0 && typeof bodyJson.detail === 'string') out.push(bodyJson.detail);
     if (out.length === 0 && typeof bodyJson.title === 'string') out.push(bodyJson.title);
-    return out;
+    return { details: out, body: bodyJson };
   } catch {
-    return [];
+    return { details: [], body: undefined };
   }
 }

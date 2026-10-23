@@ -1,0 +1,13 @@
+{
+  "promptAvailability": 0,
+  "prompt": "phone",
+  "connection": "waiting",
+  "captchaAvailable": false,
+  "lastLoginAtAvailability": 0,
+  "lastLoginAt": "2026-08-05T00:00:00.0000000+00:00",
+  "deviceTrustAvailability": 0,
+  "deviceTrustPersisted": true,
+  "egressStabilityAvailability": 0,
+  "egressStable": true,
+  "detail": null
+}
