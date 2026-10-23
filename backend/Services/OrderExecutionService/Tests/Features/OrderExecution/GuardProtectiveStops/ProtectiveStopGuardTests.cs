@@ -149,7 +149,7 @@ public class ProtectiveStopGuardTests
             stop.ProductType, PositionEffect.Open, stop.Quantity, 1_000m, stop.Quantity, 1_000m, OrderStatus.Filled, 0m,
             Now.AddMinutes(-5)));
         return (new ProtectiveStopGuard(
-            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock()), broker, stops, store);
+            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance), broker, stops, store);
     }
 
     private static BrokerPositionSnapshot Long(int qty) => new("AAPL", Market.UnitedStates, qty, 1_000m);
@@ -375,7 +375,7 @@ public class ProtectiveStopGuardTests
         var broker = new GuardBroker { Positions = null };
         var guard = new ProtectiveStopGuard(
             broker, broker, new InMemoryProtectiveStopOrderStore(), new InMemoryExecutedOrderStore(),
-            new InMemoryOrderReservationStore(), new FakeClock());
+            new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance);
 
         var result = await guard.RunOnceAsync(10);
 
@@ -402,7 +402,7 @@ public class ProtectiveStopGuardTests
         stops.Save(broken);
         stops.Save(healthy);
         var guard = new ProtectiveStopGuard(
-            broker, broker, stops, new InMemoryExecutedOrderStore(), new InMemoryOrderReservationStore(), new FakeClock());
+            broker, broker, stops, new InMemoryExecutedOrderStore(), new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance);
 
         var result = await guard.RunOnceAsync(10);
 
@@ -437,7 +437,7 @@ public class ProtectiveStopGuardTests
 
     private static ProtectiveStopGuard WithRetry(GuardBroker broker, InMemoryProtectiveStopOrderStore stops,
         InMemoryExecutedOrderStore store, List<TimeSpan> waits) =>
-        new(broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(),
+        new(broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance,
             positionQueryRetry: new PositionQueryRetry(
                 new ProtectiveStopGuardOptions(),
                 (wait, _) =>
@@ -503,7 +503,7 @@ public class ProtectiveStopGuardTests
     private static ProtectiveStopGuard WithHealth(
         GuardBroker broker, InMemoryProtectiveStopOrderStore stops, InMemoryExecutedOrderStore store,
         RecordingPositionQueryHealth health, bool withRetry) =>
-        new(broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(),
+        new(broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance,
             positionQueryRetry: withRetry
                 ? new PositionQueryRetry(new ProtectiveStopGuardOptions(), (_, _) => Task.CompletedTask, () => 0.5)
                 : null,

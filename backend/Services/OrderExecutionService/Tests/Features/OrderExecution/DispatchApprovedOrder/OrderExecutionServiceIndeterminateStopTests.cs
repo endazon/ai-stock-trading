@@ -184,7 +184,7 @@ public class OrderExecutionServiceIndeterminateStopTests
         // エントリーを送った後の口座には建玉がある（#1048 で送る前を空にしたので、ここで約定後の口座へ戻す）。
         broker.Positions = [new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 10, 1_000m)];
         var guard = new OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard(
-            broker, broker, stops, store, reservations, new FakeClock());
+            broker, broker, stops, store, reservations, new FakeClock(), AlwaysOpenSessionGate.Instance);
         var patrol = await guard.RunOnceAsync(batchSize: 10);
 
         patrol.Replaced.Should().Be(1);

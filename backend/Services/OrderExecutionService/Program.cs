@@ -153,6 +153,10 @@ builder.Services.AddSingleton<IBrokerAdapter>(sp =>
 });
 
 builder.Services.AddSingleton<IClock, SystemClock>();
+// 🔴 FR-10, NFR, #1444（親 #1423 M-1）, IADR-0574 決定1: 保護逆指値ガードと S1 の決済が「今は場中か」を問う口（共有カーネルの MarketHours）。
+// 下の 2 つの組み立てへ渡す。引数は省略できない（渡し忘れはコンパイルで止まる）。実体が MarketHours であることは T-10-3001 が
+// 本番の組み立てで固定する（「常に場中」の偽物は試験のアセンブリにしか無い）。
+builder.Services.AddSingleton<IMarketSessionGate>(MarketHoursSessionGate.Instance);
 // 🔴 NFR, FR-10, FR-11, #1092, IADR-0462 決定1〜3: 建玉照会の成功・失敗を、状態が変わったときだけ監査台帳へ出す報告口。
 // **singleton を 1 つだけ**置き、ガード・S1・発注・観測の常駐へ同じものを渡す（状態は発生源ごとにこの中で持つ）。
 // 発行はランタイムの MessageBus から行う —— 発注・S1 のハンドラの処理中に呼ばれても、その処理が例外で終わったときに
@@ -219,6 +223,8 @@ builder.Services.AddScoped(sp => new SoftwareStopExecutor(
     sp.GetRequiredService<IExecutedOrderStore>(),
     sp.GetRequiredService<IOrderReservationStore>(),
     sp.GetRequiredService<IClock>(),
+    // #1444, IADR-0574 決定3: 閉場中は S1 の成行を送らない（省略できない引数）。
+    sp.GetRequiredService<IMarketSessionGate>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<SoftwareStopExecutor>(),
     // NFR, FR-10, #1092, IADR-0462: S1 が自ら照会した回の建玉照会の状態を台帳へ出す。
     positionQueryHealth: sp.GetRequiredService<IPositionQueryHealthReporter>()));
@@ -472,6 +478,8 @@ if (brokerSelection.IsMoomoo)
             // #848, IADR-0117（改定 7）: 成行手仕舞いも予約 → 発注 → 確定の 3 相で送る（届いたか不明を撃ち直さない）。
             sp.GetRequiredService<IOrderReservationStore>(),
             sp.GetRequiredService<IClock>(),
+            // 🔴 #1444, IADR-0574 決定2: 閉場中は逆指値の張り直し・成行の手仕舞いを送らず、次の開場の巡回で張り直す（省略できない引数）。
+            sp.GetRequiredService<IMarketSessionGate>(),
             sp.GetRequiredService<ILoggerFactory>()
                 .CreateLogger<OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard>(),
             sp.GetRequiredService<

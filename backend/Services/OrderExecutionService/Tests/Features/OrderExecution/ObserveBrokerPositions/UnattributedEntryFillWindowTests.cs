@@ -75,7 +75,7 @@ public class UnattributedEntryFillWindowTests
             IReadOnlyList<object> events = path switch
             {
                 Path.Guard => (await new ProtectiveStopGuard(
-                    Broker, Broker, Stops, Store, new InMemoryOrderReservationStore(), Clock).RunOnceAsync(50)).Events,
+                    Broker, Broker, Stops, Store, new InMemoryOrderReservationStore(), Clock, AlwaysOpenSessionGate.Instance).RunOnceAsync(50)).Events,
                 _ => new UnattributedPositionDetector(Stops, Store, Clock, batchSize: 50).Detect(positions),
             };
             return events.OfType<SoftwareStopExecuted>()

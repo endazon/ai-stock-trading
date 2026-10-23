@@ -88,9 +88,9 @@ public class ApprovedCloseNettingTests
         public Fixture(Func<InMemoryExecutedOrderStore, IExecutedOrderStore>? wrap = null)
         {
             var store = wrap is null ? (IExecutedOrderStore)Store : wrap(Store);
-            var executor = new SoftwareStopExecutor(Broker, Broker, Stops, store, Reservations, Clock);
+            var executor = new SoftwareStopExecutor(Broker, Broker, Stops, store, Reservations, Clock, AlwaysOpenSessionGate.Instance);
             Guard = new ProtectiveStopGuard(
-                Broker, Broker, Stops, store, Reservations, Clock, Logger, softwareStops: executor);
+                Broker, Broker, Stops, store, Reservations, Clock, AlwaysOpenSessionGate.Instance, Logger, softwareStops: executor);
         }
 
         public ProtectiveStopOrder ArmS1(int quantity)

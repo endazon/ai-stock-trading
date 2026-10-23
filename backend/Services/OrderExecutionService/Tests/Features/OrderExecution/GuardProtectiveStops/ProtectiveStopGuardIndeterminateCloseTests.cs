@@ -132,7 +132,7 @@ public class ProtectiveStopGuardIndeterminateCloseTests
         stops.Save(stop);
         var store = new InMemoryExecutedOrderStore();
         var reservations = new InMemoryOrderReservationStore();
-        var guard = new ProtectiveStopGuard(broker, broker, stops, store, reservations, new FakeClock());
+        var guard = new ProtectiveStopGuard(broker, broker, stops, store, reservations, new FakeClock(), AlwaysOpenSessionGate.Instance);
         return new Harness(guard, broker, stops, store, reservations, stop);
     }
 
@@ -382,7 +382,7 @@ public class ProtectiveStopGuardIndeterminateCloseTests
         stops.Save(stop);
         var store = new InMemoryExecutedOrderStore();
         var reservations = new InMemoryOrderReservationStore();
-        var guard = new ProtectiveStopGuard(adapter, adapter, stops, store, reservations, new FakeClock());
+        var guard = new ProtectiveStopGuard(adapter, adapter, stops, store, reservations, new FakeClock(), AlwaysOpenSessionGate.Instance);
 
         var first = await guard.RunOnceAsync(10);
         await guard.RunOnceAsync(10);

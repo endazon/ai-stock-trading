@@ -99,9 +99,9 @@ public class SoftwareStopBlockingRegressionTests
         var store = new InMemoryExecutedOrderStore();
         var reservations = new InMemoryOrderReservationStore();
         var clock = new FakeClock();
-        var executor = new SoftwareStopExecutor(broker, broker, stops, store, reservations, clock);
+        var executor = new SoftwareStopExecutor(broker, broker, stops, store, reservations, clock, AlwaysOpenSessionGate.Instance);
         return new Fixture(
-            executor, new ProtectiveStopGuard(broker, broker, stops, store, reservations, clock, softwareStops: executor),
+            executor, new ProtectiveStopGuard(broker, broker, stops, store, reservations, clock, AlwaysOpenSessionGate.Instance, softwareStops: executor),
             new AppSvc(broker, store, reservations, clock, stops), clock, broker, stops, store);
     }
 

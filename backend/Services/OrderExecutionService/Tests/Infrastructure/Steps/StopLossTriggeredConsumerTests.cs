@@ -93,7 +93,7 @@ public class StopLossTriggeredConsumerTests
                 opts.Services.AddSingleton(sp => new SoftwareStopExecutor(
                     sp.GetRequiredService<IBrokerAdapter>(), sp.GetRequiredService<IBrokerPositionSource>(),
                     sp.GetRequiredService<IProtectiveStopOrderStore>(), sp.GetRequiredService<IExecutedOrderStore>(),
-                    sp.GetRequiredService<IOrderReservationStore>(), sp.GetRequiredService<IClock>()));
+                    sp.GetRequiredService<IOrderReservationStore>(), sp.GetRequiredService<IClock>(), AlwaysOpenSessionGate.Instance));
 
                 opts.UseAiStockTradingRabbitMq(
                     ServiceName, "amqp://guest:guest@localhost:5672",

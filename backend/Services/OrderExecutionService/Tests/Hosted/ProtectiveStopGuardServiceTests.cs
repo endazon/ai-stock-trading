@@ -200,7 +200,7 @@ public class ProtectiveStopGuardServiceTests
                 opts.Services.AddScoped(sp => new ProtectiveStopGuard(
                     broker, broker, sp.GetRequiredService<IProtectiveStopOrderStore>(),
                     sp.GetRequiredService<IExecutedOrderStore>(), new InMemoryOrderReservationStore(),
-                    sp.GetRequiredService<IClock>()));
+                    sp.GetRequiredService<IClock>(), AlwaysOpenSessionGate.Instance));
 
                 opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
                 opts.StubAllExternalTransports();

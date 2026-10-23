@@ -75,9 +75,9 @@ public class ProtectiveStopGuardSoftwareStopTests
         var store = new InMemoryExecutedOrderStore();
         var reservations = new InMemoryOrderReservationStore();
         var clock = new FakeClock();
-        var executor = new SoftwareStopExecutor(broker, broker, stops, store, reservations, clock);
+        var executor = new SoftwareStopExecutor(broker, broker, stops, store, reservations, clock, AlwaysOpenSessionGate.Instance);
         return new Fixture(
-            new ProtectiveStopGuard(broker, broker, stops, store, reservations, clock, softwareStops: executor), executor, broker, stops, store);
+            new ProtectiveStopGuard(broker, broker, stops, store, reservations, clock, AlwaysOpenSessionGate.Instance, softwareStops: executor), executor, broker, stops, store);
     }
 
     private static BrokerPositionSnapshot Long(int qty) => new("AAPL", Market.UnitedStates, qty, 1_000m);

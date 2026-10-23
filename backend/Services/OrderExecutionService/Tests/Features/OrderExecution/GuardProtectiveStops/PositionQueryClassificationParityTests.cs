@@ -78,7 +78,7 @@ public class PositionQueryClassificationParityTests
         var stops = new InMemoryProtectiveStopOrderStore();
         stops.Save(ActiveStop());
         var guard = new ProtectiveStopGuard(
-            adapter, adapter, stops, new InMemoryExecutedOrderStore(), new InMemoryOrderReservationStore(), new FakeClock(),
+            adapter, adapter, stops, new InMemoryExecutedOrderStore(), new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance,
             positionQueryRetry: new PositionQueryRetry(
                 new ProtectiveStopGuardOptions(), (_, _) => Task.CompletedTask, () => 0.5),
             positionQueryHealth: health);

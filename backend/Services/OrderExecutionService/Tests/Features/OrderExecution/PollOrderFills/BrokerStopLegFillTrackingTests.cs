@@ -111,7 +111,7 @@ public class BrokerStopLegFillTrackingTests
         var stops = new InMemoryProtectiveStopOrderStore();
         var poller = new OrderFillPoller(
             broker, store, clock, reArmer: null, logger: null, protectiveStops: withProtectiveStops ? stops : null);
-        var guard = new ProtectiveStopGuard(broker, broker, stops, store, new InMemoryOrderReservationStore(), clock);
+        var guard = new ProtectiveStopGuard(broker, broker, stops, store, new InMemoryOrderReservationStore(), clock, AlwaysOpenSessionGate.Instance);
         return new Fixture(clock, broker, store, stops, poller, guard);
     }
 

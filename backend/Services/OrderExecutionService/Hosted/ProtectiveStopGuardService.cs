@@ -24,6 +24,10 @@ public sealed class ProtectiveStopGuardService(
     ILogger<ProtectiveStopGuardService> logger,
     SoftwareStopLivenessReporter? softwareStopLiveness = null) : BackgroundService
 {
+    // 🔴 #1444, IADR-0574 決定4: 直前の巡回で「閉場のため次の開場まで待った」件数。変わったときだけ Information を出す
+    // （閉場中は毎晩、失効した当日限りの逆指値を毎巡回待つので、巡回ごとに出すと 30 秒ごとの行になる）。
+    private int _lastAwaitingMarketOpen;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.Value.Enabled)
@@ -87,6 +91,15 @@ public sealed class ProtectiveStopGuardService(
                 scope.ServiceProvider.GetService<HeldCloseNotificationTracker>(),
                 scope.ServiceProvider.GetService<CloseRejectionTracker>())
             .ConfigureAwait(false);
+
+        if (result.AwaitingMarketOpen != _lastAwaitingMarketOpen)
+        {
+            logger.LogInformation(
+                "保護逆指値ガード: 閉場中のため、逆指値の張り直し・成行の手仕舞いを次の開場まで待つ建玉は {Count} 件です（前回 {Previous} 件）。"
+                    + " 待っている建玉は次の開場まで逆指値がありません。開場後の最初の巡回で張り直します（不可なら場中に成行で手仕舞います）。",
+                result.AwaitingMarketOpen, _lastAwaitingMarketOpen);
+            _lastAwaitingMarketOpen = result.AwaitingMarketOpen;
+        }
 
         if (result.Replaced > 0 || result.ClosedOut > 0 || result.Unknown > 0 || result.Failed > 0
             || result.CloseRejected > 0 || result.CloseFailed > 0)

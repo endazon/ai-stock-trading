@@ -49,6 +49,8 @@ public sealed class SoftwareStopExecutor(
     IExecutedOrderStore store,
     IOrderReservationStore reservations,
     IClock clock,
+    // 🔴 FR-10, NFR, #1444, IADR-0574 決定1: 閉場中は S1 の成行を送らない。**省略できない**（既定の fail-open を置かない）。
+    IMarketSessionGate marketSession,
     ILogger<SoftwareStopExecutor>? logger = null,
     TimeSpan? orphanGrace = null,
     TimeSpan? settlementGrace = null,
@@ -108,6 +110,10 @@ public sealed class SoftwareStopExecutor(
     private const int NettingScanLimit = 500;
 
     private readonly ILogger _logger = logger ?? NullLogger<SoftwareStopExecutor>.Instance;
+
+    // 🔴 FR-10, NFR, #1444（親 #1423 M-1）, IADR-0574 決定3: 閉場中は S1 の成行を送らない（到達の記録は残し、次の開場の巡回で送る）。
+    // 本番は Program.cs が MarketHoursSessionGate を渡す（T-10-3001）。
+    private readonly IMarketSessionGate _marketSession = marketSession ?? throw new ArgumentNullException(nameof(marketSession));
 
     // NFR, FR-10, #1092, IADR-0462: 建玉照会の状態の報告口。本番は Program.cs が singleton（発行の実装）を渡す。
     private readonly IPositionQueryHealthReporter _positionQueryHealth =
@@ -213,7 +219,7 @@ public sealed class SoftwareStopExecutor(
             var outcome = await TryCloseAsync(armed, snapshot: null, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (outcome.Event is not null)
                 events.Add(outcome.Event);
-            if (outcome.Kind == SoftwareStopCloseKind.Deferred)
+            if (outcome.Kind is SoftwareStopCloseKind.Deferred or SoftwareStopCloseKind.AwaitingMarketOpen)
                 deferred++;
         }
 
@@ -246,6 +252,8 @@ public sealed class SoftwareStopExecutor(
             return SoftwareStopCloseOutcome.Deferred;
         }
 
+        // 🔴 #1444, IADR-0574 決定3（2026-10-23 追記）: 閉場で待つ行（AwaitingMarketOpen）は「決済できていない」通知の対象にしない。
+        // 閉場中は誰も約定させられず、待つことが正しいため（引け際に到達した行が閉場をまたぐたびに Critical 相当が出るのを避ける）。
         return outcome.Kind == SoftwareStopCloseKind.Deferred ? NotifyIfStalled(stop, outcome) : outcome;
     }
 
@@ -397,6 +405,22 @@ public sealed class SoftwareStopExecutor(
             PositionEffect.Close, StopLossPrice: null, current.FxRateToBase);
 
         var now = clock.UtcNow;
+
+        // 🔴 FR-10, NFR, #1444（親 #1423 M-1）, IADR-0574 決定3: **閉場中は成行を送らない。** 閉場中の成行は翌寄りまで約定せず
+        // （IADR-0380 決定2）、ブローカーが場外の成行をどう扱うか（受け付けて寄りで執行するか・拒否するか）は実弾で未確認である。
+        // 到達の記録（TriggeredAt）は残るので、次の開場後の最初の巡回（ガード）が同じ経路で送る——一度到達したら価格が戻っても
+        // 決済する（IADR-0344 決定4）規律は変わらない。待ち時間・判断の手仕舞いの取消（下の段）より前に置く——送らない回に
+        // 判断の手仕舞いを取り消すと、閉場中にその建玉の出口を 1 本減らすだけになる。失敗にも数えない（待ち時間を進めない）。
+        // 記録済みの決済の確定・残保護数量 0 での完了・建玉照会は、注文を出さないので閉場中も上で済ませる。
+        if (!_marketSession.IsOpen(current.Market, now))
+        {
+            // 巡回（30 秒）ごとに来るので Debug。閉場で待つ件数は常駐ガードが変わったときだけ Information で出す（ProtectiveStopGuardService）。
+            _logger.LogDebug(
+                "ソフトウェア逆指値の決済を次の開場まで待ちます（閉場中は成行を送りません。到達の記録は残ります）。"
+                    + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 市場={Market} 数量={Quantity} 次の開場={NextOpen}",
+                current.EntryDecisionId, current.Symbol, current.Market, quantity, _marketSession.NextOpen(current.Market, now));
+            return SoftwareStopCloseOutcome.AwaitingMarketOpen;
+        }
 
         // 🔴 #833 項目2, IADR-0344 追記(15): 続けて売れていない行は、待ち時間が過ぎるまで**新しい成行を送らない**
         // （ハンドラ・ガードのどちらから来ても同じ）。待ち時間は撃ち直しを遅らせるだけで、止めはしない。
@@ -974,6 +998,13 @@ public sealed class SoftwareStopExecutor(
     // #820 の 4 巡目監査, IADR-0344 追記(4) 決定9: **到達済みなのに決済できない**状態が猶予を過ぎたら Critical を出す。
     // 行は Active のまま再試行を続ける（据え置きは正しい fail-safe である）。**1 行につき 1 回**しか出さない
     //（StalledNotifiedAt に記録する）——毎巡回 Critical を出すと、本当に見るべき通知が埋もれる。
+    // 🔴 #1444, IADR-0574 決定3（2026-10-23 追記）: 「決済できていない」猶予の起点。到達の後に閉場をはさんだなら、
+    // 到達の後の最初の開場から数え直す（閉場の間は猶予の計時を進めない）。同じ場の中で猶予を過ぎたなら到達の時刻のまま（従来どおり）。
+    private DateTimeOffset StallGraceStart(Market market, DateTimeOffset triggeredAt, DateTimeOffset now) =>
+        _marketSession.NextOpen(market, triggeredAt) is { } reopened && reopened > triggeredAt && reopened <= now
+            ? reopened
+            : triggeredAt;
+
     private SoftwareStopCloseOutcome NotifyIfStalled(ProtectiveStopOrder stop, SoftwareStopCloseOutcome deferred)
     {
         var now = clock.UtcNow;
@@ -987,7 +1018,7 @@ public sealed class SoftwareStopExecutor(
                 fresh.State != ProtectiveStopState.Active
                     || fresh.TriggeredAt is not { } triggeredAt
                     || fresh.StalledNotifiedAt is not null
-                    || now - triggeredAt < _settlementGrace
+                    || now - StallGraceStart(fresh.Market, triggeredAt, now) < _settlementGrace
                     ? null
                     : fresh with { StalledNotifiedAt = now, UpdatedAt = now });
         }
@@ -1098,6 +1129,12 @@ public enum SoftwareStopCloseKind
     /// 行は Active のままで、残りを次の巡回・次の到達で決済する。
     /// </summary>
     PartiallyClosed,
+
+    /// <summary>
+    /// 🔴 #1444, IADR-0574 決定3: 到達済みだが<b>閉場中</b>なので成行を送らなかった。到達の記録を残し、次の開場の巡回で送る。
+    /// 失敗ではない（待ち時間を進めない）。<b>末尾へ足す</b>（既存の値を動かさない）。
+    /// </summary>
+    AwaitingMarketOpen,
 }
 
 /// <summary>#820, IADR-0344: 決済試行の結果と、発行すべきイベント（無ければ null）。</summary>
@@ -1106,6 +1143,7 @@ public sealed record SoftwareStopCloseOutcome(SoftwareStopCloseKind Kind, Softwa
     public static readonly SoftwareStopCloseOutcome NotApplicable = new(SoftwareStopCloseKind.NotApplicable, null);
     public static readonly SoftwareStopCloseOutcome Completed = new(SoftwareStopCloseKind.Completed, null);
     public static readonly SoftwareStopCloseOutcome Deferred = new(SoftwareStopCloseKind.Deferred, null);
+    public static readonly SoftwareStopCloseOutcome AwaitingMarketOpen = new(SoftwareStopCloseKind.AwaitingMarketOpen, null);
 
     public static SoftwareStopCloseOutcome CompletedWith(SoftwareStopExecuted evt) => new(SoftwareStopCloseKind.Completed, evt);
 }

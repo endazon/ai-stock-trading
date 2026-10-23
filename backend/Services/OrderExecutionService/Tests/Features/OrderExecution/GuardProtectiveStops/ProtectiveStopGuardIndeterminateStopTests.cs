@@ -49,7 +49,7 @@ public class ProtectiveStopGuardIndeterminateStopTests
         var reservations = new InMemoryOrderReservationStore();
         var clock = new MutableClock(Now);
         var guard = new ProtectiveStopGuard(
-            broker, broker, stops, store, reservations, clock,
+            broker, broker, stops, store, reservations, clock, AlwaysOpenSessionGate.Instance,
             heldCloseNotifications: new HeldCloseNotificationTracker(),
             closeRejections: new CloseRejectionTracker());
         return new Harness(guard, broker, stops, store, reservations, clock, row.EntryDecisionId);
@@ -299,7 +299,7 @@ public class ProtectiveStopGuardIndeterminateStopTests
             new InMemoryOrderReservationStore(), ProtectiveStopIds.StopDecisionId(row.EntryDecisionId, attempt: 2));
         var clock = new MutableClock(Now);
         var guard = new ProtectiveStopGuard(
-            broker, broker, stops, new InMemoryExecutedOrderStore(), reservations, clock,
+            broker, broker, stops, new InMemoryExecutedOrderStore(), reservations, clock, AlwaysOpenSessionGate.Instance,
             heldCloseNotifications: new HeldCloseNotificationTracker(), closeRejections: new CloseRejectionTracker());
 
         var result = await guard.RunOnceAsync(batchSize: 10);
@@ -341,7 +341,7 @@ public class ProtectiveStopGuardIndeterminateStopTests
         stops.Save(row);
         var clock = new MutableClock(Now);
         var guard = new ProtectiveStopGuard(
-            broker, broker, stops, new InMemoryExecutedOrderStore(), new InMemoryOrderReservationStore(), clock,
+            broker, broker, stops, new InMemoryExecutedOrderStore(), new InMemoryOrderReservationStore(), clock, AlwaysOpenSessionGate.Instance,
             heldCloseNotifications: tracker, closeRejections: new CloseRejectionTracker());
 
         var produced = await guard.RunOnceAsync(batchSize: 10);

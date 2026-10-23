@@ -51,6 +51,8 @@ public sealed class ProtectiveStopGuard(
     IExecutedOrderStore store,
     IOrderReservationStore reservations,
     IClock clock,
+    // 🔴 FR-10, NFR, #1444, IADR-0574 決定1: 閉場中は張り直し・成行を送らない。**省略できない**（既定の fail-open を置かない）。
+    IMarketSessionGate marketSession,
     ILogger<ProtectiveStopGuard>? logger = null,
     HeldCloseNotificationTracker? heldCloseNotifications = null,
     OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopExecutor? softwareStops = null,
@@ -72,6 +74,10 @@ public sealed class ProtectiveStopGuard(
     public const int MaxConfirmedCloseRejections = 3;
 
     private readonly ILogger _logger = logger ?? NullLogger<ProtectiveStopGuard>.Instance;
+
+    // 🔴 FR-10, NFR, #1444（親 #1423 M-1）, IADR-0574 決定1: 閉場中は逆指値の張り直し・成行の手仕舞いを送らない。
+    // 本番は Program.cs が MarketHoursSessionGate を渡す（T-10-3001）。
+    private readonly IMarketSessionGate _marketSession = marketSession ?? throw new ArgumentNullException(nameof(marketSession));
 
     // NFR, FR-10, #1092, IADR-0462: 建玉照会の状態の報告口。本番は Program.cs が singleton（発行の実装）を渡す。
     private readonly IPositionQueryHealthReporter _positionQueryHealth =
@@ -203,6 +209,7 @@ public sealed class ProtectiveStopGuard(
         var failed = 0;
         var closeRejected = 0;
         var closeFailed = 0;
+        var awaitingMarketOpen = 0;
 
         // #820 の 4 巡目監査, IADR-0344 追記(4) 決定8: S0 → 到達済み S1 → 未到達 S1 の順に評価する（理由は冒頭の注記）。
         foreach (var stop in active
@@ -227,6 +234,8 @@ public sealed class ProtectiveStopGuard(
                     case Outcome.CloseRejected: closeRejected++; break;
                     // #938（PR #916 監査 F5）: 確実に未発注の手仕舞い失敗は「手仕舞い」に数えない。
                     case Outcome.CloseFailed: closeFailed++; break;
+                    // #1444, IADR-0574 決定2: 閉場中で張り直し・手仕舞いを次の開場まで待つ。不明・失敗に混ぜない。
+                    case Outcome.AwaitingMarketOpen: awaitingMarketOpen++; break;
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -257,7 +266,8 @@ public sealed class ProtectiveStopGuard(
             snapshot, stops.FindActive(batchSize), stops, store, clock.UtcNow, events, _logger);
 
         return new ProtectiveStopGuardResult(
-            active.Count, stillActive, completed, replaced, closedOut, unknown, failed, events, closeRejected, closeFailed);
+            active.Count, stillActive, completed, replaced, closedOut, unknown, failed, events, closeRejected, closeFailed,
+            awaitingMarketOpen);
     }
 
     // #820, IADR-0344 決定6・追記(4): ソフトウェア逆指値の巡回（ブローカーの注文照会をしない）。
@@ -286,6 +296,9 @@ public sealed class ProtectiveStopGuard(
                 OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopCloseKind.PartiallyClosed =>
                     Outcome.ClosedOut,
                 OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopCloseKind.Rejected => Outcome.StillActive,
+                // #1444, IADR-0574 決定3: 到達済みだが閉場中——成行は次の開場の巡回で送る（到達の記録は残る）。
+                OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopCloseKind.AwaitingMarketOpen =>
+                    Outcome.AwaitingMarketOpen,
                 _ => Outcome.Unknown,
             };
         }
@@ -440,6 +453,22 @@ public sealed class ProtectiveStopGuard(
             LogHeldClose(stop, closeDecisionId);
             RenotifyHeldCloseIfDue(stop, quantity, closeDecisionId, closeIntent, events);
             return Outcome.Unknown;
+        }
+
+        // 🔴 FR-10, NFR, #1444（親 #1423 M-1）, IADR-0574 決定2: **閉場中は逆指値を張り直さず、成行でも手仕舞わない。**
+        // 保護レグは有効期限を載せない（当日限り。GTC の可否は #1214）ため、引けで失効した逆指値を閉場中に見つけるのは毎日の平常である。
+        // ここで張り直すと場外の逆指値をブローカーがどう扱うか（受理するか・次の場で有効か）が未確認のまま送ることになり、
+        // 拒否されれば成行へ倒れる——**場外の成行は翌寄りで約定し、損切りラインに達していない建玉を寄り値で手仕舞う**。
+        // 閉場中に送った成行は翌寄りまで約定しない（IADR-0380 決定2）ので、送らずに待っても出口は狭まらない。
+        // 行は Active のまま失効した逆指値を指し続け、次の開場後の最初の巡回が同じ経路で張り直す（不可なら場中に成行で手仕舞う）。
+        // 記録済みの手仕舞いの確定（a）と、送信中かもしれない予約の据え置き（b）は注文を出さないので、閉場中も上で済ませる。
+        if (!_marketSession.IsOpen(stop.Market, now))
+        {
+            _logger.LogDebug(
+                "保護逆指値ガード: 閉場中のため、失効した逆指値の張り直し（不可なら成行の手仕舞い）を次の開場まで待ちます: "
+                + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 市場={Market} 数量={Quantity} 次の開場={NextOpen}",
+                stop.EntryDecisionId, stop.Symbol, stop.Market, quantity, _marketSession.NextOpen(stop.Market, now));
+            return Outcome.AwaitingMarketOpen;
         }
 
         if (protective is not null)
@@ -1090,6 +1119,12 @@ public sealed class ProtectiveStopGuard(
         /// <b>ClosedOut（解消した）ではない</b>——手仕舞えていない建玉を「手仕舞い」の件数に入れない。
         /// </summary>
         CloseFailed,
+
+        /// <summary>
+        /// 🔴 #1444, IADR-0574 決定2・3: 保護が要る（失効した逆指値を張り直す・到達済みの S1 を決済する）が、<b>閉場中</b>なので
+        /// 次の開場まで新しい注文を送らない。<b>Unknown（不明）でも CloseFailed（失敗）でもない</b>——事実は確定しており、待つことが正しい。
+        /// </summary>
+        AwaitingMarketOpen,
     }
 
     // #1013: 「建玉 0」の解釈に使うエントリー注文の状態（原則 A の 3 値＋終端の 2 値）。
@@ -1126,7 +1161,10 @@ public sealed record ProtectiveStopGuardResult(
     int CloseRejected = 0,
     // #938（PR #916 監査 F5）, IADR-0369（2026-09-25 追記）: 成行手仕舞いも**確実に未発注**で失敗した件数（Remediation=None・
     // 建玉が残っている）。ClosedOut（解消した）に混ぜない。決定 5 と同じく**末尾へ足す**（既存の位置を動かさない）。
-    int CloseFailed = 0)
+    int CloseFailed = 0,
+    // 🔴 #1444, IADR-0574 決定2・3: 閉場中のため張り直し・手仕舞いを次の開場まで待った件数（失効した S0・到達済みの S1）。
+    // 不明（Unknown）にも失敗（CloseFailed）にも混ぜない。**末尾へ足す**（既存の位置を動かさない）。
+    int AwaitingMarketOpen = 0)
 {
     public static readonly ProtectiveStopGuardResult Empty = new(0, 0, 0, 0, 0, 0, 0, []);
 }
