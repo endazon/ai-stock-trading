@@ -25,6 +25,7 @@ import {
   TableRow,
 } from '@platform/ui';
 import { ApiError } from '@foundation/api/ApiError';
+import { validationReasonsOf } from '@ai-stock-trading/lib/validationReasons';
 import type {
   BannedSymbol,
   LimitFieldKey,
@@ -136,7 +137,9 @@ function saveMessageOf(e: unknown): string {
       return i18n._(msg`競合が発生しました。最新を取得して再試行してください。`);
     }
     if (e.kind === 'validation') {
-      const detail = e.details.length > 0 ? `（${e.details.join(' / ')}）` : '';
+      // #1465, IADR-0585: 本ユニットの 400 の本文（`{ error, details }`）からサーバの理由を出す。
+      const reasons = validationReasonsOf(e);
+      const detail = reasons.length > 0 ? `（${reasons.join(' / ')}）` : '';
       return `${i18n._(msg`入力内容に誤りがあります。`)}${detail}`;
     }
     if (e.kind === 'forbidden') {

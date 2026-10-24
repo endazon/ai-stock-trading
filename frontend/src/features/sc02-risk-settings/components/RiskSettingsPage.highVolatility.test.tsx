@@ -3,6 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '@ai-stock-trading/testing/renderWithProviders';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
+import { serverBadRequest } from '@ai-stock-trading/testing/serverErrors';
 
 // T-10-2593〜T-10-2601, SC-02, FR-10, FR-11, UC-06, ADR-0066 決定1・決定2, ADR-0063 決定1・決定2, #1291, IADR-0530:
 // **高ボラティリティ銘柄の明示指定と区分の上限を SC-02 から表示・設定できること**（ADR-0066 決定2 の受け入れ基準）。
@@ -54,9 +55,12 @@ function mockBff(
     if (path === '/monitor/settings/history') return [];
     if (path === PATH && req?.method === 'PUT') {
       if (put === 'validation') {
-        throw new ApiError('validation', '入力内容に誤りがあります。', 400, [
-          '高ボラティリティ銘柄の 1 注文あたりの発注金額上限（equity 比）は 0.01（新規建ての最小の名目額）以上 0.25（区分外の上限）以下でなければなりません（指定値: 0.3）。',
-        ]);
+        throw serverBadRequest({
+          error: '高ボラティリティ銘柄の設定が受理できません。',
+          details: [
+            '高ボラティリティ銘柄の 1 注文あたりの発注金額上限（equity 比）は 0.01（新規建ての最小の名目額）以上 0.25（区分外の上限）以下でなければなりません（指定値: 0.3）。',
+          ],
+        });
       }
       return settings;
     }

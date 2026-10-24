@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '@ai-stock-trading/testing/renderWithProviders';
 import userEvent from '@testing-library/user-event';
-import { ApiError } from '@foundation/api/ApiError';
+import { serverBadRequest } from '@ai-stock-trading/testing/serverErrors';
+import { CONTRACT_STOP_LOSS_METHOD_400 } from '@ai-stock-trading/testing/riskContractFixtures';
 
 // T-10-991〜T-10-994, SC-02, FR-10, FR-12, FR-11, UC-06, ADR-0040 決定1・決定3, #823, IADR-0342 決定2, IADR-0422 決定2:
 // **損切りの実行機構を SC-02 だけで選べること**と、**実弾では S0 以外を選べない表示がサーバの拒否と整合すること**。
@@ -59,9 +60,8 @@ function mockBff(options: Options = {}) {
     if (path === '/monitor/settings/history') return [];
     if (path === '/risk-controls/settings/stop-loss-method' && req?.method === 'PUT') {
       if (put === 'validation') {
-        throw new ApiError('validation', '入力内容に誤りがあります。', 400, [
-          '発注先が実弾（moomoo REAL）の間は、損切りの実行機構を S0（ブローカー側逆指値）以外にできません。',
-        ]);
+        // #1465: 本番サーバの 400 の実応答（契約フィクスチャ）。理由は `details` ではなく本文にだけある。
+        throw serverBadRequest(CONTRACT_STOP_LOSS_METHOD_400);
       }
       return settings;
     }

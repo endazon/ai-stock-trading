@@ -15,6 +15,7 @@ import type {
   MonitorSettingsChangeEntry,
 } from '../src/lib/monitor/contracts';
 import type { OpendAuthStateView } from '../src/features/sc04-opend-auth/types';
+import type { BadRequestBody } from '../src/lib/validationReasons';
 
 // SC-01/02/03, IADR-0087: E2E の BFF モック定義（test-only）。
 // 画面が叩く BFF パス/メソッドを Playwright の page.route で横取りし、決定的な応答を返す（実 API に依存しない）。
@@ -115,6 +116,10 @@ export const RISK_STATUS: RiskStatusView = {
 // FR-10, SC-02, ADR-0070・ADR-0071 決定 5, #1407, IADR-0564: 閉場前の統制とテーマの定義（契約フィクスチャ＝保存後・構成と食い違う形）。
 export const PRE_CLOSE_CONTROLS = loadContract<PreCloseControlsView>('risk-controls.settings-pre-close.json');
 export const THEME_CONCENTRATION = loadContract<ThemeConcentrationControlView>('risk-controls.settings-theme-concentration.json');
+
+// SC-02, FR-10, #1465, IADR-0585: 損切りの実行機構の 400 の**実応答**（`{ error, details }`。実弾の間に S1 を選ぶ拒否）。
+// 本ユニットのサービスの 400 は RFC 7807 ではない。E2E のモックも本番の形で組み、サーバの理由が画面に出ることを確かめる。
+export const STOP_LOSS_METHOD_400 = loadContract<BadRequestBody>('risk-controls.settings-stop-loss-method.400.json');
 
 export const WATCHLIST = [
   { symbol: '7203', market: 0 },

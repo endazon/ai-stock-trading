@@ -8,6 +8,7 @@ import {
   PRE_CLOSE_CONTROLS,
   RISK_SETTINGS,
   RISK_STATUS,
+  STOP_LOSS_METHOD_400,
   THEME_CONCENTRATION,
   WATCHLIST,
 } from './fixtures';
@@ -137,7 +138,11 @@ test.describe('SC-02 リスク設定（#187）', () => {
       ...defaultBff(),
       'PUT /risk-controls/settings/limits': {
         status: 400,
-        body: { errors: { limits: ['1注文発注額上限は必須です'] } },
+        // #1465: 本ユニットのサービスの 400 は `{ error, details }`（RFC 7807 ではない）。本番の形で組む。
+        body: {
+          error: 'リスク上限の値が設定可能な範囲を外れています。',
+          details: ['1注文あたりの発注金額上限（equity 比）は 0 より大きく 1（100%）以下でなければなりません。'],
+        },
       },
     });
     await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
@@ -147,7 +152,7 @@ test.describe('SC-02 リスク設定（#187）', () => {
     await form.getByLabel('変更理由').fill('不正値');
     await form.getByRole('button', { name: '保存' }).click();
 
-    await expect(form.getByRole('alert').filter({ hasText: '入力' })).toBeVisible();
+    await expect(form.getByRole('alert').filter({ hasText: '入力' })).toContainText('0 より大きく 1（100%）以下でなければなりません');
   });
 
   test('履歴取得の失敗（500）は履歴領域のみ縮退する', async ({ page }) => {
@@ -688,7 +693,8 @@ test.describe('SC-02 取引ガードの変更（#1412）', () => {
         putCount += 1;
         return {
           status: 400,
-          body: { title: '入力内容に誤りがあります。', detail: '現金口座では信用買いを有効化できません。' },
+          // #1465: 取引ガードの拒否は ArgumentException の共通の写し（IADR-0503）で `{ error }` になる。本番の形で組む。
+          body: { error: '現金口座では信用買いを有効化できません。' },
         };
       },
     });
@@ -773,20 +779,14 @@ test.describe('SC-02 損切りの実行機構（#1412）', () => {
     expect(putBody).toEqual({ method: 1, reason: 'S1 を検証する' });
   });
 
-  test('検証エラー（PUT 400）は入力の誤りを表示し、再試行しない', async ({ page }) => {
+  test('検証エラー（PUT 400）はサーバの理由を表示し、再試行しない', async ({ page }) => {
     let putCount = 0;
     await installBff(page, {
       ...defaultBff(),
-      // サーバ（UpdateStopLossMethodEndpoint）の 400 の本文の形。別の経路で発注先が実弾へ変わっていた場合に返る。
+      // サーバ（UpdateStopLossMethodEndpoint）の 400 の実応答（契約フィクスチャ）。別の経路で発注先が実弾へ変わっていた場合に返る。
       'PUT /risk-controls/settings/stop-loss-method': () => {
         putCount += 1;
-        return {
-          status: 400,
-          body: {
-            error: '損切りの実行機構の変更を受理できません。',
-            details: ['発注先が実弾（moomoo REAL）の間は、損切りの実行機構を S0（ブローカー側逆指値）以外にできません。'],
-          },
-        };
+        return { status: 400, body: STOP_LOSS_METHOD_400 };
       },
     });
     await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
@@ -796,7 +796,10 @@ test.describe('SC-02 損切りの実行機構（#1412）', () => {
     await form.getByLabel('手法の変更理由').fill('S2 を検証する');
     await form.getByRole('button', { name: '損切りの実行機構を保存' }).click();
 
-    await expect(form.getByRole('alert').filter({ hasText: '入力内容に誤りがあります。' })).toBeVisible();
+    // #1465: 一般文言だけでなく、サーバの理由（本文の `details`）が画面に出る。
+    await expect(form.getByRole('alert').filter({ hasText: '入力内容に誤りがあります。' })).toContainText(
+      STOP_LOSS_METHOD_400.details![0]!,
+    );
     await expect(form.getByText('損切りの実行機構を保存しました。')).toHaveCount(0);
     expect(putCount).toBe(1);
   });
