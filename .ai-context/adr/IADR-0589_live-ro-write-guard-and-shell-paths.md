@@ -29,6 +29,7 @@ related_specs:
 
 1. `e2e/live/support/guard.ts` の `installWriteGuard` が、`/bff/` への **GET・HEAD・OPTIONS 以外の全部**を記録して `page.route` で abort する。live-ro の spec は
    各 test の前に張り、後で「危険な 3 種の記録が 0 件」「書き込みの記録が 0 件」を見る。abort は保険であり、**送ろうとしたこと自体を失敗にする**。
+   URL を解析できない要求は、読み取り（GET・HEAD・OPTIONS）以外なら abort の対象にする（**fail-closed**。通さない）。
 2. 危険な 3 種（発注先の変更・OpenD 認証の送信と再送）は `DANGEROUS` に名前で持ち、失敗の文言で書き込み一般と分ける。
 3. AST の画面のパスは `/settings`・`/settings/risk`・`/controls`・`/opend-auth`。live の spec はこれを使い、`owner-reach.ro.spec.ts` の `/trading/settings` を直す。
 4. 保険そのものの働きは L1（`e2e/live-opt-in.spec.ts`）が固定する（画面の中から送った PUT・POST が abort され記録に残る。判定の純関数の表）。

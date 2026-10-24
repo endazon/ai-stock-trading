@@ -135,6 +135,10 @@ test('書き込みの保険: /bff/ への GET 以外だけを abort の対象に
   expect(isGuardedWrite('POST', 'https://localhost/bff/opend-auth/code')).toBe(true);
   expect(isGuardedWrite('GET', 'https://localhost/bff/risk-controls/settings')).toBe(false);
   expect(isGuardedWrite('POST', 'https://keycloak.localhost/realms/platform/login-actions/authenticate')).toBe(false);
+  // fail-closed: URL を解析できない書き込みは abort の対象（通さない）。読み取りは通す。
+  expect(isGuardedWrite('PUT', 'not a url')).toBe(true);
+  expect(isGuardedWrite('POST', '')).toBe(true);
+  expect(isGuardedWrite('GET', 'not a url')).toBe(false);
   expect(
     dangerousOf([
       { method: 'PUT', path: '/bff/risk-controls/settings/broker-provider' },

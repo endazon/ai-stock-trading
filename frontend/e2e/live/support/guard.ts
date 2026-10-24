@@ -26,15 +26,23 @@ export function dangerousOf(records: readonly WriteRecord[]): WriteRecord[] {
   return records.filter((r) => DANGEROUS.some((d) => d.method === r.method && d.path === r.path));
 }
 
-/** 要求が abort の対象か（`/bff/` への GET・HEAD・OPTIONS 以外）。純関数。 */
-export function isGuardedWrite(method: string, url: string): boolean {
-  let path: string;
+/** URL の pathname。解析できなければ null（呼び出し側は安全側＝abort に倒す）。 */
+function pathOf(url: string): string | null {
   try {
-    path = new URL(url).pathname;
+    return new URL(url).pathname;
   } catch {
-    return false;
+    return null;
   }
-  return path.startsWith('/bff/') && !READ_METHODS.has(method.toUpperCase());
+}
+
+/**
+ * 要求が abort の対象か（`/bff/` への GET・HEAD・OPTIONS 以外）。純関数。
+ * 🔴 **fail-closed**: URL を解析できない要求は、読み取り（GET・HEAD・OPTIONS）以外なら abort の対象にする（通さない）。
+ */
+export function isGuardedWrite(method: string, url: string): boolean {
+  if (READ_METHODS.has(method.toUpperCase())) return false;
+  const path = pathOf(url);
+  return path === null || path.startsWith('/bff/');
 }
 
 /** `/bff/` への書き込みをすべて記録して abort する。記録を返す（本文は記録しない）。 */
@@ -46,7 +54,7 @@ export async function installWriteGuard(page: Page): Promise<WriteRecord[]> {
       await route.fallback();
       return;
     }
-    records.push({ method: req.method(), path: new URL(req.url()).pathname });
+    records.push({ method: req.method(), path: pathOf(req.url()) ?? req.url() });
     await route.abort('blockedbyclient');
   });
   return records;
