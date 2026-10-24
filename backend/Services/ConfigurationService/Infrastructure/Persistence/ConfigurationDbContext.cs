@@ -11,6 +11,10 @@ public sealed class ConfigurationDbContext(DbContextOptions<ConfigurationDbConte
 
     public DbSet<AssumptionsChangeRow> AssumptionsChangeLog => Set<AssumptionsChangeRow>();
 
+    // 🔴 NFR, FR-10, #1473, IADR-0587: DateTimeOffset（null 許容を含む）の全列を DB の境界で UTC へ揃える（照会のパラメータにも掛かる）。
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) =>
+        configurationBuilder.Properties<DateTimeOffset>().HaveConversion<UtcDateTimeOffsetConverter>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<AssumptionsRow>(e =>

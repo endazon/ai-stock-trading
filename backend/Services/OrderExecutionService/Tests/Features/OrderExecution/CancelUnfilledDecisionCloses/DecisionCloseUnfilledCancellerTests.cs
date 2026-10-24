@@ -216,6 +216,20 @@ public class DecisionCloseUnfilledCancellerTests
             .Should().Be((new DateTimeOffset(2026, 10, 14, 15, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 10, 15, 15, 0, 0, TimeSpan.Zero)));
     }
 
+    // 🔴 T-10-3067, #1473, IADR-0587 決定2: 取引日の範囲は**オフセットも UTC**で返す。DateTimeOffset の等値は瞬間しか比べないので、
+    // 上の T-10-2672 は −04:00 のまま返しても緑だった（稼働では照会へ渡って Npgsql が timestamptz へ書けず、取消の巡回が毎回失敗した）。
+    [Theory]
+    [InlineData(Market.UnitedStates, 2026, 10, 15, 2)]
+    [InlineData(Market.UnitedStates, 2026, 12, 1, 15)]
+    [InlineData(Market.Japan, 2026, 10, 14, 16)]
+    public void T_10_3067_市場の現地取引日の範囲はオフセットもUTCで返す(Market market, int y, int m, int d, int h)
+    {
+        var (start, end) = DecisionCloseUnfilledCanceller.TradingDayRange(market, new DateTimeOffset(y, m, d, h, 0, 0, TimeSpan.Zero));
+
+        start.Offset.Should().Be(TimeSpan.Zero);
+        end.Offset.Should().Be(TimeSpan.Zero);
+    }
+
     // T-10-2673: 適用は判断由来の決済だけ（決定4）。利用者の手仕舞い・維持率割れの自動縮小・出どころ不明・出どころなし・新規建ては取り消さない。
     [Fact]
     public async Task T_10_2673_判断由来の決済以外は取り消さない()

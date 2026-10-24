@@ -19,6 +19,10 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
     // （`/policy` とは別枠の 1 日の回数上限・作り直した版の記録・断った回数）。
     public DbSet<ReportRegenerationAttemptRow> ReportRegenerationAttempts => Set<ReportRegenerationAttemptRow>();
 
+    // 🔴 NFR, FR-10, #1473, IADR-0587: DateTimeOffset（null 許容を含む）の全列を DB の境界で UTC へ揃える（照会のパラメータにも掛かる）。
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) =>
+        configurationBuilder.Properties<DateTimeOffset>().HaveConversion<UtcDateTimeOffsetConverter>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<ReportRow>(e =>
