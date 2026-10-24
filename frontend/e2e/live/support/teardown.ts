@@ -43,6 +43,7 @@ export async function revokeOwnerSession(cfg: LiveEnv, browser: Browser): Promis
           (url) => url.origin === cfg.edgeUrl && !url.pathname.startsWith('/bff/'),
           { timeout: 30_000 },
         );
+        // 401（既に失効していた）は成功として扱う（冪等。下の「同じ cookie で 401」の確かめで失効を確定する）。
       } else if (me.status() !== 401) {
         throw new Error(`/bff/auth/me（ログアウトの前）が ${me.status()}`);
       }

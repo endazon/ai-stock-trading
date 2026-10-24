@@ -46,4 +46,4 @@ updated: 2026-10-25
 
 ## 検証
 
-- `npm run e2e:typecheck`・`npm run lint`、L1 の `e2e/live-opt-in.spec.ts`（5 件）、L1 の `--list` に `e2e/live/` が載らない。
+- `npm run e2e:typecheck`・`npm run lint`、L1 の `e2e/live-opt-in.spec.ts`（6 件）、L1 の `--list` に `e2e/live/` が載らない。
