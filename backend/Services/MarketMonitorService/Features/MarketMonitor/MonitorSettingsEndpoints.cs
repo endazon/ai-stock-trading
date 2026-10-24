@@ -89,7 +89,7 @@ internal static class MonitorSettingsEndpoints
     // されるため、要求では nullable で受けて明示的な指定を必須にする。
     // **2 段目に残る共通部分**——追加・削除の 2 操作が使う。
     internal static Market MarketOf(WatchlistChangeRequest req) =>
-        req.Market ?? throw new ArgumentException("market は必須です。", nameof(req)).ClientVisible();
+        req.Market ?? throw new ArgumentException("market（市場）は必須です。", nameof(req)).ClientVisible();
 
     // NFR, IADR-0450, #753（段 5）: 群のフィルタの例外の写し。gRPC 面（WatchlistOwnerWriteGrpcService）も同じ写しを使う（2 箇所に書かない）。
     // 写さない例外は null（そのまま上げる）。

@@ -43,24 +43,27 @@ public static class ClientVisibleArgument
     }
 
     /// <summary>
-    /// <see cref="ArgumentException.ThrowIfNullOrWhiteSpace"/> と同じ検査・同じ例外（null は <see cref="ArgumentNullException"/>）を、
+    /// <see cref="ArgumentException.ThrowIfNullOrWhiteSpace"/> と同じ検査・同じ型の例外（null は <see cref="ArgumentNullException"/>、
+    /// 空・空白は <see cref="ArgumentException"/>。<c>ParamName</c> も同じ）を、<b>日本語の文言</b>「<paramref name="label"/>は必須です。」で
     /// 印を付けて投げる。利用者が入力する欄（理由・銘柄コードなど）の空欄検査に使う。
+    /// <para>
+    /// SC-01, SC-02, IADR-0586 決定 2, #1472: 以前は CoreLib の例外をそのまま投げたため、英語の既定文言
+    /// （<c>The value cannot be an empty string …</c>）が画面と Discord に出ていた。<paramref name="label"/> は項目の日本語名（例: 「理由」）。
+    /// </para>
     /// </summary>
     public static void ThrowIfNullOrWhiteSpace(
-        [NotNull] string? argument, [CallerArgumentExpression(nameof(argument))] string? paramName = null)
+        [NotNull] string? argument,
+        string label,
+        [CallerArgumentExpression(nameof(argument))] string? paramName = null)
     {
         if (!string.IsNullOrWhiteSpace(argument))
             return;
 
-        try
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(argument, paramName);
-        }
-        catch (ArgumentException e)
-        {
-            throw e.ClientVisible();
-        }
+        ArgumentException.ThrowIfNullOrWhiteSpace(label);
+        var message = $"{label}は必須です。";
+        if (argument is null)
+            throw new ArgumentNullException(paramName, message).ClientVisible();
 
-        throw new InvalidOperationException("ArgumentException.ThrowIfNullOrWhiteSpace が投げなかった（前提の崩れ）。");
+        throw new ArgumentException(message, paramName).ClientVisible();
     }
 }

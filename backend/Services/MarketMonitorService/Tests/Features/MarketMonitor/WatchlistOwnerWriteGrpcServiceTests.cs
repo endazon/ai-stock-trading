@@ -170,7 +170,7 @@ public class WatchlistOwnerWriteGrpcServiceTests
         (await SymbolsAsync(factory)).Should().Equal(before, "拒否では 1 件も適用しない");
     }
 
-    // T-10-2425（NFR-06, IADR-0509, #1230）: 案の形の検証（自前の入力検証）は印つき（ClientVisibleArgument）なので、REST の 400 と
+    // T-10-2425（NFR-06, IADR-0509, #1230, IADR-0586, #1472）: 案の形の検証（自前の入力検証）は印つき（ClientVisibleArgument）なので、REST の 400 と
     // gRPC の INVALID_ARGUMENT が固定文言ではなく利用者へ見せる文言を返す（T-10-1734 は両者の一致だけを見ており、両方が固定文言でも通る）。
     [Fact]
     public async Task T_10_2425_案の形の検証の文言は印つきで_REST_と_gRPC_に載る()
@@ -186,6 +186,8 @@ public class WatchlistOwnerWriteGrpcServiceTests
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var error = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString();
         error.Should().StartWith("銘柄は米国のティッカー（大文字。例 AAPL / BRK.B）に限ります。").And.NotBe(ClientFacingErrors.InvalidRequestMessage);
+        // SC-02, IADR-0586 決定 1, #1472: Bot が出す detail も REST と同じ文言で、.NET の引数名の接尾辞（` (Parameter 'changes')`）が付かない。
+        error.Should().NotContain("(Parameter").And.NotContain("changes");
 
         var act = async () => await Grpc(factory).ApplyWatchlistProposalAsync(GrpcBody(before, invalid));
         var ex = (await act.Should().ThrowAsync<RpcException>()).Which;

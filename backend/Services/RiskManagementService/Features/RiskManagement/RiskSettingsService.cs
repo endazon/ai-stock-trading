@@ -61,7 +61,7 @@ public sealed class RiskSettingsService(
         if (unsupported.Count > 0)
         {
             throw new ArgumentException(
-                $"口座種別 {account.AccountType} では商品種別 {string.Join(" / ", unsupported)} を有効にできません"
+                $"口座種別 {TradingTermDisplay.Label(account.AccountType)} では商品種別 {string.Join(" / ", unsupported.Select(TradingTermDisplay.Label))} を有効にできません"
                     + "（現金口座では株を借りられないため信用買い・空売りが成立しません。ADR-0021 決定4-4）。",
                 nameof(guard)).ClientVisible();
         }
@@ -329,6 +329,6 @@ public sealed class RiskSettingsService(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         // NFR-06, IADR-0509, #1230: 利用者（Discord・画面）が入力する欄の空欄検査。文言を 400 / INVALID_ARGUMENT へ載せる印を付ける。
-        ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason);
+        ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason, "理由");
     }
 }

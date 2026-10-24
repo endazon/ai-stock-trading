@@ -55,6 +55,7 @@ public class AssumptionsArgumentExceptionMessageTests
     }
 
     // T-10-2401: 自前の入力検証（理由が空）は 400 で文言を保つ（NFR-06, IADR-0509, #1230: 理由の空欄検査は印つきの ClientVisibleArgument.ThrowIfNullOrWhiteSpace）。
+    // SC-01, IADR-0586, #1472: 文言は日本語で、.NET の英語の既定文言・引数名の接尾辞を含まない。
     [Fact]
     public async Task 自前の入力検証の_ArgumentException_は_400_で文言を保つ()
     {
@@ -67,6 +68,6 @@ public class AssumptionsArgumentExceptionMessageTests
         var body = await res.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
         res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        JsonNode.Parse(body)!["error"]!.GetValue<string>().Should().Contain("'reason'");
+        JsonNode.Parse(body)!["error"]!.GetValue<string>().Should().Be("理由は必須です。");
     }
 }

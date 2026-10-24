@@ -120,7 +120,8 @@ public class RiskControlsOwnerWriteGrpcServiceTests
     }
 
     // T-10-2423（NFR-06, IADR-0509, #1230）: 利用者（Discord・画面）が入力する理由の空欄検査は印つき（ClientVisibleArgument）なので、
-    // kill switch・一時停止・設定の変更のいずれも REST の 400 と gRPC の INVALID_ARGUMENT で文言（'reason'）を保ち、固定文言にならない。
+    // kill switch・一時停止・設定の変更のいずれも REST の 400 と gRPC の INVALID_ARGUMENT で文言を保ち、固定文言にならない。
+    // SC-02, IADR-0586, #1472: 文言は日本語の「理由は必須です。」で、.NET の英語の既定文言・引数名の接尾辞（'reason'）を含まない（Bot の detail も同じ）。
     [Fact]
     public async Task T_10_2423_理由の空欄は印つきで_REST_と_gRPC_の文言を保つ()
     {
@@ -140,14 +141,14 @@ public class RiskControlsOwnerWriteGrpcServiceTests
             var ex = await FailsAsync(grpc);
 
             status.Should().Be(400, path);
-            error.Should().Contain("'reason'", path).And.NotBe(ClientFacingErrors.InvalidRequestMessage);
+            error.Should().Be("理由は必須です。", path);
             (ex.StatusCode, ex.Status.Detail).Should().Be((StatusCode.InvalidArgument, error!), path);
         }
 
         using var stage = await Rest(factory).PutAsJsonAsync(
             "/risk-controls/settings/stage1-minimum-trade-count", new { minimumTradeCount = 100, reason = " " });
         stage.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await stage.Content.ReadAsStringAsync()).Should().Contain("'reason'");
+        (await stage.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString().Should().Be("理由は必須です。");
     }
 
     // 群のフィルタの例外の写し（ArgumentException → 400）を REST と共有する: 理由の欠如は INVALID_ARGUMENT で同じ文言。
