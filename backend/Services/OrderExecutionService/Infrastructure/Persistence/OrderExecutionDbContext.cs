@@ -17,6 +17,10 @@ public sealed class OrderExecutionDbContext(DbContextOptions<OrderExecutionDbCon
     // FR-10, #331, IADR-0210: 保護逆指値レグ（ProtectiveStopGuard の巡回対象の権威）。
     public DbSet<ProtectiveStopOrderRow> ProtectiveStopOrders => Set<ProtectiveStopOrderRow>();
 
+    // 🔴 NFR, FR-10, #1473, IADR-0587: DateTimeOffset（null 許容を含む）の全列を DB の境界で UTC へ揃える（照会のパラメータにも掛かる）。
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) =>
+        configurationBuilder.Properties<DateTimeOffset>().HaveConversion<UtcDateTimeOffsetConverter>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         // #131, IADR-0057: DecisionId を主キーにすることで、並行配送でも予約は高々1つに限定される

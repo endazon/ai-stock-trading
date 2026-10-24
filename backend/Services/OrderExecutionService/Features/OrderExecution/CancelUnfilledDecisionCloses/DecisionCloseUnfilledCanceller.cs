@@ -123,8 +123,10 @@ public sealed class DecisionCloseUnfilledCanceller(
         var zone = MarketHours.ZoneOf(market);
         var localDate = TimeZoneInfo.ConvertTime(instant, zone).Date;
         var nextDate = localDate.AddDays(1);
-        return (new DateTimeOffset(localDate, zone.GetUtcOffset(localDate)),
-            new DateTimeOffset(nextDate, zone.GetUtcOffset(nextDate)));
+        // 🔴 #1473, IADR-0587 決定2: 要約のとおり **UTC で返す**（市場のオフセットのまま返すと、照会へ渡ったときに Npgsql が timestamptz へ書けず、
+        // 取消の巡回が毎回例外で失敗した）。DB の境界（UtcDateTimeOffsetConverter）でも揃えるが、ここでも名乗りどおりにする。
+        return (new DateTimeOffset(localDate, zone.GetUtcOffset(localDate)).ToUniversalTime(),
+            new DateTimeOffset(nextDate, zone.GetUtcOffset(nextDate)).ToUniversalTime());
     }
 }
 
