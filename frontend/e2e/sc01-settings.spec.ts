@@ -4,6 +4,7 @@ import {
   installBff,
   pathWithRoles,
   ASSUMPTIONS,
+  ASSUMPTIONS_400,
   ASSUMPTIONS_HISTORY,
 } from './fixtures';
 
@@ -83,8 +84,8 @@ test.describe('SC-01 設定（#187）', () => {
       ...defaultBff(),
       'PUT /assumptions': {
         status: 400,
-        // #1465: ConfigurationService の 400 は `{ error }`（RFC 7807 ではない）。本番の形で組む。
-        body: { error: '理由は必須です' },
+        // #1465, #1470: ConfigurationService の 400 の実応答（契約フィクスチャ。`{ error }`）。
+        body: ASSUMPTIONS_400,
       },
     });
     await page.goto(pathWithRoles('/settings', ['trading-owner']));
@@ -93,7 +94,7 @@ test.describe('SC-01 設定（#187）', () => {
     await page.getByLabel('変更理由', { exact: true }).fill('不正値');
     await page.getByRole('button', { name: '保存', exact: true }).click();
 
-    await expect(page.getByRole('alert').filter({ hasText: '入力' })).toContainText('理由は必須です');
+    await expect(page.getByRole('alert').filter({ hasText: '入力' })).toContainText(ASSUMPTIONS_400.error);
   });
 
   test('履歴取得の失敗（500）は履歴領域のみ縮退する', async ({ page }) => {

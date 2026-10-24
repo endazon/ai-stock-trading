@@ -120,6 +120,11 @@ export const THEME_CONCENTRATION = loadContract<ThemeConcentrationControlView>('
 // SC-02, FR-10, #1465, IADR-0585: 損切りの実行機構の 400 の**実応答**（`{ error, details }`。実弾の間に S1 を選ぶ拒否）。
 // 本ユニットのサービスの 400 は RFC 7807 ではない。E2E のモックも本番の形で組み、サーバの理由が画面に出ることを確かめる。
 export const STOP_LOSS_METHOD_400 = loadContract<BadRequestBody>('risk-controls.settings-stop-loss-method.400.json');
+// SC-01, SC-02, FR-03, FR-17, #1470, IADR-0585: MarketMonitorService・ConfigurationService の 400 の**実応答**（いずれも `{ error }`）。
+export const WATCHLIST_POST_400 = loadContract<BadRequestBody>('monitor.watchlist-post.400.json');
+export const MOVEMENT_THRESHOLD_400 = loadContract<BadRequestBody>('monitor.settings-movement-threshold.400.json');
+export const COOLDOWN_400 = loadContract<BadRequestBody>('monitor.settings-cooldown.400.json');
+export const ASSUMPTIONS_400 = loadContract<BadRequestBody>('assumptions.400.json');
 
 export const WATCHLIST = [
   { symbol: '7203', market: 0 },
