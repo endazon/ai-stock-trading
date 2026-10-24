@@ -20,7 +20,7 @@ related_specs:
 
 ## コンテキスト
 
-1. AST の画面は MSP の SPA の `/trading/*` にだけ在り、認証は MSP の realm `platform` に一本化されている（ADR-0038）。試験アカウント `e2e-trading-owner` は MSP の realm が持ち、ログイン（パスワード → TOTP）は MSP の live の setup が行う。
+1. AST の画面は MSP の SPA の `/trading/*` にだけ在り（［2026-10-25 追記 / #1417］誤り。共通シェルの直下の `/settings` 等に載る。IADR-0589 決定 3）、認証は MSP の realm `platform` に一本化されている（ADR-0038）。試験アカウント `e2e-trading-owner` は MSP の realm が持ち、ログイン（パスワード → TOTP）は MSP の live の setup が行う。
 2. MSP の live の teardown は、実行の終わりに 6 役割すべてのセッションを失効させ state を消す（MSP/IADR-0624）。そのままでは AST の別の実行は state を読めない。
 3. AST には live 層の CI（使い捨てスタック）が無い。
 
