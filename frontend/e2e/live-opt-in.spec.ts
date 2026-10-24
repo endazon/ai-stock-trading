@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { OPTION_NAMES, parseLiveEnv, stateFile, type LiveEnv } from './live/support/env';
-import { readinessProblems } from './live/support/readiness';
+import { gate, readinessProblems } from './live/support/readiness';
 
 // NFR / IADR-0588（#1416 / E-33）: AST の live 層の config（`playwright.live.config.ts`）の **opt-in・読み込み・state の読み先・門**を L1 で固定する。
 // 稼働の環境には 1 度も触れない（ブラウザも開かない。`--list` は globalSetup を走らせない）。live の実走は MSP の setup の後に流す（作業仕様書）。
@@ -110,3 +110,22 @@ test('門: state が無い・cookie が失効している・trading-owner を持
   // 門は MSP の名前のファイルを読みに行く。
   expect(new Set(seen)).toEqual(new Set([owner]));
 });
+
+test('門で落ちるときも、取引オーナーの state が在れば失効と削除を 1 回だけ先に済ませる（exit 2 で teardown が走らないため）', async () => {
+  const dir = '/msp/.auth';
+  let revoked = 0;
+  const revoke = async () => {
+    revoked += 1;
+  };
+  // state は在るが失効している → 不成立。失効の関数を 1 回呼ぶ。
+  const failed = await gate(live(dir), async () => ({ status: 401, roles: [] }), revoke, () => true);
+  expect(failed).toHaveLength(1);
+  expect(revoked).toBe(1);
+  // state が無い → 不成立だが、失効させるものが無いので呼ばない。
+  await gate(live(dir), async () => ({ status: 200, roles: ['trading-owner'] }), revoke, () => false);
+  expect(revoked).toBe(1);
+  // 成立 → 呼ばない（teardown が実行の終わりに失効させる）。
+  expect(await gate(live(dir), async () => ({ status: 200, roles: ['trading-owner'] }), revoke, () => true)).toEqual([]);
+  expect(revoked).toBe(1);
+});
+

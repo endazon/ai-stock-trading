@@ -1,4 +1,4 @@
-// NFR / MSP の IADR-0569・IADR-0624 / IADR-0588（#1416 / E-33）: AST の live 層の opt-in と到達先・storageState の置き場（純関数）。
+// NFR / MSP/IADR-0569・IADR-0624 / IADR-0588（#1416 / E-33）: AST の live 層の opt-in と到達先・storageState の置き場（純関数）。
 //
 // - AST は**自分ではログインしない**。MSP の live の setup（MSP `src/platform/frontend/e2e/live/auth.setup.ts`）が試験アカウントごとに作った
 //   storageState（BFF のセッション cookie）を `E2E_AUTH_DIR` から読む（MSP#2013 コメント 3 §2.3）。ファイル名は MSP の
@@ -11,7 +11,7 @@
 const LAYERS = ['ro', 'trading'] as const;
 export type Layer = (typeof LAYERS)[number];
 
-/** MSP の試験アカウントの役割（realm `platform` の `e2e-<role>`。MSP の IADR-0570）。AST の spec が使うのは trading-owner と user。 */
+/** MSP の試験アカウントの役割（realm `platform` の `e2e-<role>`。MSP/IADR-0570）。AST の spec が使うのは trading-owner と user。 */
 export const ROLES = [
   'user',
   'operator',

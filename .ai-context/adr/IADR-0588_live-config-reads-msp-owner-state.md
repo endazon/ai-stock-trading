@@ -21,7 +21,7 @@ related_specs:
 ## コンテキスト
 
 1. AST の画面は MSP の SPA の `/trading/*` にだけ在り、認証は MSP の realm `platform` に一本化されている（ADR-0038）。試験アカウント `e2e-trading-owner` は MSP の realm が持ち、ログイン（パスワード → TOTP）は MSP の live の setup が行う。
-2. MSP の live の teardown は、実行の終わりに 6 役割すべてのセッションを失効させ state を消す（MSP の IADR-0624）。そのままでは AST の別の実行は state を読めない。
+2. MSP の live の teardown は、実行の終わりに 6 役割すべてのセッションを失効させ state を消す（MSP/IADR-0624）。そのままでは AST の別の実行は state を読めない。
 3. AST には live 層の CI（使い捨てスタック）が無い。
 
 ## 決定
@@ -30,7 +30,7 @@ related_specs:
 2. MSP 側に、取引オーナーだけを残す opt-out（`E2E_KEEP_SESSIONS=trading-owner`。既定は全部失効。値域外は例外。残すファイルは 0600）を別 issue・別 PR で足す。**それが MSP に入るまで、AST の live は流せない**（門が「state が無い」で exit 2 になる）。
 3. AST の globalSetup（門）は、取引オーナーの state が在り、その cookie で `/bff/auth/me` が 200 かつ `trading-owner` を持つことを確かめ、満たさなければ exit 2。
 4. AST の globalTeardown は、成否によらず取引オーナーのセッションを BFF のログアウトで失効させ（同じ cookie で `/bff/auth/me` が 401 になることを見る）、state を消す。確かめられなければ役割名だけを出して exit 1。
-5. opt-in（`E2E_LIVE` は `1` か未設定・空）・層（`E2E_LAYER` は `ro` / `trading`）・project 名と接尾辞は MSP と同じにする（MSP の IADR-0569 決定 3・4）。値域外は読み込みで例外。
+5. opt-in（`E2E_LIVE` は `1` か未設定・空）・層（`E2E_LAYER` は `ro` / `trading`）・project 名と接尾辞は MSP と同じにする（MSP/IADR-0569 決定 3・4）。値域外は読み込みで例外。
 6. L1 の config は `e2e/live/` を `testIgnore` する。live の config の opt-in・読み込み・state の読み先・門の判定は L1 の `e2e/live-opt-in.spec.ts` が固定する（AST の CI で走る）。
 
 ## 検討した選択肢
@@ -49,3 +49,5 @@ related_specs:
 
 - AST の live の実走は CI で確かめられない（AST に live 層の CI が無い）。最初の実走は常設の PoC で、MSP の opt-out が入った後に行う。
 - AST の teardown が走らない異常終了では、取引オーナーのセッションが寿命まで残る（MSP の teardown と同じ性質）。
+- **teardown は失効できなかったときも state のファイルを消す**（MSP の teardown と同じ形）。失効できなかったセッションは、BFF のセッションの寿命で自然に切れるまで生きている。再試行の手がかりより、ディスクに cookie を残さないことを取る。
+- 門（globalSetup）が exit 2 で抜けると Playwright は globalTeardown を呼ばない。そのため門が不成立のときも、取引オーナーの state が在れば、teardown と同じ失効と削除の関数を先に呼んでから exit 2 にする（`readiness.ts` の `gate`。L1 で「state が在って門で落ちたときに 1 回呼ばれる」を固定）。

@@ -1,7 +1,7 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
 import { parseLiveEnv, type Layer } from './e2e/live/support/env';
 
-// NFR / MSP の IADR-0569 決定 3・4 / MSP の IADR-0624 / IADR-0588（#1416 / E-33）: **AST の live 層の config**。
+// NFR / MSP/IADR-0569 決定 3・4 / MSP/IADR-0624 / IADR-0588（#1416 / E-33）: **AST の live 層の config**。
 // L1（`playwright.config.ts`。ハーネス＋ page.route のモック）とは別のファイルにする —— L1 の webServer と baseURL が live に掛からない。
 //
 // - AST は**自分ではログインしない**。MSP の live の setup が書いた storageState を `E2E_AUTH_DIR` から読む（`e2e/live/support/env.ts`）。
@@ -21,7 +21,7 @@ if (!cfg.live) {
 
 type Project = NonNullable<PlaywrightTestConfig['projects']>[number];
 
-/** 層の project（MSP の IADR-0569 決定 3 の表と同じ名前・接尾辞）。 */
+/** 層の project（MSP/IADR-0569 決定 3 の表と同じ名前・接尾辞）。 */
 const LAYER_PROJECTS: Record<Layer, Project> = {
   ro: { name: 'live-ro', testMatch: /\.ro\.spec\.ts$/, workers: 2, retries: 1 },
   trading: {
