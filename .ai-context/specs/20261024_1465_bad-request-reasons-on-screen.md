@@ -2,7 +2,7 @@
 title: 書き込みの 400 で、サーバの理由（本文 `{ error, details }`）を画面に出す
 type: spec
 status: done
-related_ids: [SC-01, SC-02, FR-10, FR-13, FR-19, FR-20, NFR, IADR-0585, IADR-0503, IADR-0146]
+related_ids: [SC-01, SC-02, FR-10, FR-13, FR-19, FR-20, NFR-19, IADR-0585, IADR-0503, IADR-0146]
 author: claude (Claude Code)
 created: 2026-10-24
 updated: 2026-10-24
@@ -55,3 +55,11 @@ updated: 2026-10-24
   `fetch('/bff/risk-controls/settings/stage1-minimum-trade-count',{method:'PUT',headers:{'Content-Type':'application/json','X-MSP-CSRF':'1'},body:'{"reason":"e2e 1465"}'})`
   を送り、400 と本文 `{"error":"minimumTradeCount（件数）は必須です。"}` を確かめる（契約フィクスチャと同じ）。CSRF のヘッダ名は基盤の現行に合わせる。
 - 画面に理由が出ることは L1 の E2E（`sc01-settings.spec.ts`・`sc02-risk-settings.spec.ts`）が固定している。
+
+## ［2026-10-24 追記 / #1469 の AI レビュー］
+
+- 🟡: 画面へ出す 1 文の組み立て（一般文言 ＋ 括弧書きの理由）が 9 か所に写されていたので、`validationMessageOf(e, general)` へまとめた。
+  一般文言は i18n のカタログの都合で呼び出し側が渡す（文言とその抽出元は変わらない。`npm run i18n` の差分 0）。挙動は変えていない（既存の Vitest・E2E は無変更で緑）。
+- 🟡: MarketMonitorService・ConfigurationService の 400 の契約での縛りは #1470 で追跡する。
+- 🟢: 無採番の `NFR` を NFR-19（WCAG 3.3.1・3.3.3）へ替えた。IADR-0585 決定 2 に「空の `details` なら `error` へ倒れる」を足した。
+

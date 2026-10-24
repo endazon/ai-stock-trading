@@ -2,7 +2,7 @@
 title: IADR-0585 本ユニットの 400 の本文 `{ error, details }` は変えず、画面が `ApiError.body` から理由を読む。本文の形は契約フィクスチャで縛る
 type: impl-adr
 status: Accepted
-related_ids: [SC-01, SC-02, FR-10, FR-13, FR-19, FR-20, NFR, IADR-0503, IADR-0146, IADR-0496]
+related_ids: [SC-01, SC-02, FR-10, FR-13, FR-19, FR-20, NFR-19, IADR-0503, IADR-0146, IADR-0496]
 author: claude (Claude Code)
 created: 2026-10-24
 updated: 2026-10-24
@@ -36,7 +36,10 @@ related_specs:
 1. **サーバの 400 の本文は変えない**（`{ error, details? }` のまま）。
 2. **画面は `ApiError.body` から理由を読む**（`frontend/src/lib/validationReasons.ts` の `validationReasonsOf`）。読む順は
    `ApiError.details`（RFC 7807 由来）→ `body.details`（文字列の配列）→ `body.error`（文字列）。文字列でない要素は捨てる。
-   9 つのフォームの写し（`saveMessageOf` / `messageOf`）がこれを通す。
+   `details` が空の配列（または文字列の要素が無い）なら `error` へ倒れる。
+   画面へ出す 1 文（一般文言 ＋ 括弧書きの理由）の組み立ても `validationMessageOf` の 1 か所に置き、9 つのフォームの写し（`saveMessageOf` / `messageOf`）はそれを呼ぶだけにする
+   （［2026-10-24 追記 / #1469 の AI レビュー］組み立てを 9 か所に写すと、写しの片方だけが本番とずれる。#1465 の事故と同じ形）。
+   本件は NFR-19（WCAG 2.2 AA）の達成基準 3.3.1（誤りの特定）・3.3.3（誤りの修正の提案）にも当たる。
 3. **400 の本文も契約フィクスチャで縛る**（IADR-0146 の機構）。`{ error, details }` の代表に損切りの実行機構の拒否、`{ error }` の代表に
    Stage 1 の最小取引件数の省略を、RiskManagementService の実端点から採る。単体試験は `serverBadRequest(body)`（本番の apiClient と同じく
    `details` は空・理由は `body`）でモックを作り、E2E もフィクスチャの本文で組む。
@@ -54,4 +57,4 @@ related_specs:
 - 9 つのフォームで、サーバの理由が一般文言の後ろに括弧書きで出る。409 の扱い（一般文言・再試行なし）は変わらない。
 - サーバの本文の形を変えると契約テストが赤になり、フィクスチャを再生成すると `riskContractFixtures.ts` の型（`BadRequestBody`）で `tsc` が赤になる。
 - 残余リスク: MarketMonitorService と ConfigurationService の 400 は契約フィクスチャで縛っていない（形は同じ `{ error }` で、単体試験と E2E は
-  本番の形のモックに改めた）。`ApiError.body` を渡さない apiClient に差し替わると理由が再び消える（基盤の apiClient は渡す。E2E のハーネスも渡す）。
+  本番の形のモックに改めた。#1470 で追跡）。`ApiError.body` を渡さない apiClient に差し替わると理由が再び消える（基盤の apiClient は渡す。E2E のハーネスも渡す）。

@@ -17,7 +17,7 @@ import {
   Tag,
 } from '@platform/ui';
 import { ApiError } from '@foundation/api/ApiError';
-import { validationReasonsOf } from '@ai-stock-trading/lib/validationReasons';
+import { validationMessageOf } from '@ai-stock-trading/lib/validationReasons';
 import { formatAt, marketLabel, MARKET_OPTIONS } from '@ai-stock-trading/lib/risk/contracts';
 import type { MonitoredSymbol, MonitorSettingsChangeEntry } from '@ai-stock-trading/lib/monitor/contracts';
 import { monitorChangeTypeLabel } from '@ai-stock-trading/lib/monitor/contracts';
@@ -59,9 +59,7 @@ function messageOf(e: unknown): string {
     }
     if (e.kind === 'validation') {
       // #1465, IADR-0585: 本ユニットの 400 の本文（`{ error, details }`）からサーバの理由を出す。
-      const reasons = validationReasonsOf(e);
-      const detail = reasons.length > 0 ? `（${reasons.join(' / ')}）` : '';
-      return `${i18n._(msg`入力内容に誤りがあります。`)}${detail}`;
+      return validationMessageOf(e, i18n._(msg`入力内容に誤りがあります。`));
     }
     if (e.kind === 'forbidden') {
       return i18n._(msg`変更する権限がありません。`);
