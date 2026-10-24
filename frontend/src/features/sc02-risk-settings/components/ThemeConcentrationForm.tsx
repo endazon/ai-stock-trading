@@ -17,6 +17,7 @@ import {
   TableRow,
 } from '@platform/ui';
 import { ApiError } from '@foundation/api/ApiError';
+import { validationMessageOf } from '@ai-stock-trading/lib/validationReasons';
 import type { ThemeConcentrationControlView, ThemeView, WatchlistMatch } from '@ai-stock-trading/lib/risk/contracts';
 import {
   CONTROL_VALUE_SOURCE_SAVED,
@@ -54,8 +55,8 @@ function saveMessageOf(e: unknown): string {
       return i18n._(msg`競合が発生しました。最新を取得して再試行してください。`);
     }
     if (e.kind === 'validation') {
-      const detail = e.details.length > 0 ? `（${e.details.join(' / ')}）` : '';
-      return `${i18n._(msg`入力内容に誤りがあります。`)}${detail}`;
+      // #1465, IADR-0585: 本ユニットの 400 の本文（`{ error, details }`）からサーバの理由を出す。
+      return validationMessageOf(e, i18n._(msg`入力内容に誤りがあります。`));
     }
     if (e.kind === 'forbidden') {
       return i18n._(msg`変更する権限がありません。`);

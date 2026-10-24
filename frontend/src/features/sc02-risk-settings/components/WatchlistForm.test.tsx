@@ -4,6 +4,7 @@ import { renderWithProviders } from '@ai-stock-trading/testing/renderWithProvide
 import type { RenderResult } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
+import { serverBadRequest } from '@ai-stock-trading/testing/serverErrors';
 
 // SC-02, FR-13, FR-03, FR-11, UC-06, IADR-0088, IADR-0090: 監視銘柄（watchlist）変更 UI の振る舞い。
 // リスク上限/ガード（#186/#188）と同じ apiFetch モック方針で、実 BFF 疎通に依存しない。別サービス（MarketMonitor）を
@@ -166,7 +167,7 @@ describe('WatchlistForm (SC-02, FR-13, FR-03, IADR-0090)', () => {
     mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {
       if (path === '/monitor/watchlist/history') return HISTORY;
       if (path === '/monitor/watchlist' && req?.method === 'DELETE')
-        throw new ApiError('validation', '入力不正', 400, ['理由は必須です']);
+        throw serverBadRequest({ error: '理由は必須です' });
       if (path === '/monitor/watchlist') return WATCHLIST;
       return [];
     });

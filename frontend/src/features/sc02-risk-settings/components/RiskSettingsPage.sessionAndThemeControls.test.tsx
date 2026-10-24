@@ -3,6 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '@ai-stock-trading/testing/renderWithProviders';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
+import { serverBadRequest } from '@ai-stock-trading/testing/serverErrors';
 
 // T-10-2956〜T-10-2962, SC-02, FR-10, FR-19, FR-11, UC-06, ADR-0070 決定 5, ADR-0071 決定 2・5, #1407, IADR-0564 決定 3・6:
 // **閉場前の統制（締め切り N・手仕舞いの有効と M）とテーマの定義を SC-02 から表示・設定できること。**
@@ -69,7 +70,10 @@ function mockBff(
     if (path === '/monitor/settings/history') return [];
     if ((path === PRE_CLOSE || path === THEMES) && req?.method === 'PUT') {
       if (put === 'validation') {
-        throw new ApiError('validation', '入力内容に誤りがあります。', 400, ['米国 の N は 1〜390 分で指定してください（指定値 400）。']);
+        throw serverBadRequest({
+          error: '閉場前の統制の設定が受理できません。',
+          details: ['米国 の N は 1〜390 分で指定してください（指定値 400）。'],
+        });
       }
       return path === PRE_CLOSE ? preClose : themes;
     }

@@ -3,6 +3,7 @@ import { screen, within } from '@testing-library/react';
 import { renderWithProviders } from '@ai-stock-trading/testing/renderWithProviders';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
+import { serverBadRequest } from '@ai-stock-trading/testing/serverErrors';
 
 // SC-02, FR-13, FR-19, FR-20, UC-06, IADR-0084: リスク設定画面（リスク上限の閲覧/変更）の振る舞い。
 // データ取得・更新は apiFetch をモックし、実 BFF 疎通に依存しない。
@@ -357,9 +358,10 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
       if (path === '/risk-controls/settings/history') return HISTORY;
       if (path === '/risk-controls/status') return STATUS;
       if (path === '/risk-controls/settings/limits' && req?.method === 'PUT')
-        throw new ApiError('validation', '検証', 400, [
-          '1注文あたりの発注金額上限（equity 比）は 0 より大きく 1（100%）以下でなければなりません。',
-        ]);
+        throw serverBadRequest({
+          error: 'リスク上限の値が設定可能な範囲を外れています。',
+          details: ['1注文あたりの発注金額上限（equity 比）は 0 より大きく 1（100%）以下でなければなりません。'],
+        });
       if (path === '/monitor/watchlist') return [];
       if (path === '/monitor/watchlist/history') return [];
       return SETTINGS;

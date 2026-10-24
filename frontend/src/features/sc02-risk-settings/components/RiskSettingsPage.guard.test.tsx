@@ -4,6 +4,7 @@ import { renderWithProviders } from '@ai-stock-trading/testing/renderWithProvide
 import type { RenderResult } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
+import { serverBadRequest } from '@ai-stock-trading/testing/serverErrors';
 
 // SC-02, FR-13, FR-19, UC-06, IADR-0086: 取引ガードの変更 UI の振る舞い。
 // 上限フォーム（#186）と同じ apiFetch モック方針で、実 BFF 疎通に依存しない。
@@ -288,7 +289,7 @@ describe('RiskSettingsPage guard editing (SC-02, FR-13, FR-19, IADR-0086)', () =
     mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {
       if (path === '/risk-controls/settings/history') return [];
       if (path === '/risk-controls/settings/guard' && req?.method === 'PUT')
-        throw new ApiError('validation', '入力不正', 400, ['理由は必須です']);
+        throw serverBadRequest({ error: '理由は必須です' });
       return SETTINGS;
     });
     const view = await renderReady();

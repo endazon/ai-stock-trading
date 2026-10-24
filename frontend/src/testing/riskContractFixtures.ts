@@ -21,6 +21,9 @@ import settingsHistoryJson from './contract-fixtures/risk-controls.settings-hist
 import shortSellingJson from './contract-fixtures/risk-controls.short-selling.json';
 import preCloseJson from './contract-fixtures/risk-controls.settings-pre-close.json';
 import themeConcentrationJson from './contract-fixtures/risk-controls.settings-theme-concentration.json';
+import stopLossMethod400Json from './contract-fixtures/risk-controls.settings-stop-loss-method.400.json';
+import stage1MinimumTradeCount400Json from './contract-fixtures/risk-controls.settings-stage1-minimum-trade-count.400.json';
+import type { BadRequestBody } from '@ai-stock-trading/lib/validationReasons';
 import type {
   PreCloseControlsView,
   RiskManagementSettings,
@@ -62,6 +65,15 @@ export const CONTRACT_PRE_CLOSE_CONTROLS: PreCloseControlsView = preCloseJson;
 export const CONTRACT_THEME_CONCENTRATION: ThemeConcentrationControlView = themeConcentrationJson;
 
 // ---- テスト用のヘルパ ----
+
+// 🔴 #1465, IADR-0585: **400 の本文も実応答で縛る。** 単体試験のモックが本番と違う形（`ApiError.details` に理由を直接詰める）
+// だったため、画面が本番の本文から理由を読まないことを、両側とも緑のまま見逃していた。
+
+/** `PUT /risk-controls/settings/stop-loss-method` の 400 の実応答（実弾の間に S1 を選ぶ。`{ error, details }`）。 */
+export const CONTRACT_STOP_LOSS_METHOD_400: BadRequestBody = stopLossMethod400Json;
+
+/** `PUT /risk-controls/settings/stage1-minimum-trade-count` の 400 の実応答（件数の省略。`{ error }` だけ）。 */
+export const CONTRACT_STAGE1_MINIMUM_TRADE_COUNT_400: BadRequestBody = stage1MinimumTradeCount400Json;
 
 // フィクスチャは全テストで共有されるため、複製してから渡す（あるテストの上書きが他へ漏れない）。
 // JSON 由来の純データのみを扱うため往復複製で十分である。
