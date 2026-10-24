@@ -6,11 +6,12 @@ import { dangerousOf, installWriteGuard, type WriteRecord } from './support/guar
 // バナー・REAL モーダルの無効送信**。網羅表（#1410）の A-003・A-004・A-007・A-025・A-042・A-043・A-057・A-058・A-066（A-002 は MSP の shell.ro）。
 //
 // 🔴 読み取りだけ。本番の取引・OpenD を動かす要求（`PUT …/broker-provider`・`POST /bff/opend-auth/code|resend`）は、各 test の前に
-// `support/guard.ts` が `page.route` で abort する保険を張り、test の後に**送ろうとした記録が 0 件**であることを見る（`/bff/` への GET 以外の
+// `support/guard.ts` が `page.context().route`（別タブ〔popup〕も含む）で abort する保険を張り、test の後に**送ろうとした記録が 0 件**であることを見る（`/bff/` への GET 以外の
 // 要求も同じく 0 件）。REAL のモーダルは**チェックだけ**を入れて送信が無効のままであることを見て閉じる（文字入力をしない＝送信の条件を揃えない）。
 // 🔴 AST の画面は MSP の共通シェルの直下（`/settings`・`/settings/risk`・`/controls`・`/opend-auth`）に載る。`/trading` の接頭辞は無い
-// （`/settings`・`/settings/risk`・`/controls` は MSP の `router.test.ts` 189〜191 行、`/opend-auth` は
-// `src/features/sc04-opend-auth/routes/sc04OpendAuthRoute.tsx` 30 行。網羅表の `/trading/*` は誤り）。
+// （`/settings`・`/settings/risk`・`/controls` は MSP の `router.test.ts` の test「mounts the AST screens in the typed route tree」の
+// `arrayContaining(['/settings', '/settings/risk', '/controls'])`、`/opend-auth` は
+// `src/features/sc04-opend-auth/routes/sc04OpendAuthRoute.tsx` の `path: '/opend-auth'`。網羅表の `/trading/*` は誤り）。
 
 const cfg = parseLiveEnv(process.env);
 

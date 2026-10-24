@@ -1,9 +1,10 @@
 // FR-09 / FR-20 / NFR-06 / IADR-0589（#1417 / E-43）: AST の live-ro の**書き込みの保険**。
 //
-// 🔴 live-ro は読み取りだけである。とくに次の 2 つは本番の取引と OpenD を動かすので、**画面の操作がどう転んでも外へ出さない**:
+// 🔴 live-ro は読み取りだけである。とくに次の 3 種は本番の取引と OpenD を動かすので、**画面の操作がどう転んでも外へ出さない**:
 //   - `PUT /bff/risk-controls/settings/broker-provider`（発注先の切替。実弾〔moomoo REAL〕への切替を含む）
 //   - `POST /bff/opend-auth/code` / `POST /bff/opend-auth/resend`（オーナーの端末へ SMS が飛ぶ・OpenD の状態が変わる）
-// `page.route` で `/bff/` への **GET 以外**の要求をすべて記録して abort する。test の終わりに、危険な 2 種の記録が 0 件であること、
+// **context** の経路（`page.context().route`）で `/bff/` への **GET 以外**の要求をすべて記録して abort する（別タブ〔popup〕の要求も塞ぐ）。
+// test の終わりに、危険な 3 種の記録が 0 件であること、
 // 書き込みの記録が 0 件であることを見る（abort は保険であり、送ろうとしたこと自体を失敗にする）。
 import type { Page, Request } from '@playwright/test';
 
@@ -45,10 +46,14 @@ export function isGuardedWrite(method: string, url: string): boolean {
   return path === null || path.startsWith('/bff/');
 }
 
-/** `/bff/` への書き込みをすべて記録して abort する。記録を返す（本文は記録しない）。 */
+/**
+ * `/bff/` への書き込みをすべて記録して abort する。記録を返す（本文は記録しない）。
+ * 🔴 `page.route` ではなく `page.context().route` に張る —— 画面が開いた別タブ（popup）の要求も同じ context を通るので塞がる。
+ * Playwright は test ごとに新しい context を作るので、記録が test をまたいで混ざることは無い。
+ */
 export async function installWriteGuard(page: Page): Promise<WriteRecord[]> {
   const records: WriteRecord[] = [];
-  await page.route('**/bff/**', async (route) => {
+  await page.context().route('**/bff/**', async (route) => {
     const req: Request = route.request();
     if (!isGuardedWrite(req.method(), req.url())) {
       await route.fallback();

@@ -178,6 +178,30 @@ test('書き込みの保険: 画面の中から送られた PUT broker-provider 
   ]);
 });
 
+test('書き込みの保険: 画面が開いた別タブ（popup）から送られた PUT broker-provider も abort され、記録に残る（guard は context に張る）', async ({
+  page,
+}) => {
+  const records = await installWriteGuard(page);
+  await page.goto('/');
+  const [popup] = await Promise.all([
+    page.waitForEvent('popup'),
+    page.evaluate(() => {
+      window.open('/', '_blank');
+    }),
+  ]);
+  await popup.waitForLoadState();
+  const outcome = await popup.evaluate(async () => {
+    try {
+      await fetch('/bff/risk-controls/settings/broker-provider', { method: 'PUT' });
+      return 'sent';
+    } catch {
+      return 'aborted';
+    }
+  });
+  expect(outcome).toBe('aborted');
+  expect(dangerousOf(records)).toEqual([{ method: 'PUT', path: '/bff/risk-controls/settings/broker-provider' }]);
+});
+
 test('live の spec は page.request / request の書き込み系（post・put・patch・delete・fetch）を使わない（guard は page の経路だけを塞ぐ。IADR-0589）', () => {
   const dir = fileURLToPath(new URL('./live/', import.meta.url));
   const specs = readdirSync(dir).filter((f) => f.endsWith('.spec.ts'));

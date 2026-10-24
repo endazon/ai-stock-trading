@@ -19,17 +19,17 @@ updated: 2026-10-25
 
 ## 受け入れ基準（#1417）
 
-- [x] `PUT broker-provider` と `POST /opend-auth/*` が `page.route` で abort され、呼ばれた記録が 0 件 ——
+- [x] `PUT broker-provider` と `POST /opend-auth/*` が `page.context().route` で abort され（別タブ〔popup〕の要求も）、呼ばれた記録が 0 件 ——
   `e2e/live/support/guard.ts` が各 test の前に `/bff/` への GET 以外をすべて記録して abort し、`trading.ro.spec.ts` の afterEach が
   危険な 3 種（`PUT …/broker-provider`・`POST /bff/opend-auth/code`・`…/resend`）の記録が 0 件、書き込みの記録が 0 件であることを見る。
-  保険そのものの働き（画面の中から送った PUT / POST が abort され記録に残る、GET は通す）は L1 の `e2e/live-opt-in.spec.ts` で固定する。
+  保険そのものの働き（画面の中から送った PUT / POST と別タブ〔popup〕から送った PUT が abort され記録に残る、GET は通す）は L1 の `e2e/live-opt-in.spec.ts` で固定する。
 
 ## 判断（IADR-0589）
 
 1. **書き込みの保険は `/bff/` への GET・HEAD・OPTIONS 以外の全部**（危険な 3 種だけに絞らない）。live-ro は読み取りの層なので、送ろうとしたこと自体を失敗にする。
    URL を解析できない書き込みも abort する（fail-closed）。
 2. **AST の画面のパスは `/settings`・`/settings/risk`・`/controls`・`/opend-auth`**（MSP の共通シェルの直下）。網羅表・設計（MSP#2013 コメント 3）・
-   E-33 の `owner-reach.ro.spec.ts` の `/trading/*` は誤り（`/settings`・`/settings/risk`・`/controls` は MSP の `router.test.ts` 189〜191 行、`/opend-auth` は本リポジトリの `sc04OpendAuthRoute.tsx` 30 行）。
+   E-33 の `owner-reach.ro.spec.ts` の `/trading/*` は誤り（`/settings`・`/settings/risk`・`/controls` は MSP の `router.test.ts` の test「mounts the AST screens in the typed route tree」の `arrayContaining(['/settings', '/settings/risk', '/controls'])`、`/opend-auth` は本リポジトリの `sc04OpendAuthRoute.tsx` の `path: '/opend-auth'`）。
    本 PR で `owner-reach.ro.spec.ts` も直す。ナビのグループ名は「株式自動売買」、パンくずの根は「ホーム」（網羅表 A-004 の「基盤ポータル」は古い）。
 3. A-043 は**チェックだけ**を入れ、「REAL」の文字は入れない。送信（実弾へ切り替える）の条件は「同意のチェック かつ 『REAL』の文字入力」
    （`RiskSettingsPage.tsx` 878 行・1202 行）なので無効のままである。**理由欄の fill はモーダルを開くための入力（982 行）であり、送信の条件ではない。**
@@ -37,9 +37,9 @@ updated: 2026-10-25
 4. A-007 は、BFF の統制状態の発注先が paper なら 3 画面でバナーが 1、それ以外なら 0。A-058 は paper のときだけ「取得できていません」を見て、
    paper 以外は発注先を annotation に残して、発注先による条件つきで理由つき skip。
 5. A-002 は MSP の shell.ro が持つ（取引オーナー以外の state を AST に残させない。MSP#2233）。
-6. guard は `page` の経路だけを塞ぐので、live の spec は `page.request` の書き込み系を使わない（L1 で本文を走査して 0 件を固定）。
+6. guard は browser context の経路（画面と別タブ）だけを塞ぐので、live の spec は `page.request` の書き込み系を使わない（L1 で本文を走査して 0 件を固定）。
 
 ## 検証
 
-- `e2e/live-opt-in.spec.ts`（L1）9 件（E-43 で新規 3）、`E2E_LIVE=1 … --list` で live-ro に 10 件（trading.ro 9・owner-reach 1）、`npm run lint`・`e2e:typecheck`。
+- `e2e/live-opt-in.spec.ts`（L1）10 件（E-43 で新規 4）、`E2E_LIVE=1 … --list` で live-ro に 10 件（trading.ro 9・owner-reach 1）、`npm run lint`・`e2e:typecheck`。
 - live の実走は PoC（MSP の setup を `E2E_KEEP_SESSIONS=trading-owner` で流してから。手順は 20261025_1416 の「流す順」）。
