@@ -1,11 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { OPTION_NAMES, parseLiveEnv, stateFile, type LiveEnv } from './live/support/env';
 import { gate, readinessProblems } from './live/support/readiness';
+import { dangerousOf, installWriteGuard, isGuardedWrite } from './live/support/guard';
 
 // NFR / IADR-0588（#1416 / E-33）: AST の live 層の config（`playwright.live.config.ts`）の **opt-in・読み込み・state の読み先・門**を L1 で固定する。
 // 稼働の環境には 1 度も触れない（ブラウザも開かない。`--list` は globalSetup を走らせない）。live の実走は MSP の setup の後に流す（作業仕様書）。
@@ -127,5 +128,91 @@ test('門で落ちるときも、取引オーナーの state が在れば失効�
   // 成立 → 呼ばない（teardown が実行の終わりに失効させる）。
   expect(await gate(live(dir), async () => ({ status: 200, roles: ['trading-owner'] }), revoke, () => true)).toEqual([]);
   expect(revoked).toBe(1);
+});
+
+test('書き込みの保険: /bff/ への GET 以外だけを abort の対象にし、危険な 3 種（発注先の変更・OpenD 認証の送信と再送）を見分ける（#1417）', () => {
+  expect(isGuardedWrite('PUT', 'https://localhost/bff/risk-controls/settings/broker-provider')).toBe(true);
+  expect(isGuardedWrite('POST', 'https://localhost/bff/opend-auth/code')).toBe(true);
+  expect(isGuardedWrite('GET', 'https://localhost/bff/risk-controls/settings')).toBe(false);
+  expect(isGuardedWrite('POST', 'https://keycloak.localhost/realms/platform/login-actions/authenticate')).toBe(false);
+  // fail-closed: URL を解析できない書き込みは abort の対象（通さない）。読み取りは通す。
+  expect(isGuardedWrite('PUT', 'not a url')).toBe(true);
+  expect(isGuardedWrite('POST', '')).toBe(true);
+  expect(isGuardedWrite('GET', 'not a url')).toBe(false);
+  expect(
+    dangerousOf([
+      { method: 'PUT', path: '/bff/risk-controls/settings/broker-provider' },
+      { method: 'POST', path: '/bff/opend-auth/resend' },
+      { method: 'PUT', path: '/bff/risk-controls/settings/limits' },
+      { method: 'GET', path: '/bff/risk-controls/settings/broker-provider' },
+    ]),
+  ).toEqual([
+    { method: 'PUT', path: '/bff/risk-controls/settings/broker-provider' },
+    { method: 'POST', path: '/bff/opend-auth/resend' },
+  ]);
+});
+
+test('書き込みの保険: 画面の中から送られた PUT broker-provider と POST opend-auth/code は abort され、記録に残る（GET は通す）', async ({
+  page,
+}) => {
+  const records = await installWriteGuard(page);
+  await page.goto('/');
+  const outcomes = await page.evaluate(async () => {
+    const tryFetch = async (method: string, path: string) => {
+      try {
+        await fetch(path, { method });
+        return 'sent';
+      } catch {
+        return 'aborted';
+      }
+    };
+    return {
+      broker: await tryFetch('PUT', '/bff/risk-controls/settings/broker-provider'),
+      code: await tryFetch('POST', '/bff/opend-auth/code'),
+    };
+  });
+  expect(outcomes).toEqual({ broker: 'aborted', code: 'aborted' });
+  expect(dangerousOf(records)).toEqual([
+    { method: 'PUT', path: '/bff/risk-controls/settings/broker-provider' },
+    { method: 'POST', path: '/bff/opend-auth/code' },
+  ]);
+});
+
+test('書き込みの保険: 画面が開いた別タブ（popup）から送られた PUT broker-provider も abort され、記録に残る（guard は context に張る）', async ({
+  page,
+}) => {
+  const records = await installWriteGuard(page);
+  await page.goto('/');
+  const [popup] = await Promise.all([
+    page.waitForEvent('popup'),
+    page.evaluate(() => {
+      window.open('/', '_blank');
+    }),
+  ]);
+  await popup.waitForLoadState();
+  const outcome = await popup.evaluate(async () => {
+    try {
+      await fetch('/bff/risk-controls/settings/broker-provider', { method: 'PUT' });
+      return 'sent';
+    } catch {
+      return 'aborted';
+    }
+  });
+  expect(outcome).toBe('aborted');
+  expect(dangerousOf(records)).toEqual([{ method: 'PUT', path: '/bff/risk-controls/settings/broker-provider' }]);
+});
+
+test('live の spec は page.request / request の書き込み系（post・put・patch・delete・fetch）を使わない（guard は browser context の経路だけを塞ぎ、page.request は素通りする。IADR-0589）', () => {
+  const dir = fileURLToPath(new URL('./live/', import.meta.url));
+  const specs = readdirSync(dir).filter((f) => f.endsWith('.spec.ts'));
+  expect(specs.length, 'live の spec').toBeGreaterThan(0);
+  const offenders = specs.flatMap((f) =>
+    readFileSync(join(dir, f), 'utf8')
+      .split('\n')
+      .map((line, i) => ({ f, i: i + 1, line }))
+      .filter(({ line }) => /\brequest\s*\.\s*(post|put|patch|delete|fetch)\s*\(/.test(line))
+      .map(({ f, i }) => `${f}:${i}`),
+  );
+  expect(offenders).toEqual([]);
 });
 
