@@ -3,15 +3,15 @@ title: 画面仕様書（素案） — SC-02 リスク設定画面（リスク�
 type: screen
 status: Draft
 created: 2026-07-18
-updated: 2026-10-21
+updated: 2026-10-24
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-03, FR-10, FR-11, FR-12, FR-13, FR-19, FR-20, SC-02, UC-06]
 adrs: [ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0040, ADR-0042, ADR-0043, ADR-0063, ADR-0066, ADR-0070, ADR-0071]
 iadrs: [IADR-0084, IADR-0086, IADR-0090, IADR-0095, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0164, IADR-0338, IADR-0339, IADR-0342, IADR-0422, IADR-0433, IADR-0437, IADR-0475, IADR-0527, IADR-0530, IADR-0564]
-specs: [20260718_106_frontend-risk-settings-and-controls, 20260718_196_frontend-watchlist-ui, 20260718_SC-01_settings, 20260805_334_broker-provider-axis, 20260805_362_sc02-ratio-input, 20260806_340_screens-reimplementation, 20260807_422_broker-provider-default-paper, 20260807_423_sc01-section2-removal-and-sc02-relocation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0086_frontend-guard-edit-ui, IADR-0090_frontend-watchlist-ui, IADR-0130_equity-ratio-risk-limits, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0151_risk-limit-percent-input-and-bounds, IADR-0155_sc01-collection-parameters-supply, IADR-0161_broker-provider-allow-list-resolution, IADR-0162_unsupplied-metric-display-convention-all-screens, IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation, 20260925_823_stop-method-ui-and-daily-report, 20260926_1025_policy-watchlist-apply, 20260926_1030_finnhub-cycle-fit-control, 20261001_1134_watchlist-no-fallback, 20261021_1407_sc02-pre-close-and-theme-settings]
-issues: [#1407, #1291, #20, #165, #188, #196, #209, #329, #334, #340, #362, #364, #389, #408, #409, #410, #422, #423, #424, #819, #823, #1025, #1030, #1134, planning#31, planning#33]
+specs: [20261024_1415_real-modal-six-points, 20260718_106_frontend-risk-settings-and-controls, 20260718_196_frontend-watchlist-ui, 20260718_SC-01_settings, 20260805_334_broker-provider-axis, 20260805_362_sc02-ratio-input, 20260806_340_screens-reimplementation, 20260807_422_broker-provider-default-paper, 20260807_423_sc01-section2-removal-and-sc02-relocation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0086_frontend-guard-edit-ui, IADR-0090_frontend-watchlist-ui, IADR-0130_equity-ratio-risk-limits, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0151_risk-limit-percent-input-and-bounds, IADR-0155_sc01-collection-parameters-supply, IADR-0161_broker-provider-allow-list-resolution, IADR-0162_unsupplied-metric-display-convention-all-screens, IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation, 20260925_823_stop-method-ui-and-daily-report, 20260926_1025_policy-watchlist-apply, 20260926_1030_finnhub-cycle-fit-control, 20261001_1134_watchlist-no-fallback, 20261021_1407_sc02-pre-close-and-theme-settings]
+issues: [#1407, #1291, #1415, #20, #165, #188, #196, #209, #329, #334, #340, #362, #364, #389, #408, #409, #410, #422, #423, #424, #819, #823, #1025, #1030, #1134, planning#31, planning#33, planning#816]
 -->
 
 
@@ -109,9 +109,12 @@ platform SPA 認証済みレイアウト配下に feature `sc02-risk-settings` �
    （#165 Bot 側）。
 3-2. **発注先の変更（変更可・#334・#422）**: 3 値（内蔵 `paper` / moomoo `REAL` / moomoo `SIMULATE`）から選ぶ。
    **変更操作を持つ画面は本画面だけである**（統制状態参照画面は参照専用）。理由必須・監査ログ・版の対象。
-   **実弾（moomoo `REAL`）への切替は警告モーダルを必ず経由し、計画の 4 点**（①実資金で執行される旨／②切替先と現在の
+   **実弾（moomoo `REAL`）への切替は警告モーダルを必ず経由し、計画の 6 点**（①実資金で執行される旨／②切替先と現在の
    Stage の組み合わせ〔Stage 1 のままなら段階ゲートを飛ばしている旨〕／③現在の equity と統制値の実額／④チェックボックスの
-   同意と「REAL」の文字入力）**を提示する。「OK」1 押しでは通過できない。** equity を取得できない場合は切替を許さない。
+   同意と「REAL」の文字入力／⑤段階が実弾を既定とするまで発注は行われない旨〔段階が実弾を既定としないときだけ〕／
+   ⑥損切りの実行機構が S0 以外なら、そもそもモーダルへ進ませない〔モーダルの手前の関門〕）**を満たす。「OK」1 押しでは
+   通過できない。** equity を取得できない場合は切替を許さない。
+   ［2026-10-24］計画の導入文は 2026-09-25 に「4 点」から「6 点」へ訂正された。本書の「4 点」も追随した（実装は既に 6 点を満たしていた）。
 
    ### ②に**「段階が実弾を既定とするまで発注は行われない」旨**を必ず含める（段階ゲートの要求の追記 (1)・#422）
 

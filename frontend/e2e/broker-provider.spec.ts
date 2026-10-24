@@ -6,8 +6,10 @@ import {
   pathWithRoles,
   RISK_SETTINGS,
   RISK_SETTINGS_PAPER,
+  RISK_STATUS,
   RISK_STATUS_PAPER,
 } from './fixtures';
+import { formatAmount } from '../src/lib/risk/contracts';
 
 // SC-01/02/03, FR-20, FR-12, FR-13, UC-06, INDEX 決定 46, #334, IADR-0141:
 // 発注先（Broker Provider）の 2 軸分離まわりの実ブラウザ E2E。BFF 応答はモック（page.route）。
@@ -80,23 +82,60 @@ test.describe('SC-02 実弾（moomoo REAL）切替の警告モーダル（#334�
     return liveDialog(page);
   }
 
-  test('モーダルは計画の 4 点を提示する', async ({ page }) => {
+  // FR-20 (1), SC-02, #1415（網羅表 A-036）, planning#816: 計画 SC-02 の警告モーダルは**6 点**を含める
+  // （2026-09-25 に「4 点」から訂正。実装は 6 点を満たしており、古かったのはテスト名だけである）。
+  // ①〜⑤ はモーダルの本文に出す。**⑥ はモーダルの手前の関門**（損切りの実行機構が S0 以外なら、そもそも
+  // モーダルへ進ませない）であり、`sc02-risk-settings.spec.ts` の「S0 以外のまま REAL を選ぶと…確認モーダルへ
+  // 進めず PUT broker-provider を送らない」と Vitest（`RiskSettingsPage.stopLossMethod.test.tsx`）・サーバの 400 で固定している。
+  test('モーダルは計画の 6 点のうち本文に出す ①〜⑤ を提示する（⑥ はモーダルの手前の関門）', async ({ page }) => {
     await installBff(page, defaultBff());
     await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
     const dialog = await openModal(page);
 
-    // ① 実資金で執行される旨
+    // ① これ以降の注文は実際の資金で執行される旨
     await expect(dialog.getByText('これ以降の注文は実際の資金で執行されます。')).toBeVisible();
-    // ② 切替先と現在の Stage の組み合わせ（Stage 1 のまま実弾＝段階ゲートを飛ばしている旨）
-    await expect(dialog.getByText(/段階ゲート.*を飛ばしています/)).toBeVisible();
-    // FR-20 (1), #422: **同意しても 1 件も発注されない**旨。計画が「警告モーダルにも含める」と名指しした。
+    // ② 切替先と現在の Stage の組み合わせ（Stage 1 のまま実弾＝段階ゲートを飛ばしている旨）。組み合わせそのものも出す。
+    await expect(dialog.getByText(/現在の運用段階:\s*Stage 1（SIMULATE）/)).toBeVisible();
+    await expect(dialog.getByText(/段階が想定する発注先:\s*moomoo SIMULATE（デモ環境）/)).toBeVisible();
+    await expect(dialog.getByText(/段階ゲート（統制違反 0 件・60 営業日・取引 100 件）を飛ばしています/)).toBeVisible();
+    // ③ 現在の equity と、それに対する統制値の**実額**（equity から解決済みの値。比率ではない）。
+    const table = dialog.getByRole('table', { name: '現在の equity と統制値' });
+    await expect(table.getByRole('row', { name: /現在の equity/ })).toContainText(formatAmount(RISK_STATUS.capital));
+    await expect(table.getByRole('row', { name: /1 注文あたり発注金額上限/ })).toContainText(
+      formatAmount(RISK_STATUS.maxOrderAmount),
+    );
+    await expect(table.getByRole('row', { name: /1 日あたり発注金額上限/ })).toContainText(
+      formatAmount(RISK_STATUS.maxDailyOrderAmount),
+    );
+    await expect(table.getByRole('row', { name: /保有建玉数上限/ })).toContainText(String(RISK_STATUS.maxOpenPositions));
+    // ④ 確認のための明示的な操作（チェックボックスの同意と「REAL」の文字入力）
+    await expect(dialog.getByRole('checkbox', { name: '実資金で執行されることを理解しました' })).toBeVisible();
+    await expect(dialog.getByLabel(/「REAL」と入力/)).toBeVisible();
+    // ⑤ 段階が実弾を既定とするまで発注は行われない旨（FR-20 (1), #422）。①と併記して矛盾しない文言であること。
     // これが無いと「同意したのに発注されない＝壊れている」と読まれる。
     await expect(dialog.getByText(/段階が実弾を既定とするまで発注は行われません/)).toBeVisible();
-    // ③ 現在の equity と統制値の実額
+    await expect(dialog.getByText(/1 件も発注されません/)).toBeVisible();
+  });
+
+  // ⑤ の否定形: 段階が既に実弾を既定とする（Stage 2）なら、注文は実際に発注される。同じ文言を出すと嘘になる。
+  // ② の「段階ゲートを飛ばしている」旨も出さない（組み合わせが妥当であるため）。
+  test('段階が実弾を既定とするとき（Stage 2）は ⑤ と ② の段階ゲートの警告を出さない', async ({ page }) => {
+    await installBff(page, {
+      ...defaultBff(),
+      'GET /risk-controls/settings': {
+        status: 200,
+        body: { ...RISK_SETTINGS, stage: { ...RISK_SETTINGS.stage, stage: 2, mode: 1 } },
+      },
+      'GET /risk-controls/status': { status: 200, body: { ...RISK_STATUS, stage: 2 } },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const dialog = await openModal(page);
+
+    await expect(dialog.getByText('これ以降の注文は実際の資金で執行されます。')).toBeVisible();
+    await expect(dialog.getByText(/現在の運用段階:\s*Stage 2（最小実弾）/)).toBeVisible();
+    await expect(dialog.getByText(/段階が実弾を既定とするまで発注は行われません/)).toHaveCount(0);
+    await expect(dialog.getByText(/を飛ばしています/)).toHaveCount(0);
     await expect(dialog.getByRole('table', { name: '現在の equity と統制値' })).toBeVisible();
-    // ④ 明示的な確認操作（チェックボックス＋文字入力）
-    await expect(dialog.getByRole('checkbox')).toBeVisible();
-    await expect(dialog.getByLabel(/「REAL」と入力/)).toBeVisible();
   });
 
   // **退行防止の中核**: 「OK」1 押しで通過できないこと。
