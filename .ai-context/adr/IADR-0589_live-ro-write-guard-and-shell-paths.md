@@ -23,7 +23,7 @@ related_specs:
 1. AST の live-ro は常設の PoC（本番の OpenD・証券口座につながる）で流す。`PUT /bff/risk-controls/settings/broker-provider` は発注先（実弾を含む）を切り替え、
    `POST /bff/opend-auth/code|resend` はオーナーの端末へ SMS を飛ばし OpenD の状態を変える。live-ro の操作（REAL モーダルを開く等）が転んでも、これらを外へ出してはならない。
 2. 網羅表と設計（MSP#2013 コメント 3）は AST の画面を `/trading/*` と書いているが、MSP の SPA は AST のルートを共通シェルの直下に載せる（`createAiStockTradingRoutes(shell)`。
-   MSP の `router.test.ts` が `/settings`・`/settings/risk`・`/controls` を固定）。E-33 の `owner-reach.ro.spec.ts` はこの誤りを写していた。
+   `/settings`・`/settings/risk`・`/controls` は MSP の `router.test.ts` 189〜191 行、`/opend-auth` は `sc04OpendAuthRoute.tsx` 30 行）。E-33 の `owner-reach.ro.spec.ts` はこの誤りを写していた。
 
 ## 決定
 

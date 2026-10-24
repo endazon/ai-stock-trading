@@ -29,7 +29,7 @@ updated: 2026-10-25
 1. **書き込みの保険は `/bff/` への GET・HEAD・OPTIONS 以外の全部**（危険な 3 種だけに絞らない）。live-ro は読み取りの層なので、送ろうとしたこと自体を失敗にする。
    URL を解析できない書き込みも abort する（fail-closed）。
 2. **AST の画面のパスは `/settings`・`/settings/risk`・`/controls`・`/opend-auth`**（MSP の共通シェルの直下）。網羅表・設計（MSP#2013 コメント 3）・
-   E-33 の `owner-reach.ro.spec.ts` の `/trading/*` は誤り（MSP の `router.test.ts` 190 行が `/settings`・`/settings/risk`・`/controls` を固定している）。
+   E-33 の `owner-reach.ro.spec.ts` の `/trading/*` は誤り（`/settings`・`/settings/risk`・`/controls` は MSP の `router.test.ts` 189〜191 行、`/opend-auth` は本リポジトリの `sc04OpendAuthRoute.tsx` 30 行）。
    本 PR で `owner-reach.ro.spec.ts` も直す。ナビのグループ名は「株式自動売買」、パンくずの根は「ホーム」（網羅表 A-004 の「基盤ポータル」は古い）。
 3. A-043 は**チェックだけ**を入れ、「REAL」の文字は入れない。送信（実弾へ切り替える）の条件は「同意のチェック かつ 『REAL』の文字入力」
    （`RiskSettingsPage.tsx` 878 行・1202 行）なので無効のままである。**理由欄の fill はモーダルを開くための入力（982 行）であり、送信の条件ではない。**

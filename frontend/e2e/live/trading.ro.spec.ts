@@ -9,7 +9,8 @@ import { dangerousOf, installWriteGuard, type WriteRecord } from './support/guar
 // `support/guard.ts` が `page.route` で abort する保険を張り、test の後に**送ろうとした記録が 0 件**であることを見る（`/bff/` への GET 以外の
 // 要求も同じく 0 件）。REAL のモーダルは**チェックだけ**を入れて送信が無効のままであることを見て閉じる（文字入力をしない＝送信の条件を揃えない）。
 // 🔴 AST の画面は MSP の共通シェルの直下（`/settings`・`/settings/risk`・`/controls`・`/opend-auth`）に載る。`/trading` の接頭辞は無い
-// （MSP の `router.test.ts`。網羅表の `/trading/*` は誤り）。
+// （`/settings`・`/settings/risk`・`/controls` は MSP の `router.test.ts` 189〜191 行、`/opend-auth` は
+// `src/features/sc04-opend-auth/routes/sc04OpendAuthRoute.tsx` 30 行。網羅表の `/trading/*` は誤り）。
 
 const cfg = parseLiveEnv(process.env);
 
