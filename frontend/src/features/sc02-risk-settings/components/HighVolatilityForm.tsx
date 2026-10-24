@@ -252,7 +252,7 @@ export function HighVolatilityForm({
           </p>
         )}
 
-        <h4 className="mt-3 text-xs font-semibold">{i18n._(msg`明示指定の銘柄`)}</h4>
+        <h3 className="mt-3 text-xs font-semibold">{i18n._(msg`明示指定の銘柄`)}</h3>
         {watchlist === null && !watchlistQuery.isPending && (
           <Note tone="err">
             {i18n._(
