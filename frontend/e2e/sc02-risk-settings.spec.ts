@@ -9,6 +9,9 @@ import {
   RISK_SETTINGS,
   RISK_STATUS,
   STOP_LOSS_METHOD_400,
+  WATCHLIST_POST_400,
+  MOVEMENT_THRESHOLD_400,
+  COOLDOWN_400,
   THEME_CONCENTRATION,
   WATCHLIST,
 } from './fixtures';
@@ -221,6 +224,26 @@ test.describe('SC-02 監視銘柄（#196）', () => {
     expect(postBody).toEqual({ symbol: '6758', market: 1, reason: '半導体監視' });
   });
 
+  // #1470, IADR-0585: MarketMonitorService の 400 の実応答（契約フィクスチャ。`{ error }`）で、サーバの理由が画面に出る。
+  test('追加の検証エラー（POST 400）はサーバの理由を表示し、再試行しない', async ({ page }) => {
+    let postCount = 0;
+    await installBff(page, {
+      ...defaultBff(),
+      'POST /monitor/watchlist': () => {
+        postCount += 1;
+        return { status: 400, body: WATCHLIST_POST_400 };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = watchlistAddForm(page);
+    await form.getByLabel('監視銘柄コード').fill('6758');
+    await form.getByLabel('追加理由').fill('半導体監視');
+    await form.getByRole('button', { name: '監視銘柄を追加' }).click();
+
+    await expect(form.getByRole('alert').filter({ hasText: '入力内容に誤りがあります。' })).toContainText(WATCHLIST_POST_400.error);
+    expect(postCount).toBe(1);
+  });
+
   test('削除は明示確認の後に DELETE /monitor/watchlist（body 理由）を叩く', async ({ page }) => {
     let deletePath: string | null = null;
     let deleteBody: unknown = null;
@@ -358,6 +381,28 @@ test.describe('SC-02 市場監視パラメータ（#423）', () => {
   });
 
   // **0 を許してはならない。** 0 ではあらゆる変動が閾値超過となり LLM 費用が暴走する。
+  // #1470, IADR-0585: 画面の値域検査をすり抜けた拒否（サーバの値域が変わった・別の経路の変更と競った等）でも、サーバの理由が画面に出る。
+  test('変動閾値・クールダウンの検証エラー（PUT 400）はサーバの理由を表示する', async ({ page }) => {
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /monitor/settings/movement-threshold': { status: 400, body: MOVEMENT_THRESHOLD_400 },
+      'PUT /monitor/settings/cooldown': { status: 400, body: COOLDOWN_400 },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+
+    const threshold = thresholdForm(page);
+    await threshold.getByLabel('変動閾値 %').fill('5');
+    await threshold.getByLabel('変動閾値の変更理由').fill('ボラティリティ上昇');
+    await threshold.getByRole('button', { name: '変動閾値を保存' }).click();
+    await expect(threshold.getByRole('alert')).toContainText(MOVEMENT_THRESHOLD_400.error);
+
+    const cooldown = cooldownForm(page);
+    await cooldown.getByLabel('クールダウン 時間').fill('1');
+    await cooldown.getByLabel('クールダウンの変更理由').fill('通知を減らす');
+    await cooldown.getByRole('button', { name: 'クールダウンを保存' }).click();
+    await expect(cooldown.getByRole('alert')).toContainText(COOLDOWN_400.error);
+  });
+
   test('値域外の変動閾値・クールダウンは保存できずサーバへ送らない', async ({ page }) => {
     let putCount = 0;
     await installBff(page, {

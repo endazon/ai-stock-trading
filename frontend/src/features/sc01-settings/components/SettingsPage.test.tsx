@@ -4,6 +4,7 @@ import { renderWithProviders } from '@ai-stock-trading/testing/renderWithProvide
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
 import { serverBadRequest } from '@ai-stock-trading/testing/serverErrors';
+import { CONTRACT_ASSUMPTIONS_400 } from '@ai-stock-trading/testing/assumptionsContractFixtures';
 
 // SC-01, FR-17, UC-06, IADR-0080: 設定画面（全体前提条件の閲覧/変更）の振る舞い。
 // データ取得・更新は apiFetch をモックし、実 BFF 疎通に依存しない。
@@ -174,7 +175,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
     mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {
       if (path === '/assumptions/history') return HISTORY;
       if (path === '/assumptions' && req?.method === 'PUT')
-        throw serverBadRequest({ error: '理由は必須です' });
+        throw serverBadRequest(CONTRACT_ASSUMPTIONS_400);
       return SAMPLE;
     });
     renderWithProviders(<SettingsPage />);
@@ -184,7 +185,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/入力/);
     // #1465: サーバの理由（本文の `error`）が画面に出る。
-    expect(screen.getByRole('alert')).toHaveTextContent('理由は必須です');
+    expect(screen.getByRole('alert')).toHaveTextContent(CONTRACT_ASSUMPTIONS_400.error);
   });
 
   // ---- SC-01 §1, #424, IADR-0162 決定4: 供給が無い値の表示規約（全画面共通） ----
