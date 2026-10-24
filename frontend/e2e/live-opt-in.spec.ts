@@ -202,7 +202,7 @@ test('書き込みの保険: 画面が開いた別タブ（popup）から送ら�
   expect(dangerousOf(records)).toEqual([{ method: 'PUT', path: '/bff/risk-controls/settings/broker-provider' }]);
 });
 
-test('live の spec は page.request / request の書き込み系（post・put・patch・delete・fetch）を使わない（guard は page の経路だけを塞ぐ。IADR-0589）', () => {
+test('live の spec は page.request / request の書き込み系（post・put・patch・delete・fetch）を使わない（guard は browser context の経路だけを塞ぎ、page.request は素通りする。IADR-0589）', () => {
   const dir = fileURLToPath(new URL('./live/', import.meta.url));
   const specs = readdirSync(dir).filter((f) => f.endsWith('.spec.ts'));
   expect(specs.length, 'live の spec').toBeGreaterThan(0);
