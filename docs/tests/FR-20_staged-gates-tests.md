@@ -3,15 +3,15 @@ title: 段階ゲートと発注先の 2 軸分離（FR-20）テスト仕様書
 type: test-spec
 status: draft
 created: 2026-08-03
-updated: 2026-10-08
+updated: 2026-10-24
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-03, FR-10, FR-11, FR-12, FR-13, FR-14, FR-15, FR-19, FR-20, SC-01, SC-02, SC-03, UC-06]
 adrs: [ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0034]
 iadrs: [IADR-0127, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0161, IADR-0163, IADR-0164, IADR-0180, IADR-0187, IADR-0271, IADR-0281, IADR-0304, IADR-0062, IADR-0240, IADR-0383, IADR-0511]
-specs: [20260803_343_regression-test-foundation, 20261008_1220_shortsell-verdict-product-types-revision, 20260804_333_stage-gate, 20260805_334_broker-provider-axis, 20260805_387_class-c-violation-count, 20260923_868_stage-transition-approver-on-behalf-of, 20260902_388_short-sell-release-verdict, 20260904_388_short-sell-strategy-observation, FR-12_paper-trade-tests, FR-15_backtest-tests, FR-20_staged-gates, IADR-0136_stage-orderable-cap-ratio, IADR-0137_stage1-trading-day-counting, IADR-0138_stage0-drawdown-tolerance-tightening, IADR-0139_stage-product-type-enforcement, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0142_stage1-simulate-only-aggregation, IADR-0148_control-violation-supply-and-unavailable-state, IADR-0149_stage1-trade-count-supply, README]
-issues: [#333, #334, #340, #342, #343, #344, #382, #385, #386, #387, #388, #407, #417, #419, #422, #423, #431, #434, #466, #569, #774, #861, #868, #1220]
+specs: [20261024_1415_real-modal-six-points, 20260803_343_regression-test-foundation, 20261008_1220_shortsell-verdict-product-types-revision, 20260804_333_stage-gate, 20260805_334_broker-provider-axis, 20260805_387_class-c-violation-count, 20260923_868_stage-transition-approver-on-behalf-of, 20260902_388_short-sell-release-verdict, 20260904_388_short-sell-strategy-observation, FR-12_paper-trade-tests, FR-15_backtest-tests, FR-20_staged-gates, IADR-0136_stage-orderable-cap-ratio, IADR-0137_stage1-trading-day-counting, IADR-0138_stage0-drawdown-tolerance-tightening, IADR-0139_stage-product-type-enforcement, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0142_stage1-simulate-only-aggregation, IADR-0148_control-violation-supply-and-unavailable-state, IADR-0149_stage1-trade-count-supply, README]
+issues: [#333, #334, #1415, #340, #342, #343, #344, #382, #385, #386, #387, #388, #407, #417, #419, #422, #423, #431, #434, #466, #569, #774, #861, #868, #1220]
 -->
 
 
@@ -155,7 +155,7 @@ issues: [#333, #334, #340, #342, #343, #344, #382, #385, #386, #387, #388, #407,
 | T-41 | 任意 | 発注先の 3 値と序数を検査する | `InternalPaper`=0 / `MoomooReal`=1 / `MoomooSimulate`=2。**0 / 1 は旧 `TradeMode` の意味を保存する** | —| 自動（境界値） |
 | T-42 | 実弾への切替 | 同意のみ／文字入力のみ／`real`（小文字）で切り替えを試みる | いずれも**受理されない**（両方が揃うまで。照合は大文字小文字を区別する） | —| 自動（否定形） |
 | T-43 | 実弾への切替 | 画面を経由せず API を直接叩く | **400 で拒否され設定が変わらない**（画面だけの統制は API 直叩きで消える） | —| 自動（否定形） |
-| T-44 | 実弾への切替・equity の取得に失敗 | モーダルで確認操作を完了させようとする | **切替できない**（4 点のうち③を提示できない状態で同意を取らない） | —| 自動（否定形） |
+| T-44 | 実弾への切替・equity の取得に失敗 | モーダルで確認操作を完了させようとする | **切替できない**（6 点のうち③を提示できない状態で同意を取らない） | —| 自動（否定形） |
 | T-45 | 任意 | 理由が空（空白のみを含む）で発注先を変更する | **設定も履歴も変わらない**（拒否を履歴へ積まない） | —| 自動（否定形） |
 | T-46 | 任意 | 発注先を変更する | 段階は変わらない／段階を変更する | 発注先は変わらない | —| 自動（否定形） |
 | T-47 | 内蔵 `paper` で 60 営業日・100 件を積む | Stage 1 の昇格可否を判定する | **昇格可能にならない**（計画が名指しする最悪の失敗の直接検知） | —| 自動（否定形） |
