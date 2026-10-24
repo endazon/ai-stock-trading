@@ -175,7 +175,8 @@ public class ReportExceptionMessageExposureTests
             TestContext.Current.CancellationToken);
 
         res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await ErrorOf(res)).Should().Contain("PeriodKey は種別・対象日と一致する必要があります");
+        // SC-02, IADR-0586 決定 3, #1472: 種別は列挙名（Daily）でなく呼び名（日報）で書く。
+        (await ErrorOf(res)).Should().StartWith("日報の PeriodKey は種別・対象日と一致する必要があります").And.NotContain("Daily");
     }
 
     // T-10-2392（REST の 400・gRPC の INVALID_ARGUMENT）: フレームワークが投げた ArgumentException は状態を保ち、文言は固定文言にする。
