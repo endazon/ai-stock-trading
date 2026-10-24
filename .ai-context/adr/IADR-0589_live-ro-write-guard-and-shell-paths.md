@@ -32,6 +32,13 @@ related_specs:
 2. 危険な 3 種（発注先の変更・OpenD 認証の送信と再送）は `DANGEROUS` に名前で持ち、失敗の文言で書き込み一般と分ける。
 3. AST の画面のパスは `/settings`・`/settings/risk`・`/controls`・`/opend-auth`。live の spec はこれを使い、`owner-reach.ro.spec.ts` の `/trading/settings` を直す。
 4. 保険そのものの働きは L1（`e2e/live-opt-in.spec.ts`）が固定する（画面の中から送った PUT・POST が abort され記録に残る。判定の純関数の表）。
+5. **A-002（閲覧者〔e2e-user〕で 4 画面が NotFound・ナビに「株式自動売買」が無い）は MSP の live-ro（`e2e/live/shell.ro.spec.ts`）が持つ**。AST の live は
+   取引オーナーの state だけを読む。理由: MSP の opt-out（MSP#2232）が残せるのは取引オーナーだけであり、e2e-user も残すと cookie を手元に置く面が広がる。
+   MSP の shell.ro は e2e-user の storageState で既に流れている（同じ実行の中で失効まで閉じる）。
+6. **A-043 の skip**: 現在の発注先が REAL のとき（前提外）と、損切りの実行機構が S0 以外のとき（確認モーダルの手前の関門で止まる設計。L1 の
+   `sc02-risk-settings.spec.ts` が固定）だけ、理由つきで skip する。どちらも**現在の設定を GET で読んだ値による条件つき**で、既定の構成（SIMULATE・S0）では流れる。
+7. **A-058 の skip**: 発注先が paper 以外のときだけ、発注先を annotation に残して理由つきで skip する（paper 以外は REAL 照会の有無で数値の出方が変わり、
+   読み取りだけでは期待値を決められない）。**発注先による条件つき**で、paper の構成では流れる。
 
 ## 検討した選択肢
 
@@ -43,6 +50,9 @@ related_specs:
 ## 影響
 
 - 共通シェルや画面が読み取りのために POST を使う形（照会の POST）を足すと、live-ro が赤になる。そのときは照会の口を明示して許す（本 IADR を改める）。
+- 🔴 **guard は `page` の経路（画面が送る要求）だけを塞ぐ。`page.request`（APIRequestContext）は `page.route` を経由しない。** そのため live の spec では
+  `page.request` / `request` の書き込み系（`post`・`put`・`patch`・`delete`・`fetch`）を使わない（読み取りの `get` だけ）。この規約は L1 の
+  `e2e/live-opt-in.spec.ts` が、`e2e/live/*.spec.ts` の本文に `request.(post|put|patch|delete|fetch)(` が 0 件であることで機械的に固定する。
 - 網羅表（#1410）の `/trading/*` と A-004 の「基盤ポータル」は誤り／古い。PR で訂正を明記する。
 
 ## 残余リスク

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -172,5 +172,19 @@ test('書き込みの保険: 画面の中から送られた PUT broker-provider 
     { method: 'PUT', path: '/bff/risk-controls/settings/broker-provider' },
     { method: 'POST', path: '/bff/opend-auth/code' },
   ]);
+});
+
+test('live の spec は page.request / request の書き込み系（post・put・patch・delete・fetch）を使わない（guard は page の経路だけを塞ぐ。IADR-0589）', () => {
+  const dir = fileURLToPath(new URL('./live/', import.meta.url));
+  const specs = readdirSync(dir).filter((f) => f.endsWith('.spec.ts'));
+  expect(specs.length, 'live の spec').toBeGreaterThan(0);
+  const offenders = specs.flatMap((f) =>
+    readFileSync(join(dir, f), 'utf8')
+      .split('\n')
+      .map((line, i) => ({ f, i: i + 1, line }))
+      .filter(({ line }) => /\brequest\s*\.\s*(post|put|patch|delete|fetch)\s*\(/.test(line))
+      .map(({ f, i }) => `${f}:${i}`),
+  );
+  expect(offenders).toEqual([]);
 });
 

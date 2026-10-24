@@ -3,7 +3,7 @@ import { OWNER_ROLE, parseLiveEnv, stateFile } from './support/env';
 import { dangerousOf, installWriteGuard, type WriteRecord } from './support/guard';
 
 // NFR-06 / FR-09 / FR-12 / FR-17 / FR-20 / SC-01 / SC-02 / SC-03 / SC-04 / ADR-0038 / IADR-0589（#1417 / E-43）: AST の live-ro の**4 画面の到達・
-// バナー・REAL モーダルの無効送信**。網羅表（#1410）の A-002〜A-004・A-007・A-025・A-042・A-043・A-057・A-058・A-066。
+// バナー・REAL モーダルの無効送信**。網羅表（#1410）の A-003・A-004・A-007・A-025・A-042・A-043・A-057・A-058・A-066（A-002 は MSP の shell.ro）。
 //
 // 🔴 読み取りだけ。本番の取引・OpenD を動かす要求（`PUT …/broker-provider`・`POST /bff/opend-auth/code|resend`）は、各 test の前に
 // `support/guard.ts` が `page.route` で abort する保険を張り、test の後に**送ろうとした記録が 0 件**であることを見る（`/bff/` への GET 以外の
@@ -65,25 +65,8 @@ async function currentSettings(page: Page): Promise<{ brokerProvider: number; st
   return (await res.json()) as { brokerProvider: number; stopLossMethod: number };
 }
 
-test.describe('閲覧者（e2e-user：trading-owner を持たない）', () => {
-  test.use({ storageState: stateFile(cfg.authDir, 'user') });
-
-  // NFR-06, ADR-0038: A-002。
-  test(
-    'A-002: 4 画面はどれも見つかりませんでしたになり、ナビに株式自動売買のグループが無い',
-    { tag: ['@p0', '@live-ro'] },
-    async ({ page }) => {
-      for (const s of SCREENS) {
-        await page.goto(s.path);
-        await expect(page.getByRole('heading', { name: '見つかりませんでした' }), s.path).toBeVisible();
-        await expect(page.getByRole('heading', { name: s.heading, level: 1 }), s.path).toHaveCount(0);
-      }
-      await expect(
-        page.getByRole('navigation', { name: '主要ナビゲーション' }).getByRole('heading', { name: UNIT_NAV_GROUP }),
-      ).toHaveCount(0);
-    },
-  );
-});
+// A-002（閲覧者〔e2e-user〕で 4 画面が NotFound・ナビに株式自動売買が無い）は MSP の live-ro（`e2e/live/shell.ro.spec.ts`）が持つ（IADR-0589 決定 5）。
+// AST へ e2e-user の state を残させない（残すセッションを取引オーナーの 1 つに限り、cookie を手元に置く面を狭くする）。
 
 test.describe('未認証', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
@@ -171,11 +154,13 @@ test.describe('取引オーナー（e2e-trading-owner）', () => {
       await page.goto('/settings/risk');
       const form = page.getByRole('form', { name: '発注先の変更' });
       await form.getByRole('radio', { name: /moomoo REAL/ }).check();
-      // 理由の値は送らない（送信の条件を揃えないので PUT は起きない。起きても guard が abort して afterEach が落とす）。
+      // 理由は確認モーダルを開く条件である（RiskSettingsPage.tsx 982 行: 理由が空なら「実弾への切替を確認する」が無効）。入力するのは画面の中だけ。
       await form.getByLabel('変更理由').fill('E2E live-ro の確認（送信しない）');
       await form.getByRole('button', { name: '実弾への切替を確認する' }).click();
       const dialog = page.getByRole('dialog', { name: '実弾（moomoo REAL）への切替の確認' });
       await expect(dialog).toBeVisible();
+      // 送信（実弾へ切り替える）の条件は「同意のチェック かつ 『REAL』の文字入力」（RiskSettingsPage.tsx 878 行の confirmationComplete・
+      // 1202 行の disabled）。チェックだけを入れ、文字は入れないので、送信は無効のままである（PUT は起きない。起きても guard が abort して落とす）。
       await dialog.getByRole('checkbox', { name: '実資金で執行されることを理解しました' }).check();
       await expect(dialog.getByRole('button', { name: '実弾へ切り替える' })).toBeDisabled();
       await dialog.getByRole('button', { name: 'キャンセル' }).click();
