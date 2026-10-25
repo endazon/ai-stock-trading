@@ -3,9 +3,11 @@ using System.Runtime.CompilerServices;
 using JasperFx.CodeGeneration;
 using JasperFx.CodeGeneration.Model;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Wolverine;
 using Wolverine.ErrorHandling;
 using Wolverine.RabbitMQ;
+using Wolverine.Runtime;
 
 namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 
@@ -207,6 +209,13 @@ public static class WolverineExtensions
         {
             options.Services.AddHostedService<WolverinePreGeneratedCodeAssertion>();
         }
+
+        // 🔴 NFR, IADR-0591 決定 1, MSP#2265: Wolverine の停止を 1 本の作業に束ねる（WolverineSingleStopGate の注記）。
+        // in-process のホストでは停止が 2 回並んで呼ばれ、2 回目が排出の完了を待たずに終わると、RunAsync が排出の途中で
+        // コンテナ（RabbitMQ の接続）を破棄し、後片付けが永久に止まる。ここ（configure の中）で登録するので runtime より後に
+        // 並び、停止では runtime より先に呼ばれる。
+        options.Services.AddSingleton<IHostedService>(
+            sp => WolverineSingleStopGate.For(sp.GetRequiredService<IWolverineRuntime>()));
 
         // IADR-0129 決定 11: ハンドラの生成コードに service location を許可する。
         // 本ユニットの永続アダプタ（EfExecutedOrderStore 等）は `internal sealed` であり、生成コードは

@@ -63,16 +63,33 @@ internal static class E2EInfrastructure
     /// 外部注入（E2E_*）で共有するブローカでは consumer が残り得る（作業仕様書の残余）。
     /// </para>
     /// </summary>
-    public static async Task DisposeQuietlyAsync(IAsyncDisposable? host, string name)
+    /// <remarks>
+    /// NFR, IADR-0591 決定 2, MSP#2265: 破棄には上限（既定 <see cref="DisposeLimit"/>）を置く。超えたら、どのホストの破棄が
+    /// 終わらないかを名指しした <see cref="TimeoutException"/> で**試験を赤にする**（黙って続けない）。
+    /// これは根の修正（停止の束ね・IADR-0591 決定 1）の補助で、blame-hang の 5 分の無言の中断より速く、原因を名指して落とす。
+    /// </remarks>
+    public static async Task DisposeQuietlyAsync(IAsyncDisposable? host, string name, TimeSpan? limit = null)
     {
         if (host is null)
         {
             return;
         }
 
+        var bound = limit ?? DisposeLimit;
         try
         {
-            await host.DisposeAsync();
+            var disposing = host.DisposeAsync().AsTask();
+            using var delay = new CancellationTokenSource();
+            if (await Task.WhenAny(disposing, Task.Delay(bound, delay.Token)) != disposing)
+            {
+                throw new TimeoutException(
+                    $"[E2E 後片付け] {name} の破棄が {bound.TotalSeconds:0} 秒以内に終わらない。"
+                    + "停止の呼び出しが排出の完了を待たずに終わり、排出の途中でコンテナが破棄された疑いがある"
+                    + "（MSP#2265・IADR-0591）。テストホストの hang dump で、止まっている非同期の連鎖を見る。");
+            }
+
+            await delay.CancelAsync();
+            await disposing;
         }
         catch (OperationCanceledException ex)
         {
@@ -80,6 +97,9 @@ internal static class E2EInfrastructure
                 $"[E2E 後片付け] {name} の破棄が打ち切られました（試験の判定には影響しない。どの段かはスタックで見る）: {ex}");
         }
     }
+
+    /// <summary>NFR, IADR-0591 決定 2: ホストの破棄の上限（blame-hang の 5 分より短く、平常の破棄〔数秒〕より十分長い）。</summary>
+    public static TimeSpan DisposeLimit { get; } = TimeSpan.FromMinutes(2);
 
     private static string? Value(string name)
     {

@@ -4,6 +4,7 @@ using Xunit;
 namespace AiStockTrading.IntegrationTests;
 
 // NFR, #1128: 後片付けの破棄は「接続を閉じる待ちの打ち切り」だけを握り、ほかの例外は投げる。
+// NFR, IADR-0591 決定 2, MSP#2265: 終わらない破棄は、上限でホストを名指して落とす。
 // Docker も実基盤も要らない（Integration の印を付けない＝既定の CI で走る）。
 public sealed class E2EInfrastructureDisposeTests
 {
@@ -47,6 +48,28 @@ public sealed class E2EInfrastructureDisposeTests
         var act = () => E2EInfrastructure.DisposeQuietlyAsync(new Throwing(new InvalidOperationException("壊れた")), "ホスト");
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("壊れた");
+    }
+
+    private sealed class Never : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync() => new(new TaskCompletionSource().Task);
+    }
+
+    [Fact]
+    public async Task 終わらない破棄は上限でホストを名指したTimeoutExceptionになる()
+    {
+        // NFR, IADR-0591 決定 2, MSP#2265: 排出の途中でコンテナが破棄されると、破棄は二度と終わらない（手元の heap dump で実測）。
+        // 黙って続けず、上限で、どのホストかを名指して落とす。
+        var act = () => E2EInfrastructure.DisposeQuietlyAsync(new Never(), "発注執行のホスト", TimeSpan.FromMilliseconds(200));
+
+        await act.Should().ThrowAsync<TimeoutException>().WithMessage("*発注執行のホスト*");
+    }
+
+    [Fact]
+    public void 破棄の上限はblame_hangの5分より短い()
+    {
+        // 上限が blame-hang（integration の --blame-hang-timeout 5m）以上だと、名指しの失敗より先に無言の中断が来る。
+        E2EInfrastructure.DisposeLimit.Should().BeLessThan(TimeSpan.FromMinutes(5));
     }
 
     [Fact]
