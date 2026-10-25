@@ -19,8 +19,11 @@ public class EntryBlockersServiceTests
     // 2026-09-23 10:00 EDT（米国の取引日の中）。
     private static readonly DateTimeOffset Now = new(2026, 9, 23, 14, 0, 0, TimeSpan.Zero);
 
-    private sealed class Fixture(DateTimeOffset? now = null, RiskManagementSettings? settings = null)
+    private sealed class Fixture(
+        DateTimeOffset? now = null, RiskManagementSettings? settings = null, ConfiguredSessionAndThemeControls? controls = null)
     {
+        public ConfiguredSessionAndThemeControls Controls { get; } = controls ?? ConfiguredSessionAndThemeControls.Default;
+
         public InMemoryPortfolioLedgerStore Ledger { get; } = new();
         public InMemoryKillSwitchStore KillSwitch { get; } = new();
         public InMemoryPauseStore Pause { get; } = new();
@@ -34,23 +37,23 @@ public class EntryBlockersServiceTests
             KillSwitch, Pause, new InMemoryBrokerAccountObservationStore(TimeProvider.System),
             FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
 
-        public EntryBlockersService Blockers() => new(Settings, Snapshots(), Lockout, Ledger, Clock);
+        public EntryBlockersService Blockers() => new(Settings, Snapshots(), Lockout, Ledger, Clock, Controls);
 
         public OrderScreeningService Screening() => new(
             Settings, Snapshots(), Lockout, Clock, new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(),
-            Ledger, TestShortSellContexts.Unavailable(Clock, Ledger));
+            Ledger, TestShortSellContexts.Unavailable(Clock, Ledger), new InMemoryEntryReservationStore(), Controls);
     }
 
-    private static TradeDecisionMade Buy() =>
+    private static TradeDecisionMade Buy(string symbol = "AAPL", TradeSide side = TradeSide.Buy) =>
         new(Guid.NewGuid(),
-            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
-                1, 100m, PositionEffect.Open, StopLossPrice: 95m),
+            new OrderIntent(symbol, Market.UnitedStates, side, ProductType.Cash, BrokerProvider.InternalPaper,
+                1, 100m, PositionEffect.Open, StopLossPrice: side == TradeSide.Buy ? 95m : 105m),
             "判断", Now);
 
     // 審査の拒否理由のうち、口の対象になるもの（並びを保つ）。
-    private static async Task<IReadOnlyList<RejectionReason>> ScreenedDeterminableAsync(Fixture f)
+    private static async Task<IReadOnlyList<RejectionReason>> ScreenedDeterminableAsync(Fixture f, string symbol = "AAPL")
     {
-        var outcome = await f.Screening().ScreenAsync(Buy());
+        var outcome = await f.Screening().ScreenAsync(Buy(symbol));
         return outcome.IsApproved
             ? []
             : [.. outcome.Rejected!.Reasons.Where(EntryStateBlockers.Determinable.Contains)];
@@ -237,5 +240,89 @@ public class EntryBlockersServiceTests
 
         // 審査と同じ関数: 同じ設定の審査の理由と一致する。
         OrderStateBlockers.Determine(settings.Guard, "7203", Market.Japan).Should().Equal(RejectionReason.MarketDisabled);
+    }
+
+    // 🔴 T-10-2985, FR-10, FR-19, ADR-0070, #1433, IADR-0572 決定1: **閉場前の新規建ての締め切り**を口も返す（審査と同じ解決・同じ組み立て）。
+    // 2026-09-23（水）の米国の閉場は 16:00 EDT＝20:00Z、既定 60 分の締め切りは 19:00Z から。窓の中（ちょうど・閉場の 30 分前）では両方向に返し、
+    // 同じストアの審査も同じ理由で拒否する。窓の外（閉場の 61 分前）と休場日（土曜の同じ時刻）では返さない（審査も通す）。
+    [Theory]
+    [InlineData("2026-09-23T19:00:00Z", true)]
+    [InlineData("2026-09-23T19:30:00Z", true)]
+    [InlineData("2026-09-23T18:59:00Z", false)]
+    [InlineData("2026-09-26T19:30:00Z", false)]
+    public async Task T_10_2985_締め切りの窓の中では口が理由を返し窓の外と休場日では返さない(string at, bool within)
+    {
+        var f = new Fixture(DateTimeOffset.Parse(at, System.Globalization.CultureInfo.InvariantCulture));
+
+        var view = f.Blockers().Build("AAPL", Market.UnitedStates);
+        var screened = await ScreenedDeterminableAsync(f);
+
+        view.LongSide.Should().Equal(screened, "口と審査が一致する（同じ関数・同じ構成の解決）");
+        if (within)
+        {
+            view.LongSide.Should().Equal(RejectionReason.PreCloseEntryCutoff);
+            view.ShortSide.Should().Equal([RejectionReason.PreCloseEntryCutoff], "売りの新規建て（空売り・売り増し）も止める（方向を問わない）");
+        }
+        else
+        {
+            view.LongSide.Should().BeEmpty();
+            view.ShortSide.Should().BeEmpty();
+        }
+
+        view.AnyOrder.Should().BeEmpty("締め切りは新規建てだけを止める（決済は止めない）");
+    }
+
+    // 🔴 T-10-2986, SC-02, #1433, IADR-0572 決定1, IADR-0564 決定 2: 画面で保存した締め切り（保存値）が構成より優先して効く（審査と同じ解決）。
+    // 閉場の 90 分前（18:30Z）は既定 60 分では窓の外、保存値 120 分では窓の中。構成の値 30 分（窓の外）を与えても保存値が効く。
+    [Fact]
+    public async Task T_10_2986_画面で保存した締め切りの分数が口にも効く()
+    {
+        var at = new DateTimeOffset(2026, 9, 23, 18, 30, 0, TimeSpan.Zero);
+        var configured = ConfiguredSessionAndThemeControls.Default with
+        {
+            PreCloseEntryCutoff = new PreCloseEntryCutoffSettings(new Dictionary<Market, int> { [Market.UnitedStates] = 30 }),
+        };
+        new Fixture(at, controls: configured).Blockers().Build("AAPL", Market.UnitedStates).LongSide.Should().BeEmpty("前提: 構成の 30 分では窓の外");
+
+        var saved = TradingDefaults.CreateSettings() with
+        {
+            PreCloseEntryCutoff = new PreCloseEntryCutoffSettings(new Dictionary<Market, int> { [Market.UnitedStates] = 120 }),
+        };
+        var f = new Fixture(at, saved, configured);
+
+        var view = f.Blockers().Build("AAPL", Market.UnitedStates);
+
+        view.LongSide.Should().Equal(RejectionReason.PreCloseEntryCutoff);
+        view.LongSide.Should().Equal(await ScreenedDeterminableAsync(f), "審査も保存値で判定する");
+    }
+
+    // 🔴 T-10-2987, FR-10, FR-19, ADR-0071, #1433, IADR-0572 決定1: **テーマの同時保有の上限**を口も返す（審査と同じ述語・同じスナップショット）。
+    // 既定の暗号資産のテーマ（上限 1）で COIN を保有しているとき、同じ集まりの MARA は両方向とも塞がる。COIN 自身（買い増し）・集まりの外の AAPL は塞がらない。
+    [Fact]
+    public async Task T_10_2987_テーマの他の銘柄を上限まで保有していれば集まりの別の銘柄を塞ぐ()
+    {
+        var f = new Fixture();
+        HoldLong(f, "COIN");
+
+        var mara = f.Blockers().Build("MARA", Market.UnitedStates);
+        mara.LongSide.Should().Equal(RejectionReason.ThemeConcentrationExceeded);
+        mara.ShortSide.Should().Equal([RejectionReason.ThemeConcentrationExceeded], "方向を問わず銘柄を数える");
+        mara.LongSide.Should().Equal(await ScreenedDeterminableAsync(f, "MARA"), "口と審査が一致する");
+
+        f.Blockers().Build("COIN", Market.UnitedStates).LongSide
+            .Should().BeEmpty("同じ銘柄の買い増しは集まりの銘柄の数を増やさない（自分自身は数えない）");
+        (await ScreenedDeterminableAsync(f, "COIN")).Should().BeEmpty();
+        f.Blockers().Build("AAPL", Market.UnitedStates).LongSide.Should().BeEmpty("どの集まりにも属さない銘柄には上限を掛けない");
+
+        // 画面で保存したテーマの定義（保存値）が効く: 上限 2 にすれば MARA も通る（審査と同じ解決）。
+        var saved = TradingDefaults.CreateSettings() with
+        {
+            ThemeConcentration = new ThemeConcentrationSettings(
+                [new ThemeLimit("暗号資産", Market.UnitedStates, ["COIN", "MARA", "MSTR", "HOOD"], 2)]),
+        };
+        var g = new Fixture(settings: saved);
+        HoldLong(g, "COIN");
+        g.Blockers().Build("MARA", Market.UnitedStates).LongSide.Should().BeEmpty();
+        (await ScreenedDeterminableAsync(g, "MARA")).Should().BeEmpty();
     }
 }

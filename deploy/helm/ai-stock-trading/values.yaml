@@ -13,7 +13,16 @@ global:
     pullPolicy: IfNotPresent
   # 共有インフラ（MSP platform-infra）への接続既定。ExternalName エイリアス（下記 infraAliases）で
   # 素のサービス名を platform-infra の FQDN へ解決する。
-  rabbitmqConnectionString: amqp://guest:guest@rabbitmq:5672
+  # NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: ブローカ（基盤 platform-infra の RabbitMQ）への接続。**サービスごとのユーザー**
+  # （<usernamePrefix><サービス名>。例 ast-trade-decision）で接続する。ユーザーと権限は基盤が作る（MSP の
+  # deploy/local/rabbitmq-setup/users.txt・reconcile-users.sh）。パスワードは Secret credentialsSecretName（キー = ユーザー名）から読む。
+  # ESO 所有（externalSecrets.enabled=true）では templates/external-secrets.yaml が Vault ai-stock-trading/rabbitmq-users を同期する。
+  # 🔴 既定のユーザー（guest）は使わない。旧キー rabbitmqConnectionString は廃止（与えると描画で止める）。
+  rabbitmq:
+    host: rabbitmq
+    port: 5672
+    credentialsSecretName: ast-rabbitmq-users
+    usernamePrefix: "ast-"
   otlpEndpoint: http://otel-collector:4317
   authAuthority: http://keycloak:8080/realms/ai-stock-trading
   # #22 受け入れ基準③: 実効構成バージョン（適用中の構成の Git コミット等）。GitOps（ArgoCD）で注入する。
@@ -50,6 +59,8 @@ mesh:
     # OpenD（独自プロトコル TCP 11111・常駐 1 セッション）は既定でサイドカー注入対象外にする。
     # HTTP でないためメッシュ mTLS/ルーティングの恩恵が無く、Envoy 傍受で常駐 TCP 接続の挙動が
     # 変わるリスクの方が上回る（IADR-0314 決定2）。
+    # IADR-0570: true なら enabled に依らず OpenD の Pod へ sidecar.istio.io/inject: "false" を描く
+    # （注入の切り替えで OpenD の Pod テンプレートが変わらず、作り直されない）。
     excludeOpend: true
     # #121 CronJob の Job 完了・起動順序に関する申告。ネイティブサイドカー（k8s 1.29+ の
     # initContainer restartPolicy: Always）前提ならメインコンテナ終了でサイドカーも自動終了し
@@ -200,9 +211,36 @@ opend:
     # 投入の流量制限（サービス全体で数える）。守っているのは moomoo の SMS 送信枠と総当たり耐性である。
     rateLimitMaxSubmissions: 5
     rateLimitWindowSeconds: 60
+    # #1456, IADR-0579: SMS の再送だけに課す最小の間隔（秒）。上の流量制限（投入と再送の合算）の内側に重ねる。
+    # 検証コードの投入は数えない。暫定値（OpenD 側の制限と SMS の到達所要の実測で置き換える）。
+    resendIntervalSeconds: 60
+    # NFR, IADR-0566: 呼び出し元（基盤の BFF）の検証に使う共有シークレット。Secret の volume としてサイドカーだけにマウントする
+    # （OpenD 本体にはマウントしない）。ファイルで渡すのは、値を回したときに OpenD の Pod を作り直さないため。
+    # 🔴 Secret が無い・値が 32 文字未満のあいだ、サイドカーの 4 本の口はすべて 503 を返す（fail-closed）。Pod の起動は止めない
+    #    （optional: true。止めると Service opend の endpoint から外れて発注経路まで止まる）。
+    #    ESO 所有（externalSecrets.enabled=true）では下記 externalSecrets.opendAuthCallerSecret が同期する。
+    #    送り手（基盤の BFF）は同じ値を env OpendAuth__CallerSecret で受ける（基盤の名前空間の Secret。基盤の側で配線する）。
+    callerSecret:
+      secretName: opend-auth-caller-secret
+      secretKey: caller-secret
+      mountPath: /var/run/opend-auth
+      defaultMode: 0440
     resources:
       requests: { cpu: 10m, memory: 32Mi }
       limits: { cpu: 200m, memory: 128Mi }
+  # NFR, IADR-0566: OpenD の Pod への到達の制限（templates/networkpolicy-opend.yaml・ingress だけ）。既定 true＝閉じる。
+  # opend.enabled=true のときだけ描く。届いてよい相手は 2 つ:
+  #   - API（apiPort）… 同じ namespace の発注執行（apiClientPodLabels）
+  #   - 認証サイドカー（authGateway.port）… 基盤の BFF（authGatewayClients。authGateway.enabled のときだけ規則を描く）
+  # 🔴 届く相手を足すときは、ここと呼び出し元の構成を同じ変更で揃える（ここだけ開けても、サイドカーは共有シークレットで拒む）。
+  networkPolicy:
+    enabled: true
+    apiClientPodLabels:
+      app: order-execution-service
+    authGatewayClients:
+      namespace: microservices-platform
+      podLabels:
+        app: bff-service
 
 # #132, IADR-0060 決定 4: 秘匿情報の External Secrets（Vault）**受け口**。既定 disabled = fail-safe。
 # ⚠️ **これは Vault 化の充足ではない**。ストア（Vault / External Secrets Operator）は #24 の管掌で本リポジトリには無く、
@@ -222,6 +260,16 @@ externalSecrets:
   moomooRsa:
     remoteKey: ai-stock-trading/moomoo-rsa
     property: opend_rsa.pem
+  # NFR, IADR-0568: ブローカのサービスごとのユーザーのパスワード（プロパティ名 = ユーザー名）。externalSecrets.enabled のとき同期する。
+  # 種は基盤の bootstrap（MSP deploy/local/vault/eso/bootstrap.sh）が乱数で入れる。同期先は global.rabbitmq.credentialsSecretName。
+  rabbitmqUsers:
+    remoteKey: ai-stock-trading/rabbitmq-users
+  # NFR, IADR-0566: 認証サイドカーの呼び出し元検証の共有シークレット。opend.enabled と opend.authGateway.enabled が
+  # どちらも true のときだけ描く。同期先は opend.authGateway.callerSecret.secretName / secretKey。
+  # 基盤の BFF も同じ Vault のキーを自分の名前空間へ同期する（両側で同じ値になる。値は Git に置かない）。
+  opendAuthCallerSecret:
+    remoteKey: ai-stock-trading/opend-auth
+    property: caller-secret
   # ADR-0006, IADR-0094 (#24): API 鍵群（Secret `ast-secrets`）の Vault 同期。既定 disabled = fail-safe
   # （現行の手動 k8s Secret 直運用を維持）。有効化には externalSecrets.enabled=true も要る。
   # ⚠️ 平文の鍵は置かない。Vault の単一 KV（remoteKey）に **Secret キー名と同名のプロパティ**で格納し
@@ -271,6 +319,24 @@ discord:
     # "discordUserId:keycloak利用者名" のカンマ区切り（同上のエスケープが要る）。対応が無いユーザーは操作できない。
     userMapping: ""
 
+# FR-15, NFR（費用）, ADR-0033 決定5, #1342, IADR-0537 決定5: Stage 0 の記録器（trade-decision）の永続ボリューム。
+# 記録の書き出し先（Stage0Recording__OutputPath）と実行の状態（完了の印・途中の記録・費用の累計の台帳・実行のロック）を置く。
+# 🔴 既定は無効（PVC も mount も env も描画しない＝本番の描画は本設定点の追加前とバイト等価）。記録器は状態の置き場
+#    （Stage0Recording:StateDirectory）が無ければ走らないため、無効のままでは記録は 1 回も走らない（fail-safe）。
+# 有効にすると、PVC `trade-decision-stage0` を作り、trade-decision の mountPath へ mount し、
+# Stage0Recording__StateDirectory=<mountPath>/state を注入し、trade-decision の更新方式を Recreate にする
+# （入れ替えで旧 Pod と新 Pod の記録器が重ならない。重なってもロックで片方は LLM を呼ばない）。
+# 🔴 Stage0Recording__StateDirectory を extraEnv に書かない（描画が単独で持つ。書けば描画で止まる）。
+#    Stage0Recording__OutputPath（extraEnv）は mountPath の下を指すこと（外を指せば描画で止まる）。
+# PVC は helm.sh/resource-policy: keep（uninstall・無効化でも消さない。費用の累計と完了の印を失うと、同じ承認値の記録がもう一度走る）。
+stage0Recording:
+  persistence:
+    enabled: false
+    size: 1Gi
+    # 空=クラスタ既定の StorageClass（k3d/Rancher Desktop の local-path で足りる）。
+    storageClassName: ""
+    mountPath: /var/lib/ai-stock-trading/stage0
+
 # 10 Worker。全て Web SDK :8080（/health/live・/health/ready）。
 # db を持つものは ConnectionStrings を注入、auth=true は Auth__Authority を注入する。
 services:
@@ -301,6 +367,9 @@ services:
       # fail-safe: 空/"none"/未知の値/不正な BaseUrl はすべて no-op＝**外部へ 1 リクエストも出さない**。
       # "stooq"（登録不要・鍵なし）を入れると実過去データ取得が有効になる。
       - { name: Backtest__BarData__Provider, value: "" }
+      # NFR, IADR-0559, #1391: Provider=order-execution の日足を east-west gRPC で呼ぶ場合は、このサービスの `grpcClients` へ `OrderExecution: true` を足す
+      # （→ OrderExecution__Grpc。前提: services.order-execution に `grpcPort: 8081`）。宣言があれば Backtest__BarData__OrderExecution__BaseUrl より優先する
+      # （Provider の明示は今までどおり要る）。deadline は OrderExecution__GrpcTimeoutSeconds（既定 30 秒＝REST と同値）。
       # FR-15, FR-20, ADR-0008, #688, IADR-0310: Stage 0 判定の定時駆動。
       # fail-safe: **既定は無効**。無効なら巡回もバー取得も verdict の発行も起きない。
       # 有効化は経路B（values-local.yaml）で行う（#632 / IADR-0329 決定4）。**本番既定は無効のまま**であり、
@@ -378,6 +447,14 @@ services:
       # 宣言があれば上の BaseUrl より優先する。s2s は REST と同じ ServiceAuth__*（trading-service）。deadline は MarketMonitor__GrpcTimeoutSeconds（既定 5 秒）。
       # 構成の固定リスト。上の MarketMonitor__BaseUrl を結線している（本番既定）ので**フォールバック専用**（一度も読めていないときだけ使う）。
       - { name: Collection__Source__Finnhub__Symbols__0, value: "" }
+      # FR-01, FR-02, #1363, IADR-0547 決定 1: 収集の対象へ保有銘柄（リスク管理の GET /risk-controls/open-positions・OwnerOrService・
+      # 下の ServiceAuth__* の s2s）を合流させる宛先。取引判断は監視銘柄 ∪ 保有銘柄を判断する（IADR-0521）ため、結線すると監視銘柄の外の
+      # 保有銘柄のニュース・開示も集める（上限を超えるときは保有を先に採る）。読めない巡回は監視銘柄だけ（警告）。
+      # 空=保有を足さない（従来の挙動。取引判断の RiskManagement__BaseUrl と同じく本番既定は空）。
+      - { name: RiskManagement__BaseUrl, value: "" }
+      # NFR, MSP:ADR-0029, IADR-0557, #1388: 上の照会を east-west gRPC（h2c）で呼ぶ場合の宛先。🔴 **既定は REST であり、このキーは意図的に置いていない**。
+      # 有効化するときだけ、このサービスの `grpcClients` へ `RiskManagement: true` を足す（前提: services.risk-management に `grpcPort: 8081`。
+      # 宣言があれば上の BaseUrl より優先し、空でも保有を読む）。s2s は REST と同じ ServiceAuth__*。deadline は RiskManagement__GrpcTimeoutSeconds（既定 5 秒）。
       # ADR-0020 §結果 / IADR-0224 / IADR-0275: 日次上限は空=未実測（銘柄数上限を逆算しない）のまま。
       # 分次は実測済みだが、日次は実測セッションでも確定できなかった（継続観察が要る）。
       - { name: Collection__Source__Finnhub__DailyRequestLimit, value: "" }
@@ -387,6 +464,8 @@ services:
       # Google News RSS（ニュース系の代替・キー不要。ADR-0020 決定2）。空=本ソース無効。
       - { name: Collection__Source__GoogleNews__Queries__0, value: "" }
       # SEC EDGAR（米国の開示・キー不要）。連絡先入り User-Agent は SEC 規約で必須（空=本ソース無効）。
+      # FR-01, #1363, IADR-0547 決定 2・3: 上の MarketMonitor__BaseUrl を結線しているとき、CIK は収集の対象の銘柄（保有が先、続いて監視銘柄）から
+      # SEC の対応表（www.sec.gov/files/company_tickers.json。1 日 1 回・同じ User-Agent と自制）で導く。下の固定 CIK は「常に足す分」（併用）。
       - { name: Collection__Source__SecEdgar__UserAgent, value: "" }
       - { name: Collection__Source__SecEdgar__Ciks__0, value: "" }
       # EDINET API v2（日本の開示・要 API キー）。
@@ -517,11 +596,18 @@ services:
       # 宣言があれば上の BaseUrl より優先する。メタデータのトークンは REST と同じ Notifications__Discord__OwnerAuth__*（ボットの機密クライアント。
       # 呼び先の gRPC 面は Auth__GrpcOwnerClients__0 で azp を確かめる）。deadline は <上記>__GrpcTimeoutSeconds（既定 5 / 5 / 10 秒）、
       # 方針の改訂と適用の内訳の記録は Reports__GrpcPolicyRevisionTimeoutSeconds（既定 120 秒＝REST と同値。これも既定では置かない）。
+      # 報告書の確定は Reports__GrpcConfirmTimeoutSeconds（既定 30 秒＝REST の確定専用クライアントと同値。これも既定では置かない）。
+      # 🔴 確定の上限は、報告書サービスの KB の後処理の時間予算 Reports__Confirm__KnowledgeBudgetSeconds（既定 20 秒）＋余白より長く置く（片方だけを変えない）。
   order-execution:
     image: ai-stock-trading/order-execution-service
     db: order_execution_svc
     # FR-10, #967, IADR-0425: 借株可否の照会の口（GET /order-execution/short-permit・OwnerOrService）を守る認証の Authority を注入する。
     auth: true
+    # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 5 の追補 2）, IADR-0328 決定 3, IADR-0559, #1391: east-west gRPC（h2c）の提供側ポート
+    # （OrderExecutionRead: 借株可否・日足・処理中の決済。呼び出し元はリスク管理・取引判断・バックテスト）。
+    # 🔴 **既定は REST であり、`grpcPort` は意図的に宣言していない**（宣言すると Service / Deployment の第 2 ポートと
+    # env `Grpc__Port` が描画され、既定描画が変わる）。有効化するときだけ、ここへ 1 行足す（呼び出し元の `grpcClients.OrderExecution` と**同じ変更で**揃える）:
+    #   grpcPort: 8081
     # Broker__Provider / Broker__Environment は template が broker.tier から決定する
     # （既定 paper・moomoo-sim は OpenD 経由 SIMULATE・moomoo-live は描画時 fail＝実弾は未解禁・#13 / IADR-0111）。
     extraEnv:
@@ -576,6 +662,18 @@ services:
       #   - { name: FaultInjection__IndeterminateDispatch__Mode, value: "BeforeSend" }   # None（既定）/ AfterSend / BeforeSend
       #   - { name: FaultInjection__IndeterminateDispatch__Symbols, value: "AAPL" }      # 当てる銘柄（* 単独で全銘柄）。新規建てにだけ・1 回だけ当たる
       #   - { name: FaultInjection__IndeterminateDispatch__ExpiresAtUtc, value: "2026-10-05T20:00:00Z" }  # 時差（Z か +09:00）必須・起動から 24 時間以内。過ぎたら注入しない
+      # NFR-06, IADR-0448, IADR-0559, #1391: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
+      - name: Auth__GrpcOwnerClients__0
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # 🔴 FR-10, ADR-0009, IADR-0567: 新規建てを送る直前に kill switch・一時停止の状態を照会する宛先（GET /risk-controls/trading-halt・OwnerOrService）。
+      #    **空・未設定・照会の失敗は「不明」＝新規建てを送らない**（fail-closed。決済・損切りは照会しない＝止まらない）。
+      #    s2s は下の ServiceAuth__*（trading-service。token エンドポイントは auth: true の Authority から導く）。
+      #    将来リスク管理に NetworkPolicy を置くときは、発注執行（order-execution-service）からの 8080 を許可すること。
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
   report:
     image: ai-stock-trading/report-service
     # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0328 決定 3, IADR-0446, #1061: east-west gRPC（h2c）の提供側ポート。
@@ -659,6 +757,8 @@ services:
       # fail-safe: 空=未供給＝「供給されていません（0 円ではありません）」。**0 円へ倒さない。**
       - { name: Stage0Recording__ApprovedEstimateJpy, value: "" }
       # FR-07, IADR-0071 決定2: 無応答時の既定動作。空/不正=ContinueLastConfirmed（直近確定を継続＝安全既定）。
+      # 🔴 FR-07, #1423 M-6, ADR-0075, IADR-0583: Halt にすると、承認待ちの日報が期限（翌営業日の米国市場の開場）を過ぎた間、取引判断の全体を見送る
+      # （損切り・手仕舞いは止めない・確定で自動再開）。継続・停止とも無応答を通知する（Reports__NoResponseNotice__Enabled=false で通知だけ外せる）。
       - { name: Reports__NoResponseBehavior, value: "" }
       # FR-09, UC-03, ADR-0003, #774, IADR-0240 決定11: 確定要求の本文で運ばれる「代理される利用者」（onBehalfOf）を
       # 信じてよいクライアント（カンマ区切り）。Discord Bot は owner マップ機密クライアントのトークンで確定を呼ぶため、
@@ -712,6 +812,11 @@ services:
       # 照会は実弾口座（Real × Margin）のヘッダの読み取り専用の照会に替わり、結線すると借株可否が答えられる（発注は SIMULATE のまま）。
       # 結線するときは order-execution 側の auth（上）と本サービスの ServiceAuth__*（trading-service）が要る。
       - { name: OrderExecution__BaseUrl, value: "" }
+      # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 5 の追補 2）, IADR-0559, #1391: 上の照会を east-west gRPC（h2c）で呼ぶ場合の宛先。
+      # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。有効化するときだけ、このサービスの `grpcClients`（extraEnv の兄弟のマップ）へ足す。🔴 この env 配列へ `*__Grpc` を足さない（配列は values を重ねると丸ごと置き換わり、既存の env が消える・IADR-0489）:
+      #   grpcClients: { OrderExecution: true }   # → OrderExecution__Grpc=http://order-execution-service:<grpcPort>（宛先は描画が導出する）
+      # 前提（同じ変更で揃える。無ければ描画で止まる）: services.order-execution に `grpcPort: 8081` を宣言すること。
+      # 宣言があれば上の BaseUrl より優先する（BaseUrl が空でも借株可否を照会する＝結線と同じ意味になる）。s2s は REST と同じ ServiceAuth__*。deadline は OrderExecution__GrpcTimeoutSeconds（既定 5 秒）。
       # FR-20, FR-11, UC-06, ADR-0003, #868, IADR-0240 決定11, IADR-0383: 段階遷移の要求の onBehalfOf
       # （代理される利用者）を信じてよいクライアント（カンマ区切り）。Discord Bot は owner マップ機密クライアントの
       # トークンで承認を呼ぶため、トークンからは人を解決できない（実資金ゲートの承認者が unknown になっていた）。
@@ -720,6 +825,20 @@ services:
       # fail-safe: 未設定/空=誰の onBehalfOf も信じない（承認者はトークンの主体へ倒れる）。
       - name: RiskControls__DelegatedActor__TrustedClientIds
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: 閉場前の新規建ての締め切り（閉場の何分前から新規建て〔買い増し・売り増しを含む〕を審査で拒否するか）。
+      # **既定 60 分（JP・US とも）はコードの既定で効くため、このキーは意図的に置いていない**（置くと既定描画が変わる）。変えるときだけ足す
+      # （1〜場中の長さ〔米国 390・東証 330〕。0〔統制を外す値〕・読めない値・範囲外・未知の市場は起動が止まる）:
+      #   - { name: PreCloseEntryCutoff__Minutes__UnitedStates, value: "60" }
+      #   - { name: PreCloseEntryCutoff__Minutes__Japan, value: "60" }
+      # 🔴 FR-10, FR-19, SC-02, #1407, IADR-0564 決定 1: 閉場前の手仕舞い（閉場の 15 分前以降に保有を成行で全量手仕舞う。方針の「持ち越し可: …」行の銘柄は残す）。
+      # **既定は無効**（コードの既定で効くため、このキーは意図的に置いていない）。方針の「閉場前の手仕舞い: 有効」の行でも有効になる。
+      # IADR-0561 決定 3 では trade-decision の構成だったが、締め切り・テーマの上限と同じくここ（risk-management）へ移した（trade-decision に書くと起動が止まる）。
+      # 構成で有効にするとき・分数を変えるときだけ足す（分数 1〜60。読めない値・範囲外は起動が止まる）:
+      #   - { name: PreCloseFlatten__Enabled, value: "true" }
+      #   - { name: PreCloseFlatten__Minutes__UnitedStates, value: "15" }
+      #   - { name: PreCloseFlatten__Minutes__Japan, value: "15" }
+      # 🔴 SC-02, #1407, IADR-0564 決定 2: 締め切り・手仕舞い・テーマの定義は **SC-02 で保存した値があればそちらが効く**（構成は「保存するまでの値」）。
+      # 保存した後にここを変えても、その項目には効かない（SC-02 と GET /risk-controls/settings/pre-close・/theme-concentration が「構成と食い違い」を示す）。
       # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
@@ -733,6 +852,9 @@ services:
       # helm.yml の検査が赤にする。#1140, IADR-0478 決定 1）:
       #   - { name: DecisionVolume__Enabled, value: "true" }
       #   - { name: OrderExecution__BaseUrl, value: "http://order-execution-service:8080" }
+      # NFR, IADR-0559, #1391: 日足（と処理中の決済・Stage 0 の当時の価格）を east-west gRPC で呼ぶ場合は、このサービスの `grpcClients` へ
+      # `OrderExecution: true` を足す（→ OrderExecution__Grpc。前提: services.order-execution に `grpcPort: 8081`）。宣言があれば OrderExecution__BaseUrl より優先する。
+      # deadline は OrderExecution__GrpcTimeoutSeconds（既定 8 秒＝REST と同値）。
       # FR-10, ADR-0049 決定2, ADR-0048 決定 3, #1122, IADR-0486 決定 1: 損切り幅の下限を 1.0 × ATR(14, 日足) にする（得られなければ参照価格の 2%）。
       # 🔴 **既定は無効（false）であり、このキーは意図的に置いていない**（置くと既定描画が変わる。無効の間は下限は参照価格の 2%・プロンプトは従来のまま）。
       # 日足の口は上の出来高と 1 つを共有する（同じ銘柄の同じ取引日の取得は 1 回）。有効化の条件は出来高と同じ（取得枠の回復周期を IADR に記録してから利用者が行う）。
@@ -741,6 +863,12 @@ services:
       # FR-10, #1176, IADR-0495 決定1: 新規建ての最小の名目額（equity 比）。🔴 **既定 0.01（1%）はコードの既定で効くため、このキーは意図的に置いていない**
       # （置くと既定描画が変わる）。変えるときだけ足す（0 以上 0.25 以下。読めない値・範囲外は起動が止まる。0 は統制を外す）:
       #   - { name: Sizing__MinEntryNotionalRatio, value: "0.01" }
+      # 🔴 FR-10, FR-19, #1396, IADR-0561 決定 3・4 / #1407, IADR-0564 決定 1: 閉場前の手仕舞いの常駐の巡回の間隔（既定 60 秒・10〜300）。
+      # **有効・無効と分数はここに書かない**（risk-management の構成か SC-02 へ移した。ここに PreCloseFlatten__Enabled / __Minutes__* を書くと起動が止まる）。
+      # 変えるときだけ足す:
+      #   - { name: PreCloseFlatten__IntervalSeconds, value: "60" }
+      # 🔴 ADR-0066 決定1, #1291: 変えるときは高ボラティリティ銘柄の区分の上限（SC-02 または GET /risk-controls/settings の highVolatility・既定 5%）との関係を確かめること。区分の上限の下端は
+      # 既定値 1% の固定でこの値に連動しない。この値を区分の上限より上げると、区分の銘柄の新規建ては常に見送りになる（起動時に警告が出る）。
       - { name: Reports__BaseUrl, value: "" }
       # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0446, #1061: 上の照会を east-west gRPC（h2c）で呼ぶ場合の宛先。
       # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。有効化するときだけ、このサービスの `grpcClients`（extraEnv の兄弟のマップ）へ足す。🔴 この env 配列へ `*__Grpc` を足さない（配列は values を重ねると丸ごと置き換わり、既存の env が消える・IADR-0489）:
@@ -764,6 +892,10 @@ services:
       #   grpcClients: { MarketMonitor: true }   # → MarketMonitor__Grpc=http://market-monitor-service:<grpcPort>（宛先は描画が導出する）
       # 前提（同じ変更で揃える。無ければ描画で止まる）: services.market-monitor に `grpcPort: 8081` を宣言すること。
       # 宣言があれば上の BaseUrl より優先する。s2s は REST と同じ ServiceAuth__*（trading-service）。当時の監視銘柄（Stage 0 の記録）も同じ宛先で gRPC になる。
+      # 🔴 NFR-13, UC-02, #1423 M-5, ADR-0074 決定2, IADR-0582: 月次 LLM 費用上限の 100% 到達（Halted）を判断の合流点で読み、
+      # 定時・価格変動の両方の判断を LLM の前で見送る。情報収集と同じ GET /costs/state・同じ s2s（下の ServiceAuth__*）。
+      # 空にすると未結線（NoOp＝常に停止していない＝価格変動の判断は上限の後も LLM を呼ぶ）。
+      - { name: CostControl__BaseUrl, value: "http://cost-control-service:8080" }
       # FR-04, FR-15, ADR-0033 決定3, ADR-0037 決定2, #632, #1295: 記録側の学習カットオフ日（5.5 系の割当・Jun 2026 → 2026-06-30）。
       # 🔴 **バックテスト側（Backtest__Stage0__LlmTrainingCutoff）と必ず同値にする** —— 食い違うと
       # 記録再生の評価は `RecordingMismatch` で fail-closed し、原因が構成の不一致だと読み取りにくい。

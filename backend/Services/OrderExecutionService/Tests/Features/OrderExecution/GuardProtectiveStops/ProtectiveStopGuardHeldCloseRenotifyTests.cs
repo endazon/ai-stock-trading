@@ -110,7 +110,7 @@ public class ProtectiveStopGuardHeldCloseRenotifyTests
 
         // 本番と同じ形: ガードは巡回ごとに作り直される（scoped）。通知の記憶だけがプロセスの寿命で生きる（singleton）。
         public Task<ProtectiveStopGuardResult> PatrolAsync(CancellationToken ct = default) =>
-            new ProtectiveStopGuard(Broker, Broker, Stops, Store, Reservations, Clock, logger: null, Tracker)
+            new ProtectiveStopGuard(Broker, Broker, Stops, Store, Reservations, Clock, AlwaysOpenSessionGate.Instance, logger: null, Tracker)
                 .RunOnceAsync(10, ct);
 
         public void RestartProcess() => Tracker = new HeldCloseNotificationTracker();

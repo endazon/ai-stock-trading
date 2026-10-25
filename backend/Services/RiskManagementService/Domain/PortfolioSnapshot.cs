@@ -123,4 +123,11 @@ public record PortfolioSnapshot
     /// 回復せず残っている）。kill switch / pause と同じく**新規建てのみ**を止め、手仕舞い・損切りは止めない。
     /// </summary>
     public bool InformationDegradedBlocksNewEntries { get; init; }
+
+    /// <summary>
+    /// 🔴 FR-10, #1397, IADR-0562 決定 2: 保有中の銘柄と、承認済みで生きている未約定の新規建て（予約を含む。IADR-0346・IADR-0529）の (銘柄, 市場)。
+    /// テーマごとの同時保有の上限の入力（方向は問わない）。
+    /// </summary>
+    public IReadOnlySet<(string Symbol, Market Market)> HeldOrPendingSymbols { get; init; }
+        = new HashSet<(string, Market)>();
 }

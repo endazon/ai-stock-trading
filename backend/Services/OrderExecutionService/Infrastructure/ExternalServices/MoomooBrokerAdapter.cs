@@ -152,7 +152,15 @@ public sealed class MoomooBrokerAdapter(
             ? MoomooPriceRounding.RoundTrigger(intent.Market, intent.Side, trigger)
             : triggerPrice;
 
-        return (await PlaceWithRejectionDetailAsync(sentIntent, remark, cancellationToken, kind, sentTrigger)
+        // 🔴 FR-05, FR-10, #1339, IADR-0536 決定1: **承認経路の指値の決済**（判断の利確・損切り、利用者・自動縮小の指値の手仕舞い）だけ
+        // 有効期限 DAY を明示する。保護逆指値（Stop。#1214 の対象）・成行・新規建ての指値には載せない（従来どおりブローカーの既定）。
+        // S3（StopLimit / TrailingStop）はこの口を通らない（PlaceAlternativeStopOrderAsync が直接呼ぶ）。
+        var timeInForce = kind == MoomooOrderKind.Limit && intent.PositionEffect == PositionEffect.Close
+            ? MoomooTimeInForce.Day
+            : (MoomooTimeInForce?)null;
+
+        return (await PlaceWithRejectionDetailAsync(
+                sentIntent, remark, cancellationToken, kind, sentTrigger, timeInForce: timeInForce)
             .ConfigureAwait(false)).Order;
     }
 
@@ -167,7 +175,8 @@ public sealed class MoomooBrokerAdapter(
             CancellationToken cancellationToken,
             MoomooOrderKind kind,
             decimal? triggerPrice,
-            decimal? trailValue = null)
+            decimal? trailValue = null,
+            MoomooTimeInForce? timeInForce = null)
     {
         var now = _time.GetUtcNow();
 
@@ -190,7 +199,8 @@ public sealed class MoomooBrokerAdapter(
             // Mode=Live でも SIMULATE を用いる（本 PR は実弾を撃たない・IADR-0016）。実弾解禁は別 IADR＋明示 config。
             var request = new MoomooOrderRequest(intent.Symbol, MapMarket(intent.Market), MapSide(intent.Side),
                 intent.Quantity, intent.Price, remark, kind, triggerPrice, trailValue,
-                PositionEffect: intent.PositionEffect); // #856, IADR-0488: OpenD へは送らない（故障注入の対象の見分けにだけ使う）
+                PositionEffect: intent.PositionEffect, // #856, IADR-0488: OpenD へは送らない（故障注入の対象の見分けにだけ使う）
+                TimeInForce: timeInForce); // #1339, IADR-0536 決定1: null は欄を送らない（ブローカーの既定）
             var result = await client.PlaceOrderAsync(request, cancellationToken).ConfigureAwait(false);
             return (ToBrokerOrder(intent, result, now), null, null, result.OrderId);
         }
@@ -414,6 +424,9 @@ public sealed class MoomooBrokerAdapter(
         // 証券会社が受理しなかったことが**分かっている**状態。在庫解放の対象のままにする
         //（発注拒否で押さえが解けるのは #848 の射程内であり、外すと 2 つ目の恒久ロックを作る）。
         MoomooOrderState.Failed => OrderStatus.Rejected,
+        // 🔴 FR-05, ADR-0067 決定5, #1339, IADR-0539: 失効（Disabled）は**失注**（Expired）。拒否と区別して表示する。
+        // 未約定の終端としての扱い（在庫の解放・未約定残の通知・S1 の再武装）は拒否と同じ（OrderStatusLifecycle）。
+        MoomooOrderState.Expired => OrderStatus.Expired,
         // 🔴 この既定アームは **Unknown 専用ではない**。いま到達するのは MoomooOrderState.Unknown だけだが、
         // 将来 MoomooOrderState へ値を足して上のアームへ写し忘れた場合も**ここへ落ちる**（＝非終端）。
         // 向きは意図どおり（名前を付けられない状態で在庫を解放しない）。ただし新しい値が**終端**を意味するなら
@@ -423,7 +436,8 @@ public sealed class MoomooBrokerAdapter(
 
     // #848: Unknown は**終端に入れない**（CompletedAt を立てない・約定追跡が引き直す）。
     private static bool IsTerminal(MoomooOrderState state) =>
-        state is MoomooOrderState.FilledAll or MoomooOrderState.Cancelled or MoomooOrderState.Failed;
+        state is MoomooOrderState.FilledAll or MoomooOrderState.Cancelled or MoomooOrderState.Failed
+            or MoomooOrderState.Expired;
 
     // GetOrderAsync でブローカ照会結果に Intent が無い場合の最小プレースホルダ（状態照会用途）。
     private static OrderIntent MinimalIntent() =>

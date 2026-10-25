@@ -1,6 +1,8 @@
+using System.Globalization;
 using MarketMonitorService.Common.Abstractions;
 using MarketMonitorService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Logging;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
@@ -145,6 +147,13 @@ public sealed class MarketMonitorAppService(
                 Guid.NewGuid(), monitored.Symbol, monitored.Market,
                 quote.Price, baseline.Value, movement.ChangeRatio, now));
             cooldownStore.SetLastTriggered(monitored.Symbol, monitored.Market, now);
+            // FR-03, ADR-0003, #1364: 検知の中身（銘柄・現在値・基準値・変動率）を INFO で 1 行残す（従来は発行だけで監査で追えなかった）。
+            // 銘柄は監視銘柄の設定（利用者・提案の入力）由来のため、行を割らないよう LogSanitizer を通す（NFR, IADR-0316）。
+            _logger.LogInformation(
+                "急変を検知しました: 銘柄 {Symbol}（{Market}） / 現在値 {Price} / 基準値 {BaselinePrice} / 変動率 {ChangeRatio} / 閾値 {ThresholdRatio}",
+                LogSanitizer.Sanitize(monitored.Symbol), monitored.Market,
+                quote.Price, baseline.Value, movement.ChangeRatio.ToString("P2", CultureInfo.InvariantCulture),
+                settings.MovementThresholdRatio.ToString("P2", CultureInfo.InvariantCulture));
         }
 
         return new MonitorRoundResult(stopLosses, movements)

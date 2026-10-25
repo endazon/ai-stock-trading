@@ -679,6 +679,8 @@ public class BusinessMetricsTests
         metrics.RecordFinnhubSymbolsDeferred(0);
         metrics.RecordKLineDailyRequest(BusinessMetrics.KLineRequestSucceeded);
         metrics.RecordKLineQuota(used: 1, remaining: 299);
+        // NFR, FR-10, #1442, IADR-0573 決定3: 発行し終えていない約定の件数（ゲージ）。
+        metrics.RecordOrderExecutedPublishPending(0);
 
         // NFR-01, NFR-02, #689: 端点間の 3 計器。**未観測カウンタも 1 回発火させる** ——
         // 起点なしの呼び出しでしか出ない計器であり、ここを落とすとレジストリとの一致検査がすり抜ける。

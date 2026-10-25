@@ -336,6 +336,13 @@ services:
       # ⚠️ Broker__Environment=live は**未解禁**であり、指定すると起動時に停止する（LiveTradingGate＝閂 0）。
       Broker__Provider: ${BROKER_PROVIDER:-paper}
       Broker__Environment: ${BROKER_ENVIRONMENT:-sim}
+      # 🔴 FR-10, ADR-0009, IADR-0567: 新規建てを送る直前に kill switch・一時停止を照会する宛先（GET /risk-controls/trading-halt）。
+      # 空・照会の失敗（資格情報なしの 401 を含む）は「不明」＝新規建てを送らない（fail-closed。決済・損切りは止まらない）。
+      RiskManagement__BaseUrl: ${RISK_MANAGEMENT_BASEURL:-http://risk-management-service:8080}
+      # s2s トークン（trading-service）。発注執行は Auth__Authority を持たない（受け口の認証を変えない）ため、token エンドポイントを明示する。
+      ServiceAuth__TokenEndpoint: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}/protocol/openid-connect/token
+      ServiceAuth__ClientId: ${SERVICEAUTH_CLIENTID:-}
+      ServiceAuth__ClientSecret: ${SERVICEAUTH_CLIENTSECRET:-}
     depends_on:
       <<: *depends-infra
       postgres:

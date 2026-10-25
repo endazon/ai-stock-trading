@@ -164,6 +164,98 @@ public class FrontendContractFixtureTests
         await AssertMatchesFixtureAsync("risk-controls.settings-history.json", res);
     }
 
+    // FR-10, FR-19, SC-02, ADR-0070 決定 5, #1407, IADR-0564: GET /risk-controls/settings/pre-close（閉場前の統制。効いている値・構成の値・保存値・食い違い）。
+    // 保存値と食い違いの形を契約に出すため、構成と違う値を 1 回保存してから採る（保存値が null のままでは SavedCutoff の形が現れない）。
+    [Fact]
+    public async Task 閉場前の統制の応答がフロントの契約フィクスチャと一致する()
+    {
+        using var factory = new RiskWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+
+        var put = await client.PutAsJsonAsync("/risk-controls/settings/pre-close", new
+        {
+            cutoffMinutes = new[] { new { market = (int)Market.Japan, minutes = 60 }, new { market = (int)Market.UnitedStates, minutes = 90 } },
+            flattenEnabled = true,
+            flattenMinutes = new[] { new { market = (int)Market.Japan, minutes = 15 }, new { market = (int)Market.UnitedStates, minutes = 15 } },
+            reason = "契約フィクスチャ生成のための保存",
+        });
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var res = await client.GetAsync("/risk-controls/settings/pre-close");
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        await AssertMatchesFixtureAsync("risk-controls.settings-pre-close.json", res);
+    }
+
+    // FR-10, FR-19, SC-02, ADR-0071 決定 5, #1407, IADR-0564: GET /risk-controls/settings/theme-concentration（テーマの定義）。保存してから採る。
+    [Fact]
+    public async Task テーマの定義の応答がフロントの契約フィクスチャと一致する()
+    {
+        using var factory = new RiskWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+
+        var put = await client.PutAsJsonAsync("/risk-controls/settings/theme-concentration", new
+        {
+            themes = new[]
+            {
+                new { name = "暗号資産", market = (int)Market.UnitedStates, symbols = new[] { "COIN", "MARA", "MSTR", "HOOD" }, maxPositions = 1 },
+            },
+            reason = "契約フィクスチャ生成のための保存",
+        });
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var res = await client.GetAsync("/risk-controls/settings/theme-concentration");
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        await AssertMatchesFixtureAsync("risk-controls.settings-theme-concentration.json", res);
+    }
+
+    // 🔴 SC-02, FR-10, ADR-0040 決定1, #1465, IADR-0585: **400 の本文も契約である。** 画面はサーバの理由（`details`・`error`）を
+    // 利用者へ出す（`frontend/src/lib/validationReasons.ts`）。本文の形が変わると理由が黙って消え、一般文言だけが残る
+    // （#1465 の事故。単体試験のモックが本番と違う形だったため、両側とも緑のまま食い違っていた）。
+    // ここは `{ error, details }`（拒否の理由の一覧つき）の代表として、実弾の間に S0 以外を選ぶ拒否を採る。
+    [Fact]
+    public async Task 損切りの実行機構の400応答がフロントの契約フィクスチャと一致する()
+    {
+        using var factory = new RiskWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+
+        var live = await client.PutAsJsonAsync("/risk-controls/settings/broker-provider", new
+        {
+            provider = (int)BrokerProvider.MoomooReal,
+            reason = "契約フィクスチャ生成のため実弾へ切り替える",
+            acknowledgedLiveTrading = true,
+            acknowledgement = "REAL",
+        });
+        live.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var res = await client.PutAsJsonAsync("/risk-controls/settings/stop-loss-method", new
+        {
+            method = 1,
+            reason = "実弾の間に S1 を選ぶ",
+        });
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertMatchesFixtureAsync("risk-controls.settings-stop-loss-method.400.json", res);
+    }
+
+    // #1465, IADR-0585: `{ error }`（理由が 1 文だけ・`details` が無い）の代表。Stage 1 の最小取引件数の件数の省略を採る。
+    // 画面は `details` が無ければ `error` を理由として出す。
+    [Fact]
+    public async Task 最小取引件数の400応答がフロントの契約フィクスチャと一致する()
+    {
+        using var factory = new RiskWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+
+        var res = await client.PutAsJsonAsync("/risk-controls/settings/stage1-minimum-trade-count", new
+        {
+            reason = "件数を送らずに保存する",
+        });
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertMatchesFixtureAsync("risk-controls.settings-stage1-minimum-trade-count.400.json", res);
+    }
+
     private static async Task AssertMatchesFixtureAsync(string fileName, HttpResponseMessage response)
     {
         var actual = ContractFixtureComparer.Normalize(await response.Content.ReadAsStringAsync());

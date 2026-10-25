@@ -3,14 +3,14 @@ title: インフラ・構成仕様書（AST）
 type: infra-spec
 status: draft
 created: 2026-07-19
-updated: 2026-09-09
+updated: 2026-10-23
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [NFR-03, NFR-05, NFR-07, NFR-14, NFR]
 adrs: [ADR-0001, ADR-0006]
-iadrs: [IADR-0052, IADR-0060, IADR-0094, IADR-0314]
-specs: [20260909_627_mesh-sidecar-injection-switch]
+iadrs: [IADR-0052, IADR-0060, IADR-0094, IADR-0314, IADR-0570]
+specs: [20260909_627_mesh-sidecar-injection-switch, 20261023_GHSA-j4qv_mesh-injection-handover]
 issues: [#24, #282, #627]
 -->
 
@@ -57,6 +57,10 @@ namespace へメッシュ参加ラベルが付き、以後の Pod 再作成で�
 カーの利用可否）を申告値として持つ。**設定点の追加だけであり、実クラスタでの有効化・疎通確認・
 退行確認は未実施**（次回デプロイ時に実施し、結果を実装ADR へ反映する）。手順・確認コマンドは
 chart README を参照。
+
+連結ローカルの起動器（`scripts/k8s-local-deploy.sh`）では `AST_MESH_INJECTION=1|0` で選び、未指定の再実行は現行の
+リリースの値を引き継ぐ（新規は無効）。起動器は名前空間を自前で作るため、注入ラベルも起動器が貼る・剥がす。
+OpenD を注入対象外にする注釈は注入の有無に依らず描くので、注入の切り替えで OpenD は作り直されない。
 
 ## Tier 境界（重要・受け入れ基準の充足状況）
 

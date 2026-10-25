@@ -4,14 +4,14 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-09-25
-updated: 2026-09-25
+updated: 2026-10-14
 ---
 <!-- trace:
 ids: [FR-10, UC-02]
 adrs: [ADR-0040]
 iadrs: [IADR-0344, IADR-0365, IADR-0380, IADR-0210]
-specs: [20260925_937_host-liveness-monitor]
-issues: [#937, #909, #902]
+specs: [20260925_937_host-liveness-monitor, 20261014_msp1919_host-memory-prereq]
+issues: [#937, #909, #902, MSP#1919]
 -->
 
 # 運用 Runbook: ホスト側の死活監視
@@ -30,17 +30,19 @@ issues: [#937, #909, #902]
 オーナーが手で起動するまでの約 4 分間、保有していた 707 株は無保護だった（#937）。
 **クラスタの中の監視（アラート・Discord 通知サービス）はクラスタと一緒に止まる** ため、この停止はどこからも知らされなかった。
 
-本書は次の 3 つを定める。
+本書は次の 4 つを定める。
 
 1. **ホストの上でクラスタの外から見張るスクリプト**（`scripts/host-liveness-monitor.ps1`）の登録
 2. **Rancher Desktop の自動起動**
 3. **場中に Windows Update で再起動しない設定**
+4. **WSL2 の VM のメモリ上限**（既定の上限では VM がメモリを使い切り、クラスタが止まる）
 
 ## この手順を実行する条件（いつ走らせるか）
 
 | 場面 | 行う節 |
 | --- | --- |
-| 初回（ホストの準備） | 「手順」の 1〜6 をすべて |
+| 初回（ホストの準備） | 「手順」の 1〜7 をすべて |
+| クラスタ（VM）が止まる・Pod が一斉に再起動する | 手順 7（VM のメモリ上限） |
 | リポジトリのクローン先・PowerShell の場所を変えた | 手順 4（タスクの操作のパス）を直す |
 | 死活監視の通知が届いた | 「失敗したときの分岐」 |
 | ホストが予期せず再起動した | 手順 6（原因の確認） |
@@ -188,6 +190,14 @@ Rancher Desktop の「Preferences」→「Application」→「Behavior」で次�
    **「スケジュールされた自動更新のインストールで、ログオンしているユーザーがいる場合には自動的に再起動しない」** を有効にする
    （配下のフォルダ名は版により異なる。見つからなければ 1・2 だけでよい）。
 4. 「設定」→「システム」→「電源」で、電源接続時の **スリープ・休止状態を「なし」** にする（スリープ中もクラスタは止まり、S1 は働かない）。
+   コマンドで行う場合は次の 2 行（管理者でなくてよい）。ノート PC なら、カバーを閉じたときの動作（電源接続時）も「何もしない」にする（下の 3・4 行目）。
+
+   ```powershell
+   powercfg /change standby-timeout-ac 0     # 電源接続時のスリープ: なし
+   powercfg /change hibernate-timeout-ac 0   # 電源接続時の休止: なし
+   powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0   # 電源接続時にカバーを閉じたとき: 何もしない（ノート PC のみ）
+   powercfg /setactive SCHEME_CURRENT                                  # 上の変更を有効にする
+   ```
 
 **予期しない再起動の原因を確かめる**（再起動のたびに行う）:
 
@@ -199,12 +209,73 @@ Get-WinEvent -FilterHashtable @{ LogName = 'System'; Id = 1074, 6008, 41 } -MaxE
 - `1074`: 再起動を始めたプロセスと理由（Windows Update なら `TrustedInstaller.exe` や `MoUsoCoreWorker.exe` 等が載る）
 - `6008` / `41`: 予期しないシャットダウン（電源断・フリーズ）
 
+### 7. WSL2 の VM のメモリ上限を上げる
+
+Rancher Desktop（Windows）の VM のメモリと CPU は、Rancher Desktop の設定画面ではなく **WSL2 の `%USERPROFILE%\.wslconfig`** が決める。
+ファイルが無いと WSL2 の既定（**メモリ＝物理の 50%**・swap＝メモリの 25%・CPU＝全論理プロセッサ）になる。
+2026-10-14 の実測では、物理 31 GB のホストで上限（約 15.5 GiB）の 86% を使っていた。基盤と AST を載せた常用の状態で上限に張り付き、
+VM の停止と Pod の一斉再起動が 3 日で 4 回起きた。
+
+推奨値（必要なメモリの根拠＝全 Pod の requests / limits の合計は、基盤リポジトリの `deploy/local/README.md` の「稼働ホストの前提」にある）:
+
+```ini
+[wsl2]
+memory=24GB
+swap=8GB
+# processors は書かない（全論理プロセッサ）。絞る場合も 4 以上にする（推測）
+```
+
+| キー | 推奨 | 理由 |
+| --- | --- | --- |
+| `memory` | `24GB` | 基盤と AST の常用構成の limits の合計（24,608 Mi＝約 24.0 GiB。内訳は下の表）にほぼ等しい。残り（物理 31 GB なら約 7 GB）で Windows を動かす（推測） |
+| `swap` | `8GB` | Pod の外のプロセス（イメージのビルド・k3s）の山を逃がす（推測）。Pod は既定で swap を使わないので、Pod の OOM はこれでは防げない |
+| `processors` | 指定しない | CPU は各 Pod の limits で抑える。絞る場合も 4 以上（推測） |
+
+`memory` の根拠の内訳（コンテナ単位・replicas を掛けた合計。2026-10-14 の `helm template` / `kubectl kustomize` の描画から）:
+
+| 束 | requests | limits |
+| --- | --- | --- |
+| 基盤のアプリ（18 コンテナ） | 2,624 Mi | 10,368 Mi |
+| 基盤の共有インフラ（13 コンテナ） | 1,736 Mi | 6,944 Mi |
+| AST（11 サービス・OpenD とそのサイドカー。13 コンテナ） | 1,696 Mi | 6,784 Mi |
+| 必須の小計 | 6,056 Mi | 24,096 Mi |
+| 秘密情報の経路（OpenBao。ESO・Reloader は limits 無し） | 128 Mi | 512 Mi |
+| **常用の構成の計** | **6,184 Mi（約 6.0 GiB）** | **24,608 Mi（約 24.0 GiB）** |
+
+requests の合計は実測の使用量（13.3 GiB）の半分に満たないので、必要なメモリは limits の合計と実測で見積もる。
+
+反映（🔴 **閉場中に行う。反映の間はクラスタが止まり、S1 も働かない**）:
+
+```powershell
+# 1. Rancher Desktop を終了する（トレイのアイコン → Quit。ウィンドウを閉じるだけでは VM は止まらない）
+# 2. .wslconfig を上の内容で作る（既にあれば [wsl2] の節を直す）
+notepad "$env:USERPROFILE\.wslconfig"
+# 3. WSL の VM を止める（全ディストリビューションが止まる）
+wsl --shutdown
+wsl --list --running        # 一覧にディストリビューションが 1 つも出なくなるまで待つ（表示の文言は Windows の言語設定で変わる）
+# 4. （任意）WSL を更新する
+wsl --version
+wsl --update
+# 5. Rancher Desktop を起動し、ノードが Ready になるのを待つ
+kubectl --context rancher-desktop get nodes
+```
+
+確認:
+
+```powershell
+wsl -l -v                                                              # ディストリビューション名を確かめる（Rancher Desktop の既定は rancher-desktop）
+wsl -d rancher-desktop -- grep -E 'MemTotal|SwapTotal' /proc/meminfo   # MemTotal が約 24 GB、SwapTotal が約 8 GB
+kubectl --context rancher-desktop describe node | Select-String -Pattern 'memory:'   # Allocatable の memory が約 24 GiB
+kubectl --context rancher-desktop top node                                           # 使用率が下がっている
+```
+
 ## 確認（この手順が成功したと言える条件）
 
 - 手順 1 の試走が状態を 1 行出し、手順 2 で Windows の通知（と設定していれば Discord）が届いた。
 - タスクスケジューラの「AST host liveness monitor」の「前回の実行結果」が場中に更新され、平常時は `0x0` である（警報の状態では `0x1`、スクリプトの失敗は `0x2`）。
 - 場中に `%LOCALAPPDATA%\ai-stock-trading\host-liveness\host-liveness.log` へ 5 分ごとに 1 行ずつ増えている。
 - ホストを再起動（場外に行う）してログオンすると、Rancher Desktop が自動で起動し、次の場中の実行が `CLUSTER_UNREACHABLE` を出さない。
+- 手順 7 の後、VM の `MemTotal` が約 24 GB で、`kubectl top node` の使用率が上限に張り付いていない。
 
 ## 失敗したときの分岐
 

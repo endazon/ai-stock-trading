@@ -26,6 +26,12 @@ namespace BacktestService.Infrastructure.ExternalServices;
 //      moomoo を明示的に構成する必要があり、それは上記 2 点の確認が済んでから行う。
 // 「使える履歴源が無い」と書けば 2 を否定し、「moomoo で解決した」と書けば 3 を落とす。どちらの誤読も作らないこと。
 //
+// ［2026-10-13 追記 / #1308・IADR-0528 決定8］上の 3・4 は Stage 0 について変わった。利用者裁定 2026-10-13
+// （#1219 のコメント）は **Stage 0 では前復権と費用モデルの不整合を受け入れ、足は発注執行の `/daily-bars` 経由で取る**
+// （backtest の Pod に OpenD は配線しない）と決めた。そのため provider `order-execution`（HttpOrderExecutionHistoricalBarSource）を足した。
+// **既定は今も none**（明示構成したときだけ使う）。ADR-0023 決定5 の確認 2 点（回復周期・借株料）は未了のままで、
+// Stage 0 の記録と評価に限ってそれを受け入れたこと（逸脱の受容）は IADR-0528 にある。moomoo（直結）は残すが、values では選ばない。
+//
 // **provider 選択は allow-list である。** 既知の provider が**それぞれの構成の妥当性を満たしたときだけ**
 // 実アダプタを返し、未知の provider はすべて no-op へ落ちる。この形を崩さないこと
 // （崩すと、綴り誤り 1 つで意図しないデータ源が実接続を始める）。
@@ -38,18 +44,36 @@ public static class HistoricalBarSourceFactory
     public const string Moomoo = "moomoo";
 
     /// <summary>
+    /// 発注執行の日足の照会（`GET /order-execution/daily-bars`。前復権）。#1308, IADR-0528 決定8。
+    /// 利用者裁定 2026-10-13 で Stage 0 の足の源に決めた（backtest の Pod に OpenD は配線しない）。
+    /// </summary>
+    public const string OrderExecution = "order-execution";
+
+    /// <summary>
     /// 構成から**実効的な** provider 名を導く（空・未知・構成不備はすべて <see cref="None"/>）。
     /// 選択規則の単一情報源であり、<see cref="Create"/> と実効構成の自己申告
     /// （GET /internal/introspection）が同じ答えを返すことを構造で保証する。
     /// </summary>
-    public static string ResolveProvider(BarDataOptions? options) =>
+    /// <param name="options">過去データ源の構成。</param>
+    /// <param name="orderExecutionGrpcDeclared">
+    /// 発注執行の gRPC の宣言（<c>OrderExecution:Grpc</c>）があるか。NFR, IADR-0559 決定 3, #1391: 宣言があれば
+    /// <see cref="OrderExecution"/> は <c>Backtest:BarData:OrderExecution:BaseUrl</c> が空でも構成を満たす（段 1〜5 と同じ「宣言は BaseUrl より優先」）。
+    /// provider の明示（allow-list）は変わらない —— 宣言だけでは <see cref="None"/> のままである。
+    /// </param>
+    public static string ResolveProvider(BarDataOptions? options, bool orderExecutionGrpcDeclared = false) =>
         (options?.Provider ?? "").Trim().ToLowerInvariant() switch
         {
             Stooq when NormalizeBaseUrl(options!.Stooq.BaseUrl) is not null => Stooq,
             Moomoo when IsUsableOpenD(options!.Moomoo) => Moomoo,
+            OrderExecution when orderExecutionGrpcDeclared
+                || NormalizeOrderExecutionBaseUrl(options!.OrderExecution.BaseUrl) is not null => OrderExecution,
             _ => None, // 未知の provider は実アダプタへ落ちない（allow-list）
         };
 
+    /// <param name="orderExecutionGrpc">
+    /// 発注執行の gRPC の輸送（<c>OrderExecution:Grpc</c> を宣言したときだけ composition root が与える。#1391・IADR-0559 決定 3）。
+    /// 与えられ、かつ実効 provider が <see cref="OrderExecution"/> なら REST より優先する。
+    /// </param>
     /// <param name="moomooClient">
     /// OpenD への接続（ADR-0023 決定5）。実効 provider が <see cref="Moomoo"/> のときだけ composition root が与える。
     /// **実効 provider が moomoo なのに未提供なら停止する**（構成不備ではなく配線の誤りであり、黙って no-op へ
@@ -61,14 +85,16 @@ public static class HistoricalBarSourceFactory
         HttpClient httpClient,
         TimeProvider timeProvider,
         ILoggerFactory loggerFactory,
-        IMoomooHistoryKLineClient? moomooClient = null)
+        IMoomooHistoryKLineClient? moomooClient = null,
+        HttpClient? orderExecutionClient = null,
+        OrderExecutionGrpcTransport? orderExecutionGrpc = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
         var logger = loggerFactory.CreateLogger(typeof(HistoricalBarSourceFactory).FullName!);
         var configured = (options.Provider ?? "").Trim().ToLowerInvariant();
-        var resolved = ResolveProvider(options);
+        var resolved = ResolveProvider(options, orderExecutionGrpc is not null);
 
         if (resolved == Stooq)
         {
@@ -93,6 +119,31 @@ public static class HistoricalBarSourceFactory
                     + "（ADR-0023 決定5 / IADR-0157）。");
         }
 
+        if (resolved == OrderExecution && orderExecutionGrpc is not null)
+        {
+            // NFR, #1391, IADR-0559 決定 3: gRPC の輸送（`OrderExecution:Grpc` の宣言）があれば gRPC。BaseUrl より優先する（既定は REST）。
+            return new GrpcOrderExecutionHistoricalBarSource(
+                orderExecutionGrpc,
+                Limiter(options.OrderExecution.RequestsPerMinute, timeProvider),
+                loggerFactory.CreateLogger<GrpcOrderExecutionHistoricalBarSource>());
+        }
+
+        if (resolved == OrderExecution)
+        {
+            // #1308, IADR-0528 決定8: サービスの資格つきの HttpClient は composition root が与える（無ければ配線の誤りとして止める）。
+            if (orderExecutionClient is null)
+            {
+                throw new InvalidOperationException(
+                    $"{BarDataOptions.SectionName}:Provider={OrderExecution} には発注執行への HttpClient（サービスの資格つき）が必要です（IADR-0528 決定8）。");
+            }
+
+            orderExecutionClient.BaseAddress ??= new Uri(NormalizeOrderExecutionBaseUrl(options.OrderExecution.BaseUrl)!);
+            return new HttpOrderExecutionHistoricalBarSource(
+                orderExecutionClient,
+                Limiter(options.OrderExecution.RequestsPerMinute, timeProvider),
+                loggerFactory.CreateLogger<HttpOrderExecutionHistoricalBarSource>());
+        }
+
         // 以降は no-op。既定（空・none）の警告は NoOpHistoricalBarSource 自身が出すため、
         // ここでは「有効化したつもりで効いていない」構成不備だけを切り分けて警告する。
         if (configured == Stooq)
@@ -112,6 +163,14 @@ public static class HistoricalBarSourceFactory
                 options.Moomoo.OpenDHost,
                 options.Moomoo.OpenDPort);
         }
+        else if (configured == OrderExecution)
+        {
+            logger.LogWarning(
+                "Backtest:BarData:Provider に order-execution が指定されていますが、発注執行のベース URL" +
+                "（Backtest:BarData:OrderExecution:BaseUrl = '{BaseUrl}'）が不正なため過去データを取得しません" +
+                "（no-op へフォールバック・IADR-0528 決定8）。",
+                options.OrderExecution.BaseUrl);
+        }
         else if (configured.Length > 0 && configured != None)
         {
             logger.LogWarning(
@@ -125,6 +184,19 @@ public static class HistoricalBarSourceFactory
     // OpenD の接続先が指定されているか（発注経路の MoomooPreflight と同じ観点。ここでは落とさず no-op へ倒す）。
     private static bool IsUsableOpenD(MoomooBarDataOptions moomoo) =>
         !string.IsNullOrWhiteSpace(moomoo.OpenDHost) && moomoo.OpenDPort != 0;
+
+    // #1308, IADR-0528 決定8: 発注執行のベース URL。空・未設定・絶対 http/https でなければ null（＝構成不備。既定の宛先は持たない）。
+    internal static string? NormalizeOrderExecutionBaseUrl(string? configuredBaseUrl)
+    {
+        if (string.IsNullOrWhiteSpace(configuredBaseUrl))
+            return null;
+
+        var baseUrl = configuredBaseUrl.Trim();
+        return Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) &&
+               (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            ? baseUrl
+            : null;
+    }
 
     // 空・未設定は既定 URL へ。絶対 http/https でなければ null（＝構成不備）。
     private static string? NormalizeBaseUrl(string? configuredBaseUrl)

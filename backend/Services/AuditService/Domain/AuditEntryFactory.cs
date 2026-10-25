@@ -58,7 +58,8 @@ public static class AuditEntryFactory
     public static AuditEntry From(OrderExecuted e, Guid id, DateTimeOffset recordedAt) => new(
         // OrderExecuted は銘柄を持たない（DecisionId で相関して補完する系）。Symbol は null。
         id, nameof(OrderExecuted), e.DecisionId, Symbol: null,
-        $"約定 {e.Status} 数量{e.FilledQuantity}@{e.AveragePrice}（OrderId={e.OrderId}）",
+        // 🔴 FR-05, ADR-0067 決定5, #1339, IADR-0539: 失注（失効）と拒否を要約で区別する（列挙名に日本語を添える）。
+        $"約定 {OrderStatusDisplay.Describe(e.Status)} 数量{e.FilledQuantity}@{e.AveragePrice}（OrderId={e.OrderId}）",
         AuditSerialization.Serialize(e), e.ExecutedAt, recordedAt);
 
     // 🔴 FR-10, FR-11, #1048（利用者裁定 2026-10-02・Q3）, IADR-0481 決定3: 約定追跡の打ち切り。相関は注文の DecisionId
@@ -147,9 +148,11 @@ public static class AuditEntryFactory
 
     // NFR（費用）, FR-04, IADR-0055: 実 LLM 呼び出しの費用発生（#79）。注文相関を持たないため、
     // 発生月で束ねられるよう "llm-cost:{yyyy-MM}" の決定的 GUID を相関にする（CostThresholdReached と同系）。
+    // 🔴 NFR-13, ADR-0057 決定3, #1461, IADR-0584 決定5: 月は費用統制の費用計上月と同じ **JST の年月**（以前は発生時刻のオフセットのまま＝UTC）。
+    // 相関を読む実装は無く（束ねて辿るだけ）、既に記録した行の相関は書き換えない。
     public static AuditEntry From(LlmCostIncurred e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(LlmCostIncurred),
-        AuditCorrelation.From($"llm-cost:{e.At.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)}"),
+        AuditCorrelation.From($"llm-cost:{e.At.ToOffset(TimeSpan.FromHours(9)).ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)}"),
         Symbol: null,
         $"LLM 費用発生 {e.Amount:N2} 円（用途 {e.Purpose ?? "不明"}・モデル {e.Model ?? "不明"}）",
         AuditSerialization.Serialize(e), e.At, recordedAt);
@@ -318,6 +321,21 @@ public static class AuditEntryFactory
                 + $"/母集団 {e.EvaluatedDecisionCount.ToString(CultureInfo.InvariantCulture)} 件"
                 + $"({(string.IsNullOrEmpty(e.ExcludedInputKinds) ? "種別不明" : e.ExcludedInputKinds)})";
     }
+
+    // FR-10, FR-11, #1423 M-3, ADR-0073 決定1〜3, IADR-0581: 基準資金の口座照会の欠けによる新規建ての拒否。
+    // 銘柄に依らない統制の状態であり、取引日ごとに 1 件（発行側が抑える）。相関は固定キーで束ねる（日報未確定と同じ形）。
+    public static AuditEntry From(CapitalBaselineObservationMissing e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(CapitalBaselineObservationMissing), AuditCorrelation.From("capital-baseline"), Symbol: null,
+        $"基準資金の口座照会が直前の米国東部暦日に成功せず新規建てを拒否（判定日 {e.TradingDay:yyyy-MM-dd}・"
+            + $"最後の観測 {e.LatestObservedTradingDay:yyyy-MM-dd}{(e.Stale ? "・鮮度超過" : string.Empty)}）",
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-07, FR-11, UC-03, #1423 M-6, ADR-0075 決定4, IADR-0583: 日報の無応答（承認待ちのまま期限を過ぎた）。相関は日報の方針と同じ固定キー。
+    public static AuditEntry From(DailyReportNoResponse e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(DailyReportNoResponse), AuditCorrelation.From("daily-policy"), Symbol: null,
+        $"日報 {e.PeriodKey} が無応答のまま期限（{e.Deadline:yyyy-MM-dd HH:mm zzz}）を過ぎた"
+            + (e.TradingHalted ? "（停止: 確定まで取引判断を見送る）" : $"（継続: 直近の確定済み {e.LastConfirmedPeriodKey ?? "なし"} の方針）"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
     // UC-01, FR-09, FR-07, FR-11, #210: 日報未確定による取引スキップ。注文/市場相関を持たないため "daily-policy" の
     // 決定的 GUID を相関にする（日報未確定の見送りが同一相関で束ねられ、監査照会でまとめて辿れる）。
@@ -588,6 +606,12 @@ public static class AuditEntryFactory
                 // 「成立せず」の前置きは共通だが、実際には何も送っておらず何も取り消していない——要約でそう書く。
                 ProtectiveStopRemediation.EntryStateUnknown =>
                     "——**建玉 0 だがエントリー注文の状態が不明。逆指値の取消・記録の完了はせず据え置き（要人手確認）**",
+                // FR-10, #1422, IADR-0569 決定3: 取消は送ったが終端を確かめられていない。「取り消した」とは書かない。
+                ProtectiveStopRemediation.EntryCancelUnconfirmed =>
+                    "——**エントリーへ取消を送ったが未確認（取消の窓で約定し得る）。終端の観測で取消の確定か成行手仕舞いを行う**",
+                // FR-10, ADR-0040, #1454, IADR-0580 決定1: 逆指値がエントリーより先に約定した。買い戻しも取消もしていない。
+                ProtectiveStopRemediation.StopFilledBeforeEntry =>
+                    "——**逆指値がエントリーより先に約定（反対方向の建玉の可能性）。買い戻し・エントリーの取消はせず記録を据え置き（要人手対応）**",
                 _ => string.Empty,
             }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
@@ -643,6 +667,10 @@ public static class AuditEntryFactory
                 // #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因による減少の確定。決済は出していない。
                 SoftwareStopOutcome.ProtectionReduced =>
                     "——外部要因で建玉が減ったぶんを保護記録の主張から差し引いた（決済は出していない）",
+                // 🔴 #1330, IADR-0534 決定3: 承認済みの決済の約定に合わせた縮小（外部要因ではない）。決済は出していない。
+                SoftwareStopOutcome.ApprovedCloseReleased =>
+                    $"——外部要因ではない: 承認済みの決済の約定ぶんを差し引いた（出どころ={e.CloseOrigin?.ToString() ?? "不明"}"
+                        + $"・OrderId={e.CloseOrderId}・CloseDecisionId={e.CloseDecisionId}・決済は出していない）",
                 // #820 の 8 巡目監査, IADR-0344 追記(8) 決定3: 帳簿では守っているのに 1 株も動かせない状態が猶予を過ぎた。
                 SoftwareStopOutcome.ProtectionSuspended =>
                     "——**帳簿では守っているのに 1 株も決済できない状態が猶予を過ぎても続いている（到達の有無に依らない・要人手対応）**",

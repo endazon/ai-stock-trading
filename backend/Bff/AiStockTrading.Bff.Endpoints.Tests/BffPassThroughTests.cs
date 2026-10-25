@@ -40,6 +40,13 @@ public class BffPassThroughTests
         ["PUT", "/bff/risk-controls/settings/stage1-minimum-trade-count"],
         // T-10-990, AST #823, FR-10, SC-02, ADR-0040 決定1: 損切りの実行機構の変更（SC-02 だけが持つ操作）。
         ["PUT", "/bff/risk-controls/settings/stop-loss-method"],
+        // T-10-2591, AST #1291, FR-10, SC-02, AST/ADR-0066 決定2: 高ボラティリティ銘柄の統制値の変更（SC-02 だけが持つ操作）。
+        ["PUT", "/bff/risk-controls/settings/high-volatility"],
+        // T-10-2954, AST #1407, FR-10, SC-02, AST/ADR-0070・ADR-0071 決定 5: 閉場前の統制とテーマの定義の表示と保存。
+        ["GET", "/bff/risk-controls/settings/pre-close"],
+        ["PUT", "/bff/risk-controls/settings/pre-close"],
+        ["GET", "/bff/risk-controls/settings/theme-concentration"],
+        ["PUT", "/bff/risk-controls/settings/theme-concentration"],
         ["GET", "/bff/risk-controls/status"],
         ["GET", "/bff/risk-controls/stage-gate"],
         // AST #640, SC-03, FR-10, FR-19: 空売りの現況（維持率等）。後段は実装済みだが BFF 登録が漏れていた。
@@ -304,6 +311,72 @@ public class BffPassThroughTests
         host.Downstream.LastRequestBody.Should().Be(body);
         host.Downstream.LastRequest!.Method.Should().Be(HttpMethod.Put);
         host.Downstream.LastRequest!.RequestUri!.AbsolutePath.Should().Be("/risk-controls/settings/stop-loss-method");
+    }
+
+    // T-10-2592, AST #1291, FR-10, SC-02, UC-06, AST/ADR-0066 決定2, AST/IADR-0530:
+    // 高ボラティリティ銘柄の統制値の変更は本文（比率・明示指定・理由）を後段へそのまま転送し、後段の拒否
+    // （値域外・理由なし＝400、サービスロール＝403）を書き換えずに透過する。**統制は後段が実効する**（BFF は判定しない）。
+    [Theory]
+    [InlineData(HttpStatusCode.OK)]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task 高ボラティリティ銘柄の統制値の変更は_本文を後段へ転送し_後段の応答を透過する(HttpStatusCode downstreamStatus)
+    {
+        await using var host = await BffTestHost.StartAsync();
+        const string body = """{"maxOrderAmountRatio":0.05,"designatedSymbols":[{"symbol":"TSLA","market":1}],"reason":"値動きの大きい銘柄を区分に入れる"}""";
+        host.Downstream.Status = downstreamStatus;
+        host.Downstream.ResponseBody = """{"error":"x"}""";
+
+        var resp = await host.SendAuthed(HttpMethod.Put, "/bff/risk-controls/settings/high-volatility", body);
+
+        resp.StatusCode.Should().Be(downstreamStatus);
+        (await resp.Content.ReadAsStringAsync()).Should().Be("""{"error":"x"}""");
+        host.Downstream.LastRequestBody.Should().Be(body);
+        host.Downstream.LastRequest!.Method.Should().Be(HttpMethod.Put);
+        host.Downstream.LastRequest!.RequestUri!.AbsolutePath.Should().Be("/risk-controls/settings/high-volatility");
+    }
+
+    // T-10-2954, AST #1407, FR-10, FR-19, SC-02, UC-06, AST/ADR-0070 決定 5, AST/ADR-0071 決定 5, AST/IADR-0564 決定 6:
+    // 閉場前の統制とテーマの定義の保存は本文を後段へそのまま転送し、後段の拒否（値域外・理由なし＝400、サービスロール＝403）を書き換えずに透過する。
+    // 読み取りも後段の本文（効いている値・食い違い）をそのまま返す。**統制は後段が実効する**（BFF は判定しない）。
+    [Theory]
+    [InlineData("/settings/pre-close", HttpStatusCode.OK)]
+    [InlineData("/settings/pre-close", HttpStatusCode.BadRequest)]
+    [InlineData("/settings/pre-close", HttpStatusCode.Forbidden)]
+    [InlineData("/settings/theme-concentration", HttpStatusCode.OK)]
+    [InlineData("/settings/theme-concentration", HttpStatusCode.BadRequest)]
+    [InlineData("/settings/theme-concentration", HttpStatusCode.Forbidden)]
+    public async Task 閉場前の統制とテーマの定義の保存は_本文を後段へ転送し_後段の応答を透過する(string path, HttpStatusCode downstreamStatus)
+    {
+        await using var host = await BffTestHost.StartAsync();
+        const string body = """{"themes":[{"name":"暗号資産","market":1,"symbols":["COIN"],"maxPositions":1}],"reason":"画面からの変更"}""";
+        host.Downstream.Status = downstreamStatus;
+        host.Downstream.ResponseBody = """{"error":"x"}""";
+
+        var resp = await host.SendAuthed(HttpMethod.Put, "/bff/risk-controls" + path, body);
+
+        resp.StatusCode.Should().Be(downstreamStatus);
+        (await resp.Content.ReadAsStringAsync()).Should().Be("""{"error":"x"}""");
+        host.Downstream.LastRequestBody.Should().Be(body);
+        host.Downstream.LastRequest!.Method.Should().Be(HttpMethod.Put);
+        host.Downstream.LastRequest!.RequestUri!.AbsolutePath.Should().Be("/risk-controls" + path);
+    }
+
+    [Theory]
+    [InlineData("/settings/pre-close")]
+    [InlineData("/settings/theme-concentration")]
+    public async Task 閉場前の統制とテーマの定義の読み取りは_後段の本文をそのまま返す(string path)
+    {
+        await using var host = await BffTestHost.StartAsync();
+        host.Downstream.Status = HttpStatusCode.OK;
+        host.Downstream.ResponseBody = """{"drift":true}""";
+
+        var resp = await host.SendAuthed(HttpMethod.Get, "/bff/risk-controls" + path, body: null);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await resp.Content.ReadAsStringAsync()).Should().Be("""{"drift":true}""");
+        host.Downstream.LastRequest!.Method.Should().Be(HttpMethod.Get);
+        host.Downstream.LastRequest!.RequestUri!.AbsolutePath.Should().Be("/risk-controls" + path);
     }
 }
 

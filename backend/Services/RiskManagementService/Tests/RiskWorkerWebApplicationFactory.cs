@@ -65,18 +65,28 @@ public sealed class RiskWorkerWebApplicationFactory : WebApplicationFactory<Prog
     public decimal? CapitalBaselineEquityInBase { get; init; } = Domain.TradingDefaults.InitialCapital;
 
     /// <summary>
-    /// FR-10, #905, IADR-0354 決定3/4: 基準資金の行を仕込む**さかのぼり日数**（現在からの日数）。
+    /// FR-10, #905, #1423 M-3, IADR-0354 決定3/4, IADR-0581 決定1: 基準資金の行を仕込む<b>観測時刻</b>を、
+    /// 起点 <paramref name="now"/> の<b>直前の米国東部暦日</b>に置く。
     /// <para>
-    /// 🔴 <b>1 ではなく 2 である。</b> <c>EfCapitalBaselineStore</c> は
-    /// <c>TradingDay &lt; today</c>（<b>米国東部時間の暦日</b>）の行しか判定に使わないが、
-    /// <c>AddDays(-1)</c> は暦日ではなく <b>24 時間前</b>である。夏時間が終わる日は 25 時間あるため、
-    /// その日の最後の 1 時間（ET 23:00〜23:59 ＝ UTC 04:00〜04:59）だけ 24 時間前が<b>当日と同じ ET 暦日</b>へ落ち、
-    /// 行が判定から外れて基準資金が <c>null</c> になる（新規建ては <c>CapitalBaselineUnavailable</c> で
-    /// fail-closed に止まる）。48 時間前はどの瞬間でも前暦日に属し、鮮度上限（既定 4 日）の内側にも収まる。
-    /// 同型の欠陥は結合試験側で PR #903（#893）が同じ値で是正済みである。
+    /// 🔴 <b>「直前の暦日」でなければならない。</b> <c>EfCapitalBaselineStore</c> は <c>TradingDay &lt; today</c>
+    /// （米国東部の暦日）の行しか使わず（#905）、さらに #1423 M-3（ADR-0073 決定1）以降は<b>直前の暦日の行が無ければ
+    /// 未供給</b>（新規建ては <c>CapitalBaselineUnavailable</c> で止まる）である。旧来の「48 時間前」は時刻によって
+    /// 2 暦日前に落ちるため使えない。24 時間前は夏時間が終わる 25 時間の日の最後の 1 時間に当日へ落ちる（#905）。
+    /// よって時刻ではなく暦日で決める: 1 時間ずつ遡り、最初に前暦日へ入った時刻を採る（1 時間刻みは暦日を飛び越えない）。
     /// </para>
     /// </summary>
-    internal const int CapitalBaselineSeedDaysAgo = 2;
+    internal static DateTimeOffset PreviousTradingDayObservation(DateTimeOffset now)
+    {
+        var today = Common.Abstractions.TradingDay.Of(now, AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates);
+        var observedAt = now;
+        while (Common.Abstractions.TradingDay.Of(
+                   observedAt, AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates) >= today)
+        {
+            observedAt = observedAt.AddHours(-1);
+        }
+
+        return observedAt;
+    }
 
     /// <summary>
     /// FR-10, #1258: 基準資金の行を仕込む<b>起点の時刻</b>。既定（<c>null</c>）は実時刻。
@@ -97,9 +107,9 @@ public sealed class RiskWorkerWebApplicationFactory : WebApplicationFactory<Prog
         {
             using var scope = host.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<RiskManagementDbContext>();
-            var observedAt = (CapitalBaselineSeedNow ?? DateTimeOffset.UtcNow).AddDays(-CapitalBaselineSeedDaysAgo);
-            // 取引日は米国東部時間の暦日（EfCapitalBaselineStore と同じ基準）。当日より前を仕込む
-            // （さかのぼり日数の根拠は CapitalBaselineSeedDaysAgo の注記・#905）。
+            var observedAt = PreviousTradingDayObservation(CapitalBaselineSeedNow ?? DateTimeOffset.UtcNow);
+            // 取引日は米国東部時間の暦日（EfCapitalBaselineStore と同じ基準）。直前の暦日を仕込む
+            // （根拠は PreviousTradingDayObservation の注記・#905・#1423 M-3）。
             var tradingDay = Common.Abstractions.TradingDay.Of(
                 observedAt, AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates);
             // CreateHost は 1 つの factory につき複数回呼ばれ得る（InMemory DB は共有）ため冪等に書く。

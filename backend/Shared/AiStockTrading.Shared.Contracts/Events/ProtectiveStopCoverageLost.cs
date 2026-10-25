@@ -47,6 +47,14 @@ public enum ProtectiveStopLossCause
 
     /// <summary>滞留中の逆指値が失効した（取消・拒否・期限切れ）。</summary>
     LapsedInFlight,
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0040, #1454, IADR-0580 決定1（PR #1458 の AI レビュー 🟡）: 保護逆指値が<b>エントリー注文より先に約定した</b>（窓開け）。
+    /// 失効でも未受理でもない——逆指値は約定しており、反対方向の建玉が生じ得る。対処は
+    /// <see cref="ProtectiveStopRemediation.StopFilledBeforeEntry"/> と組で出る（発行元は常駐ガード）。
+    /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
+    /// </summary>
+    FilledBeforeEntry,
 }
 
 // #331, IADR-0210: 保護喪失への対処。
@@ -151,4 +159,32 @@ public enum ProtectiveStopRemediation
     /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
     /// </summary>
     EntryStateUnknown,
+
+    /// <summary>
+    /// 🔴 FR-10, #1422, IADR-0569 決定1・決定3: <b>保護逆指値が未受理のため未約定のエントリーへ取消を送ったが、取消の結果を確かめられていない</b>
+    /// （送った後の照会が非終端・不明）。取消要求の後にも約定し得るため、「取り消した（建玉は生じていない）」とは言わない。
+    /// <para>
+    /// 承認時の保護の文脈は閉じずに「取消の確認待ち」で残る。約定追跡がエントリーの終端を観測したら、約定 0 なら
+    /// <see cref="EntryCancelled"/>、約定 &gt; 0 なら約定数量を成行で手仕舞った結果（<see cref="PositionClosed"/> 等）を<b>もう 1 回</b>発行する。
+    /// それまでのあいだ、取消の窓で約定した分は逆指値なしで残り得る（Critical）。<c>CloseDecisionId</c> / <c>CloseIntent</c> は運ばない（何も送っていない）。
+    /// </para>
+    /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
+    /// </summary>
+    EntryCancelUnconfirmed,
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0040, #1454, IADR-0580 決定1: <b>保護逆指値が、エントリー注文より先に約定した</b>（窓開けで、未約定のエントリーと同時に板へ置いた
+    /// 逆指値が先に発火した）。エントリーはまだ生きている（未約定・一部約定）か、状態を確かめられないが反対方向の建玉が見えている。
+    /// <b>反対方向の建玉（買いのエントリーなら売り建玉）が保護なしで生じている可能性がある。</b>
+    /// <para>
+    /// システムは<b>自動では買い戻さず、エントリーも取り消さない</b>（どちらを採るかは別途の判断）。常駐ガードは保護記録を <c>Active</c> のまま残し、
+    /// エントリーが終端したら記録を完了させる。それまで約 1 時間ごと（と再起動のたび）に再発行される。人手対応を要する（Critical）。
+    /// </para>
+    /// <para>
+    /// <c>CloseDecisionId</c> は<b>約定した逆指値レグ</b>の DecisionId（相関のため）。<c>CloseIntent</c> は運ばない（システムは何も送っていない・台帳は押さえない）。
+    /// <c>Cause</c> は常に <see cref="ProtectiveStopLossCause.FilledBeforeEntry"/>（失効を表す LapsedInFlight を借りない。集計・表示で取り違えないため）。
+    /// </para>
+    /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
+    /// </summary>
+    StopFilledBeforeEntry,
 }

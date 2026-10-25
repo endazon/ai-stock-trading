@@ -25,6 +25,9 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
     // FR-19, #154, IADR-0067: 相場操縦検知の入力＝注文アクティビティの射影。
     public DbSet<OrderActivityRow> OrderActivities => Set<OrderActivityRow>();
 
+    // FR-10, #1319, IADR-0529: 審査が承認した新規建ての予約（承認行が届くまでの間も統制へ算入する）。
+    public DbSet<EntryReservationRow> EntryReservations => Set<EntryReservationRow>();
+
     // FR-20, UC-06, IADR-0070: 段階ゲートの遷移履歴（追記専用）と段階別実績（単一行）。
     public DbSet<StageTransitionRow> StageTransitions => Set<StageTransitionRow>();
 
@@ -86,6 +89,10 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
     // 🔴 計上表とは**別テーブル**である——0 円の計上として書けないようにするための分離であり、
     // 「費用が発生しなかった」と「取得できなかった」を後から必ず区別できるようにする。
     public DbSet<BorrowFeeUnavailableDayRow> BorrowFeeUnavailableDays => Set<BorrowFeeUnavailableDayRow>();
+
+    // 🔴 NFR, FR-10, #1473, IADR-0587: DateTimeOffset（null 許容を含む）の全列を DB の境界で UTC へ揃える（照会のパラメータにも掛かる）。
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) =>
+        configurationBuilder.Properties<DateTimeOffset>().HaveConversion<UtcDateTimeOffsetConverter>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -167,6 +174,8 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
             // **その終端の記録そのものが落ちる**（見送りなら在庫が解放されない＝#852 の実害の再発）。
             // 新しい書き手を足すときは catch も足すこと。
             e.Property(r => r.TerminalAt).IsConcurrencyToken();
+            // FR-04, FR-10, #1384, IADR-0558 決定 4: 建てた条件の記号（英大文字 1 字）。既存行は NULL（記録なし）。
+            e.Property(r => r.EntryCondition).HasMaxLength(8);
         });
 
         mb.Entity<TradeFillRow>(e =>
@@ -189,6 +198,21 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
             e.Property(r => r.Symbol).HasMaxLength(32).IsRequired();
             // 相場操縦検知の窓照会（銘柄・市場別に発注時刻の範囲を切り出す）用の複合インデックス。
             e.HasIndex(r => new { r.Symbol, r.Market, r.PlacedAt });
+        });
+
+        // 🔴 FR-10, #1319, IADR-0529: 新規建ての予約。**承認行（approved_orders）とは別の表である。**
+        // 承認行は IADR-0407 の「発行済み」の印であり、審査の中（発行の前）に書くと、発行に失敗したときに
+        // 再配送が「発行済み」とみなして発注が永久に出ない。予約は審査のトランザクションの中で書き、
+        // 承認行が来たら注文源は承認行だけを数える（予約は数えない）。
+        mb.Entity<EntryReservationRow>(e =>
+        {
+            e.ToTable("entry_reservations");
+            e.HasKey(r => r.DecisionId);
+            e.Property(r => r.DecisionId).ValueGeneratedNever();
+            e.Property(r => r.Symbol).HasMaxLength(32).IsRequired();
+            e.Property(r => r.VoidReasons).HasMaxLength(512);
+            // 注文源は承認時刻の下限で切り出す（走査量の上限。当日の判定は純関数）。
+            e.HasIndex(r => r.ApprovedAt);
         });
 
         // FR-20, UC-06, IADR-0070: 段階遷移履歴（追記専用）。Sequence が主キー＝一意連番で並行二重追記を弾く。

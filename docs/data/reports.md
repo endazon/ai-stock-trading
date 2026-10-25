@@ -3,15 +3,15 @@ title: 報告書（reports）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-10-10
+updated: 2026-10-17
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-06, FR-07, FR-08, FR-11, FR-14, FR-16, FR-17, UC-03, UC-04, UC-05]
-adrs: [ADR-0001, ADR-0003, ADR-0042, ADR-0052, ADR-0053]
-iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0381, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492, IADR-0493, IADR-0516, IADR-0522, IADR-0526]
-specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window, 20261006_1181_report-opening-inventory, 20261006_1182_report-regenerate-present-notice, 20261008_1224_report-ledger-inputs-session-window, 20261008_1255_ledger-entry-occurred-at, 20261010_243_policy-revision-max-tokens, 20261010_1300_report-draft-knowledge-copy]
-issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, #1181, #1182, #1224, #1255, #243, #1300, planning#711, planning#746, planning#724, planning#784]
+ids: [FR-06, FR-07, FR-08, FR-11, FR-14, FR-15, FR-16, FR-17, UC-03, UC-04, UC-05]
+adrs: [ADR-0001, ADR-0003, ADR-0033, ADR-0042, ADR-0052, ADR-0053, ADR-0068]
+iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0381, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492, IADR-0493, IADR-0516, IADR-0522, IADR-0526, IADR-0528, IADR-0548, IADR-0549, IADR-0556]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window, 20261006_1181_report-opening-inventory, 20261006_1182_report-regenerate-present-notice, 20261008_1224_report-ledger-inputs-session-window, 20261008_1255_ledger-entry-occurred-at, 20261010_243_policy-revision-max-tokens, 20261010_1300_report-draft-knowledge-copy, 20261017_1373_daily-policy-version-history, 20261017_1373_daily-policy-reconfirm]
+issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, #1181, #1182, #1224, #1255, #243, #1300, #1308, #1373, planning#711, planning#746, planning#724, planning#784, planning#803]
 -->
 
 # データ仕様書: 報告書（reports）
@@ -55,23 +55,52 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, 
 | ConfirmedAt | timestamptz? | 確定日時 |
 | Version | int（並行トークン） | 版番号付き冪等確定の楽観排他 |
 
-- インデックス: `(Kind, State, PeriodStart)`（最新の確定済み日報の照会）。
+- インデックス: `(Kind, State, PeriodStart)`（作られた当時の、最新の確定済み日報の照会。照会は下の確定した版の履歴へ移った）。
+
+## エンティティ定義（`report_confirmed_versions`・確定した版の履歴・永続）
+
+確定のたびに 1 行を足し、**書き換えない**。`reports` の行（会話キーごとに 1 行）は現在の状態を持ち、こちらは「どの版がいつ確定したか」を持つ。
+期間キーは変えない（1 日 1 本の日報の前提を保つ）。
+
+| 属性 | 型 | 説明 |
+| --- | --- | --- |
+| Kind | 列挙（int 格納）(PK) | 種別 |
+| Sequence | int (PK) | 種別ごとの確定の通し番号（1 から）。同じ種別の確定が並行すると鍵が衝突し、後の保存は読み直して決め直す |
+| PeriodKey | string(64) | 期間キー |
+| PeriodStart | date | 期間開始日 |
+| Version | int | 確定した版（確定後の `reports` の版。確定は版を 1 進める）。`(PeriodKey, Version)` で一意 |
+| ConfirmedAt | timestamptz | その版の確定時刻 |
+| BasedOn / AssumptionsVersion / PolicySummary / Body / UnsuppliedInputs | `reports` と同じ | 確定した時点の内容の写し |
+
+- インデックス: `(PeriodKey, Version)`（一意）、`(Kind, PeriodStart, ConfirmedAt)`（二段の選び方）。
+- **最新の確定済み報告書は、この表から二段で選ぶ。** 1 段目は開始日が最大の期間キー（同じ開始日は期間キーの降順）、2 段目はその期間キーの中で
+  確定時刻が最新の版（同時刻は版番号の大きい方）。確定時刻だけで期間キーをまたいで並べない。
+- 確定は、`reports` の行の確定とこの表への追加を 1 回の保存（1 トランザクション）で行う。
+- 移行: 表を足したマイグレーションが、既存の確定済みの行（確定時刻のあるもの）をその時点の版のまま写した（各期間キーにつき 1 本）。
 
 ## 照会・操作
 
-- `GET /reports`、`GET /reports/{periodKey}`、`GET /reports/daily-policy`（確定済み日報方針＝Date/Summary/AssumptionsVersion・未確定は 404）。
+- `GET /reports`、`GET /reports/{periodKey}`、`GET /reports/daily-policy`（確定済み日報方針＝Date/Summary/AssumptionsVersion/PeriodKey/Version・未確定は 404）。
+  方針は確定した版の履歴から二段で選ぶ。PeriodKey・Version はその確定版の期間キーと版番号で、取引判断が判断の記録へ残す。gRPC の同じ照会も同じ 2 項目を運ぶ。
+- `GET /reports/daily-policy/as-of?at=<時刻>`（**その時刻までに確定していた**版だけを対象に、`daily-policy` と同じ二段で選んだ方針＝Date/Summary/AssumptionsVersion/ConfirmedAt/PeriodKey/Version。ConfirmedAt は選んだ版の確定時刻。無ければ 404。`at` はオフセット付きの ISO 8601 で、無い・オフセットが無い・読めないときは 400）。**その時刻より後に確定した版（同じ期間キーの後の版を含む）は使わない。** 確定した版の写しは書き換えないので、答えはその時刻に `GET /reports/daily-policy` が返した値と一致する。Stage 0 の記録器が判断時点の方針を組むために読む。認可は `daily-policy` と同じく OwnerOrService。
 - `GET /reports/period-keys`（会話キーと開始日だけの軽い一覧＝`[{periodKey, periodStart}]`・開始日の降順、同日は会話キーの降順・ページングなし）。Discord の `/report` の入力補完が打鍵ごとに読むため、本文・要約・状態を載せない。OwnerOnly。`/{periodKey}` より優先される（`daily-policy` と同じくリテラル一致）。
 - `PUT /reports/{periodKey}`（ドラフト upsert・楽観排他）、`POST /reports/{periodKey}/confirm`（版番号付き冪等確定）。すべて OwnerOnly。
 - `POST /reports/policy-revisions`（方針の改訂案。OwnerOnly）: 要求は `{instruction, periodKey?, onBehalfOf?}`。利用者の自由文の指示（1000 文字まで）から
   AI が方針の改訂案を作り、対象の報告書へ**新しい版のドラフト**として保存して提示（承認待ち）する。**確定はしない**（確定は上の確定 API）。
-  対象は `periodKey` 省略時に当日（JST）の日報。既存の未確定の報告書は改訂し、確定済みは 409。存在しない会話キーで新しく作れるのは当日の日報だけで、
+  対象は `periodKey` 省略時に当日（JST）の日報。既存の未確定の報告書は改訂する。
+  **効いている確定済み日報（最新の確定済み日報）には版を足す**: 確定済みの版 n の方針を土台に、行を版 n+1 のドラフトへ戻して保存・提示する
+  （本文の状態の行は未確定へ戻し、改訂の記録を末尾へ足す。確定した版 n の写しは残り、**確定するまで版 n が効き続ける**）。当日の日報に限らない
+  （営業日の 0 時から自動生成までは前日付の日報が効いているので、その会話キーを指定する）。版を足したことは提示の通知で知らせる。
+  それ以外の確定済み（より古い日報・週報・月報）は 409 で、再確定できる日報（効いている日報）の会話キーを返答に書く。
+  効いている日報が移った後の版 n+1 のドラフトは改訂しない（409・AI を呼ばない）。存在しない会話キーで新しく作れるのは当日の日報だけで、
   土台は直近の確定済み日報（方針・`BasedOn`・`AssumptionsVersion`）。確定済み日報が無い・より新しい確定済み日報がある場合は 409。
   **営業日にまだ自動生成されていない当日の日報は作らない**（409。作ると数値入りの自動生成の日報が作られなくなるため。自動生成の後に
-  改訂する。休場日と自動生成が無効な構成では作れる。判定は `Reports:AutoGeneration` の境界・休場日・有効化）。
+  改訂する。休場日と自動生成が無効な構成では作れる。判定は `Reports:AutoGeneration` の境界・休場日・有効化）。この 409 の返答には、
+  いま効いている日報の会話キーと、それを指定すれば版を足して再確定できること（承認待ちの版 n+1 があればその版）を書く。
   改訂の記録（指示者・時刻・指示の原文・案・監視銘柄の入れ替え案・説明）は本文（Body）の末尾へ追記する。
   応答は 200＝`{periodKey, version, created, presented, message, policySummary, watchlistChanges[{action, symbol, reason}], rationale}`
   （文字列は投稿向けに無害化済み＝メンション構文とマスクリンクを幅ゼロ空白の挿入だけで崩す。方針は保存される方針と幅ゼロ空白を除いて同一）／400＝指示・会話キー・代理指定の不正／404＝対象なし／
-  409＝確定済み・土台なし・確定しても効かない・営業日で当日の日報が未生成・並行更新（LLM を待つ間の更新）／502＝AI の案を作れなかった。
+  409＝効いていない確定済み・効いている日報が移った後の版 n+1・土台なし・確定しても効かない・営業日で当日の日報が未生成・並行更新（LLM を待つ間の更新）／502＝AI の案を作れなかった。
   **200 以外では何も保存しない。** 保存の後に提示だけ失敗したときは 200・`presented=false`。
   監視銘柄の入れ替え案は、Discord の `/policy` 専用の確認ボタンで確定できたときだけ市場監視サービスで適用される（`/report approve` では適用しない）。
   要求の `currentWatchlist`（`[{symbol, market}]`・market は `UnitedStates` / `Japan`）は Bot が照会した現在の監視銘柄で、米国の銘柄を AI へ渡し、
@@ -125,6 +154,11 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, 
   **基盤の Wiki 同期が露出を見るようになった版の配備の後に有効にする**（それより前の基盤は写しを Wiki へ載せ、外部 AI エージェント向けの文書一覧にも返す）。
 - **版番号付き冪等確定**: Draft→Confirmed の遷移時のみ `ConfirmedAt` 記録＋`ReportConfirmed` 発行（通知サービスが Discord 通知）。
   既に確定済みの再確定は冪等（状態変化なし・イベント重複なし）。版不一致は 409、確定済みの変更は 409、未認証 401/無権限 403。
+  確定の後の KB の後処理（確定版の写しの保存／置き換え・失効の印・ドラフトの写しの削除）は、1 つの時間予算 `Reports:Confirm:KnowledgeBudgetSeconds`
+  （既定 20 秒）で打ち切る。予算は要求の取り消しと結ばない。予算切れでも確定は 200 で返し、置き換えが終わらなければドラフトの写しは消さない（入れ直しが揃える）。
+  呼び出し側（通知サービス）の確定の上限（既定 30 秒）は、この予算より長く置く。
+  レビュー局面（`GET /reports/{periodKey}/review`）は `latestConfirmedVersion`（その期間キーの最新の確定版の版番号。確定版が無ければ null）を返す。
+  確定は版を 1 進めるので、呼び出し側は「最新の確定版 == 押した版 + 1」で、時間切れになった確定がその版で確定されたかを確かめる。
   応答は報告書の項目に `transitioned`（この要求で確定したか）と `version`（確定後の版）を足したもの。確定は版を 1 進めるため、
   冪等な再確定では `version == expectedVersion + 1` のときだけ「その版で確定されている」（別の版で確定済みを取り違えない）。
 - **確定者の解決**: 確定要求の本文は `expectedVersion` と任意の `onBehalfOf`（代理される利用者＝Keycloak 利用者名）。
@@ -163,6 +197,17 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, 
 ## 整合性・制約ルール
 
 - PeriodKey ごとに 1 行。確定済みは不変（`UpsertDraft` で変更不可）。版番号（Version）で楽観排他しロストアップデートを防ぐ。
+  例外は**効いている確定済み日報への版の追加**だけで、行を版 n+1 のドラフトへ戻す（確定した版の写しは書き換えない）。
+- **版 n+1 の確定は、確定の時点でその日報がなお効いているときだけ通る。** 判定と確定は 1 回の保存で行い（確定した版の履歴の通し番号の最大を先に読み、
+  その時点までの写しで効いている期間キーを確かめ、通し番号 +1 の写しを足す）、より新しい日付の日報の確定と並行したら先に保存を終えた方が勝つ。
+  移った後の確定は 409 で理由を返し、ドラフトは残す。`/report regenerate` も移った後の版 n+1 は作り直さない（409）。
+- レビュー照会（`GET /reports/{periodKey}/review`。gRPC の同じ照会も）は、行が版 n+1 のドラフトのとき `confirmedVersion`（効いている確定版の版）と
+  `noLongerEffective`（効いている日報が移って確定できない）を返す。一覧・取得は行の現在の状態（版 n+1 のドラフト）を返す。
+- 確定の通知（`ReportConfirmed`）は確定した版（`version`）と、再確定ならそれまで効いていた版（`supersededVersion`）を運ぶ。
+- KB: 再確定は確定版の写しを最新の確定版で置き換える（作らない。承認待ちの写しは確定版の後に消す）。入れ直しは期間キーごとの最新の確定版を入れる
+  （行が版 n+1 のドラフトの間も確定版）。効いている日報が移って確定できなくなった版 n+1 のドラフトの写しは、`reportState=draft` のまま
+  `reportDraftStatus=expired` を持つ写しで置き換えて残す（削除しない）。入れ直しは、行が版 n+1 のドラフトのとき、その日報が効いていれば承認待ちの写しを
+  残し、効いていなければ失効の印つきの写しへ置き換える（確定時に印を付けそこねた写しもここで回復する）。
 - 確定は利用者のみ（OwnerOnly・アクター必須）。生成AI・自動処理は確定できない。
 
 ## 約定・手動売買の取り込みの集計範囲（セッションの窓）

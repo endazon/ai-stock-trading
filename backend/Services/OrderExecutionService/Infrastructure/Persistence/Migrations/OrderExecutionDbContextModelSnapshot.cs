@@ -46,6 +46,9 @@ namespace OrderExecutionService.Infrastructure.Migrations
                     b.Property<int>("Market")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("OrderExecutedPublishPending")
+                        .HasColumnType("boolean");
+
                     b.Property<decimal>("PlannedPrice")
                         .HasColumnType("numeric");
 
@@ -53,6 +56,9 @@ namespace OrderExecutionService.Infrastructure.Migrations
                         .HasColumnType("integer");
 
                     b.Property<int>("ProductType")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ProtectionReleasedQuantity")
                         .HasColumnType("integer");
 
                     b.Property<int>("Quantity")
@@ -63,6 +69,9 @@ namespace OrderExecutionService.Infrastructure.Migrations
 
                     b.Property<decimal>("SlippageRatio")
                         .HasColumnType("numeric");
+
+                    b.Property<DateTimeOffset?>("SoftwareStopCancelRequestedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -76,6 +85,9 @@ namespace OrderExecutionService.Infrastructure.Migrations
                         .HasColumnType("character varying(32)");
 
                     b.Property<DateTimeOffset?>("TrackingAbandonedFrom")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("UnfilledCancelRequestedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("OrderId");
@@ -193,6 +205,9 @@ namespace OrderExecutionService.Infrastructure.Migrations
 
                     b.Property<int>("ExternalReductionObservations")
                         .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("ExternalReductionObservedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<decimal>("FxRateToBase")
                         .HasColumnType("numeric");

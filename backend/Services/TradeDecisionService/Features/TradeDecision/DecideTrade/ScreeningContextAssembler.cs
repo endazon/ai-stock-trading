@@ -62,7 +62,22 @@ public static class ScreeningContextAssembler
     // 見積りは保有の有無を知らないため無条件に予約する（過大に見積もるほど安全側）。行の長さが予約を超えないことを試験で固定する。
     public const int HeldExitRuleReserveChars = 150;
 
-    private const int PerSymbolLineChars = 400 + PriceContextReserveChars + NewsStatusReserveChars + HeldExitRuleReserveChars;
+    // FR-04, FR-10, #1384, IADR-0558 決定 7: 建てた条件の要約の行と、不明があるときの既定の出口の固定文（TradeDecisionPromptBuilder の
+    // AppendEntryBasisSummary。保有ありのときだけ出る）は**保護分**である（削ると、条件ごとの出口に達した建玉を一次が落とす）。
+    // 並べるロットは ScreeningMaxLots まで。見積りは保有の有無を知らないため無条件に予約する。最悪長が予約を超えないことを試験で固定する。
+    public const int HeldEntryBasisReserveChars = 450;
+
+    // FR-04, FR-10, #1396, IADR-0561 決定 5: 市場の現地時刻と閉場までの残り時間の行（TradeDecisionPromptBuilder.MarketClockLine）は**保護分**である
+    // （削ると方針の時刻の条件を一次が評価できない）。見積りは時刻を知らないため無条件に予約する。最長が予約を超えないことを試験で固定する。
+    public const int MarketClockReserveChars = 100;
+
+    // FR-04, FR-10, #1397, IADR-0562 決定 3: 保有中の全銘柄の節（TradeDecisionPromptBuilder.PortfolioSection）は**保護分**である（削ると方針の銘柄の組み合わせの
+    // 条件を一次が評価できない）。並べるのは PortfolioMaxShown 件まで。見積りは保有を知らないため無条件に予約する。最悪長が予約を超えないことを試験で固定する。
+    public const int PortfolioReserveChars = 600;
+
+    private const int PerSymbolLineChars =
+        400 + PriceContextReserveChars + NewsStatusReserveChars + HeldExitRuleReserveChars + HeldEntryBasisReserveChars
+        + MarketClockReserveChars + PortfolioReserveChars;
 
     // 参考情報 1 件の JSON 化オーバーヘッド（キー名・引用符・フェンス）の概算。
     private const int PerReferenceOverheadChars = 60;
@@ -105,7 +120,10 @@ public static class ScreeningContextAssembler
         // （表示の上限 50 件で頭打ちになるため、予算 150,000 文字〔IADR-0313〕に対して数千文字以内に収まる）。
         var sharedProtected = PromptScaffoldChars + policy.Summary.Length
             + TradeDecisionPromptBuilder.WatchlistSection(trigger, watchlist).Length;
+        // FR-03, FR-04, #1364: 急変が起点なら一次へ出す価格変動トリガーの節も保護分（削ると急変追随の条件を判定できない）。
+        // 概算ではなく**プロンプトへ出す文字列そのものの長さ**を数える（定時は空文字列＝0 で従来の見積りと同じ）。
         var symbolProtected = PerSymbolLineChars + protectedRefs.Sum(EstimateChars)
+            + TradeDecisionPromptBuilder.PriceMovementTriggerSection(trigger).Length
             + (PolicyTakeProfitConditions.ForSymbol(policy.Summary, trigger.Symbol).Count > 0 ? TakeProfitReachedReserveChars : 0);
 
         var plan = ScreeningContextPlanner.Plan(
@@ -132,11 +150,13 @@ public static class ScreeningContextAssembler
     }
 
     // 概算サイズ。プロンプト側の上限（タイトル 200 / 本文 400 / 出典 500）と JSON 化のオーバーヘッドで見積もる。
+    // FR-08, IADR-0542 決定 5, #1359: 境界語はプロンプト側で足すため（保存分は素）、その分を見積りへ足す。
     private static int EstimateChars(RetrievedContext reference) =>
         Math.Min(reference.Title.Length, 200)
         + Math.Min(reference.Text.Length, 400)
         + Math.Min(reference.SourceUri?.Length ?? 0, 500)
-        + PerReferenceOverheadChars;
+        + PerReferenceOverheadChars
+        + TradeDecisionPromptBuilder.ReferenceBoundaryChars;
 
     /// <summary>縮退計画と、スクリーニングプロンプトへ残す参考情報（保護＋残余）。</summary>
     public sealed record AssembledScreeningContext(

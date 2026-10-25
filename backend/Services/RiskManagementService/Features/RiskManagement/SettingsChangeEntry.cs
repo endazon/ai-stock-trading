@@ -38,4 +38,15 @@ public enum SettingsChangeType
     // 計画は「どの手法を選んでいるかを監査ログに出す」と定める（どの手法で走ったかが読めなければ観測結果を解釈できない）。
     // **末尾へ追加する**（序数 9）。BrokerProviderChanged と同じ規律（IADR-0134 決定2）。
     StopLossMethodChanged,
+
+    // 🔴 FR-10, UC-06, ADR-0063 決定1・決定2, #1291, IADR-0527 決定2: 高ボラティリティ銘柄の統制値（区分の上限・利用者の明示指定）の変更。
+    // **末尾へ追加する**（序数 10）。BrokerProviderChanged と同じ規律（IADR-0134 決定2）。
+    HighVolatilityChanged,
+
+    // 🔴 FR-10, FR-19, SC-02, ADR-0070 決定 5, #1407, IADR-0564 決定 4: 閉場前の統制（締め切り N・手仕舞いの有効と M）の変更。
+    // **末尾へ追加する**（序数 11）。BrokerProviderChanged と同じ規律（IADR-0134 決定2）。
+    PreCloseControlsChanged,
+
+    // 🔴 FR-10, FR-19, SC-02, ADR-0071 決定 5, #1407, IADR-0564 決定 4: テーマの定義と上限の変更。**末尾へ追加する**（序数 12）。
+    ThemeConcentrationChanged,
 }

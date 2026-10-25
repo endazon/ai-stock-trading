@@ -200,7 +200,7 @@ public class ProtectiveStopGuardServiceTests
                 opts.Services.AddScoped(sp => new ProtectiveStopGuard(
                     broker, broker, sp.GetRequiredService<IProtectiveStopOrderStore>(),
                     sp.GetRequiredService<IExecutedOrderStore>(), new InMemoryOrderReservationStore(),
-                    sp.GetRequiredService<IClock>()));
+                    sp.GetRequiredService<IClock>(), AlwaysOpenSessionGate.Instance));
 
                 opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
                 opts.StubAllExternalTransports();
@@ -486,6 +486,32 @@ public class ProtectiveStopGuardServiceTests
 
         livenessLog.Informations.Should().ContainSingle()
             .Which.Should().Contain("Active 1 件").And.Contain("トリガー=338.51").And.Contain("未到達");
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task T_10_2668_巡回が発注記録の無い古い未確定のS1を幽霊の疑いとして出し行は閉じない()
+    {
+        // T-10-2668, FR-10, #856, IADR-0538: 本番の組み立て（常駐ガード → 発注記録のストア）で識別が届く。
+        // 2026-10-05 の BeforeSend の AAPL と同じ形（未確定・未到達・発注記録なし・作成から 10 日）。観測だけで行は閉じない。
+        var stops = new InMemoryProtectiveStopOrderStore();
+        var ghost = SoftwareStopLivenessReporterTests.SoftwareStop(remaining: null, trigger: 327.83m);
+        ghost = ghost with { CreatedAt = Now.AddDays(-10), UpdatedAt = Now.AddDays(-10) };
+        stops.Save(ghost);
+        var livenessLog = new SoftwareStopLivenessReporterTests.RecordingLogger<SoftwareStopLivenessReporter>();
+        var liveness = new SoftwareStopLivenessReporter(
+            new SoftwareStopLivenessReporterTests.MutableClock(Now), livenessLog, TimeSpan.FromMinutes(5));
+
+        using var host = await BuildHostAsync(new GuardBroker(), stops);
+        var service = BuildService(host, new ProtectiveStopGuardOptions(), softwareStopLiveness: liveness);
+
+        await service.RunOnceAsync(CancellationToken.None);
+
+        livenessLog.Informations.Should().ContainSingle().Which.Should().Contain("発注記録なし（幽霊の疑い）");
+        livenessLog.Entries.Where(e => e.Level == LogLevel.Warning).Should().ContainSingle()
+            .Which.Message.Should().Contain($"EntryDecisionId={ghost.EntryDecisionId}");
+        stops.Find(ghost.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active, "自動では閉じない");
 
         await host.StopAsync();
     }

@@ -590,6 +590,313 @@
         }
       }
     },
+    "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/orderexecution/v1/order_execution_read.proto": {
+      "syntax": "proto3",
+      "package": "aistocktrading.orderexecution.v1",
+      "csharpNamespace": "AiStockTrading.Shared.Grpc.OrderExecution.V1",
+      "imports": [],
+      "messages": {
+        "DailyBarRow": {
+          "fields": {
+            "close": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            },
+            "date": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "high": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
+            "low": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            },
+            "open": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "volume": {
+              "number": 6,
+              "type": "int64",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetDailyBarsRequest": {
+          "fields": {
+            "from": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "to": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetDailyBarsResponse": {
+          "fields": {
+            "bars": {
+              "number": 5,
+              "type": "DailyBarRow",
+              "label": "repeated"
+            },
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "status": {
+              "number": 3,
+              "type": "DailyBarsState",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "unavailable_reason": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetInFlightClosesRequest": {
+          "fields": {
+            "close_side": {
+              "number": 3,
+              "type": "TradeSide",
+              "label": "singular"
+            },
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetInFlightClosesResponse": {
+          "fields": {
+            "closable_quantity": {
+              "number": 8,
+              "type": "int32",
+              "label": "optional"
+            },
+            "close_side": {
+              "number": 3,
+              "type": "TradeSide",
+              "label": "singular"
+            },
+            "in_flight_quantity": {
+              "number": 6,
+              "type": "int32",
+              "label": "optional"
+            },
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "order_ids": {
+              "number": 7,
+              "type": "string",
+              "label": "repeated"
+            },
+            "status": {
+              "number": 4,
+              "type": "InFlightClosesState",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "unknown_reason": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetShortPermitRequest": {
+          "fields": {
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetShortPermitResponse": {
+          "fields": {
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "status": {
+              "number": 3,
+              "type": "ShortPermitState",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "unknown_reason": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "enums": {
+        "DailyBarsState": {
+          "values": {
+            "DAILY_BARS_STATE_AVAILABLE": 2,
+            "DAILY_BARS_STATE_UNAVAILABLE": 1,
+            "DAILY_BARS_STATE_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "InFlightClosesState": {
+          "values": {
+            "IN_FLIGHT_CLOSES_STATE_COVERED": 2,
+            "IN_FLIGHT_CLOSES_STATE_NOT_COVERED": 3,
+            "IN_FLIGHT_CLOSES_STATE_UNKNOWN": 1,
+            "IN_FLIGHT_CLOSES_STATE_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "Market": {
+          "values": {
+            "MARKET_JAPAN": 1,
+            "MARKET_UNITED_STATES": 2,
+            "MARKET_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "ShortPermitState": {
+          "values": {
+            "SHORT_PERMIT_STATE_NOT_PERMITTED": 3,
+            "SHORT_PERMIT_STATE_PERMITTED": 2,
+            "SHORT_PERMIT_STATE_UNKNOWN": 1,
+            "SHORT_PERMIT_STATE_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "TradeSide": {
+          "values": {
+            "TRADE_SIDE_BUY": 1,
+            "TRADE_SIDE_SELL": 2,
+            "TRADE_SIDE_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "services": {
+        "OrderExecutionRead": {
+          "rpcs": {
+            "GetDailyBars": {
+              "request": "GetDailyBarsRequest",
+              "response": "GetDailyBarsResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetInFlightCloses": {
+              "request": "GetInFlightClosesRequest",
+              "response": "GetInFlightClosesResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetShortPermit": {
+              "request": "GetShortPermitRequest",
+              "response": "GetShortPermitResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            }
+          }
+        }
+      }
+    },
     "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/report/v1/daily_policy_read.proto": {
       "syntax": "proto3",
       "package": "aistocktrading.report.v1",
@@ -603,10 +910,56 @@
               "type": "string",
               "label": "optional"
             },
+            "no_response_halted": {
+              "number": 5,
+              "type": "bool",
+              "label": "optional"
+            },
+            "period_key": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
             "summary": {
               "number": 2,
               "type": "string",
               "label": "optional"
+            },
+            "version": {
+              "number": 4,
+              "type": "int32",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetConfirmedDailyPolicyAsOfRequest": {
+          "fields": {
+            "at": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetConfirmedDailyPolicyAsOfResponse": {
+          "fields": {
+            "confirmed_at": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "policy": {
+              "number": 1,
+              "type": "DailyPolicyRecord",
+              "label": "singular"
             }
           },
           "reserved": {
@@ -644,6 +997,12 @@
               "response": "GetConfirmedDailyPolicyResponse",
               "clientStreaming": false,
               "serverStreaming": false
+            },
+            "GetConfirmedDailyPolicyAsOf": {
+              "request": "GetConfirmedDailyPolicyAsOfRequest",
+              "response": "GetConfirmedDailyPolicyAsOfResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
             }
           }
         }
@@ -670,6 +1029,21 @@
         },
         "GetReportReviewResponse": {
           "fields": {
+            "confirmed_version": {
+              "number": 3,
+              "type": "int32",
+              "label": "optional"
+            },
+            "latest_confirmed_version": {
+              "number": 5,
+              "type": "int32",
+              "label": "optional"
+            },
+            "no_longer_effective": {
+              "number": 4,
+              "type": "bool",
+              "label": "optional"
+            },
             "unsupplied_inputs": {
               "number": 2,
               "type": "UnsuppliedInputList",
@@ -2037,6 +2411,11 @@
               "type": "string",
               "label": "optional"
             },
+            "high_volatility": {
+              "number": 9,
+              "type": "HighVolatilityControls",
+              "label": "singular"
+            },
             "limits": {
               "number": 7,
               "type": "RiskLimits",
@@ -2045,6 +2424,11 @@
             "mode": {
               "number": 6,
               "type": "BrokerProvider",
+              "label": "singular"
+            },
+            "pre_close_flatten": {
+              "number": 10,
+              "type": "PreCloseFlattenControls",
               "label": "singular"
             },
             "stage_capital_remaining": {
@@ -2128,8 +2512,113 @@
             "names": []
           }
         },
+        "HighVolatilityControls": {
+          "fields": {
+            "designated_symbols": {
+              "number": 2,
+              "type": "HighVolatilitySymbolRow",
+              "label": "repeated"
+            },
+            "max_order_amount_ratio": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "HighVolatilitySymbolRow": {
+          "fields": {
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "MarketMinutesRow": {
+          "fields": {
+            "market": {
+              "number": 1,
+              "type": "Market",
+              "label": "singular"
+            },
+            "minutes": {
+              "number": 2,
+              "type": "int32",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "OpenPositionEntries": {
+          "fields": {
+            "rows": {
+              "number": 1,
+              "type": "OpenPositionEntryRow",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "OpenPositionEntryRow": {
+          "fields": {
+            "decision_id": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "entry_condition": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            },
+            "entry_reference_price": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            },
+            "ordered_at": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
+            "quantity": {
+              "number": 2,
+              "type": "int32",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
         "OpenPositionRow": {
           "fields": {
+            "entries": {
+              "number": 7,
+              "type": "OpenPositionEntries",
+              "label": "singular"
+            },
             "entry_price": {
               "number": 5,
               "type": "string",
@@ -2211,6 +2700,11 @@
         },
         "PeriodFill": {
           "fields": {
+            "approval_source": {
+              "number": 12,
+              "type": "FillApprovalSource",
+              "label": "singular"
+            },
             "decision_id": {
               "number": 9,
               "type": "string",
@@ -2265,6 +2759,24 @@
               "number": 1,
               "type": "string",
               "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "PreCloseFlattenControls": {
+          "fields": {
+            "enabled": {
+              "number": 1,
+              "type": "bool",
+              "label": "optional"
+            },
+            "minutes": {
+              "number": 2,
+              "type": "MarketMinutesRow",
+              "label": "repeated"
             }
           },
           "reserved": {
@@ -2558,9 +3070,25 @@
             "ENTRY_BLOCKER_MARKET_DISABLED": 9,
             "ENTRY_BLOCKER_MAX_DRAWDOWN_REACHED": 7,
             "ENTRY_BLOCKER_MAX_POSITIONS_EXCEEDED": 5,
+            "ENTRY_BLOCKER_PRE_CLOSE_ENTRY_CUTOFF": 11,
             "ENTRY_BLOCKER_STOPPED_OUT_SAME_DAY": 3,
+            "ENTRY_BLOCKER_THEME_CONCENTRATION_EXCEEDED": 12,
             "ENTRY_BLOCKER_TRADING_PAUSED": 2,
             "ENTRY_BLOCKER_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "FillApprovalSource": {
+          "values": {
+            "FILL_APPROVAL_SOURCE_ORDER_APPROVED": 1,
+            "FILL_APPROVAL_SOURCE_PROTECTION_LOST_CLOSE": 4,
+            "FILL_APPROVAL_SOURCE_PROTECTIVE_STOP_S0": 2,
+            "FILL_APPROVAL_SOURCE_SOFTWARE_STOP_S1": 3,
+            "FILL_APPROVAL_SOURCE_TRADE_DECISION": 5,
+            "FILL_APPROVAL_SOURCE_UNSPECIFIED": 0
           },
           "reserved": {
             "numbers": [],

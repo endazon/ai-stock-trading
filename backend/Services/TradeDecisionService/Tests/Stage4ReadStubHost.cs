@@ -14,6 +14,7 @@ namespace TradeDecisionService.Tests;
 
 // NFR, IADR-0446, #1061 (#753): 段 4 で取引判断が読む 2 つの提供側（報告書の `DailyPolicyRead`・市場監視の `WatchlistRead`）を
 // **実 Kestrel の h2c 専用ポート**（127.0.0.1 のみ）で立てる偽の提供側（段 2 の RiskReadStubHost と同じ形）。
+// #1388, IADR-0557: 段 5 の追補で当時の方針（`DailyPolicyRead/GetConfirmedDailyPolicyAsOf`）も載せた。
 // rpc ごとに呼ばれた回数と、当時の監視銘柄の要求の時刻を記録する。
 internal sealed class Stage4ReadStubHost : IAsyncDisposable
 {
@@ -59,6 +60,7 @@ internal sealed class Stage4ReadStubBehavior
     private int _policyCalls;
     private int _watchlistCalls;
     private int _asOfCalls;
+    private int _policyAsOfCalls;
 
     internal int PolicyCalls => Volatile.Read(ref _policyCalls);
 
@@ -67,6 +69,13 @@ internal sealed class Stage4ReadStubBehavior
     internal int AsOfCalls => Volatile.Read(ref _asOfCalls);
 
     internal string? LastAsOfAt { get; private set; }
+
+    internal int PolicyAsOfCalls => Volatile.Read(ref _policyAsOfCalls);
+
+    internal string? LastPolicyAsOfAt { get; private set; }
+
+    internal Func<int, CancellationToken, Task<ReportProto.GetConfirmedDailyPolicyAsOfResponse>> PolicyAsOf { get; init; } =
+        (_, _) => Task.FromResult(new ReportProto.GetConfirmedDailyPolicyAsOfResponse());
 
     internal Func<int, CancellationToken, Task<ReportProto.GetConfirmedDailyPolicyResponse>> Policy { get; init; } =
         (_, _) => Task.FromResult(new ReportProto.GetConfirmedDailyPolicyResponse());
@@ -79,6 +88,12 @@ internal sealed class Stage4ReadStubBehavior
 
     internal Task<ReportProto.GetConfirmedDailyPolicyResponse> HandlePolicy(ServerCallContext context) =>
         Policy(Interlocked.Increment(ref _policyCalls), context.CancellationToken);
+
+    internal Task<ReportProto.GetConfirmedDailyPolicyAsOfResponse> HandlePolicyAsOf(string at, ServerCallContext context)
+    {
+        LastPolicyAsOfAt = at;
+        return PolicyAsOf(Interlocked.Increment(ref _policyAsOfCalls), context.CancellationToken);
+    }
 
     internal Task<MonitorProto.GetWatchlistResponse> HandleWatchlist(ServerCallContext context) =>
         Watchlist(Interlocked.Increment(ref _watchlistCalls), context.CancellationToken);
@@ -113,6 +128,10 @@ internal sealed class DailyPolicyStubService(Stage4ReadStubBehavior behavior) : 
     public override Task<ReportProto.GetConfirmedDailyPolicyResponse> GetConfirmedDailyPolicy(
         ReportProto.GetConfirmedDailyPolicyRequest request, ServerCallContext context) =>
         behavior.HandlePolicy(context);
+
+    public override Task<ReportProto.GetConfirmedDailyPolicyAsOfResponse> GetConfirmedDailyPolicyAsOf(
+        ReportProto.GetConfirmedDailyPolicyAsOfRequest request, ServerCallContext context) =>
+        behavior.HandlePolicyAsOf(request.At, context);
 }
 
 internal sealed class WatchlistStubService(Stage4ReadStubBehavior behavior) : MonitorProto.WatchlistRead.WatchlistReadBase

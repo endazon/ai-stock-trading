@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 // SC-02, FR-20, FR-12, FR-13, UC-06, INDEX 決定 46, #334, IADR-0140 / IADR-0141:
 // 発注先（Broker Provider）の表示・変更と、**実弾切替の警告モーダル**の振る舞い。
 //
-// 計画（FR-20 (1) / 05_screens SC-02）は 4 点の提示と明示的な確認操作を義務づけ、
+// 計画（FR-20 (1) / 05_screens SC-02）は 6 点の提示と明示的な確認操作を義務づけ（2026-09-25 に 4 点から訂正。planning#816）、
 // **「既定の『OK』ボタン 1 押しで切り替えられてはならない」**と明記する。
 // 本テスト群の主眼は**否定形**である——確認が揃わない限り PUT が飛ばないことを固定する
 // （「OK」1 押し通過への退行を検知する）。
@@ -212,8 +212,10 @@ describe('SC-02 実弾（moomoo REAL）への切替（FR-20 (1)・IADR-0141）',
     return screen.getByRole('dialog', { name: '実弾（moomoo REAL）への切替の確認' });
   }
 
-  // 計画が定める 4 点がすべて提示されること。
-  it('警告モーダルは計画の 4 点を提示する', async () => {
+  // 計画が定める 6 点のうち、モーダルの本文に出す ①〜④ が提示されること（#1415, planning#816）。
+  // ⑤（段階が実弾を既定とするまで発注されない旨）は下の「段階が実弾を既定とするまで…」の 3 本、
+  // ⑥（損切りの実行機構が S0 以外ならモーダルへ進ませない）は `RiskSettingsPage.stopLossMethod.test.tsx` が固定する。
+  it('警告モーダルは計画の 6 点のうち ①〜④ を提示する（⑤・⑥ は別の試験）', async () => {
     const dialog = await openModal();
 
     // ① 実資金で執行される旨
@@ -226,7 +228,7 @@ describe('SC-02 実弾（moomoo REAL）への切替（FR-20 (1)・IADR-0141）',
     // 設定側の比率（maxOrderAmountRatio）とは別物である。
     const table = within(dialog).getByRole('table', { name: '現在の equity と統制値' });
     // SC-02, FR-10, #362, #364, IADR-0151 決定4 / IADR-0152 決定6: 実弾切替は**取り消しが困難な操作**であり、
-    // その直前に提示する 4 点は画面の他の実額と同じ表記規約（桁区切り ＋ 基準通貨 USD の記号）に従う。
+    // その直前に提示する実額は画面の他の実額と同じ表記規約（桁区切り ＋ 基準通貨 USD の記号）に従う。
     // 生の数値のままだと桁を読み違える余地が残り、「単位を取り違えさせない」という決定4 の目的に反する。
     expect(within(table).getByText(formatAmount(STATUS.capital))).toBeInTheDocument();
     expect(within(table).getByText(formatAmount(STATUS.maxOrderAmount))).toBeInTheDocument();

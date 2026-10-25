@@ -47,4 +47,30 @@ public record ScreeningOutcome
     /// <summary>FR-10, #832, IADR-0407: 承認済みの判断の再配送を再審査せずに終える結果。</summary>
     public static ScreeningOutcome ApprovedReplay(OrderScreeningObservation observation) =>
         new() { IsApproved = false, IsApprovedReplay = true, Observation = observation };
+
+    /// <summary>
+    /// 🔴 FR-10, #1319, IADR-0529 決定4: <b>予約はあるが承認行がまだ無い</b>新規建ての判断の再配送であり、再審査せずに
+    /// 予約から<b>最初と同じ承認</b>を組み直した（第 4 の形）。<see cref="IsApproved"/> は真で <see cref="Approved"/> を持つ。
+    /// <para>
+    /// 最初の承認の発行が失敗した（またはプロセスが落ちた）再配送では、これを発行しないと発注が永久に出ない。
+    /// 発行が届いていた場合の重複は発注執行が DecisionId で止める（IADR-0057）。
+    /// 呼び出し側は観測を記録し（DecisionId で冪等・IADR-0148）、審査メトリクスは刻まない（新しい審査ではない）。
+    /// </para>
+    /// </summary>
+    public bool IsApprovedRepublish { get; init; }
+
+    /// <summary>
+    /// 🔴 FR-10, #1319 の監査, IADR-0529 決定6: 予約はあるが承認行が無い判断の再配送で、<b>承認時刻の取引日が過ぎていた</b>ため
+    /// 再発行せず予約を無効にした（第 5 の形）。<see cref="Approved"/> も <see cref="Rejected"/> も <c>null</c> である。
+    /// 呼び出し側は何も発行せず、観測も記録しない（拒否に当たる状態は無い。前の取引日の判断を今日の新規建てにしないだけ）。
+    /// </summary>
+    public bool IsReservationExpired { get; init; }
+
+    /// <summary>FR-10, #1319 の監査, IADR-0529 決定6: 取引日が過ぎた予約を再発行せずに終える結果。</summary>
+    public static ScreeningOutcome ReservationExpired(OrderScreeningObservation observation) =>
+        new() { IsApproved = false, IsReservationExpired = true, Observation = observation };
+
+    /// <summary>FR-10, #1319, IADR-0529 決定4: 予約から同じ承認を組み直して発行し直す結果。</summary>
+    public static ScreeningOutcome ApprovedRepublish(OrderApproved approved, OrderScreeningObservation observation) =>
+        new() { IsApproved = true, IsApprovedRepublish = true, Approved = approved, Observation = observation };
 }

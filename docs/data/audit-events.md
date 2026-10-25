@@ -3,15 +3,15 @@ title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-10-09
+updated: 2026-10-24
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07, NFR, FR-02]
-adrs: [ADR-0001, ADR-0003, ADR-0040, ADR-0049]
-iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483, IADR-0487, IADR-0495, IADR-0500, IADR-0521]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id, 20261002_1111_decision-final-failure-record, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment]
-issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148, #1111, #1164, #1176, #1174, #1286]
+ids: [FR-07, NFR-13, UC-02, FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07, NFR, FR-02]
+adrs: [ADR-0075, ADR-0074, ADR-0001, ADR-0003, ADR-0040, ADR-0049]
+iadrs: [IADR-0583, IADR-0582, IADR-0580, IADR-0572, IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483, IADR-0487, IADR-0495, IADR-0500, IADR-0521, IADR-0534, IADR-0569]
+specs: [20261023_1454_stop-filled-before-entry, 20261023_1433_1434_llm-precheck-cutoff-theme-and-closed-position, 20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id, 20261002_1111_decision-final-failure-record, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261013_1330_approved-close-not-external-reduction]
+issues: [#1454, #1434, #17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148, #1111, #1164, #1176, #1174, #1286, #1330]
 -->
 
 
@@ -76,18 +76,29 @@ issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028
   常駐ガードが**逆指値を取り消さず保護記録も閉じずに据え置いている**ことを表す（何も送っていない）。`CloseDecisionId` と決済意図は運ばない。
   要約は「建玉 0 だがエントリー注文の状態が不明・逆指値の取消・記録の完了はせず据え置き」と書く（前置きの「成立せず」は共通の書式で、
   実際には何も取り消していない）。状態が分かるまで約 1 時間ごと（と再起動後）に複数回残り得る。
+  `Remediation` が `EntryCancelUnconfirmed` のときは、保護逆指値が未受理のため未約定のエントリーへ**取消を送ったが、照会しても終端を
+  確かめられていない**ことを表す（取消を求めた後にも約定することがある）。`CloseDecisionId` と決済意図は運ばない。要約は「取消を送ったが未確認」と書き、
+  「取り消した」とは書かない。約定の追跡がエントリーの終了を確かめたら、同じエントリーの `DecisionId` で**もう 1 件**（約定 0 なら `EntryCancelled`、
+  約定があれば成行手仕舞いの結果）が残る。
+  `Remediation` が `StopFilledBeforeEntry` のときは、**保護逆指値がエントリー注文より先に約定した**（窓開けなど）ため、反対方向の建玉
+  （買いのエントリーなら売り建玉）が逆指値なしで生じている可能性があることを表す。エントリーはまだ生きているか、状態を確かめられないが反対方向の建玉が見えている。
+  システムは買い戻しもエントリーの取消もしておらず、常駐ガードは保護記録を閉じずに据え置く。`CloseDecisionId` は約定した逆指値レグ、決済意図は運ばない。
+  `Cause` は `FilledBeforeEntry`（失効ではない）。要約は「逆指値がエントリーより先に約定（反対方向の建玉の可能性）・買い戻し・エントリーの取消はせず記録を据え置き（要人手対応）」と書く。
+  エントリーが終わるまで約 1 時間ごと（と再起動後）に複数回残り得る。
 - moomoo SIMULATE で損切りの実行機構 S2（逆指値なしの建玉を許容）が選ばれていた新規建ては、保護逆指値を発注せず
   **免除の事実（`ProtectiveStopWaived`）**を記録する（#819）。種別は保護喪失（`ProtectiveStopCoverageLost`）と**別**であり、
   相関は同じくエントリーの `DecisionId` である。要約に手法（S2）・発注先・損切りラインと「逆指値なしの建玉を保持する
   （システムは決済しない）」を書く——「建玉あり ⇒ 有効な逆指値あり（または解消済み）」の読みの例外を台帳上で明示するため。
 - 損切りの実行機構 S1（ソフトウェア逆指値）が選ばれていた新規建ては、**配置（`SoftwareStopArmed`）**と
   **発動の結果（`SoftwareStopExecuted`：成行決済の発注／未約定エントリーの取消／決済拒否の打ち切り／エントリー記録が見つからない／
-  到達後も決済できないまま猶予を過ぎた／外部要因で保護対象を減らした／帳簿では守っているのに 1 株も決済できない状態が続いている／どの保護記録も主張していない建玉がある）**を記録する。
+  到達後も決済できないまま猶予を過ぎた／外部要因で保護対象を減らした／承認済みの決済の約定に合わせて保護対象を減らした／帳簿では守っているのに 1 株も決済できない状態が続いている／どの保護記録も主張していない建玉がある）**を記録する。
   相関はいずれもエントリーの `DecisionId` である。配置の要約には「ブローカーへの逆指値なし・システム停止中は決済されない」を、
   決済拒否の要約には「建玉が無保護で残っている（要人手対応）」を書く——利用者の承認なしに決済注文・取消が起きた理由の一次証跡になるため。
   **据え置きが猶予を過ぎた記録は 1 件につき 1 回だけ残す**（毎巡回書くと台帳が同じ事実で埋まる）。
   **外部要因による保護対象の縮小も 1 件につき 1 回だけ残す**（決済は出していない旨を要約へ書く。
   ブローカー側の逆指値を取り消す場合はこの記録が唯一の痕跡になる）。
+  **取引判断の決済（利確・損切りの判断）・利用者の手仕舞い・維持率割れの自動縮小の約定で減った分は「外部要因」と書かず**、
+  承認済みの決済に合わせた縮小として、出どころと決済の識別子（判断・注文）を要約へ書く（減った理由を取り違えて読ませないため）。
   🔴 **「帳簿では守っているのに 1 株も決済できない」状態も 1 件につき 1 回だけ残す**（到達の有無に依らない）——
   この状態の記録は有効・帳簿も無傷であり、**台帳の状態欄や数量欄をいくら見ても異常が分からない**。
   違いは「到達しても 1 株も決済しない」ことだけなので、この記録が無ければ保護が失われたことを後から誰も説明できない。
@@ -135,6 +146,19 @@ issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028
   🔴 従来その判断は LLM を呼んだ後にサイジングの数量 0 で見送られ、台帳には判断後の見送り（`TradeDecisionHeld`・理由 `SizingZeroQuantity`）として残っていた。その一部がこちらへ移る。
   `ExitOnlyWithoutHolding` は、定時サイクルで監視銘柄の外の保有銘柄を出口専用で判断しようとしたが、判断の前に引いた保有が 0 または不明だったときに出る
   （決済は成立せず新規建ては出さないため、LLM を呼ばない）。
+  `InFlightCloseCoversPosition` は、保有中の銘柄で判断由来の決済が処理中（未約定）のまま決済方向の建玉をすべて覆い（発注執行が決済のゲートと同じ判定で答えた）、
+  かつ買い増し・売り増しも LLM の後で必ず見送られると分かっているときに出る（どの結論も発注にならないため、LLM を呼ばない）。
+  🔴 従来その判断は LLM を呼び、決済の結論は発注執行の見送り（`OrderDispatchForgone`・理由 `InFlightCloseCoversPosition`）として残っていた。その一部がこちらへ移る。
+  `BrokerPositionClosed` は、保有中（台帳）の銘柄で、判断由来の決済が約定した直後に発注執行がブローカーの決済方向の建玉を 0 と観測し、
+  かつ買い増し・売り増しも LLM の後で必ず見送られると分かっているときに出る（台帳は約定の射影が届くまで保有中のままである。決済の結論は発注執行の決済のゲートが建玉なしで見送る）。
+  🔴 従来その判断は LLM を呼び、LLM の後の読み直しで台帳が追いついた保有 0 により裸の新規売りの見送り（`TradeDecisionHeld`・理由 `NakedShortOpen`）として残っていた。その一部がこちらへ移る。
+  `LlmCostCapHalted` は、月次 LLM 費用上限の 100% に達して費用統制が停止中のときに、定時・価格変動の**どちらの判断でも**判断の入口で出る
+  （新規建ても保有中の銘柄の出口の判断も見送る。損切り・利用者の手仕舞い・閉場前の手仕舞い・維持率割れの自動縮小は判断を経ないので止まらない）。
+  🔴 従来、価格変動の判断は上限の後も LLM を呼んでいた（定時は情報収集が止まるので判断自体が起きない）。解除は費用統制の月替わりで自動。
+  `DailyReportNoResponseHalted` は、日報の無応答時の設定が「停止」で、承認待ちの日報が期限（翌営業日の米国市場の開場）を過ぎた間に、定時・価格変動の
+  **どちらの判断でも**判断の入口で出る（新規建ても出口の判断も見送る。損切り・手仕舞いは止まらない）。日報を確定すると次の判断から出なくなる。
+- 日報が承認待ちのまま期限を過ぎた事実（`DailyReportNoResponse`。要約「日報 … が無応答のまま期限 … を過ぎた（停止／継続）」）。
+  設定が継続でも停止でも、期間キーごとに 1 件。相関は日報の方針と同じ固定キー。
 - 取引判断が LLM の結論を得た**後**に見送った事実（`TradeDecisionHeld`。要約「判断後の見送り（理由）判断時点価格」）のうち、理由
   `AddOnBlockedByRiskControls` は、保有中の銘柄で LLM が買い増し・売り増しを返したが、LLM を呼ぶ前に読んだリスク管理の新規建ての可否の口が
   その方向を塞いでいると答えていたときに出る（発注しない）。🔴 **従来はその買い増しが審査で拒否され `OrderRejected` として残っていた**

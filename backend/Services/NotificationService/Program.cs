@@ -162,16 +162,26 @@ builder.Services.AddSingleton<PositionDriftAdoptionCommandHandler>();
 // Reports:BaseUrl 未設定/不正 URI は BaseAddress 未設定＝呼び出し失敗（Succeeded=false）に倒す。
 builder.Services.AddHttpClient("report-review", c => c.Timeout = TimeSpan.FromSeconds(5))
     .AddDiscordOwnerToken(builder.Configuration);
+// FR-07, FR-14, #1385, IADR-0556 決定 2: 確定だけは専用の名前付き HttpClient（30 秒）。確定は KB の後処理を含み、報告書サービス側の
+// 時間予算（既定 20 秒）より長く置く（外側＞内側。照会・差し戻し・一覧の 5 秒は変えない）。gRPC の deadline と同じ値を共有する。
+// Discord の応答は Defer の後の追送で、追送の期限（15 分）に収まる。
+builder.Services.AddHttpClient("report-confirm", c => c.Timeout = ReportsGrpcTransport.DefaultConfirmTimeout)
+    .AddDiscordOwnerToken(builder.Configuration);
 builder.Services.AddSingleton<IReportReviewController>(sp =>
 {
-    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("report-review");
+    var factory = sp.GetRequiredService<IHttpClientFactory>();
+    var http = factory.CreateClient("report-review");
+    var confirmHttp = factory.CreateClient("report-confirm");
     var baseUrl = builder.Configuration["Reports:BaseUrl"];
     if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+    {
         http.BaseAddress = uri;
+        confirmHttp.BaseAddress = uri;
+    }
 
     return sp.GetService<ReportsGrpcTransport>() is { } reportsGrpc
         ? new GrpcReportReviewController(reportsGrpc, sp.GetRequiredService<ILogger<GrpcReportReviewController>>())
-        : new HttpReportReviewController(http, sp.GetRequiredService<ILogger<HttpReportReviewController>>());
+        : new HttpReportReviewController(http, sp.GetRequiredService<ILogger<HttpReportReviewController>>(), confirmHttp);
 });
 
 // 詳細設計07 §二重実行防止: 窓口での多重押下を弾く前段のガード（**権威は報告書サービスの版番号付き冪等 API**）。
@@ -264,6 +274,8 @@ builder.Services.AddHostedService<DiscordBotHostedService>();
 // 送信失敗を含む一時的失敗の再試行と <queue>_error への退避は共通ヘルパに閉じている（IADR-0129 決定 5）。
 // FR-09, FR-10, #1280, IADR-0520 決定4: 損切りライン到達の通知の抑止（巡回をまたぐ記憶なので singleton）。
 builder.Services.AddSingleton<StopLossNotificationSuppressor>();
+// FR-09, FR-04, #1338, IADR-0535 決定4: 「処理中の決済が建玉を覆う」見送りの通知の畳み込み（サイクルをまたぐ記憶なので singleton）。
+builder.Services.AddSingleton<InFlightCloseForgoneNotificationSuppressor>();
 
 builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
     ServiceName,

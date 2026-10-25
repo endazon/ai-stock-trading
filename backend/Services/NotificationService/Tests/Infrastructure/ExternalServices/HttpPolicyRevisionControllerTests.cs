@@ -59,8 +59,9 @@ public class HttpPolicyRevisionControllerTests
         var schedule = new ReportFeatures.PolicyRevisionSchedule(new ReportDomain.ReportScheduleOptions(), AutoDailyEnabled: true);
         foreach (var todaysKey in new[] { longKey, "daily-2026-09-27" })
         {
+            // ADR-0068 決定1, #1373, IADR-0549 決定1: 効いている日報の会話キー（32 文字）も載せた最長の形。
             var message = ReportFeatures.ReportPolicyRevisionService.AlreadyConfirmedMessage(
-                longKey, todaysKey, new DateOnly(2026, 9, 27), schedule);
+                longKey, todaysKey, schedule, effectiveDailyKey: longKey);
             var handler = new FakeHandler(HttpStatusCode.Conflict, JsonSerializer.Serialize(new { error = message }, ReportWire));
 
             var outcome = await Controller(handler).ReviseAsync(longKey, "指示", "developer", null);

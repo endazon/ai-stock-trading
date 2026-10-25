@@ -81,6 +81,10 @@ public class DailyPolicyReadGrpcServiceTests
         restPolicy!.Summary.Should().Be("押し目買いを優先する", "空どうしの一致は何も証明しない");
         grpc.Policy.Should().Be(DailyPolicyWireMapping.ToProto(restPolicy));
         grpc.Policy.Date.Should().Be("2026-09-10");
+        // FR-04, FR-11, ADR-0068 決定4, #1373, IADR-0548 決定5: 確定版の期間キーと版番号も REST と同じ値で運ぶ。
+        grpc.Policy.PeriodKey.Should().Be(restPolicy.PeriodKey).And.NotBeNullOrEmpty();
+        grpc.Policy.HasVersion.Should().BeTrue();
+        grpc.Policy.Version.Should().Be(restPolicy.Version).And.BeGreaterThan(0);
     }
 
     // 未確定は REST の 404 と同じく「方針なし」。gRPC は NOT_FOUND ではなく `policy` の無い応答（失敗として数えない）。

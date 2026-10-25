@@ -15,8 +15,9 @@
 #   - secret は secretKeyRef のまま（平文の鍵・トークンは置かない）。実値は ESO(Vault) 同期（IADR-0094）が既定で
 #     供給する（#795 / IADR-0341: 値は基盤の画面から Vault へ書く）。AST_ESO=0 の従来経路でだけ
 #     k8s-local-deploy.sh が env から ast-secrets を作る。
-#   - order-execution は含めない → Broker__Provider は template 既定 paper（broker.tier 未指定・IADR-0111）＝実弾 OFF 不変。
-#     発注予約の自動リコンサイル（Reconciliation__*）も values.yaml をそのまま継ぐ。🔴 #1051: 解放の門は取引環境ごとの
+#   - order-execution は extraEnv だけを写す（#1339: 判断由来の決済の未約定取消の有効化）。broker は書かない → Broker__Provider は
+#     template 既定 paper（broker.tier 未指定・IADR-0111）＝実弾 OFF 不変。発注予約の自動リコンサイル（Reconciliation__*）は
+#     values.yaml と同じ値を写す。🔴 #1051: 解放の門は取引環境ごとの
 #     Reconciliation__ReleaseOnNotPlaced__Simulate / __Real で、**ローカルでもどちらも "false"（閉）**。ここで上書きしない
 #     （開けるには、その取引環境の実機の記録を添えた values.yaml の変更が要る。docs/operations/operations.md）。
 #   - notification の OwnerAuth__TokenEndpoint は入れない（template が global.authAuthority から注入・IADR-0098）。
@@ -67,6 +68,14 @@ externalSecrets:
 # OpenD には reload 注釈を付けず、代わりに reloader.stakater.com/auto: "false" を付けて明示的に対象外にする。
 reloader:
   enabled: true
+
+# FR-15, NFR（費用）, ADR-0033 決定5, #1342, IADR-0537 決定5: Stage 0 の記録器の書き出し先と実行の状態（完了の印・途中の記録・
+# 費用の累計）を永続ボリュームへ置く。PoC のホストは停止・一斉再起動を繰り返す（MSP#1919）ため、揮発領域では
+# 再起動のたびに同じ承認値の記録が二重に課金される。mountPath は values.yaml の既定（/var/lib/ai-stock-trading/stage0）。
+# 有効にしても記録は走らない（走らせるかは trade-decision の Stage0Recording__Enabled と承認値が決める）。
+stage0Recording:
+  persistence:
+    enabled: true
 
 services:
 
@@ -124,6 +133,33 @@ services:
       # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+
+  # ============ 判断由来の決済の指値の未約定時の取消（ADR-0067・#1339・利用者裁定 2026-10-21）============
+  # FR-10, FR-19, ADR-0067 決定 2・6, #1339, IADR-0539: 判断由来の決済の指値が N 分たっても約定しなければ取り消す（取り消すだけ）。
+  # 本番既定（values.yaml）は無効のまま（キーを置かない）。N は暫定値の 15 分（既定と同じ）なので __UnfilledMinutes は書かない。
+  # 🔴 Helm はリスト(extraEnv)を置換するため、values.yaml の order-execution の extraEnv を全要素写す（値は本番既定と同一。
+  #    helm.yml の「values-local drops no env from prod default」検査に掛かる）。Broker__Provider は template が決めるので不変（paper）。
+  #    発注予約の自動リコンサイルの解放の門（Reconciliation__ReleaseOnNotPlaced__*）も本番既定と同じ "false"（閉）のまま（#1051）。
+  order-execution:
+    extraEnv:
+      - { name: Reconciliation__Enabled, value: "true" }
+      - { name: Reconciliation__UseBrokerProbe, value: "true" }
+      - { name: Reconciliation__ReleaseOnNotPlaced__Simulate, value: "false" }
+      - { name: Reconciliation__ReleaseOnNotPlaced__Real, value: "false" }
+      - { name: Reconciliation__StallThresholdHours, value: "2" }
+      - { name: Reconciliation__IntervalHours, value: "1" }
+      - { name: Reconciliation__BatchSize, value: "50" }
+      - { name: DecisionCloseUnfilledCancel__Enabled, value: "true" }  # ← 取消（既定 false＝本番既定）
+      # NFR-06, IADR-0448, IADR-0559, #1391: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
+      - name: Auth__GrpcOwnerClients__0
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # 🔴 FR-10, ADR-0009, IADR-0567, #1427: 新規建てを送る直前の停止状態の照会（values.yaml の同じ行の写し）。
+      #    写し忘れると照会が「不明」になり、新規建てが全件見送りになる。
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
 
   # ① 損切り検知の時価＋建玉源。FR-10, IADR-0066/0068。
   market-monitor:
@@ -189,6 +225,9 @@ services:
       # **フォールバック専用**: 監視銘柄を一度も読めていない（起動直後から市場監視に届かない）ときだけ使う。
       # 一度読めた後に読めなくなったら、直前に読めた対象を使い続ける（不明を空と扱わない）。
       - { name: Collection__Source__Finnhub__Symbols__0, value: "AAPL" }
+      # FR-01, FR-02, #1363, IADR-0547 決定 1: 保有銘柄（リスク管理の open-positions）も収集の対象へ合流させる（保有が先。上の監視銘柄と同じ s2s）。
+      # 取引判断は監視銘柄 ∪ 保有銘柄を判断する（IADR-0521）。結線前は監視銘柄の外の保有（PoC の AAPL・AMZN・GOOGL）のニュースを集めていなかった。
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
       # 日次上限は**未実測**のため空にする（IADR-0224）。空＝逆算しない＝監視銘柄数の上限を返さない。
       # IADR-0275: 分次（60回/60秒固定ウィンドウ）は実クラスタで実測確認済みだが、日次は実測セッションでも
       # 確定できなかった（持続的ブロックを観測できず）。推測値を焼き込まないこと。
@@ -209,7 +248,9 @@ services:
       # fail-safe: 未設定/空 → SEC EDGAR **だけ**が収集対象から外れる（finnhub/fred は有効なまま）。
       - name: Collection__Source__SecEdgar__UserAgent
         secretKeyRef: { name: ast-secrets, key: sec-edgar-user-agent, optional: true }
-      - { name: Collection__Source__SecEdgar__Ciks__0, value: "0000320193" }     # ← Apple Inc.（収集銘柄 AAPL と揃える）
+      # FR-01, #1363, IADR-0547 決定 2・3: CIK は収集の対象の銘柄（保有が先、続いて監視銘柄）から SEC の対応表で導く（以前は AAPL 1 社に固定）。
+      # 固定 CIK は「常に足す分」として残すが、ここでは足さない（空）。対応表を一度も読めず固定 CIK も空なら SEC EDGAR は欠測として記録される。
+      - { name: Collection__Source__SecEdgar__Ciks__0, value: "" }
       - name: Collection__Source__Edinet__SubscriptionKey
         secretKeyRef: { name: ast-secrets, key: edinet-subscription-key, optional: true }
       - { name: Collection__Source__Boj__Db, value: "" }
@@ -293,8 +334,10 @@ services:
       # （#243 実測で発見。値・出典・fail-safe の詳細な説明は trade-decision.extraEnv の同名コメントを参照）。
       # 🔴 env 名ではモデル ID の `-` を `_` で書く（`-` を含む env 名は起動シェルが落とし ¥0 計上になる・#817。
       #   詳細は trade-decision.extraEnv の同名コメント）。
-      - { name: LlmPricing__PerModel__claude_fable_5__InputPer1kTokens, value: "1.637" }    # $10/1M（fail-safe 上限値・用途未割当）
-      - { name: LlmPricing__PerModel__claude_fable_5__OutputPer1kTokens, value: "8.186" }   # $50/1M
+      # NFR-13, ADR-0064 決定 9, #1305, IADR-0553: 表に無いモデル（旧 ID・禁止モデル・モデル名なし）の計上単価。単価表の行ではない
+      #   （どのモデル名にも結びつけない）。既定と同じ $10 / $50 を明示する。旧 `claude_fable_5` の行（上限値）はこの 2 行へ置き換えた。
+      - { name: LlmPricing__UnknownModel__InputPer1kTokens, value: "1.637" }    # $10/1M（未知モデルの計上単価）
+      - { name: LlmPricing__UnknownModel__OutputPer1kTokens, value: "8.186" }   # $50/1M
       # #1295, IADR-0524: 5.5 系（利用者裁定 2026-10-10・planning#783。提供元の公表値 確認日 2026-10-10）。
       - { name: LlmPricing__PerModel__claude_opus_5_5__InputPer1kTokens, value: "0.655" }   # $4/1M（report-monthly・report-weekly）
       - { name: LlmPricing__PerModel__claude_opus_5_5__OutputPer1kTokens, value: "3.274" }  # $20/1M
@@ -305,15 +348,6 @@ services:
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextThresholdTokens, value: "100000" }   # 入力がこれを超える要求は第 2 段
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextInputPer1kTokens, value: "0.0819" }  # $0.50/1M（100,000 トークン超）
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextOutputPer1kTokens, value: "0.409" }  # $2.50/1M
-      # 🔴 移行期間のみ（#1295・撤去は #1296）: MSP ゲートウェイの切り替え前は応答が直前世代を名乗るため、旧世代の行を残す。
-      - { name: LlmPricing__PerModel__claude_opus_5__InputPer1kTokens, value: "0.819" }     # $5/1M（旧 report-monthly・report-weekly）
-      - { name: LlmPricing__PerModel__claude_opus_5__OutputPer1kTokens, value: "4.093" }    # $25/1M
-      - { name: LlmPricing__PerModel__claude_opus_4_8__InputPer1kTokens, value: "0.819" }   # $5/1M（フォールバック先には含まれないが表の一貫性のため保持）
-      - { name: LlmPricing__PerModel__claude_opus_4_8__OutputPer1kTokens, value: "4.093" }  # $25/1M
-      - { name: LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens, value: "0.327" }   # $2/1M（旧 report-daily・フォールバック先）
-      - { name: LlmPricing__PerModel__claude_sonnet_5__OutputPer1kTokens, value: "1.637" }  # $10/1M（恒久化確認済み 2026-08-28・#243）
-      - { name: LlmPricing__PerModel__claude_haiku_4_5__InputPer1kTokens, value: "0.164" }  # $1/1M（旧 report-daily フォールバック先）
-      - { name: LlmPricing__PerModel__claude_haiku_4_5__OutputPer1kTokens, value: "0.819" } # $5/1M
       - { name: KnowledgeBase__Documents__BaseUrl, value: "http://document-service.microservices-platform:8080" }  # ← ③
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
@@ -331,9 +365,12 @@ services:
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
       - name: KnowledgeBase__Auth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
-      # FR-06, FR-08, UC-03, #1300, IADR-0526: 承認待ちの報告書の写し（ドラフト）を KB に置く（本番 values.yaml と同じ既定 false。配列の置換で消さないための写し）。
-      # 🔴 MSP#1886（ccbc4a3b 以降）を配備してから true にする。それより前の基盤は Wiki 同期と外部 AI エージェント向けの文書一覧が露出を見ず、ドラフトを Wiki.js へ載せ、一覧にも返す。
-      - { name: ReportDraftKnowledge__Enabled, value: "false" }
+      # FR-06, FR-08, UC-03, #1300, IADR-0526: 承認待ちの報告書の写し（ドラフト）を KB に置く。本番 values.yaml の既定は false のまま。
+      # 経路 B（values-local）は、MSP#1886 を含む MSP eac572ca の配備を PoC が確かめたので true にする（2026-10-10）。
+      # 🔴 MSP#1886（ccbc4a3b 以降）より前の基盤へ当てる構成では true にしない。それより前の基盤は Wiki 同期と外部 AI エージェント向けの文書一覧が露出を見ず、ドラフトを Wiki.js へ載せ、一覧にも返す。
+      - { name: ReportDraftKnowledge__Enabled, value: "true" }
+      # 🔴 FR-07, #1423 M-6, ADR-0075, IADR-0583: Halt にすると、承認待ちの日報が期限（翌営業日の米国市場の開場）を過ぎた間、取引判断の全体を見送る
+      # （損切り・手仕舞いは止めない・確定で自動再開）。継続・停止とも無応答を通知する（Reports__NoResponseNotice__Enabled=false で通知だけ外せる）。
       - { name: Reports__NoResponseBehavior, value: "" }
       # FR-09, UC-03, ADR-0003, #774, IADR-0240 決定11: 確定要求の本文で運ばれる「代理される利用者」（onBehalfOf）を
       # 信じてよいクライアント（カンマ区切り）。Discord Bot は owner マップ機密クライアントのトークンで確定を呼ぶため、
@@ -348,8 +385,9 @@ services:
       # **確定は従来どおり利用者のみ**（OwnerOnly・Discord `/report action:approve`・ADR-0003）。本番既定は不変。
       - { name: Reports__AutoGeneration__Enabled, value: "true" }
       - { name: Reports__AutoGeneration__Markets__0, value: "US" }
-      # #750 / ADR-0037 決定3: 月報 §7 の見積り承認額（分母）。経路B でも未供給（空）＝「供給されていません」。trade-decision と同値にすること。
-      - { name: Stage0Recording__ApprovedEstimateJpy, value: "" }
+      # #750 / ADR-0037 決定3: 月報 §7 の見積り承認額（分母）。trade-decision と同値にすること。
+      # #1219: オーナー承認（2026-10-13・承認額 1,700 円）の範囲の見積り 437.2831152 円を円未満 2 桁で写した値。
+      - { name: Stage0Recording__ApprovedEstimateJpy, value: "437.28" }
       # ============ 為替差損益の期末レート（#611/IADR-0286 決定2）============
       # 期末日以前の直近の日次観測（1 USD あたりの円）。trade-decision と同じ源・同じ鍵を再利用する。
       # 空だと期末に建玉が残る期間の為替差損益が「供給されていません」のままになる。
@@ -366,10 +404,34 @@ services:
     extraEnv:
       - { name: Reports__BaseUrl, value: "http://report-service:8080" }               # G4（確定済み日報方針の照会先）
       - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }# サイジング文脈(残枠/DD)
+      # ---- Stage 0 の記録の as-of 入力の基底の配線（FR-15, #1308, IADR-0528 決定7。利用者裁定 2026-10-13）----
+      # 🔴 Reports__BaseUrl（上）と OrderExecution__BaseUrl がそろうと、記録器の as-of 入力の基底の供給が有効になる。
+      #    記録を走らせるかは Stage0Recording（下）が決める。Enabled=true・承認済みのまま配備すると、その起動で記録が LLM を呼ぶ。
+      # OrderExecution__BaseUrl は判断の出来高・ATR を有効にしない（DecisionVolume__Enabled / StopWidthFloor__Atr14__Enabled は既定 false のまま）。
+      # 日足は発注執行が moomoo 構成のときだけ取れる（paper では broker-not-supported → 撃ち直した後に記録が止まる）。
+      # FR-04, #1338, IADR-0535: 同じ OrderExecution__BaseUrl で、処理中の決済の照会（GET /order-execution/in-flight-closes）も有効になる
+      # （判断由来の決済が処理中のまま建玉を覆い、どの結論も発注にならない保有銘柄は LLM を呼ばずに見送る。照会の失敗・不明は LLM を呼ぶ）。
+      - { name: OrderExecution__BaseUrl, value: "http://order-execution-service:8080" }
+      # (b) の 3 源（Finnhub の company-news・SEC EDGAR・FRED の ALFRED）。鍵は収集と同じ secret を使う（新しい資格情報は要らない）。
+      # Finnhub の自制は 3 回/分（同じ鍵の他の用途〔情報収集 30・市場監視 12・市況 5 × 3〕と足して 60 回/分）。
+      - name: Stage0AsOf__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
+      - { name: Stage0AsOf__Finnhub__RequestsPerMinute, value: "3" }
+      - name: Stage0AsOf__SecEdgar__UserAgent
+        secretKeyRef: { name: ast-secrets, key: sec-edgar-user-agent, optional: true }
+      - { name: Stage0AsOf__SecEdgar__Ciks__0, value: "0000320193" }   # 収集と同じ（AAPL）。本番の KB に無い開示は記録にも渡さない
+      - name: Stage0AsOf__Fred__ApiKey
+        secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
+      - { name: Stage0AsOf__Fred__SeriesIds__0, value: "DEXJPUS" }      # 収集と同じ系列
+      - { name: Stage0AsOf__Fred__SeriesIds__1, value: "DGS10" }
       # #286/IADR-0282: market-monitor の watchlist を初回シード（上の market-monitor.Monitor__SeedSymbols__0）
       # したうえで結線する。下の TradeCycle__Watchlist__0__* は結線を外したときの対象（#1134 / IADR-0475: 結線時は照会不達でも
       # 構成へ倒さず、直前に読めた一覧か、一度も読めていなければその巡回を見送る）。
       - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
+      # 🔴 NFR-13, UC-02, #1423 M-5, ADR-0074 決定2, IADR-0582: 月次 LLM 費用上限の 100% 到達（Halted）を判断の合流点で読み、
+      # 定時・価格変動の両方の判断を LLM の前で見送る。情報収集と同じ GET /costs/state・同じ s2s（下の ServiceAuth__*）。
+      # 空にすると未結線（NoOp＝常に停止していない＝価格変動の判断は上限の後も LLM を呼ぶ）。
+      - { name: CostControl__BaseUrl, value: "http://cost-control-service:8080" }
       # FR-04, FR-15, ADR-0033 決定3, ADR-0037 決定2, #632: 記録側の学習カットオフ日（本番既定と同値の写し）。
       # #1295, IADR-0524: 5.5 系の割当（training data cutoff Jun 2026）を月末へ写した 2026-06-30（旧割当は 2026-01-31）。
       # 🔴 backtest 側の Backtest__Stage0__LlmTrainingCutoff と必ず同値にする（食い違うと RecordingMismatch）。
@@ -386,7 +448,76 @@ services:
       - name: LlmGateway__Auth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: llm-auth-client-secret, optional: true }
       # #750 / ADR-0033 決定5: 承認額（空＝未承認＝記録は実行されない）。report と同値にすること。
-      - { name: Stage0Recording__ApprovedEstimateJpy, value: "" }
+      # #1219: オーナー承認（2026-10-13）。🔴 承認ゲートは「承認額 ≥ 見積り」ではなく**円未満 2 桁での一致**で見る
+      # （Stage0DecisionRecorder.ValidateApproval）。承認額 1,700 円をそのまま書くと NotApproved になるため、
+      # 承認の範囲内の見積り（12 銘柄 × 平日 19 日 × (一次 1 ＋ 多数決 1)・437.2831152 円）を写す。
+      # 期間・銘柄・トークン量・多数決回数のどれかを変えたら見積りが変わる＝承認し直す。
+      - { name: Stage0Recording__ApprovedEstimateJpy, value: "437.28" }
+      # ---- Stage 0 の記録の再実施（FR-15, ADR-0033 決定5, ADR-0054 決定3, ADR-0064 決定3, #1219）----
+      # 手順（見積りの式・承認額の入れ方・起動と停止・確かめ方）は #1219 のコメントにある。
+      # #1219: オーナー承認（2026-10-13）の値を入れた（12 銘柄・2026-09-15〜2026-10-09・多数決 1 回・実測トークン量）。
+      # 窓は承認時の 2026-07-01 起点から、オーナーの裁定（2026-10-13）で 2026-09-15 起点へ縮めた（〜09-14 は当時の
+      # 監視銘柄と確定日報が無く、as-of 入力を再構成できないため）。
+      # as-of 入力の基底の供給は実装済みである（#1308 / IADR-0528。上の「as-of 入力の基底の配線」の節）。
+      # 🔴 **Enabled は false で置く（承認値は入れてあるが、記録は走らない）。** 有効化は PoC が手順に沿って行う。
+      #    Enabled=true の版を配備すると、その起動で記録が走り承認額の範囲で LLM を呼ぶ。記録器は trade-decision の
+      #    起動ごとに走る（Hosted/Stage0RecordingService）。
+      # 🔴 #1342, IADR-0537: 再起動しても二重には課金しない。永続ボリューム（上の stage0Recording.persistence）に
+      #    完了の印・途中の記録・費用の累計を置き、同じ承認値の組（期間・銘柄・承認額・承認回数・モデル・トークン量）は
+      #    - 完了していれば LLM を呼ばずに終える（AlreadyFinished）。書き出さない（記録を上書きしない）。
+      #    - 途中で落ちていれば、記録済みの判断時点を飛ばして途中から再開する。
+      #    - 費用の累計が承認額に届く見込みなら、呼ぶ前に止める（StoppedOverBudget）。
+      #    - 止まった実行の記録が 0 件なら書き出さない。書き出し先は件数が減る上書きを拒む（課金済みの記録を守る）。
+      #    同じ組でもう一度記録するには、records.json を退避してから、PVC の state/ の下の印（runs/）と台帳（ledger/）を
+      #    人が消す（chart README の手順）。
+      # 🔴 **順序: ① 少額の通し試験 → ② 結果の確認 → ③ この承認値の組で true → ④ 取り出したら false へ戻す。**
+      #    ① は AAPL 1 銘柄 × 2026-09-15〜09-19（火〜金の平日 4 日・見積り 7.6716336 円＝7.67）へ縮めた組で、その見積りを承認値に写して回す。
+      #    ② は記録の件数・一次と本判断の実効モデル・費用計上（purpose=stage0-recording）を見る。
+      #    ④ では ApprovedEstimateJpy（trade-decision）も空へ戻す（#1219 の手順 4）。
+      # int / bool の欄は "" にしない（コードの既定と同じ値を書く）。空を許すのは文字列と承認値（null＝未承認）だけ。
+      - { name: Stage0Recording__Enabled, value: "false" }  # PoC が上の順序で一度だけ true にする
+      - { name: Stage0Recording__From, value: "2026-09-15" }  # 裁定（2026-10-13）。カットオフ 2026-06-30 より後であること
+      - { name: Stage0Recording__To, value: "2026-10-09" }    # 承認された窓の終端（平日 19 日）
+      # 記録の対象銘柄（2026-10-12 のウォッチリスト 12 銘柄・承認どおり）。backtest の Backtest__Stage0__Symbols と
+      # 同じ集合にする（ずれると RecordingMismatch）。
+      - { name: Stage0Recording__Symbols__0__Symbol, value: "TSLA" }
+      - { name: Stage0Recording__Symbols__0__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__1__Symbol, value: "META" }
+      - { name: Stage0Recording__Symbols__1__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__2__Symbol, value: "GOOGL" }
+      - { name: Stage0Recording__Symbols__2__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__3__Symbol, value: "AMZN" }
+      - { name: Stage0Recording__Symbols__3__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__4__Symbol, value: "AAPL" }
+      - { name: Stage0Recording__Symbols__4__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__5__Symbol, value: "SMCI" }
+      - { name: Stage0Recording__Symbols__5__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__6__Symbol, value: "PLTR" }
+      - { name: Stage0Recording__Symbols__6__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__7__Symbol, value: "NVDA" }
+      - { name: Stage0Recording__Symbols__7__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__8__Symbol, value: "COIN" }
+      - { name: Stage0Recording__Symbols__8__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__9__Symbol, value: "MSTR" }
+      - { name: Stage0Recording__Symbols__9__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__10__Symbol, value: "MARA" }
+      - { name: Stage0Recording__Symbols__10__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__11__Symbol, value: "MSFT" }
+      - { name: Stage0Recording__Symbols__11__Market, value: "UnitedStates" }
+      # 本判断の層のモデル（ADR-0011 のピン・ADR-0064 決定1）。空だと見積りが未知モデルの単価で引かれ過大になる。
+      # 一次の層（Stage0Recording__ScreeningModel）は書かない＝割当表の一次のピン（claude-haiku-5-5）で見積る（本番と同じ扱い）。
+      - { name: Stage0Recording__Model, value: "claude-sonnet-5-5" }
+      - { name: Stage0Recording__VoteCount, value: "1" }  # 多数決回数（ADR-0033 決定4）。承認回数と同時に決める
+      - { name: Stage0Recording__ApprovedVoteCount, value: "1" }  # 空＝未承認。VoteCount と同じ値（承認 2026-10-13）
+      # 1 判断あたりのトークン量（2026-10-12 の米国セッションの実測・1 回あたり。#1219 のコメント）。
+      - { name: Stage0Recording__InputTokensPerDecision, value: "3478" }            # 本判断（purpose=trade-decision）の入力
+      - { name: Stage0Recording__OutputTokensPerDecision, value: "425" }            # 同 出力
+      - { name: Stage0Recording__ScreeningInputTokensPerDecision, value: "2269" }   # 一次（purpose=trade-decision-screening）の入力
+      - { name: Stage0Recording__ScreeningOutputTokensPerDecision, value: "582" }   # 同 出力
+      # 記録の書き出し先（コンテナ内のパス）。空＝書き出さない＝実行しない。
+      # #1342, IADR-0537: 永続ボリューム（stage0Recording.persistence.mountPath）の下。Pod を再起動しても消えない。
+      # backtest へは従来どおり kubectl cp で取り出して渡す。mountPath の外を指すと描画で止まる。
+      - { name: Stage0Recording__OutputPath, value: "/var/lib/ai-stock-trading/stage0/records.json" }
       - { name: LlmGateway__TimeoutSeconds, value: "" }
       # 安全既定 "" ＝判断の要求/応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       # プロンプトレベルの検証時のみ "true" へ（README 参照）。
@@ -411,8 +542,10 @@ services:
       #   global 単一ペアでは実態と乖離する（従来の opus 基準は trade-decision で約 2.5 倍の過大計上だった）。
       #   単価は**応答が名乗った実効モデル**（CompletionApiResponse.Model）で引く。要求側の
       #   希望モデルではない（ゲートウェイは越境ルーティング〈ADR-0010〉で別モデルへ着地し得る）。
-      # fail-safe（IADR-0122 決定3・**「安全側 = 0」ではない**）:
-      #   表に無いモデル・モデル名なし → **表の最大単価**（現行 fable-5）。0 に倒すと上限が構造的に効かなくなる。
+      # fail-safe（IADR-0122 決定3・**「安全側 = 0」ではない**。#1305 / IADR-0553 で改めた）:
+      #   表に無いモデル・モデル名なし → **未知モデルの計上単価**（LlmPricing__UnknownModel__*・既定 $10 / $50）。
+      #   表の行から導かないので、行を足し外ししても変わらない。0 に倒すと上限が構造的に効かなくなる。
+      #   解析できない・0 以下の値は既定値で計上し、起動時に WARNING を出す。
       #   表が空 → 従来キー LlmPricing__InputPer1kTokens/__OutputPer1kTokens（未設定 0）。
       #   本番 values.yaml は**表を持たない**（設計。IADR-0114 決定6 / IADR-0122 決定4 / IADR-0296。#243 で
       #   「移植」を試みたが helm.yml の既定描画ゲートが止め、経路B 限定を維持した）。本番で LLM を有効にするときは
@@ -421,8 +554,10 @@ services:
       #   （#1197 / IADR-0499。0 円計上で月次上限が黙って無効になる経路を塞ぐ）。
       #
       # 出典・前提（2026-07 時点・**恒久値ではない**）:
-      #   Anthropic 公開単価（$/1M トークン・入力/出力）: fable-5 = 10/50、opus-5 / opus-4-8 = 5/25、
-      #     sonnet-5 = 2/10、haiku-4-5 = 1/5
+      #   #1305 / IADR-0553: fable-5（禁止モデル・10/50）の行は撤去した。上限値は専用の設定値「未知モデルの計上単価」
+      #     （既定 10/50 ＝ 1.637 / 8.186 円/1k）が担う（計画 ADR-0064 決定 9）。
+      #   #1296: 旧世代（opus-5 / opus-4-8 = 5/25、sonnet-5 = 2/10、haiku-4-5 = 1/5）の行は撤去した（5.5 系だけを受け付ける。
+      #     旧 ID の応答は表に無いモデルとして未知モデルの計上単価で多めに計上される）。
       #   #1295, IADR-0524（確認日 2026-10-10・planning#783）: opus-5-5 = 4/20、sonnet-5-5 = 2/10、
       #     haiku-5-5 = **プロンプト長で 2 段**（入力 100,000 トークン以下 0.10/0.50・超 0.50/2.50。キャッシュ読み書きを含む
       #     入力トークンの合計で要求ごとに決まる）。第 2 段は LongContextThresholdTokens / LongContextInputPer1kTokens /
@@ -444,8 +579,10 @@ services:
       #   渡さない。ハイフン形のままだと Pod 定義には在るのに dotnet へ 0 件しか届かず、表が空＝全呼び出し ¥0 計上に
       #   なっていた（稼働実測 2026-09-17: Pod env 10 件 → /proc/1/environ 0 件）。LlmPriceTable は `-` と `_` を
       #   同一視して応答の実効モデル名（claude-sonnet-5-5）と照合する。helm.yml が描画後の全 env 名を識別子形で検査する。
-      - { name: LlmPricing__PerModel__claude_fable_5__InputPer1kTokens, value: "1.637" }    # $10/1M（fail-safe 上限値・用途未割当）
-      - { name: LlmPricing__PerModel__claude_fable_5__OutputPer1kTokens, value: "8.186" }   # $50/1M
+      # NFR-13, ADR-0064 決定 9, #1305, IADR-0553: 表に無いモデル（旧 ID・禁止モデル・モデル名なし）の計上単価。単価表の行ではない
+      #   （どのモデル名にも結びつけない）。既定と同じ $10 / $50 を明示する。旧 `claude_fable_5` の行（上限値）はこの 2 行へ置き換えた。
+      - { name: LlmPricing__UnknownModel__InputPer1kTokens, value: "1.637" }    # $10/1M（未知モデルの計上単価）
+      - { name: LlmPricing__UnknownModel__OutputPer1kTokens, value: "8.186" }   # $50/1M
       # #1295, IADR-0524: 5.5 系（利用者裁定 2026-10-10・planning#783。提供元の公表値 確認日 2026-10-10）。
       - { name: LlmPricing__PerModel__claude_opus_5_5__InputPer1kTokens, value: "0.655" }   # $4/1M（report-monthly・report-weekly）
       - { name: LlmPricing__PerModel__claude_opus_5_5__OutputPer1kTokens, value: "3.274" }  # $20/1M
@@ -456,15 +593,6 @@ services:
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextThresholdTokens, value: "100000" }   # 入力がこれを超える要求は第 2 段
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextInputPer1kTokens, value: "0.0819" }  # $0.50/1M（100,000 トークン超）
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextOutputPer1kTokens, value: "0.409" }  # $2.50/1M
-      # 🔴 移行期間のみ（#1295・撤去は #1296）: MSP ゲートウェイの切り替え前は応答が直前世代を名乗るため、旧世代の行を残す。
-      - { name: LlmPricing__PerModel__claude_opus_5__InputPer1kTokens, value: "0.819" }     # $5/1M（旧 report-monthly・report-weekly）
-      - { name: LlmPricing__PerModel__claude_opus_5__OutputPer1kTokens, value: "4.093" }    # $25/1M
-      - { name: LlmPricing__PerModel__claude_opus_4_8__InputPer1kTokens, value: "0.819" }   # $5/1M（ADR-0011 の固定先）
-      - { name: LlmPricing__PerModel__claude_opus_4_8__OutputPer1kTokens, value: "4.093" }  # $25/1M
-      - { name: LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens, value: "0.327" }   # $2/1M（旧 trade-decision・report-daily）
-      - { name: LlmPricing__PerModel__claude_sonnet_5__OutputPer1kTokens, value: "1.637" }  # $10/1M（恒久化確認済み 2026-08-28・#243）
-      - { name: LlmPricing__PerModel__claude_haiku_4_5__InputPer1kTokens, value: "0.164" }  # $1/1M（旧 trade-decision-screening）
-      - { name: LlmPricing__PerModel__claude_haiku_4_5__OutputPer1kTokens, value: "0.819" } # $5/1M
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret
@@ -527,10 +655,18 @@ services:
   # したがって `BacktestPassed` は false のままで、Stage 0→1 の昇格は従来どおり止まる。**開けるのは経路であって門ではない。**
   backtest:
     extraEnv:
-      # 🔴 **過去データ源は空のまま**（本番既定と同値の写し）。ADR-0023 決定5 の「実装側で確認を要する 2 点」
-      # （取得枠の単位と回復周期／前復権と ADR-0016 決定14 の費用モデルの整合）が実 OpenD 待ちで未了であり、
-      # docs/blocked-tasks.md A-3 に残る。**確認が済むまで moomoo を入れない**（Stooq は ADR-0023 決定1 により取得不能）。
-      - { name: Backtest__BarData__Provider, value: "" }
+      # ［2026-10-13 / #1308・IADR-0528 決定8］過去データ源は発注執行の日足の照会（order-execution）。
+      # 利用者裁定 2026-10-13（#1219 のコメント）: Stage 0 では前復権と費用モデルの不整合を受け入れ、足は発注執行の /daily-bars 経由で取る
+      # （backtest の Pod に OpenD は配線しない）。ADR-0023 決定5 の確認 2 点（回復周期・借株料）は未了のまま、Stage 0 に限って受け入れた
+      # （逸脱の受容は IADR-0528）。本番の values.yaml は空（none）のまま。発注執行が moomoo 構成でないと broker-not-supported で欠測になる。
+      # 旧: 「過去データ源は空のまま（確認が済むまで moomoo を入れない）」。moomoo（直結）は今も入れない。
+      - { name: Backtest__BarData__Provider, value: "order-execution" }
+      - { name: Backtest__BarData__OrderExecution__BaseUrl, value: "http://order-execution-service:8080" }
+      # 照会口は OwnerOrService。サービスの資格（trading-service）で呼ぶ（token エンドポイントは template が導出する）。
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
       # ← 経路B で有効化（本番既定は "false"）。日次 1 巡回で verdict を publish する。
       - { name: Backtest__Stage0__Enabled, value: "true" }
       # 本番既定と同値の写し（ADR-0037 決定2 の写し方で 5.5 系の割当〈Jun 2026〉を月末へ写した学習カットオフ日。#1295）。
@@ -541,9 +677,43 @@ services:
       - { name: Backtest__Stage0__Strategy, value: "recorded-replay" }
       # 記録集合（JSON）のパス。**空＝記録なし**（ファイルも読まない）。値を入れるのは記録の取得後である。
       - { name: Backtest__Stage0__Recording__Path, value: "" }
-      # 評価銘柄（経路B は AAPL 1 銘柄。市場は Market 列挙名でバインドされる）。空なら取得対象が無い。
-      - { name: Backtest__Stage0__Symbols__0__Symbol, value: "AAPL" }
+      # #1219: 評価の窓は [終端 − LookbackDays, 終端]（終端は下の EvaluationEnd。空なら今日）。記録はこの窓を覆い
+      # （記録の From ≤ 窓の起点・記録の To ≥ 終端）、窓の起点はカットオフ（2026-06-30）より後でなければならない（DataCutoff）。
+      # 記録の窓 2026-09-15〜2026-10-09（利用者裁定 2026-10-13）に合わせ、終端 2026-10-09 − 24 日 ＝ 2026-09-15 とする。
+      - { name: Backtest__Stage0__LookbackDays, value: "24" }
+      # 巡回間隔（秒・60 未満は 60）。記録を Pod へ差し込んだ後の評価を待つ時間。既定 86,400（コードの既定と同じ）。
+      - { name: Backtest__Stage0__IntervalSeconds, value: "86400" }
+      # #1308, IADR-0528 決定9: 評価の窓の終端を固定する日（YYYY-MM-DD）。空＝今日（コードの既定と同じ）。
+      # #1219: 記録の To（利用者裁定 2026-10-13 の窓は 2026-10-09 まで）に揃える。空（今日）のままだと、
+      # 2026-10-10 以降のどの評価も「記録の To < 窓の終端」で RecordingMismatch になる。
+      - { name: Backtest__Stage0__EvaluationEnd, value: "2026-10-09" }
+      # 評価銘柄（市場は Market 列挙名でバインドされる）。空なら取得対象が無い。
+      # #1219: 記録の対象銘柄（trade-decision の Stage0Recording__Symbols）と同じ 12 銘柄。再生は集合の一致を
+      # 要求する（Stage0ReplayEvaluation.SameSymbols。ずれると RecordingMismatch）。
+      - { name: Backtest__Stage0__Symbols__0__Symbol, value: "TSLA" }
       - { name: Backtest__Stage0__Symbols__0__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__1__Symbol, value: "META" }
+      - { name: Backtest__Stage0__Symbols__1__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__2__Symbol, value: "GOOGL" }
+      - { name: Backtest__Stage0__Symbols__2__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__3__Symbol, value: "AMZN" }
+      - { name: Backtest__Stage0__Symbols__3__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__4__Symbol, value: "AAPL" }
+      - { name: Backtest__Stage0__Symbols__4__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__5__Symbol, value: "SMCI" }
+      - { name: Backtest__Stage0__Symbols__5__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__6__Symbol, value: "PLTR" }
+      - { name: Backtest__Stage0__Symbols__6__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__7__Symbol, value: "NVDA" }
+      - { name: Backtest__Stage0__Symbols__7__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__8__Symbol, value: "COIN" }
+      - { name: Backtest__Stage0__Symbols__8__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__9__Symbol, value: "MSTR" }
+      - { name: Backtest__Stage0__Symbols__9__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__10__Symbol, value: "MARA" }
+      - { name: Backtest__Stage0__Symbols__10__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__11__Symbol, value: "MSFT" }
+      - { name: Backtest__Stage0__Symbols__11__Market, value: "UnitedStates" }
 
   notification:
     extraEnv:

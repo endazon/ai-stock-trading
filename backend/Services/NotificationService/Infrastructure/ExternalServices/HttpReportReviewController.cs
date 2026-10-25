@@ -17,9 +17,13 @@ namespace NotificationService.Infrastructure.ExternalServices;
 // トークン無し＝401 となり操作は失敗する（安全側）。
 //
 // 失敗時の方針: 握り潰さない。**「確定したつもりで確定していない」状態を作らない**（kill switch と同じ）。
+//
+// FR-07, FR-14, #1385, IADR-0556 決定 2: **確定だけは専用のクライアント**（名前付き `report-confirm`・既定 30 秒）で呼ぶ。確定は KB の後処理を
+// 含み（報告書サービス側の時間予算・既定 20 秒）、照会・差し戻し・一覧の 5 秒では内側より短い（外側＜内側）。未指定は共用のクライアント（試験の既定）。
 public sealed class HttpReportReviewController(
     HttpClient httpClient,
-    ILogger<HttpReportReviewController> logger)
+    ILogger<HttpReportReviewController> logger,
+    HttpClient? confirmHttpClient = null)
     : IReportReviewController
 {
     public async Task<ReportReviewResult> GetReviewAsync(
@@ -47,7 +51,9 @@ public sealed class HttpReportReviewController(
                 return new ReportReviewResult(false, 0, "レビュー局面の応答を解釈できませんでした");
             }
 
-            return ReviewResult(periodKey, view.Version, view.UnsuppliedInputs, logger);
+            return ReviewResult(
+                periodKey, view.Version, view.UnsuppliedInputs, logger, view.ConfirmedVersion, view.NoLongerEffective == true,
+                view.LatestConfirmedVersion);
         }
         catch (Exception ex) when (Handled(ex, cancellationToken))
         {
@@ -57,7 +63,8 @@ public sealed class HttpReportReviewController(
 
     // NFR, IADR-0449 決定 4, #753（段 5）: 読めたレビュー局面 → 結果。gRPC 実装（GrpcReportReviewController）と共有する。
     internal static ReportReviewResult ReviewResult(
-        string periodKey, int version, IReadOnlyList<string?>? unsuppliedInputs, ILogger logger)
+        string periodKey, int version, IReadOnlyList<string?>? unsuppliedInputs, ILogger logger,
+        int? confirmedVersion = null, bool noLongerEffective = false, int? latestConfirmedVersion = null)
     {
         // FR-07, FR-14, #840, IADR-0352 決定 5: 入力が未供給のまま生成された報告書なら、**確定の前に**それを見せる。
         // 本メッセージは `/report show` と、版番号なしの `/report approve`（確認ボタンの前段）の両方に出る。
@@ -70,7 +77,15 @@ public sealed class HttpReportReviewController(
             message += $"\n{notice}";
         }
 
-        return new ReportReviewResult(true, version, message);
+        // FR-07, ADR-0068 決定1, #1373, IADR-0549 決定3: 確定済みの日報に版を足したドラフト（版 n+1）なら、効いている版と確定の可否を見せる。
+        if (confirmedVersion is { } confirmed)
+        {
+            message += noLongerEffective
+                ? $"\n⚠ 確定済みの版 {confirmed} に版を足したドラフトですが、より新しい日付の日報が確定したため、この版は確定できません（記録として残ります）。"
+                : $"\n確定済みの版 {confirmed} に版を足したドラフトです。確定するまでは版 {confirmed} の方針が効き続けます。";
+        }
+
+        return new ReportReviewResult(true, version, message, latestConfirmedVersion);
     }
 
     // FR-07, ADR-0003, 詳細設計07 §二重実行防止: 版番号付き冪等の確定。
@@ -88,7 +103,7 @@ public sealed class HttpReportReviewController(
 
         try
         {
-            using var response = await httpClient
+            using var response = await (confirmHttpClient ?? httpClient)
                 .PostAsJsonAsync(
                     $"/reports/{periodKey}/confirm", new ConfirmRequest(expectedVersion, onBehalfOf), cancellationToken)
                 .ConfigureAwait(false);
@@ -128,7 +143,9 @@ public sealed class HttpReportReviewController(
         }
         catch (Exception ex) when (Handled(ex, cancellationToken))
         {
-            return new ReportConfirmResult(false, false, ExceptionMessage("報告書の確定", ex, cancellationToken, write: true));
+            // #1385, IADR-0556 決定 3: 時間切れは「確定されたか分からない」の印をつけて返す（呼び出し側が照会して確かめる）。
+            return new ReportConfirmResult(
+                false, false, ExceptionMessage("報告書の確定", ex, cancellationToken, write: true), OutcomeUnknown: IsTimeout(ex, cancellationToken));
         }
     }
 
@@ -316,6 +333,10 @@ public sealed class HttpReportReviewController(
     internal static string TimedOutMessage(string operation, bool write) =>
         write ? $"{operation}がタイムアウトしました（結果は不明です）" : $"{operation}がタイムアウトしました";
 
+    // HttpClient の時間切れ（呼び出し側の取り消しではない OperationCanceledException）。
+    private static bool IsTimeout(Exception ex, CancellationToken cancellationToken) =>
+        ex is OperationCanceledException && !cancellationToken.IsCancellationRequested;
+
     // 呼び出し側のキャンセルだけは伝播させる（タイムアウトは HttpClient 由来の OperationCanceledException）。
     private static bool Handled(Exception ex, CancellationToken cancellationToken) =>
         ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested;
@@ -325,7 +346,11 @@ public sealed class HttpReportReviewController(
     //
     // #840, IADR-0352 決定 5: UnsuppliedInputs は報告書サービスの**コード定数の表示名**（本文・要約ではない＝
     // IADR-0240 決定4 に反しない）。欠落（旧版の報告書サービス）は null＝警告なし＝従来どおり。
-    private sealed record ReviewView(int Version, IReadOnlyList<string?>? UnsuppliedInputs = null);
+    // FR-07, ADR-0068 決定1, #1373, IADR-0549 決定3: ConfirmedVersion・NoLongerEffective は版 n+1 のドラフトの表示（欠落＝旧版・版 n+1 ではない）。
+    // FR-07, FR-14, #1385, IADR-0556 決定 3: LatestConfirmedVersion は最新の確定版の版番号（欠落＝確定版が無い・旧版）。
+    private sealed record ReviewView(
+        int Version, IReadOnlyList<string?>? UnsuppliedInputs = null, int? ConfirmedVersion = null, bool? NoLongerEffective = null,
+        int? LatestConfirmedVersion = null);
 
     // 報告書サービス側 ConfirmReportRequest / ReviewCommandRequest と同形（版番号付き）。
     // OnBehalfOf は #774 で末尾に追加（旧版の報告書サービスは未知のプロパティとして読み飛ばす）。

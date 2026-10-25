@@ -76,7 +76,7 @@ public static class ReportKnowledgeMapper
     /// 露出のキーが落ちて検索に出る。本変更は PATCH を使わない（本文の差し替えだけ）。
     /// </para>
     /// </summary>
-    public static Dictionary<string, string> DraftAttributesOf(ReportKind kind, string periodKey)
+    public static Dictionary<string, string> DraftAttributesOf(ReportKind kind, string periodKey, bool expired = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(periodKey);
 
@@ -88,6 +88,9 @@ public static class ReportKnowledgeMapper
         };
         foreach (var key in KnowledgeExposureAttributes.Keys)
             attributes[key] = KnowledgeExposureAttributes.Excluded;
+        // ADR-0068 決定6, #1373, IADR-0549 決定5: 失効した版 n+1 のドラフト（reportState は draft のまま）。
+        if (expired)
+            attributes[KnowledgeReportDraftCopy.DraftStatusKey] = KnowledgeReportDraftCopy.ExpiredDraftStatus;
         return attributes;
     }
 
@@ -95,12 +98,16 @@ public static class ReportKnowledgeMapper
     /// ドラフトの写しの本文。先頭に「承認待ち・版・確定で置き換わる」を書く（基盤の表題は変えられないので、版は本文が運ぶ）。
     /// 本文が空（月報の初回のブートストラップ・手動の PUT）なら方針を載せる。
     /// </summary>
-    public static string DraftBodyOf(TradingReport report, int version)
+    public static string DraftBodyOf(TradingReport report, int version, bool expired = false)
     {
         ArgumentNullException.ThrowIfNull(report);
 
-        var header = $"> 承認待ちの報告書（ドラフト・版 {version.ToString(CultureInfo.InvariantCulture)}）。"
-            + "確定前の本文であり、検索・取引判断には使われない。確定すると確定版に置き換わる。";
+        var header = expired
+            // ADR-0068 決定6, #1373, IADR-0549 決定5: 効いている日報が移ったため確定できない版 n+1 のドラフト（記録として残す）。
+            ? $"> 失効した報告書のドラフト（版 {version.ToString(CultureInfo.InvariantCulture)}）。"
+                + "より新しい日付の日報が確定して効いている日報が移ったため、この版は確定できない。記録として残す（検索・取引判断には使われない）。"
+            : $"> 承認待ちの報告書（ドラフト・版 {version.ToString(CultureInfo.InvariantCulture)}）。"
+                + "確定前の本文であり、検索・取引判断には使われない。確定すると確定版に置き換わる。";
 
         string content;
         if (!string.IsNullOrEmpty(report.Body))
@@ -113,19 +120,19 @@ public static class ReportKnowledgeMapper
         return $"{header}\n\n{content}";
     }
 
-    public static KnowledgeDocument ToDraftDocument(TradingReport report, int version)
+    public static KnowledgeDocument ToDraftDocument(TradingReport report, int version, bool expired = false)
     {
         ArgumentNullException.ThrowIfNull(report);
 
         return new KnowledgeDocument(
             Title: DraftTitleOf(report.Kind, report.PeriodKey),
-            Content: DraftBodyOf(report, version),
+            Content: DraftBodyOf(report, version, expired),
             Confidentiality: KnowledgeConfidentiality.Internal,
             // タグは確定版と同じ登録済みの語彙だけ（基盤のタグ辞書は未登録のタグを 400 で拒否する）。
             Tags: ["report", report.Kind.ToString().ToLowerInvariant()],
             SourceUri: null,
             ContentType: "text/markdown",
-            Attributes: DraftAttributesOf(report.Kind, report.PeriodKey));
+            Attributes: DraftAttributesOf(report.Kind, report.PeriodKey, expired));
     }
 
     /// <summary>
@@ -145,6 +152,12 @@ public static class ReportKnowledgeMapper
             && string.Equals(state, KnowledgeReportDraftCopy.DraftState, StringComparison.Ordinal)
             && KnowledgeReportDraftCopy.IsDraftTitle(entry.Title);
     }
+
+    /// <summary>ADR-0068 決定6, IADR-0549 決定5: 失効の印（reportDraftStatus=expired）を持つドラフトの写しか。</summary>
+    public static bool IsExpiredDraftCopy(KnowledgeCatalogEntry entry) =>
+        IsDraftCopy(entry)
+        && entry.Attributes.TryGetValue(KnowledgeReportDraftCopy.DraftStatusKey, out var status)
+        && string.Equals(status, KnowledgeReportDraftCopy.ExpiredDraftStatus, StringComparison.Ordinal);
 
     /// <summary>この報告書（期間キー・種別）の、AST が作ったドラフトの写しか（project=ai-stock-trading を持つものだけ）。</summary>
     public static bool IsDraftCopyOf(KnowledgeCatalogEntry entry, ReportKind kind, string periodKey) =>

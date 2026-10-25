@@ -19,6 +19,15 @@
 {{- fail (printf "未知の broker.tier %q。'paper'（内蔵擬似）または 'moomoo-sim'（OpenD 経由 SIMULATE）を指定してください（IADR-0111）。" $tier) -}}
 {{- end -}}
 {{- $broker := get $brokerTiers $tier -}}
+{{- /* NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: ブローカへはサービスごとのユーザー（<usernamePrefix><サービス名>）で接続する。
+       旧キー global.rabbitmqConnectionString（全サービス共通の 1 組・資格情報を値に含む）は廃止し、与えられたら止める。 */ -}}
+{{- if $g.rabbitmqConnectionString -}}
+{{- fail "global.rabbitmqConnectionString は廃止しました。ブローカへはサービスごとのユーザーで接続します（global.rabbitmq.* と Secret global.rabbitmq.credentialsSecretName。IADR-0568）。" -}}
+{{- end -}}
+{{- $mq := $g.rabbitmq | default dict -}}
+{{- if or (not $mq.host) (not $mq.port) (not $mq.credentialsSecretName) (not $mq.usernamePrefix) -}}
+{{- fail "global.rabbitmq.host / port / credentialsSecretName / usernamePrefix が要ります（ブローカのサービスごとの資格情報。IADR-0568）。" -}}
+{{- end -}}
 {{- range $name, $svc := .Values.services }}
 {{- /* FR-09/14, #245, IADR-0102: Discord Bot の環境固有 ID（非機密）を values（discord.bot.*）から与える設定点。
        env を**追加**せず extraEnv の**値を上書き**する（同名 env の二重定義を作らない）。空既定では 1 つも
@@ -81,6 +90,30 @@
 {{- range $e := $svc.extraEnv }}{{- if $e.secretKeyRef }}{{- $reloadSecrets = append $reloadSecrets $e.secretKeyRef.name -}}{{- end }}{{- end -}}
 {{- if $envSecretRefs }}{{- $reloadSecrets = append $reloadSecrets $es.appSecrets.targetName -}}{{- end -}}
 {{- if and (eq $name "order-execution") (eq $broker.provider "moomoo") }}{{- $reloadSecrets = append $reloadSecrets $.Values.moomoo.opend.rsaSecretName -}}{{- end }}
+{{- /* IADR-0568: ブローカの資格情報を回したら（基盤の reconcile-users.sh が合わせた後に ESO が同期）、作り直して新しい値で接続する。 */ -}}
+{{- $reloadSecrets = append $reloadSecrets $mq.credentialsSecretName -}}
+{{- /* FR-15, NFR（費用）, ADR-0033 決定5, #1342, IADR-0537 決定5: Stage 0 の記録器の永続ボリューム（trade-decision だけ）。
+       有効なら PVC（templates/pvc-stage0-recording.yaml）を mount し、状態の置き場 Stage0Recording__StateDirectory を
+       <mountPath>/state として注入し、更新方式を Recreate にする。既定（無効）では何も描かない＝既定描画はバイト等価。
+       🔴 状態の置き場は描画が単独で持つ（extraEnv に書けば止める。/tmp などの揮発領域へ向けられる抜け道を作らない）。
+       🔴 書き出し先（extraEnv の Stage0Recording__OutputPath）が mount の外なら止める（記録が再起動で消える）。 */ -}}
+{{- $s0 := (($.Values.stage0Recording | default dict).persistence) | default dict -}}
+{{- $stage0Persist := and (eq $name "trade-decision") $s0.enabled -}}
+{{- range $e := $svc.extraEnv }}
+{{- if eq ($e.name | toString) "Stage0Recording__StateDirectory" }}
+{{- fail (printf "services.%s の extraEnv に Stage0Recording__StateDirectory は書けません。状態の置き場は stage0Recording.persistence.enabled=true で描画が注入します（永続ボリュームの外へ向けない。#1342 / IADR-0537）。" $name) }}
+{{- end }}
+{{- end }}
+{{- if $stage0Persist }}
+{{- if not (hasPrefix "/" ($s0.mountPath | default "" | toString)) }}
+{{- fail "stage0Recording.persistence.mountPath は絶対パスで指定してください（#1342 / IADR-0537）。" }}
+{{- end }}
+{{- with (index $baseUrls "Stage0Recording__OutputPath") }}
+{{- if not (hasPrefix (printf "%s/" (trimSuffix "/" $s0.mountPath)) .) }}
+{{- fail (printf "services.trade-decision の Stage0Recording__OutputPath=%q は stage0Recording.persistence.mountPath（%s）の外です。記録が Pod の再起動で消えるため、mount の下を指してください（#1342 / IADR-0537）。" . $s0.mountPath) }}
+{{- end }}
+{{- end }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -98,6 +131,11 @@ metadata:
   {{- end }}
 spec:
   replicas: 1
+  {{- if $stage0Persist }}
+  {{- /* #1342, IADR-0537: 入れ替えで旧 Pod と新 Pod の記録器が同じ状態を同時に進めない（ReadWriteOnce の PVC も Recreate が要る）。 */}}
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       app: {{ $name }}-service
@@ -168,9 +206,16 @@ spec:
                    ［2026-09-17 追記 / #811］上の「512Mi の内側で止める」「472Mi 頭打ち」の読みは #808 で誤りと判明した。
                    保持されていたのは GC ヒープの外（Wolverine の実行時 Roslyn コンパイルの作業メモリ）で、新しい型の
                    メッセージが来なくなって止まって見えただけである（GC ヒープ側は audit で ≈64Mi）。是正は #811（PR #814。
-                   codegen write＋TypeLoadMode.Static）。本 env は GC ヒープの上限として無害なので据え置く。 */}}
+                   codegen write＋TypeLoadMode.Static）。本 env は GC ヒープの上限として無害なので据え置く。
+                   ［2026-10-14 追記 / #1348］上の「ヒープ上限を limit の 60%（≈307Mi）に固定し」は #782 から本追記まで
+                   事実でなかった。値を "60" と書いていたため 0x60＝96%（≈491Mi）として効いていた。本追記で "0x3C" に直した。 */}}
+            {{- /* NFR, ADR-0006, #1348: .NET は GC 設定の環境変数の値を**16 進数として読む**（"0x3C" も "3C" も 0x3C）。
+                   出典: Microsoft Learn「Garbage collector config settings」の「Ways to specify the configuration」の表
+                   （https://learn.microsoft.com/en-us/dotnet/core/runtime-config/garbage-collector。GCHeapHardLimitPercent は
+                   hexadecimal value・例は 30% → 0x1E）。60% は "0x3C"。10 進数で "60" と書くと 96% になる。
+                   10 以上の値は必ず 0x を付けて書く（helm.yml の fail-safe 検査が 16 進数で読んで 60 であることを固定する）。 */}}
             - name: DOTNET_GCHeapHardLimitPercent
-              value: "60"
+              value: "0x3C"
             {{- /* NFR-01, ADR-0006, IADR-0129 決定 6 追記, #808: 3 つの GC 設定を入れても audit-service は 10 分で RSS 476Mi
                    → OOMKilled（実測）。伸びているのは GC ヒープ（実測 ≈64Mi）ではなく glibc malloc の per-thread アリーナで、
                    Wolverine がメッセージ型ごとに 1 通目の受信時に Roslyn でハンドラをコンパイルするたび（別スレッド＝別
@@ -211,8 +256,16 @@ spec:
             - name: Grpc__Port
               value: {{ $svc.grpcPort | quote }}
             {{- end }}
+            {{- /* NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: サービスごとのユーザーで接続する。パスワードは Secret（キー = ユーザー名）から
+                   RABBITMQ_PASSWORD として入れ、接続文字列は k8s の $(VAR) 補間で組む（env の値に平文を描かない。基盤の chart と同じ形）。
+                   🔴 optional にしない: 値が無いまま既定のユーザーへ戻る経路を作らない（新しい Pod が起動せず、旧 Pod が残る）。 */}}
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $mq.credentialsSecretName }}
+                  key: {{ printf "%s%s" $mq.usernamePrefix $name }}
             - name: RabbitMq__ConnectionString
-              value: {{ $g.rabbitmqConnectionString | quote }}
+              value: {{ printf "amqp://%s%s:$(RABBITMQ_PASSWORD)@%s:%v" $mq.usernamePrefix $name $mq.host $mq.port | quote }}
             - name: Otlp__Endpoint
               value: {{ $g.otlpEndpoint | quote }}
             {{- /* ADR-0001, IADR-0077, #22: 宣言的バインディング（pipeline.json）のマウント先。
@@ -267,7 +320,7 @@ spec:
               value: {{ index $envOverrides $e.name | default $e.value | quote }}
               {{- end }}
             {{- end }}
-            {{- /* NFR, IADR-0284 決定 5（段 1〜5）, IADR-0489, #753: east-west gRPC の呼び出し側の宣言（`<提供側>__Grpc`）。
+            {{- /* NFR, IADR-0284 決定 5（段 1〜5）, IADR-0489, IADR-0559（#1391: 発注執行を足した）, #753: east-west gRPC の呼び出し側の宣言（`<提供側>__Grpc`）。
                    services.<name>.grpcClients.<提供側> を true にしたときだけ描く。宛先は**呼び先の grpcPort から導出する**
                    （http://<呼び先>-service:<grpcPort>）。未宣言・false・null は何も描かない＝既定描画・values-local 描画は追加前とバイト等価。
                    🔴 extraEnv（配列）へ足させないのは、2 つ目の values や --set で配列を重ねると**配列ごと置き換わり**、
@@ -275,7 +328,7 @@ spec:
                    🔴 呼び先の grpcPort が無い・未知の提供側・extraEnv と同名の二重定義は描画時に止める
                       （片方だけの宣言は「切り替えたつもりで常に安全側既定へ倒れる」を作る）。
                    提供側の名前は各サービスの輸送が読む構成キー（`<提供側>:Grpc`）の節名と同じ。基盤の LlmGateway（chart の外）は対象外。 */}}
-            {{- $grpcCallees := dict "Configuration" "configuration" "RiskManagement" "risk-management" "Audit" "audit" "Reports" "report" "MarketMonitor" "market-monitor" "CostControl" "cost-control" }}
+            {{- $grpcCallees := dict "Configuration" "configuration" "RiskManagement" "risk-management" "Audit" "audit" "Reports" "report" "MarketMonitor" "market-monitor" "CostControl" "cost-control" "OrderExecution" "order-execution" }}
             {{- $extraEnvNames := dict }}
             {{- range $e := $svc.extraEnv }}{{- $_ := set $extraEnvNames $e.name true }}{{- end }}
             {{- range $provider, $on := ($svc.grpcClients | default dict) }}
@@ -313,6 +366,11 @@ spec:
             {{- if and (eq $name "information-collection") $.Values.tradingCycle.cronjob.enabled }}
             - name: Collection__Trigger
               value: "External"
+            {{- end }}
+            {{- if $stage0Persist }}
+            {{- /* #1342, IADR-0537: 記録器の状態の置き場（完了の印・途中の記録・費用の累計・ロック）。永続ボリュームの下。 */}}
+            - name: Stage0Recording__StateDirectory
+              value: {{ printf "%s/state" (trimSuffix "/" $s0.mountPath) | quote }}
             {{- end }}
             {{- /* #13, IADR-0111: 発注先。既定 paper（fail-safe・実弾なし）。broker.tier=moomoo-sim で OpenD 経由
                    SIMULATE 発注へ。cross-network trade は RSA 必須のため RsaPrivateKeyPath（マウント鍵）を注入する。 */}}
@@ -392,6 +450,11 @@ spec:
               mountPath: {{ $.Values.moomoo.opend.rsaMountPath }}
               readOnly: true
             {{- end }}
+            {{- if $stage0Persist }}
+            {{- /* #1342, IADR-0537: Stage 0 の記録の書き出し先と実行の状態（PVC trade-decision-stage0）。 */}}
+            - name: stage0-recording
+              mountPath: {{ $s0.mountPath }}
+            {{- end }}
       volumes:
         {{- /* ADR-0001, IADR-0077, #22: 宣言的バインディングの ConfigMap（configmap-pipeline.yaml）。全 Worker 共通。 */}}
         - name: pipeline-config
@@ -408,5 +471,10 @@ spec:
             items:
               - key: {{ $.Values.moomoo.opend.rsaSecretKey }}
                 path: {{ $.Values.moomoo.opend.rsaSecretKey }}
+      {{- end }}
+      {{- if $stage0Persist }}
+        - name: stage0-recording
+          persistentVolumeClaim:
+            claimName: trade-decision-stage0
       {{- end }}
 {{- end }}

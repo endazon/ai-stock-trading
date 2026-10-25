@@ -32,7 +32,9 @@ public sealed class MessageBusReportDraftPresentedNotifier(IWolverineRuntime run
                 notice.PeriodLabel,
                 notice.Summary,
                 notice.Version,
-                clock.UtcNow))
+                clock.UtcNow,
+                // ADR-0068 決定6, #1373, IADR-0549 決定6: 版を足したドラフトの印（既定 null）。
+                notice.ReconfirmingFromVersion))
             .ConfigureAwait(false);
     }
 }

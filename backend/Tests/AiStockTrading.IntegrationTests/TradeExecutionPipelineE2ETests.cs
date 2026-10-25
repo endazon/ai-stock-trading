@@ -5,8 +5,10 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 using Testcontainers.PostgreSql;
 using Testcontainers.RabbitMq;
 using Xunit;
@@ -14,6 +16,7 @@ using RiskManagementDbContext = RiskManagementWorker::RiskManagementService.Infr
 using IInformationDegradationStore = RiskManagementWorker::RiskManagementService.Features.RiskManagement.IInformationDegradationStore;
 using ICapitalBaselineStore = RiskManagementWorker::RiskManagementService.Features.RiskManagement.ICapitalBaselineStore;
 using RiskTradingDefaults = RiskManagementWorker::RiskManagementService.Domain.TradingDefaults;
+using RiskClock = RiskManagementWorker::RiskManagementService.Common.Abstractions.IClock;
 
 namespace AiStockTrading.IntegrationTests;
 
@@ -81,10 +84,26 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
         Environment.SetEnvironmentVariable("Otlp__Endpoint", "http://localhost:4317");
         Environment.SetEnvironmentVariable("Broker__Provider", "paper");
 
+        // NFR, #1429, FR-10, #1396, IADR-0561: リスク管理の審査は閉場前の締め切り（閉場の 60 分前以降）に入った新規建てを拒否する。
+        // 本試験は実時計で米国株を買うため、締め切りの窓では TradeDecisionMade が拒否されて執行まで流れない（時刻依存の赤）。
+        // 締め切りの拒否は本試験の検証対象ではないので、審査の時計だけを締め切りの外へ戻す（EntryScreeningSerializationE2ETests と同じ時計）。
         _riskFactory = new WebApplicationFactory<RiskManagementWorker::Program>()
-            .WithWebHostBuilder(b => b.UseEnvironment("IntegrationTest"));
+            .WithWebHostBuilder(b =>
+            {
+                b.UseEnvironment("IntegrationTest");
+                b.ConfigureTestServices(services =>
+                    services.AddSingleton<RiskClock>(new EntryScreeningSerializationE2ETests.OutsidePreCloseCutoffClock()));
+            });
+        // NFR, #1429, FR-10, IADR-0567: 発注執行は送る直前に取引停止状態をリスク管理へ照会する。本 fixture では照会先を構成しておらず、
+        // 未構成は「不明」＝新規建てを見送る（fail-closed）ため、照会元だけを「停止していない」と答える差し替えにする
+        // （OrderExecutionPipelineE2ETests と同じ差し替え。照会の配線は T-10-2971 が固定する）。
         _executionFactory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(b => b.UseEnvironment("IntegrationTest"));
+            .WithWebHostBuilder(b =>
+            {
+                b.UseEnvironment("IntegrationTest");
+                b.ConfigureTestServices(services =>
+                    services.AddScoped<ITradingHaltSource>(_ => new OrderExecutionPipelineE2ETests.NotHaltedSource()));
+            });
     }
 
     public async ValueTask DisposeAsync()
@@ -159,9 +178,10 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
         // 前取引日の観測を残していないため、整えなければ TradeDecisionMade は必ず拒否される（#893 の実測）。
         //
         // 上と同じく**統制を迂回しない**: DB へ行を書かず、口座照会の観測イベントを実ブローカへ発行する。
-        // 観測時刻は 2 日前——ストアは当日（米国東部の暦日）の行を判定に使わず（日中の評価損益を含むため）、
-        // 鮮度上限は既定 4 日である。1 日前（24 時間前）では、夏時間が終わる 25 時間の日の最後の 1 時間に
-        // 米国東部で同じ暦日に落ち、行が判定から外れる（#903 監査）。2 日前ならどの時刻でも前暦日かつ鮮度内。評価額は従前の既定資金（$3,000）と同額にし、下の上限計算を保つ。
+        // 観測時刻は**直前の米国東部暦日**——ストアは当日（米国東部の暦日）の行を判定に使わず（日中の評価損益を含むため）、
+        // #1423 M-3（ADR-0073 決定1）以降は直前の暦日の行が無ければ未供給である。1 日前（24 時間前）では、夏時間が終わる
+        // 25 時間の日の最後の 1 時間に米国東部で同じ暦日に落ち（#903 監査）、2 日前（48 時間前）は時刻によって 2 暦日前に落ちる。
+        // よって暦日で決める（リスク管理の試験 factory の PreviousTradingDayObservation と同じ手順）。評価額は従前の既定資金（$3,000）と同額にし、下の上限計算を保つ。
         // 同じ観測は口座種別のストアにも入るが、30 分の有効期間を過ぎているため「観測無し」と同じに扱われる
         // （#874 以前の本試験と同じ前提）。
         await WaitSubscribedAsync(RiskServiceName, typeof(BrokerAccountObserved));
@@ -170,7 +190,7 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
             new BrokerAccountObserved(
                 BrokerProvider.InternalPaper,
                 new BrokerAccountState(AccountType.Margin, EquityInBase: RiskTradingDefaults.InitialCapital),
-                DateTimeOffset.UtcNow.AddDays(-2)));
+                PreviousEasternDayObservation(DateTimeOffset.UtcNow)));
         await WaitCapitalBaselineAsync(TimeSpan.FromSeconds(30));
 
         // #364, IADR-0152 決定1/3: 既定資金（InitialCapital ＝ equity $3,000・基準通貨 USD）に対し十分小さい
@@ -307,6 +327,19 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
 
         throw new TimeoutException(
             "情報収集の現況観測がリスク管理へ適用されませんでした（新規建て停止が解けない）。");
+    }
+
+    // FR-10, #1423 M-3, ADR-0073 決定1: 起点の直前の米国東部暦日に属する時刻（1 時間ずつ遡り、最初に前暦日へ入った時刻）。
+    private static DateTimeOffset PreviousEasternDayObservation(DateTimeOffset now)
+    {
+        var eastern = TimeZoneInfo.FindSystemTimeZoneById(
+            OperatingSystem.IsWindows() ? "Eastern Standard Time" : "America/New_York");
+        DateOnly DayOf(DateTimeOffset t) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(t, eastern).DateTime);
+        var today = DayOf(now);
+        var observedAt = now;
+        while (DayOf(observedAt) >= today)
+            observedAt = observedAt.AddHours(-1);
+        return observedAt;
     }
 
     // #893, IADR-0354: 口座照会の観測が基準資金として**判定に使える状態になった**まで待つ。

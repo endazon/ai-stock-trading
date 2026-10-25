@@ -68,8 +68,11 @@ public sealed class ReportKnowledgeReingestService(
         ReportKnowledgeReingestScope scope, bool refreshExisting, string actor, CancellationToken cancellationToken)
     {
         var runId = Guid.NewGuid();
-        var targets = store.List()
-            .Where(r => r.State == ReportState.Confirmed && scope.Includes(r))
+        // FR-08, ADR-0068 決定6, #1373, IADR-0549 決定5: 対象は期間キーごとの**最新の確定版**（写し）。行の現在の状態は読まない
+        // ——確定済みの日報に版を足したドラフト（版 n+1）の間も、効いている確定版を入れ直す（ドラフトの本文を確定版として入れない）。
+        var targets = store.ListLatestConfirmedVersions()
+            .Select(v => v.Report)
+            .Where(r => scope.Includes(r))
             .OrderBy(r => r.PeriodStart)
             .ThenBy(r => r.PeriodKey, StringComparer.Ordinal)
             .ToList();
@@ -111,12 +114,25 @@ public sealed class ReportKnowledgeReingestService(
             index.TryGetValue((report.PeriodKey, report.Kind.ToString()), out var sameKey);
             var matches = sameKey?.Where(e => IsCopyOf(e, report)).ToList() ?? [];
             // FR-06, FR-08, #1300, IADR-0526 決定 4: 確定済みの報告書に残った承認待ちの写し（確定の後の削除が失敗した・確定版を作れなかった）。
-            var leftoverDrafts = sameKey?.Where(e => ReportKnowledgeMapper.IsDraftCopyOf(e, report.Kind, report.PeriodKey)).ToList() ?? [];
+            // ADR-0068 決定6, #1373, IADR-0549 決定5: 失効の印つきの写し（確定できなくなった版 n+1）は記録として残す（消さない）。
+            var leftoverDrafts = sameKey?.Where(e => ReportKnowledgeMapper.IsDraftCopyOf(e, report.Kind, report.PeriodKey)
+                && !ReportKnowledgeMapper.IsExpiredDraftCopy(e)).ToList() ?? [];
+
+            // FR-07, FR-08, ADR-0068 決定1・6, #1373, IADR-0549 決定5（PR #1375 の AI レビュー 🟡）: 行が版 n+1 のドラフトなら、承認待ちの写しは
+            // 「残った写し」ではない。効いている間（承認待ち）は**残し**、効いている日報が移った後は**失効の印を付けて**残す（消さない）。
+            // 確定時に印を付けそこねた写し（並行した確定・KB の障害）も、ここで回復する。判定は `/policy`・作り直しと同じ（EffectiveDailyReport）。
+            var revision = store.Get(report.PeriodKey) is { } row
+                ? (State: EffectiveDailyReport.Classify(store, row), Row: row)
+                : (State: RevisionDraftState.NotRevision, Row: (VersionedReport?)null);
 
             try
             {
                 var item = await ReingestOneAsync(report, matches, refreshExisting, cancellationToken).ConfigureAwait(false);
-                var removed = await RemoveLeftoverDraftsAsync(item, leftoverDrafts, cancellationToken).ConfigureAwait(false);
+                var removed = revision.State == RevisionDraftState.NotRevision
+                    ? await RemoveLeftoverDraftsAsync(item, leftoverDrafts, cancellationToken).ConfigureAwait(false)
+                    : 0;
+                if (revision.State == RevisionDraftState.Stale)
+                    await MarkStaleDraftCopiesExpiredAsync(revision.Row!, sameKey ?? [], leftoverDrafts, cancellationToken).ConfigureAwait(false);
                 items.Add(item with { MatchedCopies = matches.Count, DraftCopiesRemoved = removed });
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -203,6 +219,38 @@ public sealed class ReportKnowledgeReingestService(
 
     // FR-06, FR-08, #1300, IADR-0526 決定 4: 確定版の写しが KB に在る（作った・在った・本文を入れた）ときだけ、残ったドラフトの写しを消す。
     // 確定版が無いまま消すと、確定した本文を読める写しが 1 つも無くなる。削除は best-effort で、消せた数を返す（404＝既に無い・別の主体のもの）。
+    // FR-08, ADR-0068 決定6, ADR-0065 決定5, #1373, IADR-0549 決定5: 確定できなくなった版 n+1 の承認待ちの写しを、失効の印つきの写しで置き換える。
+    // 印つきの写しが既にあれば作らず、作れたとき（または既にあるとき）だけ承認待ちの写しを消す（写しを失わない）。承認待ちの写しが無ければ何もしない。
+    // 属性は作成の 1 回だけで持つ規律（IADR-0526）なので、印は作り直した写しで付ける（CatalogReportDraftKnowledgeCopy.MarkExpiredAsync と同じ形）。
+    private async Task MarkStaleDraftCopiesExpiredAsync(
+        VersionedReport row, List<KnowledgeCatalogEntry> sameKey, List<KnowledgeCatalogEntry> pendingDrafts, CancellationToken cancellationToken)
+    {
+        if (pendingDrafts.Count == 0)
+            return;
+
+        var hasExpired = sameKey.Any(e => ReportKnowledgeMapper.IsDraftCopyOf(e, row.Report.Kind, row.Report.PeriodKey)
+            && ReportKnowledgeMapper.IsExpiredDraftCopy(e));
+        if (!hasExpired)
+        {
+            var created = await catalog.CreateAsync(ReportKnowledgeMapper.ToDraftDocument(row.Report, row.Version, expired: true), cancellationToken)
+                .ConfigureAwait(false);
+            if (created.Outcome != KnowledgeCatalogOutcome.Succeeded)
+            {
+                logger.LogWarning("確定できなくなった報告書 {PeriodKey} の承認待ちの写しに失効の印を付けられませんでした（結果={Outcome}。写しはそのまま残します）: {Reason}",
+                    LogSanitizer.Sanitize(row.Report.PeriodKey), created.Outcome, created.Reason);
+                return;
+            }
+        }
+
+        foreach (var draft in pendingDrafts)
+        {
+            var deleted = await catalog.DeleteAsync(draft.DocumentId, cancellationToken).ConfigureAwait(false);
+            if (deleted.Outcome != KnowledgeCatalogOutcome.Succeeded)
+                logger.LogWarning("確定できなくなった報告書 {PeriodKey} の承認待ちの写し {DocumentId} を消せませんでした（失効の印つきの写しは作成済み・結果={Outcome}）: {Reason}",
+                    LogSanitizer.Sanitize(row.Report.PeriodKey), draft.DocumentId, deleted.Outcome, deleted.Reason);
+        }
+    }
+
     private async Task<int> RemoveLeftoverDraftsAsync(
         ReportKnowledgeReingestItem item, List<KnowledgeCatalogEntry> drafts, CancellationToken cancellationToken)
     {

@@ -479,6 +479,42 @@ public class NotificationFormatterTests
         msg.Content.Should().NotContain("手仕舞いました").And.NotContain("解消にも失敗");
     }
 
+    // 🔴 T-10-2982, FR-10, UC-02, #1422, IADR-0569 決定3: 取消を送ったが確かめられていない（EntryCancelUnconfirmed）。「取り消しました」
+    // 「建玉は生じていません」「解消」と読ませない。取消の窓の約定が逆指値なしで残り得ることと、結果をもう 1 回知らせることを伝える。
+    [Fact]
+    public void エントリーの取消が未確認なら_取り消したと言わず約定が無保護で残り得ることを伝えるCriticalになる()
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, ProtectiveStopLossCause.RejectedAtEntry,
+            ProtectiveStopRemediation.EntryCancelUnconfirmed, 10, CloseDecisionId: null, CloseIntent: null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().Contain("取消を確認中").And.NotContain("建玉を解消");
+        msg.Content.Should().Contain("取り消せたことをまだ確認できていません").And.Contain("逆指値なしで残り得ます")
+            .And.Contain("もう 1 回通知").And.Contain("証券会社の画面");
+        msg.Content.Should().NotContain("エントリー注文を取り消しました").And.NotContain("建玉は生じていません")
+            .And.NotContain("解消にも失敗");
+    }
+
+    // 🔴 T-10-3033, FR-10, ADR-0040, #1454, IADR-0580 決定1: 逆指値がエントリーより先に約定した（StopFilledBeforeEntry）。
+    // 「成立せず」「解消」と読ませない。反対方向の建玉が無保護で生じ得ること・自動では何もしないこと・手で確かめることを伝える Critical。
+    [Fact]
+    public void T_10_3033_逆指値がエントリーより先に約定したら_反対方向の建玉の可能性と自動では何もしないことを伝えるCriticalになる()
+    {
+        var entry = Guid.NewGuid();
+        var stopDecision = Guid.NewGuid();
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            entry, "AAPL", Market.UnitedStates, ProtectiveStopLossCause.FilledBeforeEntry,
+            ProtectiveStopRemediation.StopFilledBeforeEntry, 10, stopDecision, CloseIntent: null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().Contain("エントリーより先に約定").And.Contain("反対方向の建玉")
+            .And.NotContain("成立せず").And.NotContain("解消");
+        msg.Content.Should().Contain("反対方向の建玉").And.Contain("自動では買い戻さず").And.Contain("取り消していません")
+            .And.Contain("証券会社の画面").And.Contain("約 1 時間ごと").And.Contain(entry.ToString()).And.Contain(stopDecision.ToString());
+        msg.Content.Should().NotContain("手仕舞いました").And.NotContain("解消にも失敗").And.NotContain("未受理");
+    }
+
     // 🔴 T-10-640, FR-10, FR-11, UC-06, #857, IADR-0369: 成行手仕舞いが**確認できた拒否**で終わったとき、
     // 「手仕舞いました」とも「届いたか不明」とも言ってはならない。**建玉は残っており、成行は生きていない**
     // ——読んだ人が取るべき行動（証券会社の画面で建玉を確認し、手で手仕舞う）が読み取れること。
@@ -705,6 +741,46 @@ public class NotificationFormatterTests
         msg.Content.Should().Contain(expected).And.Contain("950");
     }
 
+    // 🔴 T-10-2637, FR-10, #1330, IADR-0534 決定3: 承認済みの決済（取引判断の利確・損切り等）の約定に合わせた縮小は「外部要因」と書かない。
+    // 設計どおりの帰結なので Info。出どころと決済（DecisionId・OrderId）を名指しする。#1330 の事象では、利確の約定が
+    // 「外部要因（手動決済・強制決済…）」と通知され、所有者には誰かが手動で決済したと読めた。
+    [Theory]
+    [InlineData(OrderApprovalOrigin.TradeDecision, "取引判断の決済（利確・損切りの判断）が約定して")]
+    [InlineData(OrderApprovalOrigin.OwnerClose, "利用者の手仕舞いが約定して")]
+    [InlineData(OrderApprovalOrigin.MaintenanceMarginReduction, "維持率割れの自動縮小が約定して")]
+    [InlineData(null, "承認済みの決済が約定して")]
+    public void 承認済みの決済の約定に合わせた保護の縮小は外部要因と書かず出どころを名指しする(
+        OrderApprovalOrigin? origin, string expected)
+    {
+        var closeDecisionId = Guid.NewGuid();
+        var msg = NotificationFormatter.From(new SoftwareStopExecuted(
+            Guid.NewGuid(), "MSFT", Market.UnitedStates, SoftwareStopOutcome.ApprovedCloseReleased, 456, 500m, 500m, 0,
+            closeDecisionId, "close-msft", null, StopT0, CloseOrigin: origin));
+
+        msg.Severity.Should().Be(NotificationSeverity.Info);
+        msg.Title.Should().Be("リスク統制: 承認済みの決済の約定に合わせて保護対象を減らしました");
+        msg.Title.Should().NotContain("外部要因");
+        msg.Content.Should().Contain(expected)
+            .And.Contain("**外部要因ではありません**")
+            .And.Contain(closeDecisionId.ToString())
+            .And.Contain("close-msft")
+            .And.Contain("数量456");
+        msg.Content.Should().NotContain("手動決済").And.NotContain("強制決済");
+    }
+
+    // T-10-2637: 外部要因の文面は従来どおり（承認済みの決済で説明できない分だけに出る）。
+    [Fact]
+    public void 外部要因による保護の縮小の文面は従来どおり()
+    {
+        var msg = NotificationFormatter.From(new SoftwareStopExecuted(
+            Guid.NewGuid(), "MSFT", Market.UnitedStates, SoftwareStopOutcome.ProtectionReduced, 44, 500m, 500m, 0,
+            null, null, null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Warning);
+        msg.Title.Should().Be("リスク統制: 外部要因により保護対象を減らしました");
+        msg.Content.Should().Contain("外部要因（手動決済・強制決済・ブローカー側逆指値の約定など）");
+    }
+
     // ---- FR-09, UC-03, ADR-0003, IADR-0240 決定11, #774: 報告書確定の確定者の表示 ----
 
     private static readonly DateTimeOffset ConfirmedAt = new(2026, 9, 11, 4, 36, 0, TimeSpan.Zero);
@@ -768,5 +844,34 @@ public class NotificationFormatterTests
 
         NotificationFormatter.From(e).Content.Should().Be(
             "Daily 報告書 daily-2026-09-10 が確定しました（client:ai-stock-trading-owner・前提条件 v1）。");
+    }
+
+    // FR-07, FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: 確定済みの日報に版を足したドラフトの通知は、確定まで版 n が効き続けることを書く。
+    [Fact]
+    public void 版を足したドラフトの通知は確定まで版nが効き続けると書く()
+    {
+        var e = new ReportDraftPresented(
+            "daily-2026-10-17", "Daily", "2026-10-17", "日報 daily-2026-10-17: 確定済みの版 2 に版を足しました", 3, DateTimeOffset.UtcNow,
+            ReconfirmingFromVersion: 2);
+
+        var msg = NotificationFormatter.From(e);
+
+        msg.Title.Should().Be("日報に版を追加（承認待ち）");
+        msg.Content.Should().Contain("版 3").And.Contain("確定するまでは確定済みの版 2 の方針が効き続けます").And.NotContain("確定するまで取引方針は変わりません");
+    }
+
+    // FR-07, FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: 再確定の通知は、効いている版が変わったことを書く。初回の確定は従来の文。
+    [Fact]
+    public void 再確定の通知は効いている版が変わったことを書き初回は従来どおり()
+    {
+        var at = new DateTimeOffset(2026, 10, 16, 15, 40, 0, TimeSpan.Zero);
+        var reconfirmed = NotificationFormatter.From(new ReportConfirmed(
+            "daily-2026-10-17", "Daily", "owner", 3, at, Version: 4, SupersededVersion: 2));
+        var first = NotificationFormatter.From(new ReportConfirmed("daily-2026-10-17", "Daily", "owner", 3, at, Version: 2));
+
+        reconfirmed.Title.Should().Be("日報の再確定（効いている方針の版が変わりました）");
+        reconfirmed.Content.Should().Contain("版 4 で再確定しました").And.Contain("効いている方針は版 2 からこの版に変わりました");
+        first.Title.Should().Be("報告書確定");
+        first.Content.Should().NotContain("再確定");
     }
 }

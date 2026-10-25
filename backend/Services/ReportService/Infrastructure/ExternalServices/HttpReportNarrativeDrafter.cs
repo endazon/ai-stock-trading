@@ -44,6 +44,10 @@ public sealed class HttpReportNarrativeDrafter(
     TimeSpan? transportTimeout = null)
     : IReportNarrativeDrafter
 {
+    // IADR-0101・IADR-0522 決定 1: 散文の出力上限（思考トークンと本文の合算）。#1383 / IADR-0555 決定 4 で点検し 4096 のまま据え置いた
+    // （打ち切られた本文は捨てずに採り、JSON を解析しないため「形式違反で全部失う」構造ではない。5.5 系の実測は上限到達の警告で取る）。
+    public const int NarrativeMaxTokens = 4096;
+
     /// <summary>
     /// REST（`POST /complete`）で送る従来の形。既存の配線・試験はこちらを使う（既定は REST のまま）。
     /// 種別別の上限が無い構成では <c>HttpClient.Timeout</c> が上限であり、縮退ログの秒数もそこから採る
@@ -109,7 +113,7 @@ public sealed class HttpReportNarrativeDrafter(
             // gRPC は `CallOptions.Deadline` へ写す（deadline はサーバ側へも伝播する）。
             var exchange = await transport
                 .CompleteAsync(
-                    new LlmCompletionCall(prompt, MaxTokens: 4096, Model: null, confidentiality, purpose),
+                    new LlmCompletionCall(prompt, MaxTokens: NarrativeMaxTokens, Model: null, confidentiality, purpose),
                     timeout,
                     requestToken)
                 .ConfigureAwait(false);
@@ -173,7 +177,8 @@ public sealed class HttpReportNarrativeDrafter(
                 await _usage
                     .ReportAsync(
                         // FR-06, FR-14, 計画 ADR-0052 決定 1, IADR-0491 決定 2: 作り直しは計上区分だけを付け替える（用途キーは変えない）。
-                        new LlmUsage(context.UsagePurpose ?? purpose, dto.InputTokens ?? 0, dto.OutputTokens ?? 0, dto.Model), requestToken)
+                        // NFR-13, ADR-0064 決定4, #1306, IADR-0550: 入力トークン数は 0 へ潰さない（取れない＝null は高い側の段で引く）。
+                        new LlmUsage(context.UsagePurpose ?? purpose, dto.InputTokens, dto.OutputTokens ?? 0, dto.Model), requestToken)
                     .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -185,8 +190,6 @@ public sealed class HttpReportNarrativeDrafter(
             // ピン以外が答えたなら②警告通知・③月報集計の供給元へ流す。
             // **沈黙のフォールバックを作らないことが決定 4 の目的である。**
             var evaluation = LlmAssignmentEvaluator.Evaluate(purpose, dto.Model);
-            // #1295, IADR-0524（移行期間のみ・#1296 で撤去）: 直前世代を受けたことを用途とモデルの組ごとに 1 回だけ警告する。
-            LlmPreviousGenerationWarning.Shared.WarnOnce(logger, purpose, evaluation);
             modelUsage = new LlmModelUsage(
                 purpose, evaluation.ExpectedModel, evaluation.EffectiveModel, evaluation.Outcome.ToString());
 
@@ -224,10 +227,12 @@ public sealed class HttpReportNarrativeDrafter(
 
             // IADR-0104 決定5, IADR-0101: 上限到達は拒否ではなく劣化。本文は破棄せず（途中で切れることの観測を残し）、
             // 劣化として記録するにとどめる。
+            // FR-14, #1383, IADR-0555 決定 4: 5.5 系で思考が上限を食う度合いを測れるよう、上限・出力トークン・モデルを運ぶ。
             if (LlmStopReasons.IsMaxTokens(dto.StopReason))
                 logger.LogWarning(
-                    "報告書散文 LLM の応答が出力上限に到達しました（stopReason={StopReason}）。散文が途中で切れている可能性があります。",
-                    dto.StopReason);
+                    "報告書散文 LLM の応答が出力上限に到達しました（stopReason={StopReason} maxTokens={MaxTokens} "
+                    + "outputTokens={OutputTokens} model={Model}）。散文が途中で切れている可能性があります。",
+                    dto.StopReason, NarrativeMaxTokens, dto.OutputTokens, dto.Model);
 
             return new ReportNarrativeDraft(dto.Text, modelUsage);
         }

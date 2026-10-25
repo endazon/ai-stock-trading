@@ -9,9 +9,10 @@ namespace NotificationService.Features.Notifications;
 public static class NotificationFormatter
 {
     // 取引実行（約定）。全量約定は Info、それ以外（拒否・取消等）は注意喚起の Warning。
+    // 🔴 FR-05, ADR-0067 決定5, #1339, IADR-0539: 状態は列挙名に日本語の区別を添える（失注〔失効〕と拒否を取り違えさせない）。
     public static NotificationMessage From(OrderExecuted e) => new(
         "取引実行",
-        $"約定 {e.Status} 数量{e.FilledQuantity}@{e.AveragePrice}（OrderId={e.OrderId}・DecisionId={e.DecisionId}）",
+        $"約定 {OrderStatusDisplay.Describe(e.Status)} 数量{e.FilledQuantity}@{e.AveragePrice}（OrderId={e.OrderId}・DecisionId={e.DecisionId}）",
         e.Status == OrderStatus.Filled ? NotificationSeverity.Info : NotificationSeverity.Warning);
 
     // 🔴 FR-09, FR-10, UC-06, #847, IADR-0357: 手仕舞いが未約定残を残して終わった（失効・取消・拒否）。
@@ -22,13 +23,19 @@ public static class NotificationFormatter
     // 🔴 **Warning であって Critical ではない。** Critical は「実際に統制が破れた」事象
     //（保護喪失・損切りライン到達）に取っておく——手仕舞いが流れたこと自体は統制の破れではない。
     // ただし Info にもしない: **手仕舞えなかった建玉が実在し、無保護なら翌日へ持ち越される**。
+    //
+    // 🔴 FR-10, FR-09, UC-06, #1395, IADR-0560 決定3: 残った建玉は**取消・失効の時点の記録からの推定**であり、建玉の照会では確かめていない
+    // （同じ建玉をソフトウェア逆指値などの別の決済が売っていることがある。PoC 2026-10-20 は S1 の成行が全量を決済した直後に
+    // 「建玉はこの数量ぶん残っています」と断定した）。推定と分かる言い方にし、手仕舞い直す前に建玉を確かめさせる（二重の売りを促さない）。
+    // S1 が自分で取り消した手仕舞いには、そもそも本イベントが出ない（リスク管理の OrderExecutedLedgerHandler が抑止する）。
     public static NotificationMessage From(PositionCloseAbandoned e) => new(
         "手仕舞いが約定せず終了",
-        $"{e.Symbol}/{e.Market} {e.Side} 数量{e.ApprovedQuantity} の手仕舞いが {e.TerminalStatus} で終了しました"
+        $"{e.Symbol}/{e.Market} {e.Side} 数量{e.ApprovedQuantity} の手仕舞いが {OrderStatusDisplay.Describe(e.TerminalStatus)} で終了しました"
             + $"（約定 {e.FilledQuantity}・**未決済 {e.RemainingQuantity}**）。"
-            + "建玉はこの数量ぶん残っています（当日注文は引け後に失効します）。"
+            + "記録上はこの数量の建玉が残っている見込みです（終了の時点の記録による推定で、建玉の照会では確かめていません。"
+            + "ソフトウェア逆指値などの別の決済で既に減っていることがあります。当日注文は引け後に失効します）。"
             + "**逆指値なしの建玉はこのまま翌日へ持ち越されます。**"
-            + $"手仕舞い直すか、建玉を確認してください（DecisionId={e.DecisionId}）。",
+            + $"建玉を確認してから、手仕舞い直すか判断してください（DecisionId={e.DecisionId}）。",
         NotificationSeverity.Warning);
 
     // リスク統制発動: 発注拒否（理由つき）。
@@ -155,8 +162,24 @@ public static class NotificationFormatter
         ProtectiveStopRemediation.StopDispatchIndeterminate => StopDispatchIndeterminate(e),
         ProtectiveStopRemediation.StopReservationFailed => StopReservationFailed(e),
         ProtectiveStopRemediation.EntryStateUnknown => EntryStateUnknown(e),
+        ProtectiveStopRemediation.StopFilledBeforeEntry => StopFilledBeforeEntry(e),
         _ => CoverageLost(e),
     };
+
+    // 🔴 FR-10, ADR-0040, #1454, IADR-0580 決定1: **保護逆指値がエントリー注文より先に約定した**（窓開け）。反対方向の建玉が保護なしで生じ得る。
+    // 「成立せず」「解消」とは言わない——逆指値は約定しており、システムは買い戻しもエントリーの取消もしていない。
+    // 伝えるのは (1) 反対方向の建玉が生じている可能性、(2) 自動では何もしない、(3) 証券会社の画面で確かめる観点、(4) 約 1 時間ごとに繰り返す。
+    private static NotificationMessage StopFilledBeforeEntry(ProtectiveStopCoverageLost e) => new(
+        "リスク統制: 保護逆指値がエントリーより先に約定（反対方向の建玉の可能性）",
+        $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 保護逆指値が、エントリー注文の約定より先に約定しました（寄り付きの窓開けなど）。"
+            + "エントリー注文はまだ終わっていないか、状態を確認できません。"
+            + "**反対方向の建玉（買いのエントリーなら売り建玉）が、逆指値なしで生じている可能性があります**（売り建玉の損失には上限がありません）。"
+            + "**システムは自動では買い戻さず、エントリー注文も取り消していません。**"
+            + "**証券会社の画面で、この銘柄の建玉とエントリー注文を確認し、手で対応してください**"
+            + "（エントリーが全量約定すれば建玉は 0 に戻ります。約定しないまま終わると反対方向の建玉が残ります）。"
+            + "エントリー注文が終わるまで、この通知を約 1 時間ごと（と再起動のたび）に繰り返します。"
+            + $"EntryDecisionId={e.EntryDecisionId} StopDecisionId={e.CloseDecisionId}",
+        NotificationSeverity.Critical);
 
     // 🔴 FR-10, #1013, IADR-0428（2026-09-26 追記）: **建玉は 0 に見えるが、エントリー注文の状態を確認できない**ため、常駐ガードが
     // 保護逆指値を取り消さず、保護記録も閉じずに据え置いている。「成立せず」「解消」「未受理」とは言わない——何も送っておらず、何も取り消していない。
@@ -221,6 +244,9 @@ public static class NotificationFormatter
             // 本文は「解消にも失敗しました」なのに件名だけ読むと解消済みと読め、逆指値なしの建玉が残る側を見落とす。
             ProtectiveStopRemediation.None =>
                 "リスク統制: 保護逆指値が成立せず、建玉の解消にも失敗",
+            // 🔴 FR-10, #1422, IADR-0569 決定3: 取消は送ったが確かめられていない。「解消」「取り消した」と読ませない。
+            ProtectiveStopRemediation.EntryCancelUnconfirmed =>
+                "リスク統制: 保護逆指値が成立せず、エントリーの取消を確認中",
             _ => "リスク統制: 保護逆指値が成立せず建玉を解消",
         },
         $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 逆指値が"
@@ -228,6 +254,12 @@ public static class NotificationFormatter
             + e.Remediation switch
             {
                 ProtectiveStopRemediation.EntryCancelled => "エントリー注文を取り消しました（建玉は生じていません）。",
+                // 🔴 FR-10, #1422, IADR-0569 決定3: 取消要求の後にも約定し得る。「建玉は生じていない」と断定しない。
+                ProtectiveStopRemediation.EntryCancelUnconfirmed =>
+                    "エントリー注文へ**取消を送りましたが、取り消せたことをまだ確認できていません**（取消の前後に約定することがあります）。"
+                    + "システムはエントリー注文の終了を約定追跡で確かめ、約定が無ければ取消の確定を、約定していれば約定数量の成行手仕舞いを"
+                    + "行い、その結果をもう 1 回通知します。**それまでのあいだ、約定した分は逆指値なしで残り得ます。**"
+                    + "結果の通知が届かない場合は、証券会社の画面で注文と建玉を確認してください。",
                 ProtectiveStopRemediation.PositionClosed => "建玉を成行で手仕舞いました（逆指値なしの建玉を持たない規律・FR-10）。",
                 ProtectiveStopRemediation.CloseDispatchIndeterminate =>
                     "建玉の成行手仕舞いを**送信しましたが、結果を確認できていません（届いたか不明）**。"
@@ -341,6 +373,16 @@ public static class NotificationFormatter
                 + "ブローカー側の逆指値を持つ記録が 0 になった場合は、その逆指値を取り消します。"
                 + $"建玉と保護の対応をご確認ください（損切りライン {Invariant(e.StopLossPrice)}・EntryDecisionId={e.EntryDecisionId}）。",
             NotificationSeverity.Warning),
+        // 🔴 FR-10, #1330, IADR-0534 決定3: 承認済みの決済（取引判断の利確・損切り等）の約定に合わせて保護対象を減らした。
+        // **外部要因ではない**——設計どおりの帰結なので Info。出どころと決済を名指しし、「外部要因」「手動決済」とは書かない。
+        SoftwareStopOutcome.ApprovedCloseReleased => new(
+            "リスク統制: 承認済みの決済の約定に合わせて保護対象を減らしました",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: {ApprovedCloseOriginLabel(e.CloseOrigin)}が約定して建玉が減ったため、"
+                + "保護記録が守る株数をその分だけ減らしました（**外部要因ではありません**。保護の決済は出していません）。"
+                + "ブローカー側の逆指値を持つ記録が 0 になった場合は、その逆指値を取り消します"
+                + $"（決済の DecisionId={e.CloseDecisionId}・OrderId={e.CloseOrderId}・損切りライン {Invariant(e.StopLossPrice)}"
+                + $"・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Info),
         // #820 の 8 巡目監査, IADR-0344 追記(8) 決定3: 帳簿では守っているのに 1 株も動かせない状態が猶予を過ぎた。
         // 行は Active・帳簿も無傷なので、知らせなければ無音のまま保護が失われる（到達の有無に依らない）。
         SoftwareStopOutcome.ProtectionSuspended => new(
@@ -355,7 +397,7 @@ public static class NotificationFormatter
             "リスク統制: どの保護記録も主張していない建玉があります",
             $"{e.Symbol}/{e.Market} 数量{e.Quantity}: この銘柄・方向の建玉のうち {e.Quantity} 株を、"
                 + "どの保護記録も主張していません（他の実行機構の建玉・手動で建てた建玉・"
-                + "受理後に取り消された決済の残りなど）。"
+                + "受理後に取り消された決済の残り・保護逆指値がエントリーより先に約定した反対方向の建玉など）。"
                 + "**ソフトウェア逆指値はこの建玉を決済しません。手動で決済するか、保護を掛け直してください**"
                 + "（この銘柄ではソフトウェア逆指値の新規建ても見送られます）"
                 + $"（損切りライン {Invariant(e.StopLossPrice)}・EntryDecisionId={e.EntryDecisionId}）。",
@@ -396,6 +438,16 @@ public static class NotificationFormatter
 
     private static string Invariant(decimal value) => value.ToString(CultureInfo.InvariantCulture);
 
+    // 🔴 FR-10, #1330, IADR-0534 決定3: 承認済みの決済の出どころ（通知の主語）。分からない（null・Unknown）ときも「外部要因」とは書かない
+    // ——発行元は出どころを持つ承認経路の決済にしか帰属させない（IADR-0534 決定1）。
+    private static string ApprovedCloseOriginLabel(OrderApprovalOrigin? origin) => origin switch
+    {
+        OrderApprovalOrigin.TradeDecision => "取引判断の決済（利確・損切りの判断）",
+        OrderApprovalOrigin.OwnerClose => "利用者の手仕舞い",
+        OrderApprovalOrigin.MaintenanceMarginReduction => "維持率割れの自動縮小",
+        _ => "承認済みの決済",
+    };
+
     // #819, IADR-0342: 計画の手法 ID（S0〜S3）。enum 名だけでは計画の表と突き合わせにくい。
     private static string StopLossMethodLabel(StopLossExecutionMethod method) => method switch
     {
@@ -433,6 +485,14 @@ public static class NotificationFormatter
         // FR-10, #1105, IADR-0461 決定2: 送れば証券会社に拒否されるだけの決済。対処は要らない（処理中の決済の結果を待つ）。
         OrderDispatchForgoneReason.InFlightCloseCoversPosition =>
             "同じ建玉を売る処理中の決済が、決済できる建玉をすべて覆っています（その決済が約定しなかった場合は、改めて手仕舞ってください）",
+        // 🔴 FR-10, ADR-0009, IADR-0567 決定 3: 送る直前の停止状態の最終照会。どれも新規建てだけであり、決済・損切りは止めていない。
+        OrderDispatchForgoneReason.KillSwitchActive =>
+            "送る直前の確認で全停止スイッチ（kill switch）が有効でした（新規建てを送りません。決済・損切りは止めていません）",
+        OrderDispatchForgoneReason.TradingPaused =>
+            "送る直前の確認で取引の一時停止中でした（新規建てを送りません。決済・損切りは止めていません）",
+        OrderDispatchForgoneReason.TradingHaltStateUnknown =>
+            "送る直前に全停止スイッチ・一時停止の状態を確かめられませんでした（不明のまま新規建てを送りません。"
+                + "決済・損切りは止めていません。発注執行からリスク管理への照会の設定と疎通を確認してください）",
         _ => reason.ToString(),
     };
 
@@ -496,10 +556,18 @@ public static class NotificationFormatter
         NotificationSeverity.Info);
 
     // FR-07, FR-09: 報告書の確定（方針が取引に有効化された通知）。
-    public static NotificationMessage From(ReportConfirmed e) => new(
-        "報告書確定",
-        $"{e.Kind} 報告書 {e.PeriodKey} が確定しました（{ConfirmerOf(e)}・前提条件 v{e.AssumptionsVersion}）。",
-        NotificationSeverity.Info);
+    // FR-07, FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: 効いている日報の**再確定**（SupersededVersion あり）は、効いている版が変わったことを書く。
+    public static NotificationMessage From(ReportConfirmed e) => e.SupersededVersion is { } superseded
+        ? new(
+            "日報の再確定（効いている方針の版が変わりました）",
+            $"{e.Kind} 報告書 {e.PeriodKey} を版 {(e.Version is { } v ? v.ToString(System.Globalization.CultureInfo.InvariantCulture) : "?")} で再確定しました"
+                + $"（{ConfirmerOf(e)}・前提条件 v{e.AssumptionsVersion}）。"
+                + $"この時点から、効いている方針は版 {superseded} からこの版に変わりました（版 {superseded} は記録として残ります）。",
+            NotificationSeverity.Info)
+        : new(
+            "報告書確定",
+            $"{e.Kind} 報告書 {e.PeriodKey} が確定しました（{ConfirmerOf(e)}・前提条件 v{e.AssumptionsVersion}）。",
+            NotificationSeverity.Info);
 
     // FR-09, UC-03, ADR-0003, IADR-0240 決定11, #774: 確定者の表示。
     //   代理確定（Discord Bot 経由）: 「<操作した利用者>・<認可の主体のクライアント> 経由」——**両方を見せる**。
@@ -520,11 +588,15 @@ public static class NotificationFormatter
     // 確定され得る（確定された日報の方針は翌日の取引に効く）。「埋もれない経路で出す」は LlmFallbackFired
     // （ADR-0017 決定4-(2)）で既に採っている形である。**未供給が無ければ従来どおり Info**——毎回警告にすると
     // 警告の意味が消える。判定は発行側と共有する印（契約アセンブリの定数）で行い、イベントの形は変えない。
+    // FR-07, FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: 確定済みの日報に版を足したドラフト（ReconfirmingFromVersion あり）は、
+    // 効いている版が確定まで変わらないことを書く（ドラフトの作成では効いている版は変わらない）。
     public static NotificationMessage From(ReportDraftPresented e) => new(
-        "報告書ドラフト（承認待ち）",
+        e.ReconfirmingFromVersion is null ? "報告書ドラフト（承認待ち）" : "日報に版を追加（承認待ち）",
         $"{e.Summary}\n\n"
             + $"内容を確認のうえ確定してください（{e.PeriodKey}・版 {e.Version}）。"
-            + "確定するまで取引方針は変わりません。",
+            + (e.ReconfirmingFromVersion is { } from
+                ? $"確定するまでは確定済みの版 {from} の方針が効き続けます。"
+                : "確定するまで取引方針は変わりません。"),
         HasUnsuppliedInputs(e) || LacksNumericTakeProfit(e) ? NotificationSeverity.Warning : NotificationSeverity.Info);
 
     // #866: 要約に未供給の警告行が含まれているか（発行側 ReportSummary.Build が同じ定数で組み立てる）。
@@ -536,7 +608,9 @@ public static class NotificationFormatter
     // FR-06, FR-07, 計画 ADR-0059 決定 2, #1218, IADR-0519 決定 2: 週報の方針に書式どおりの「数値目標:」行が無い（同じ扱い）。
     private static bool LacksNumericTakeProfit(ReportDraftPresented e) =>
         e.Summary?.Contains(ReportSummaryMarkers.PolicyTakeProfitMissingPrefix, StringComparison.Ordinal) == true
-        || e.Summary?.Contains(ReportSummaryMarkers.WeeklyGoalLineMissingPrefix, StringComparison.Ordinal) == true;
+        || e.Summary?.Contains(ReportSummaryMarkers.WeeklyGoalLineMissingPrefix, StringComparison.Ordinal) == true
+        // FR-04, FR-07, #1365, IADR-0544 決定 4: 日報の方針が他の報告書を参照で済ませている（同じ扱い）。
+        || e.Summary?.Contains(ReportSummaryMarkers.PolicyExternalReferencePrefix, StringComparison.Ordinal) == true;
 
     // NFR（費用）, FR-09: 費用しきい値到達（間隔延長/停止）。停止（Halted）は Critical、間隔延長（Throttled）は Warning。
     public static NotificationMessage From(CostThresholdReached e) => new(
@@ -593,6 +667,33 @@ public static class NotificationFormatter
     // #1267: 連続は用途を分けずに数える（IADR-0517 決定4）。内訳があればそれを、無ければ（旧い発行元）しきい値に達した呼び出しの用途を書く。
     private static string UnsentPurposes(string purpose, IReadOnlyDictionary<string, int>? byPurpose) =>
         byPurpose is { Count: > 0 } ? LlmGatewayUnsent.FormatBreakdown(byPurpose) : $"用途 {purpose}";
+
+    // 🔴 FR-10, FR-09, SC-03, #1423 M-3, ADR-0073 決定3, IADR-0581: 基準資金の口座照会が直前の米国東部暦日に 1 件も成功せず、
+    // 新規建てを拒否している。**リスク統制の発動**（新規建てを止める）であり、緊急度は高＝Critical（FxRateStale の停止側と同じ重み）。
+    // 発行側が同じ取引日につき 1 回に抑える。止めていないもの（手仕舞い・損切り）と、自動で解除されることを本文に書く。
+    public static NotificationMessage From(CapitalBaselineObservationMissing e) => new(
+        "リスク統制: 基準資金を照会できず新規建てを停止",
+        $"口座照会（基準資金）が直前の米国東部暦日に 1 件も成功していません（最後の観測 {e.LatestObservedTradingDay:yyyy-MM-dd}・"
+            + $"判定日 {e.TradingDay:yyyy-MM-dd}{(e.Stale ? "・鮮度の上限も超過" : string.Empty)}）。"
+            + "**古い基準資金では統制を判定しないため、新規建てを止めています。手仕舞い・損切りは止めていません。**"
+            + "口座照会・発注執行の巡回・ブローカーの接続を確認してください。直前の暦日の観測が成功すれば自動で解除されます。",
+        NotificationSeverity.Critical);
+
+    // 🔴 FR-07, FR-09, UC-03, #1423 M-6, ADR-0075 決定4, IADR-0583: 提示した日報が承認待ちのまま期限（翌営業日の米国市場の開場）を過ぎた。
+    // 継続・停止のどちらでも出す。何が起きているか（続けている方針／止めているもの・止めていないもの）と、確定で戻ることを本文に書く。
+    // 停止は取引判断の全体を見送るので Critical、継続は古い方針で取引しているので Warning。
+    public static NotificationMessage From(DailyReportNoResponse e) => e.TradingHalted
+        ? new NotificationMessage(
+            "取引判断を停止: 日報が無応答のまま期限を過ぎました",
+            $"日報 {e.PeriodKey} が承認待ちのまま期限（{e.Deadline:yyyy-MM-dd HH:mm zzz}）を過ぎました。無応答時の設定が「停止」のため、"
+                + "**日報が確定するまで取引判断（定時・急変・新規建て・AI 判断の決済）を見送っています。損切り・手仕舞いは止めていません。**"
+                + "日報を確定すると自動で再開します。",
+            NotificationSeverity.Critical)
+        : new NotificationMessage(
+            "日報が無応答のまま期限を過ぎました",
+            $"日報 {e.PeriodKey} が承認待ちのまま期限（{e.Deadline:yyyy-MM-dd HH:mm zzz}）を過ぎました。無応答時の設定が「継続」のため、"
+                + $"直近の確定済み日報（{e.LastConfirmedPeriodKey ?? "なし"}）の方針で取引を続けています。日報を確定すると新しい方針に切り替わります。",
+            NotificationSeverity.Warning);
 
     // UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップ。確定を促す注意喚起（Warning）。
     // 日報が未確定の間は取引が見送られ続けるため、利用者に確定を促す（同一営業日内は 1 回に抑止済み・IADR-0096）。

@@ -318,11 +318,19 @@ public class LedgerGapEventsTests
         // T-10-2322, #1176, IADR-0495 決定2: 新規建てに使える金額の上限が最小の名目額に届かない見送りを末尾へ足した（5 → 6 地点）。
         // T-10-2386, #1174, IADR-0500 決定2: 残枠が現在値 × 1 株に満たない見送りを末尾へ足した（6 → 7 地点）。
         // T-10-2502, #1286, IADR-0521 決定 2: 出口専用の判断で保有が 0・不明の見送りを末尾へ足した（7 → 8 地点）。
-        Enum.GetValues<DecisionForgoneBeforeLlmReason>().Should().HaveCount(8, "LLM より前の見送りは 8 地点（仕様書の母集合）");
+        // T-10-2651, #1338, IADR-0535 決定1: 処理中の決済が建玉を覆い、どの結論も発注にならない見送りを末尾へ足した（8 → 9 地点）。
+        // T-10-2994, #1434, IADR-0572 決定2: 決済の約定の直後でブローカーの建玉が 0、どの結論も発注にならない見送りを末尾へ足した（9 → 10 地点）。
+        // T-10-3052, #1423 M-5, IADR-0582: 月次 LLM 費用上限の 100% 到達（Halted）の見送りを末尾へ足した（10 → 11 地点）。
+        // T-10-3060, #1423 M-6, IADR-0583: 日報の無応答（停止）の見送りを末尾へ足した（11 → 12 地点）。
+        Enum.GetValues<DecisionForgoneBeforeLlmReason>().Should().HaveCount(12, "LLM より前の見送りは 12 地点（仕様書の母集合）");
         Enum.GetValues<DecisionForgoneBeforeLlmReason>()[^1].Should().Be(
-            DecisionForgoneBeforeLlmReason.ExitOnlyWithoutHolding, "値は末尾へ足す");
+            DecisionForgoneBeforeLlmReason.DailyReportNoResponseHalted, "値は末尾へ足す");
         Enum.GetValues<DecisionForgoneBeforeLlmReason>()[^2].Should().Be(
-            DecisionForgoneBeforeLlmReason.EntryCapacityBelowOneShare, "既存の値の位置を変えない");
+            DecisionForgoneBeforeLlmReason.LlmCostCapHalted, "既存の値の位置を変えない");
+        Enum.GetValues<DecisionForgoneBeforeLlmReason>()[^3].Should().Be(
+            DecisionForgoneBeforeLlmReason.BrokerPositionClosed, "既存の値の位置を変えない");
+        Enum.GetValues<DecisionForgoneBeforeLlmReason>()[^4].Should().Be(
+            DecisionForgoneBeforeLlmReason.InFlightCloseCoversPosition, "既存の値の位置を変えない");
     }
 
     // ---- T-10-1771: 保有照会・未約定の照会の成否を発生源を分けて報告する ----

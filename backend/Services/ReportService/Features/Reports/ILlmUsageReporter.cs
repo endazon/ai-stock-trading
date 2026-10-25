@@ -20,4 +20,6 @@ public interface ILlmUsageReporter
 // Purpose は用途キー（report-monthly / report-weekly / report-daily）で、費用の対象範囲判別に用いる。
 // Model は**ゲートウェイが実際に選択したモデル**（応答の報告値）。単価解決の唯一の根拠であり（IADR-0122 決定1）、
 // 月報の「当月の LLM 利用実績」にも用いる。既定 null＝モデル不明（計上側は過小計上を避ける側へ倒す）。
-public readonly record struct LlmUsage(string Purpose, int InputTokens, int OutputTokens, string? Model = null);
+// NFR-13, FR-04, ADR-0064 決定4, #1306, IADR-0550: InputTokens の null は**取れない**（REST の欠落・gRPC の 0）。
+// 0 へ潰さずに渡す —— 単価の段（LlmPriceTable.Resolve）は取れないとき高い側で引く。金額の式へは 0 を渡す（推定しない）。
+public readonly record struct LlmUsage(string Purpose, int? InputTokens, int OutputTokens, string? Model = null);

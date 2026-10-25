@@ -41,7 +41,14 @@ public static class RiskSettingsSerialization
             settings.BrokerProvider,
             settings.Stage1MinimumTradeCount,
             settings.StopLossMethod,
-            productTypesRevision);
+            productTypesRevision,
+            new HighVolatilityDto(settings.HighVolatility.MaxOrderAmountRatio, [.. settings.HighVolatility.DesignatedSymbols]),
+            // 🔴 FR-10, SC-02, #1407, IADR-0564 決定 1・5: 画面で保存した閉場前の統制とテーマの定義。保存していない（null）ならキーを書かない＝構成の値が効く。
+            settings.PreCloseEntryCutoff is { } cutoff ? new Dictionary<Market, int>(cutoff.Minutes) : null,
+            settings.PreCloseFlatten is { } flatten ? new PreCloseFlattenDto(flatten.Enabled, new Dictionary<Market, int>(flatten.Minutes)) : null,
+            settings.ThemeConcentration is { } themes
+                ? [.. themes.Themes.Select(t => new ThemeDto(t.Name, t.Market, [.. t.Symbols], t.MaxPositions))]
+                : null);
         return JsonSerializer.Serialize(dto, Options);
     }
 
@@ -105,6 +112,66 @@ public static class RiskSettingsSerialization
             // 本項目を持たない旧行（null）も未知の序数も S0 である。**倒す先は「逆指値を置く」側**——
             // 読めない行が S2（免除）へ倒れると、利用者が選んでいない無防備な建玉が黙って生まれる。
             StopLossMethod = StopLossMethodChange.Resolve(dto.StopLossMethod),
+            // 🔴 FR-10, ADR-0063 決定2, #1291, IADR-0527 決定2: 高ボラティリティ銘柄の統制値を持たない旧行は**既定（上限 5%・明示指定なし）**で読む。
+            // 不在を「区分の上限なし」に倒さない。比率が値域の下端を割る行（手編集など）は**下端へ丸めて**読み（既定の 5% へ倒すよりは厳しい）、
+            // 上端を超える行・比率の欠けた行は既定の 5% で読む（値域は書き込みの経路が守る）。
+            // 🔴 ［2026-10-13 訂正 / ADR-0066 決定1・#1291］旧注記の「保存値より緩くしない」は数値の上で誤り。**保存値と比べると丸めは上限を緩める**
+            // （例: 0.5% → 1%）。下端未満の行は書き込みの経路（ThrowIfInvalid・API の 400）では作れず、DB の手での編集などでだけ生じる。
+            // ADR-0066 はこの丸めを改めず、残る制約として記録した（IADR-0527 決定2 の 2026-10-13 追記）。
+            HighVolatility = ResolveHighVolatility(dto.HighVolatility),
+            // 🔴 FR-10, SC-02, #1407, IADR-0564 決定 5: 画面で保存した閉場前の統制とテーマの定義。**キーの無い行（旧行・保存していない）は null＝構成の値が効く。**
+            // 値域の外の行（手での編集など。書き込みの経路は値域の外を拒む）も **null として読む＝構成の値へ倒す**（構成は起動時に値域を確かめている）。
+            // 黙って丸めない・統制を外す値（0 分・上限 0）を効かせない。
+            PreCloseEntryCutoff = ResolvePreCloseEntryCutoff(dto.PreCloseEntryCutoff),
+            PreCloseFlatten = ResolvePreCloseFlatten(dto.PreCloseFlatten),
+            ThemeConcentration = ResolveThemeConcentration(dto.ThemeConcentration),
+        };
+    }
+
+    private static PreCloseEntryCutoffSettings? ResolvePreCloseEntryCutoff(Dictionary<Market, int>? minutes)
+    {
+        if (minutes is null || minutes.Count == 0)
+            return null;
+        var settings = new PreCloseEntryCutoffSettings(minutes);
+        return SessionAndThemeControlValidation.Violations(settings).Count == 0 ? settings : null;
+    }
+
+    private static PreCloseFlattenSettings? ResolvePreCloseFlatten(PreCloseFlattenDto? dto)
+    {
+        if (dto?.Enabled is not { } enabled || dto.Minutes is null || dto.Minutes.Count == 0)
+            return null;
+        var settings = new PreCloseFlattenSettings(enabled, dto.Minutes);
+        return settings.Violations().Count == 0 ? settings : null;
+    }
+
+    private static ThemeConcentrationSettings? ResolveThemeConcentration(List<ThemeDto>? themes)
+    {
+        if (themes is null)
+            return null;
+        var settings = SessionAndThemeControlValidation.Normalize(new ThemeConcentrationSettings(
+        [
+            .. themes.Where(t => t is not null).Select(t => new ThemeLimit(t.Name ?? string.Empty, t.Market, t.Symbols ?? [], t.MaxPositions ?? 0)),
+        ]));
+        return SessionAndThemeControlValidation.Violations(settings).Count == 0 ? settings : null;
+    }
+
+    private static HighVolatilitySettings ResolveHighVolatility(HighVolatilityDto? dto)
+    {
+        var defaults = TradingDefaults.CreateHighVolatilitySettings();
+        if (dto is null)
+            return defaults;
+
+        var ratio = dto.MaxOrderAmountRatio switch
+        {
+            null => defaults.MaxOrderAmountRatio,
+            { } r when r < HighVolatilityOrderCap.MinRatioLowerBound => HighVolatilityOrderCap.MinRatioLowerBound, // 既定 5% より厳しい側へ丸める（保存値よりは緩む。上の注記）
+            { } r when r > HighVolatilityOrderCap.MaxRatioUpperBound => defaults.MaxOrderAmountRatio,
+            { } r => r,
+        };
+        return new HighVolatilitySettings
+        {
+            MaxOrderAmountRatio = ratio,
+            DesignatedSymbols = [.. (dto.DesignatedSymbols ?? []).Where(s => s is not null && !string.IsNullOrWhiteSpace(s.Symbol))],
         };
     }
 
@@ -133,7 +200,26 @@ public static class RiskSettingsSerialization
         // FR-19, FR-20, ADR-0034 決定5 契機2, #1220, IADR-0511: 商品種別設定の改訂番号。nullable＝番号を知らない版が
         // 書いた行（`ReadProductTypesRevision` は null を返し、判定は無効へ倒れる。固定値にしない）。**ドメインの設定には載せない**
         // ——載せると `with` で運ばれ、呼び出し側が番号を作れてしまう。番号を進めるのは設定ストアの保存だけである。
-        long? ProductTypesRevision = null);
+        long? ProductTypesRevision = null,
+        // FR-10, ADR-0063, #1291, IADR-0527 決定2: 高ボラティリティ銘柄の統制値。nullable＝本プロパティの追加前に書かれた行
+        // （旧行はキーを持たないため null のまま入り、既定〔上限 5%・明示指定なし〕で読む）。**マイグレーションで既存行を書き換えない**（IADR-0161 決定2）。
+        HighVolatilityDto? HighVolatility = null,
+        // 🔴 FR-10, SC-02, #1407, IADR-0564 決定 5: 画面で保存した値。nullable＝保存していない（旧行もキーを持たない）。**マイグレーションで既存行を書き換えない**（IADR-0161 決定2）。
+        Dictionary<Market, int>? PreCloseEntryCutoff = null,
+        PreCloseFlattenDto? PreCloseFlatten = null,
+        // 空の一覧（テーマなし＝上限を掛けない）は値域の上では受理できる定義であり、null（保存していない）と区別する。
+        List<ThemeDto>? ThemeConcentration = null);
+
+    // FR-10, SC-02, #1407: 閉場前の手仕舞いの永続 DTO（nullable で旧行と欠けた行を読み分ける）。
+    private sealed record PreCloseFlattenDto(bool? Enabled, Dictionary<Market, int>? Minutes);
+
+    // FR-10, SC-02, #1407: テーマの永続 DTO。
+    private sealed record ThemeDto(string? Name, Market Market, List<string>? Symbols, int? MaxPositions);
+
+    // FR-10, ADR-0063, #1291: 高ボラティリティ銘柄の統制値の永続 DTO（具象コレクション・nullable で旧行と値域外を読み分ける）。
+    private sealed record HighVolatilityDto(
+        decimal? MaxOrderAmountRatio,
+        List<HighVolatilitySymbol>? DesignatedSymbols);
 
     private sealed record GuardDto(
         List<ProductType> EnabledProductTypes,

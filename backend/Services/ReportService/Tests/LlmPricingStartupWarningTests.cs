@@ -103,6 +103,31 @@ public class LlmPricingStartupWarningTests(ReportWorkerWebApplicationFactory fac
         StartAndCaptureWarnings(settings, "Production").Should().NotContain(m => m.Contains(Marker));
     }
 
+    // NFR-13, ADR-0064 決定9, #1305, IADR-0553（受け入れ基準 6）: 未知モデルの計上単価が解析できない・0 以下なら起動時に警告する
+    // （計上は既定値 $10 / $50 で続くので起動は止めない。配備〔Production〕でも同じ）。未設定・正しい値なら警告しない。
+    [Theory]
+    [InlineData("0", null, true)]
+    [InlineData(null, "abc", true)]
+    [InlineData("-1", "8.186", true)]
+    [InlineData(null, null, false)]
+    [InlineData("1.637", "8.186", false)]
+    public void 未知モデルの計上単価が不正なら警告する(string? input, string? output, bool warns)
+    {
+        var warnings = StartAndCaptureWarnings(new Dictionary<string, string?>
+        {
+            ["LlmGateway:BaseUrl"] = "http://llm-gateway",
+            ["LlmPricing:PerModel:claude_opus_5_5:InputPer1kTokens"] = "0.655",
+            ["LlmPricing:PerModel:claude_opus_5_5:OutputPer1kTokens"] = "3.274",
+            ["LlmPricing:UnknownModel:InputPer1kTokens"] = input,
+            ["LlmPricing:UnknownModel:OutputPer1kTokens"] = output,
+        }, "Production");
+
+        if (warns)
+            warnings.Should().Contain(LlmPricingStartupGuard.UnknownModelSettingWarningMessage);
+        else
+            warnings.Should().NotContain(LlmPricingStartupGuard.UnknownModelSettingWarningMessage);
+    }
+
     private sealed class CapturingLoggerProvider : ILoggerProvider
     {
         private readonly ConcurrentQueue<string> _warnings = new();

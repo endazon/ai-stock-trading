@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -16,8 +17,8 @@ namespace AiStockTrading.Bff.Endpoints;
 // ── 既存 3 モジュール（Assumptions / RiskControls / Monitor）との意図的な非対称 ──
 //
 // 🔴 **① 認可を後段へ委ねられない。** 既存モジュールは `RequireAuthorization()` だけを掛け、owner 判定を
-//    後段（`OwnerOnly` を持つドメインサービス）へ委ねる。**本モジュールの上流は設計上まったく認証を
-//    持たない**（Ingress を持たず Pod 網にしか bind しない）。委譲先が無いため **BFF が唯一の認可点**である。
+//    後段（`OwnerOnly` を持つドメインサービス）へ委ねる。**本モジュールの上流は利用者の身元を見ない**
+//    （呼び出し元＝BFF であることだけを共有シークレットで確かめる。IADR-0566）。委譲先が無いため **BFF が唯一の認可点**である。
 //    `trading-owner` を持たない利用者へは **404**（403 ではない）を返す＝**存在秘匿**（NFR-06）。
 //
 // 🔴 **② 本文を素通ししない。** 既存モジュールは要求本文を丸ごと透過するが、本モジュールは
@@ -54,6 +55,9 @@ public static class OpendAuthBffEndpoints
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    /// <summary>ログのカテゴリ。<b>検証コード・共有シークレットの値は決してこのカテゴリへも出さない。</b></summary>
+    private const string LoggerCategory = "AiStockTrading.Bff.Endpoints.OpendAuth";
+
     public static IEndpointRouteBuilder MapOpendAuthBffEndpoints(this IEndpointRouteBuilder app)
     {
         // グループは認証必須（匿名は 401。既存 BFF と同じ既定であり、ログイン導線を壊さない）。
@@ -78,7 +82,8 @@ public static class OpendAuthBffEndpoints
         // SC-04: 検証コードの投入。**本文はコードだけ**であり、コマンド種別は受け取らない。
         g.MapPost("/code", PostCodeAsync).WithName("BffOpendAuthCode");
 
-        // SC-04: SMS の再送要求（本文なし）。レート制限は上流が課す（暫定 60 秒に 1 回・実測待ち）。
+        // SC-04: SMS の再送要求（本文なし）。レート制限は上流（サイドカー）が課す —— 再送だけの間隔（60 秒に 1 回）と、
+        // 投入と合算したサービス全体の上限（60 秒に 5 件）。いずれも暫定値・実測待ち（#1456・IADR-0579 / IADR-0322 決定 4）。
         g.MapPost("/resend", PostResendAsync).WithName("BffOpendAuthResend");
 
         return app;
@@ -87,7 +92,7 @@ public static class OpendAuthBffEndpoints
     // ---- /state ----
 
     private static async Task<IResult> GetStateAsync(
-        IHttpClientFactory httpFactory, IConfiguration config, CancellationToken ct)
+        IHttpClientFactory httpFactory, IConfiguration config, ILoggerFactory loggerFactory, CancellationToken ct)
     {
         // 配備構成由来の 2 指標は上流の到達性と独立に供給され得る（ADR-0024 決定1 の 2 条件）。
         var deviceTrust = config.GetValue<bool?>(OpendAuthUpstream.DeviceTrustPersistedKey);
@@ -101,11 +106,19 @@ public static class OpendAuthBffEndpoints
                 "ゲートウェイの接続先が構成されていません。", deviceTrust, egressStable));
         }
 
+        var secret = ResolveCallerSecret(config);
+        if (secret is null)
+        {
+            // IADR-0566: 呼び出し元の資格が無いなら呼ばない。「到達できない」と混ぜずに名指す。
+            return Results.Ok(OpendAuthUpstream.Unsupplied(
+                "ゲートウェイへの接続資格が構成されていません。", deviceTrust, egressStable));
+        }
+
         try
         {
             var client = httpFactory.CreateClient(ClientName);
-            using var req = new HttpRequestMessage(HttpMethod.Get, baseUrl + OpendAuthUpstream.StatePath);
-            using var resp = await client.SendAsync(req, ct);
+            using var req = UpstreamRequest(HttpMethod.Get, baseUrl + OpendAuthUpstream.StatePath, secret);
+            using var resp = await SendUpstreamAsync(client, req, loggerFactory, ct);
             if (!resp.IsSuccessStatusCode)
             {
                 return Results.Ok(OpendAuthUpstream.Unsupplied(
@@ -127,16 +140,18 @@ public static class OpendAuthBffEndpoints
     // ---- /captcha ----
 
     private static async Task<IResult> GetCaptchaAsync(
-        IHttpClientFactory httpFactory, IConfiguration config, CancellationToken ct)
+        IHttpClientFactory httpFactory, IConfiguration config, ILoggerFactory loggerFactory, CancellationToken ct)
     {
         var baseUrl = ResolveBaseUrl(config);
         if (baseUrl is null) return Results.NotFound();
+        var secret = ResolveCallerSecret(config);
+        if (secret is null) return Results.NotFound();
 
         try
         {
             var client = httpFactory.CreateClient(ClientName);
-            using var req = new HttpRequestMessage(HttpMethod.Get, baseUrl + OpendAuthUpstream.CaptchaPath);
-            using var resp = await client.SendAsync(req, ct);
+            using var req = UpstreamRequest(HttpMethod.Get, baseUrl + OpendAuthUpstream.CaptchaPath, secret);
+            using var resp = await SendUpstreamAsync(client, req, loggerFactory, ct);
             if (!resp.IsSuccessStatusCode) return Results.NotFound();
 
             var bytes = await resp.Content.ReadAsByteArrayAsync(ct);
@@ -164,10 +179,12 @@ public static class OpendAuthBffEndpoints
     /// </para>
     /// </summary>
     private static async Task<IResult> PostCodeAsync(
-        IHttpClientFactory httpFactory, IConfiguration config, HttpContext http, CancellationToken ct)
+        IHttpClientFactory httpFactory, IConfiguration config, ILoggerFactory loggerFactory, HttpContext http, CancellationToken ct)
     {
         var baseUrl = ResolveBaseUrl(config);
         if (baseUrl is null) return GatewayUnavailable();
+        var secret = ResolveCallerSecret(config);
+        if (secret is null) return GatewayUnavailable();
 
         // 🔴 本文の読み取りで例外を握るとき、**例外メッセージを一切外へ出さない**
         // （`JsonException` のメッセージには本文の断片＝検証コードが入る）。
@@ -190,7 +207,7 @@ public static class OpendAuthBffEndpoints
 
             // ── コマンドの決定（サーバ側）──
             // いま待たれているプロンプトを読み、そこからコマンドを決める。
-            var prompt = await ReadPromptAsync(client, baseUrl, ct);
+            var prompt = await ReadPromptAsync(client, baseUrl, secret, loggerFactory, ct);
             if (OpendAuthUpstream.CommandForPrompt(prompt) is null)
             {
                 // 待機していない・種別が読めない → **送らない**。
@@ -199,15 +216,13 @@ public static class OpendAuthBffEndpoints
 
             // ── 投入 ──
             // 本文は**作り直す**（画面から来た本文をそのまま流さない）。載るのはコードだけである。
-            using var req = new HttpRequestMessage(HttpMethod.Post, baseUrl + OpendAuthUpstream.VerifyPath)
-            {
-                Content = new StringContent(
-                    JsonSerializer.Serialize(new OpendAuthUpstream.UpstreamVerifyRequest(code), Json),
-                    Encoding.UTF8,
-                    "application/json"),
-            };
-            using var resp = await client.SendAsync(req, ct);
-            return MapSubmissionResult(resp.StatusCode);
+            using var req = UpstreamRequest(HttpMethod.Post, baseUrl + OpendAuthUpstream.VerifyPath, secret);
+            req.Content = new StringContent(
+                JsonSerializer.Serialize(new OpendAuthUpstream.UpstreamVerifyRequest(code), Json),
+                Encoding.UTF8,
+                "application/json");
+            using var resp = await SendUpstreamAsync(client, req, loggerFactory, ct);
+            return MapSubmissionResult(resp, http);
         }
         catch (Exception ex) when (IsUpstreamFailure(ex, ct))
         {
@@ -218,18 +233,20 @@ public static class OpendAuthBffEndpoints
     // ---- /resend ----
 
     private static async Task<IResult> PostResendAsync(
-        IHttpClientFactory httpFactory, IConfiguration config, CancellationToken ct)
+        IHttpClientFactory httpFactory, IConfiguration config, ILoggerFactory loggerFactory, HttpContext http, CancellationToken ct)
     {
         var baseUrl = ResolveBaseUrl(config);
         if (baseUrl is null) return GatewayUnavailable();
+        var secret = ResolveCallerSecret(config);
+        if (secret is null) return GatewayUnavailable();
 
         try
         {
             var client = httpFactory.CreateClient(ClientName);
             // 本文なし。送るコマンドは `req_phone_verify_code` の 1 つに固定であり、選択肢が無い。
-            using var req = new HttpRequestMessage(HttpMethod.Post, baseUrl + OpendAuthUpstream.ResendPath);
-            using var resp = await client.SendAsync(req, ct);
-            return MapSubmissionResult(resp.StatusCode);
+            using var req = UpstreamRequest(HttpMethod.Post, baseUrl + OpendAuthUpstream.ResendPath, secret);
+            using var resp = await SendUpstreamAsync(client, req, loggerFactory, ct);
+            return MapSubmissionResult(resp, http);
         }
         catch (Exception ex) when (IsUpstreamFailure(ex, ct))
         {
@@ -256,11 +273,48 @@ public static class OpendAuthBffEndpoints
         return string.IsNullOrWhiteSpace(raw) ? null : raw.TrimEnd('/');
     }
 
-    /// <summary>いま上流が待っているプロンプト種別。読めなければ <c>null</c>。</summary>
-    private static async Task<string?> ReadPromptAsync(HttpClient client, string baseUrl, CancellationToken ct)
+    /// <summary>
+    /// IADR-0566: 構成から呼び出し元の共有シークレットを解決する。空・空白は「未構成」として <c>null</c>。
+    /// 🔴 値はこのメソッドの戻り値とヘッダーにしか使わない（ログ・応答・例外へ出さない）。
+    /// </summary>
+    private static string? ResolveCallerSecret(IConfiguration config)
     {
-        using var req = new HttpRequestMessage(HttpMethod.Get, baseUrl + OpendAuthUpstream.StatePath);
-        using var resp = await client.SendAsync(req, ct);
+        // サイドカー（CallerSecretFilter.ReadSecret）と同じ正規化: 前後の空白・改行を落とす（HTTP のヘッダーは前後の空白を運ばない）。
+        var raw = config[OpendAuthUpstream.CallerSecretKey]?.Trim();
+        return string.IsNullOrEmpty(raw) ? null : raw;
+    }
+
+    /// <summary>上流への要求を作り、呼び出し元のシークレットを載せる（**全経路がここを通る**）。</summary>
+    private static HttpRequestMessage UpstreamRequest(HttpMethod method, string url, string secret)
+    {
+        var req = new HttpRequestMessage(method, url);
+        req.Headers.TryAddWithoutValidation(OpendAuthUpstream.CallerSecretHeader, secret);
+        return req;
+    }
+
+    /// <summary>
+    /// 上流へ送る（**全経路がここを通る**）。上流が呼び出し元の検証で拒んだ（401）ときだけ警告を 1 行残す
+    /// —— 画面には「到達できない」としか出ないため、配備の順序の誤り（BFF とサイドカーの値の食い違い）をログで追えるようにする。
+    /// 🔴 値はログに出さない。
+    /// </summary>
+    private static async Task<HttpResponseMessage> SendUpstreamAsync(
+        HttpClient client, HttpRequestMessage req, ILoggerFactory loggerFactory, CancellationToken ct)
+    {
+        var resp = await client.SendAsync(req, ct);
+        if (resp.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            loggerFactory.CreateLogger(LoggerCategory).LogWarning(
+                "opend-auth: 上流が呼び出し元の検証で要求を拒んだ（401）。BFF とサイドカーの共有シークレットが一致しているか確かめる（値は表示しない）。");
+        }
+        return resp;
+    }
+
+    /// <summary>いま上流が待っているプロンプト種別。読めなければ <c>null</c>。</summary>
+    private static async Task<string?> ReadPromptAsync(
+        HttpClient client, string baseUrl, string secret, ILoggerFactory loggerFactory, CancellationToken ct)
+    {
+        using var req = UpstreamRequest(HttpMethod.Get, baseUrl + OpendAuthUpstream.StatePath, secret);
+        using var resp = await SendUpstreamAsync(client, req, loggerFactory, ct);
         if (!resp.IsSuccessStatusCode) return null;
 
         var body = await resp.Content.ReadAsStringAsync(ct);
@@ -283,14 +337,41 @@ public static class OpendAuthBffEndpoints
     /// 上流の投入結果を画面向けの応答へ写す。
     /// 🔴 <b>上流の本文は捨てる。</b> 返すのは状態と機械可読な理由の符号だけであり、
     /// **利用者の入力に由来する文字列を 1 つも含まない**（検証コードが応答へ回り込む経路を塞ぐ）。
+    /// <para>
+    /// #1456, IADR-0579: 上流の <b>429（レート制限）は 409・<c>rate_limited</c>・残り秒数</b>へ写す
+    /// （以前は「その他」として 503＝供給が無い、へ倒れ、画面は「到達できない」と誤って述べていた）。
+    /// 409 にするのは、基盤の <c>apiFetch</c> が問題本文を残すのが 400 / 409 だけだからであり、
+    /// 残り秒数を画面へ渡すにはそこへ載せるしかない。<c>Retry-After</c> も同じ値で付ける。
+    /// </para>
     /// </summary>
-    private static IResult MapSubmissionResult(HttpStatusCode status) => status switch
+    private static IResult MapSubmissionResult(HttpResponseMessage resp, HttpContext http) => resp.StatusCode switch
     {
         HttpStatusCode.NoContent or HttpStatusCode.OK or HttpStatusCode.Accepted => Results.NoContent(),
         HttpStatusCode.Conflict => NotWaiting(),
         HttpStatusCode.BadRequest => Rejected(),
+        HttpStatusCode.TooManyRequests => RateLimited(http, RetryAfterSeconds(resp)),
         _ => GatewayUnavailable(),
     };
+
+    /// <summary>
+    /// 上流の <c>Retry-After</c> を秒で読む（切り上げ）。無い・読めないときは <c>null</c>（＝秒数を示さない。推測で埋めない）。
+    /// </summary>
+    private static int? RetryAfterSeconds(HttpResponseMessage resp)
+    {
+        var retryAfter = resp.Headers.RetryAfter;
+        TimeSpan? wait = retryAfter?.Delta
+            ?? (retryAfter?.Date is { } date ? date - DateTimeOffset.UtcNow : null);
+        if (wait is not { } w) return null;
+        return w <= TimeSpan.Zero ? 0 : (int)Math.Ceiling(w.TotalSeconds);
+    }
+
+    /// <summary>上流のレート制限に掛かった。<b>残り秒数</b>を本文と <c>Retry-After</c> の両方で返す。</summary>
+    private static IResult RateLimited(HttpContext http, int? retryAfterSeconds)
+    {
+        if (retryAfterSeconds is { } seconds)
+            http.Response.Headers.RetryAfter = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return Results.Json(new { reason = "rate_limited", retryAfterSeconds }, statusCode: StatusCodes.Status409Conflict);
+    }
 
     /// <summary>いま入力を待っていない（＝送るコマンドが決まらない）。</summary>
     private static IResult NotWaiting() =>

@@ -46,4 +46,21 @@ public sealed class ExecutedOrderRow
     // 🔴 FR-10, UC-06, ADR-0050 決定1, #1222, IADR-0515 決定2: 承認の出どころ（序数。1＝TradeDecision / 2＝OwnerClose / 3＝MaintenanceMarginReduction）。
     // null＝分からない。**列の追加だけ**（既存行は null＝S1 は判断の手仕舞いと同じく取り消す側。是正前と同じ挙動）。
     public OrderApprovalOrigin? ApprovalOrigin { get; set; }
+
+    // 🔴 FR-10, #1330, IADR-0534 決定2: 承認経路の決済の約定のうち、保護記録の縮小へ既に帰属させた株数（0..FilledQuantity・単調）。
+    // 既定 0。**移行で既存の決済行は FilledQuantity へ揃える**（過去の約定を、これからの縮小の証拠にしない）。
+    public int ProtectionReleasedQuantity { get; set; }
+
+    // 🔴 FR-10, FR-19, ADR-0067 決定1・2, #1339, IADR-0539: 判断由来の決済の指値の取消を系が求めた時刻（取消を送る前に書く）。
+    // null＝求めていない。**列の追加だけ**（既存行は null＝取消を求めたことが無い）。
+    public DateTimeOffset? UnfilledCancelRequestedAt { get; set; }
+
+    // 🔴 FR-10, FR-09, UC-06, #1395, IADR-0560: S1 が損切りの前にこの決済の取消を求めた時刻（取消を送る前に書く）。
+    // null＝求めていない。**列の追加だけ**（既存行は null＝従来どおり「手仕舞いが約定せず終了」を出す側）。
+    public DateTimeOffset? SoftwareStopCancelRequestedAt { get; set; }
+
+    // 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: 約定追跡が記録を更新した（UpdateOutcome）が、その状態の OrderExecuted を
+    // まだ発行し終えていない印。更新と同じ書き込みで立て、発行の後に Worker が倒す（状態・約定数が発行したものと同じときだけ）。
+    // 立ったままの記録は次の巡回で再発行する。**列の追加だけ**（既存行は false＝発行済みとして扱う。過去の約定を撃ち直さない）。
+    public bool OrderExecutedPublishPending { get; set; }
 }

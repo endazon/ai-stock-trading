@@ -119,6 +119,10 @@ public class CashAccountGuardEndpointTests
             "/risk-controls/settings/guard", GuardBody("信用系を有効化する", ProductType.Cash, unsupported));
 
         res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // SC-02, IADR-0586 決定 3, #1472: 画面と Discord が出す文言は enum 名（Cash・MarginLong・ShortSell）でなく表示名で書き、引数名の接尾辞を付けない。
+        var error = (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString();
+        error.Should().StartWith($"口座種別 現金口座 では商品種別 {TradingTermDisplay.Label(unsupported)} を有効にできません")
+            .And.NotContain(unsupported.ToString()).And.NotContain("Cash").And.NotContain("(Parameter");
 
         // 拒否された要求は設定を変えない（履歴にも残らない・IADR-0151 決定2 と同じ規律）。
         var guard = await GuardOfAsync(client);

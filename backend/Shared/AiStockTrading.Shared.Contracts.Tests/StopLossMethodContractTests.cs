@@ -89,6 +89,19 @@ public class StopLossMethodContractTests
             Guid.NewGuid(), "close-1", closeIntent, T0);
         var restored = JsonSerializer.Deserialize<SoftwareStopExecuted>(JsonSerializer.Serialize(executed))!;
         restored.Should().BeEquivalentTo(executed);
+
+        // 🔴 T-10-2630, #1330, IADR-0534 決定3: 末尾の省略可能な欄（出どころ）も往復で失われない。旧いメッセージ（欄なし）は null で読める。
+        var released = executed with
+        {
+            Outcome = SoftwareStopOutcome.ApprovedCloseReleased,
+            CloseIntent = null,
+            CloseOrigin = OrderApprovalOrigin.TradeDecision,
+        };
+        JsonSerializer.Deserialize<SoftwareStopExecuted>(JsonSerializer.Serialize(released))!
+            .Should().BeEquivalentTo(released);
+        var legacyJson = JsonSerializer.Serialize(executed).Replace(",\"CloseOrigin\":null", string.Empty, StringComparison.Ordinal);
+        legacyJson.Should().NotContain("CloseOrigin");
+        JsonSerializer.Deserialize<SoftwareStopExecuted>(legacyJson)!.CloseOrigin.Should().BeNull();
     }
 
     [Fact]
@@ -110,8 +123,10 @@ public class StopLossMethodContractTests
         ((int)SoftwareStopOutcome.StopCancelUnconfirmed).Should().Be(8);
         // #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端した（末尾へ追加）。
         ((int)SoftwareStopOutcome.CloseUnfilled).Should().Be(9);
+        // 🔴 T-10-2630, #1330, IADR-0534 決定3: 承認済みの決済の約定に合わせた保護対象の縮小（末尾へ追加）。
+        ((int)SoftwareStopOutcome.ApprovedCloseReleased).Should().Be(10);
         // 🔴 序数だけでなく**値の総数**も固定する（末尾追加なら 1 つ増える。既存値の削除・並べ替えを捕まえる）。
-        Enum.GetValues<SoftwareStopOutcome>().Should().HaveCount(10);
+        Enum.GetValues<SoftwareStopOutcome>().Should().HaveCount(11);
     }
 
     // 見送りの理由は末尾追加であり、既存 3 値の序数を動かさない（メトリクスのタグ・監査 payload の整数）。
@@ -138,8 +153,13 @@ public class StopLossMethodContractTests
         // T-10-2102, FR-10, #1048, IADR-0481 決定1: 同じ銘柄に別の手法の有効な記録がある新規建ての見送りも**末尾**である。
         ((int)OrderDispatchForgoneReason.StopLossMethodConflict).Should().Be(8);
 
+        // T-10-2972, FR-10, ADR-0009, IADR-0567 決定 3: 送る直前の停止状態の最終照会の 3 値も**末尾**である。
+        ((int)OrderDispatchForgoneReason.KillSwitchActive).Should().Be(9);
+        ((int)OrderDispatchForgoneReason.TradingPaused).Should().Be(10);
+        ((int)OrderDispatchForgoneReason.TradingHaltStateUnknown).Should().Be(11);
+
         // 値を増やしたら、見送りを分類し直す側（在庫解放の可否など）も引き直させる。
-        Enum.GetValues<OrderDispatchForgoneReason>().Should().HaveCount(9);
+        Enum.GetValues<OrderDispatchForgoneReason>().Should().HaveCount(12);
     }
 
     // 🔴 T-10-1084, FR-10, FR-06, #1002, IADR-0429 決定2: 解決の理由の序数は動かさない（イベント本文の整数・監査 payload）。

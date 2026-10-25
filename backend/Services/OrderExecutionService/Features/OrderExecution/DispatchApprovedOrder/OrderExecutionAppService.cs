@@ -47,6 +47,10 @@ namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 // 確認できた拒否）だけが従来どおり「建玉を持たない」へ進む。S0 / S3 の新規建ては送る前に承認時の保護の文脈を残し
 // （AwaitingEntry）、エントリーの送信結果が不明のまま突合で発注済みと確定したら、本クラスの ProtectAsync が承認時の手法で
 // 保護レグを張る（IReconciledEntryProtection）。
+//
+// 🔴 FR-10, ADR-0009 決定 3・4, NFR-04, IADR-0567: **新規建ては、ブローカーへ送る直前に kill switch・一時停止の状態をリスク管理へ最終照会し、
+// 成立中または不明なら送らない**（予約を Forgone へ移して見送る）。決済・損切りは照会しない＝止めない。照会元（tradingHalt）は
+// 本番の Program.cs が必ず渡す（照会先が未構成なら常に不明を返す実装。T-10-2971 が Program.cs そのもので固定する）。
 public sealed class OrderExecutionAppService(
     IBrokerAdapter broker,
     IExecutedOrderStore store,
@@ -55,8 +59,15 @@ public sealed class OrderExecutionAppService(
     IProtectiveStopOrderStore? protectiveStops = null,
     ILogger<OrderExecutionAppService>? logger = null,
     IBrokerPositionSource? brokerPositions = null,
-    IPositionQueryHealthReporter? positionQueryHealth = null) : IReconciledEntryProtection
+    IPositionQueryHealthReporter? positionQueryHealth = null,
+    ITradingHaltSource? tradingHalt = null,
+    IClosePositionLock? closeLock = null) : IReconciledEntryProtection, IUnconfirmedEntryCancelResolution
 {
+    // 🔴 NFR, FR-10, #1446（親 #1423 M-2）, IADR-0575 決定 1・3: 決済（承認の決済・保護喪失の成行手仕舞い）の「読む → 送る → 記録する」を
+    // (銘柄, 市場, 決済の方向) ごとに 1 本ずつにする。本番は Program.cs が DB の advisory lock を渡す（T-10-3008）。
+    // 渡さなければこの組み立てだけの InProcess（他の経路とは直列にならない＝単体の試験の既定。試験間で待ち合わない）。
+    private readonly IClosePositionLock _closeLock = closeLock ?? new InProcessClosePositionLock();
+
     // #820 の 8 巡目監査, IADR-0344 追記(8): 武装の前提条件（帰属不明の建玉が無いこと）を確かめるために
     // 見る Active 行の上限。保有建玉数上限（既定 3）に対して十分大きい。
     private const int ArmingScanLimit = 500;
@@ -77,9 +88,44 @@ public sealed class OrderExecutionAppService(
     // ——戻り口を足したときに載せ忘れる形を作らない。本サービスは Singleton なので、回ごとの受け皿は引数で渡す。
     public async Task<OrderDispatchResult> ExecuteAsync(OrderApproved approved, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(approved);
+
         var resolved = new StrongBox<StopLossMethodResolved?>();
-        var result = await ExecuteCoreAsync(approved, resolved, cancellationToken).ConfigureAwait(false);
+        OrderDispatchResult result;
+        if (approved.Intent.PositionEffect == PositionEffect.Close)
+        {
+            // 🔴 NFR, FR-10, #1446, IADR-0575 決定 1: 決済は、建玉照会・処理中の決済の差し引き（IADR-0461）から記録の保存（相 4）までを
+            // 同じ建玉を売る他の決済（S1・ガードの成行手仕舞い・別の承認）と直列にする。後発は先発の記録を読んでから数量を決める。
+            // 取れなければ例外で抜ける——予約はまだ取っていない（ブローカーにも触れていない）ので、承認の再配送で撃ち直せる。
+            await using var serialized = await AcquireCloseLockAsync(
+                    new ClosePositionKey(approved.Intent.Symbol, approved.Intent.Market, approved.Intent.Side),
+                    approved.DecisionId, cancellationToken)
+                .ConfigureAwait(false);
+            result = await ExecuteCoreAsync(approved, resolved, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            result = await ExecuteCoreAsync(approved, resolved, cancellationToken).ConfigureAwait(false);
+        }
+
         return resolved.Value is { } methodResolved ? result with { MethodResolved = methodResolved } : result;
+    }
+
+    // 🔴 #1446, IADR-0575: 取れなかったことは必ず Error で残す（承認の再試行を使い切ると error キューに残るのはこの例外である）。
+    private async Task<IAsyncDisposable> AcquireCloseLockAsync(
+        ClosePositionKey key, Guid decisionId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _closeLock.AcquireAsync(key, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ClosePositionLockUnavailableException ex)
+        {
+            _logger.LogError(ex,
+                "決済の直列化を取れなかったため、決済を送りません（証券会社には触れていません）: DecisionId={DecisionId} 建玉={Key}",
+                decisionId, key);
+            throw;
+        }
     }
 
     private async Task<OrderDispatchResult> ExecuteCoreAsync(
@@ -130,10 +176,13 @@ public sealed class OrderExecutionAppService(
         // 台帳が乖離していると（#849。台帳 3,381 株 / ブローカー 0 株を実測）ブローカー上では
         // **保有 0 からの売り＝裸の新規ショート**になる。**予約（相2）より前**に判定する
         //（送らないと決めたら発注に着手しない＝予約も取らない。逆指値を張れない Open の見送りと同じ位置）。
-        // 能力の無い発注先（内蔵 paper）では brokerPositions が DI に現れないため、この分岐そのものが起きない。
+        // 能力の無い発注先（内蔵 paper）では建玉照会の口（_positions）が無いため、この分岐そのものが起きない。
+        // 🔴 FR-10, #1449（親 #1423 L-1）, IADR-0576 決定1: 判定は**フィールド _positions**（明示の brokerPositions、無ければ
+        // 建玉照会の能力を持つアダプタそのもの）で行う。コンストラクタ引数を直接見ると、アダプタだけを渡す組み立てで
+        // このゲートと処理中の決済の差し引きが**黙って外れる**（S1 の武装は _positions を見るので食い違う）。
         PositionReconciliationDrift? drift = null;
         CloseReducedForInFlightCloses? inFlightReduction = null;
-        if (intent.PositionEffect == PositionEffect.Close && brokerPositions is not null)
+        if (intent.PositionEffect == PositionEffect.Close && _positions is not null)
         {
             // ポートの契約は「照会不能は null（例外を投げない）」である（IBrokerPositionSource）。
             // #873 の監査 N2: それでも**例外は不明として扱う**——契約違反の実装が現れたときに
@@ -143,7 +192,7 @@ public sealed class OrderExecutionAppService(
             PositionQueryResult query;
             try
             {
-                query = await PositionQueries.QueryAsync(brokerPositions, cancellationToken).ConfigureAwait(false);
+                query = await PositionQueries.QueryAsync(_positions, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -216,7 +265,8 @@ public sealed class OrderExecutionAppService(
             var sendable = verdict.ClosableQuantity - inFlight.Quantity;
             if (inFlight.Quantity > 0 && sendable < intent.Quantity)
             {
-                if (sendable <= 0)
+                // 🔴 #1338, IADR-0535 決定2: 「覆う」の判定は照会の口（取引判断が LLM の前に読む）と同じ関数で行う。
+                if (InFlightCloses.Covers(verdict.ClosableQuantity, inFlight.Quantity))
                 {
                     // IADR-0461 決定2: 処理中の決済が決済方向の建玉をすべて覆っている。送れば拒否されるだけなので送らない。
                     // 拒否の後の自動の出し直しは足さない（IADR-0211 決定3）。台帳の乖離（drift）を見つけていればそれも残す。
@@ -227,8 +277,10 @@ public sealed class OrderExecutionAppService(
                         + "処理中の決済={InFlightDecisionIds}",
                         verdict.ClosableQuantity, inFlight.Quantity, inFlight.DecisionIds.Count,
                         approved.DecisionId, intent.Symbol, approved.Intent.Quantity, string.Join(",", inFlight.DecisionIds));
+                    // 🔴 FR-09, #1338, IADR-0535 決定4: 覆っている処理中の決済の注文 ID を載せる（通知が同じ決済の見送りを 1 回へ畳む鍵）。
                     return RecordForgoneBeforeReservation(
-                        approved, OrderDispatchForgoneReason.InFlightCloseCoversPosition, drift);
+                        approved, OrderDispatchForgoneReason.InFlightCloseCoversPosition, drift,
+                        inFlightCloseOrderIds: inFlight.OrderIds);
                 }
 
                 // IADR-0461 決定3: 縮めて送る。**乖離イベントは出さない**（台帳の乖離ではない）。縮めた事実は別に残す（黙って数量を変えない）。
@@ -281,6 +333,8 @@ public sealed class OrderExecutionAppService(
             // 🔴 FR-10, ADR-0040 決定1, #1048（利用者裁定 2026-10-02・Q2 案 b）, IADR-0481 決定1:
             // **同じ銘柄・同じ方向に別の手法の有効な保護記録があれば、新しい手法での新規建てを見送る**（決済は止めない）。
             // ここは窓の**前の端**（予約の前）。自分の記録を残した後（送信の直前）にもう一度確かめる（下の後の端）。
+            // 🔴 #1343, IADR-0551 決定4: 判定（読むだけ）の前に、予約が見送り済みの取り残しを閉じる（書き込み）。
+            CloseForgoneEntryLeftovers(approved, disposition);
             if (HasConflictingStopLossMethod(approved, disposition, "予約の前"))
             {
                 return RecordForgoneBeforeReservation(approved, OrderDispatchForgoneReason.StopLossMethodConflict);
@@ -373,6 +427,9 @@ public sealed class OrderExecutionAppService(
         // 🔴 例外は S2: S2 の新規建ては保護の記録を残さないため、S0 / S3 の側の後の端は S2 を見ない。S2 との同時の新規建ては
         // 予約の前の moomoo SIMULATE の「記録の無い建玉」の照合でしか止まらず、建玉照会がまだ S2 の約定を映していない窓では
         // 両方が通り得る（S2 の側の後の端は S0 / S3 の AwaitingEntry を見る。IADR-0481 の残余）。
+        // 🔴 #1343, IADR-0551 決定4: 後の端でも、判定の前に見送り済みの取り残しを閉じる（前の端の後に取り残された行）。
+        if (intent.PositionEffect == PositionEffect.Open)
+            CloseForgoneEntryLeftovers(approved, disposition);
         if (intent.PositionEffect == PositionEffect.Open
             && HasConflictingStopLossMethod(approved, disposition, "送信の直前"))
         {
@@ -384,6 +441,24 @@ public sealed class OrderExecutionAppService(
             }
 
             return ForgoneIfRecorded(approved, OrderDispatchForgoneReason.StopLossMethodConflict, conflicted);
+        }
+
+        // 🔴 FR-10, ADR-0009 決定 3・4, NFR-04, IADR-0567 決定 1・3: **送信の直前の最終照会**（新規建てだけ）。kill switch・一時停止が
+        // 成立中、または確かめられない（不明）なら送らない。審査（リスク管理）の承認の後に利用者が停止を入れた窓を、送信の手前で閉じる。
+        // 決済（Close）は照会しない——手仕舞い・損切りはどの停止でも止めない（ADR-0009 決定 4）。照会の失敗で止めてもいけない。
+        // 見送りの形は上の「送信の直前」の併存の判定と同じ（予約を Forgone へ移し、S1 の行・保護の文脈を閉じる＝確実に未発注）。
+        if (intent.PositionEffect != PositionEffect.Close
+            && tradingHalt is not null
+            && await FinalTradingHaltCheckAsync(approved, cancellationToken).ConfigureAwait(false) is { } haltReason)
+        {
+            var halted = reservations.MarkReservationForgone(approved.DecisionId, clock.UtcNow);
+            if (halted is ForgoneRecordOutcome.Recorded or ForgoneRecordOutcome.AlreadyForgone)
+            {
+                CompleteSoftwareStopWithoutPosition(approved, disposition);
+                CompleteAwaitingProtection(approved.DecisionId);
+            }
+
+            return ForgoneIfRecorded(approved, haltReason, halted);
         }
 
         // 相3: ADR-0003: 承認済み注文のみ発注する。Close（owner 手仕舞い・自動縮小）も同一経路。
@@ -586,22 +661,24 @@ public sealed class OrderExecutionAppService(
     // （下の Forgone を直接呼ぶと記録が抜け、この穴が戻る。T-10-826 が理由ごとに固定する）。
     private OrderDispatchResult RecordForgoneBeforeReservation(
         OrderApproved approved, OrderDispatchForgoneReason reason, PositionReconciliationDrift? drift = null,
-        ForgoneCloseProtection? protection = null) =>
+        ForgoneCloseProtection? protection = null, IReadOnlyList<string>? inFlightCloseOrderIds = null) =>
         ForgoneIfRecorded(
-            approved, reason, reservations.TryRecordForgone(approved.DecisionId, clock.UtcNow), drift, protection);
+            approved, reason, reservations.TryRecordForgone(approved.DecisionId, clock.UtcNow), drift, protection,
+            inFlightCloseOrderIds);
 
     // 🔴 FR-05, #876, IADR-0398: **見送りを主張してよいのは、この DecisionId を Forgone として記録できたときだけである。**
     // 予約（Reserved）や確定（Completed）がある DecisionId は、別の配送が送った・送ったかもしれない——
     // ここで見送りを発行すると台帳が生きている注文の在庫の押さえを解く（「確実に未発注」と「送ったか不明」を混ぜない）。
     private OrderDispatchResult ForgoneIfRecorded(
         OrderApproved approved, OrderDispatchForgoneReason reason, ForgoneRecordOutcome recorded,
-        PositionReconciliationDrift? drift = null, ForgoneCloseProtection? protection = null)
+        PositionReconciliationDrift? drift = null, ForgoneCloseProtection? protection = null,
+        IReadOnlyList<string>? inFlightCloseOrderIds = null)
     {
         switch (recorded)
         {
             case ForgoneRecordOutcome.Recorded:
             case ForgoneRecordOutcome.AlreadyForgone:
-                return Forgone(approved, reason, drift, protection);
+                return Forgone(approved, reason, drift, protection, inFlightCloseOrderIds);
 
             case ForgoneRecordOutcome.HeldByReservation:
                 // 並行した配送が発注に着手している（送ったか不明）。従来の予約競合と同じ扱いで再発注も見送りもしない
@@ -618,6 +695,43 @@ public sealed class OrderExecutionAppService(
                     $"DecisionId={approved.DecisionId} は発注予約表で確定済み（または未知の状態 {recorded}）のため、"
                     + $"見送り（理由 {reason}）を主張しません。発注済みの注文を見送りと記録すると在庫の押さえが解けます。");
         }
+    }
+
+    // 🔴 FR-10, ADR-0009 決定 3, IADR-0567 決定 3: 停止の状態を見送りの理由へ写す（送ってよければ null）。
+    // 優先順位は kill switch ＞ 一時停止（ADR-0009 決定 3。日次損失ロックアウトは審査が止める）。不明は TradingHaltStateUnknown。
+    private async Task<OrderDispatchForgoneReason?> FinalTradingHaltCheckAsync(
+        OrderApproved approved, CancellationToken cancellationToken)
+    {
+        TradingHaltState? state;
+        try
+        {
+            state = await tradingHalt!.GetAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // 照会元の契約は「投げずに null」だが、投げても不明として見送る（予約を Reserved のまま残さない）。
+            _logger.LogError(ex, "停止の状態の照会元が例外を投げました。不明として扱います: DecisionId={DecisionId}", approved.DecisionId);
+            state = null;
+        }
+
+        OrderDispatchForgoneReason? reason = state switch
+        {
+            null => OrderDispatchForgoneReason.TradingHaltStateUnknown,
+            { KillSwitchEngaged: true } => OrderDispatchForgoneReason.KillSwitchActive,
+            { TradingPaused: true } => OrderDispatchForgoneReason.TradingPaused,
+            _ => null,
+        };
+
+        if (reason is { } r)
+        {
+            _logger.Log(
+                r == OrderDispatchForgoneReason.TradingHaltStateUnknown ? LogLevel.Error : LogLevel.Warning,
+                "新規建てを送る直前の停止状態の確認で送らないことにしました（予約は見送りとして記録します。決済・損切りは止めません）: "
+                + "DecisionId={DecisionId} 銘柄={Symbol} 数量={Quantity} 理由={Reason}",
+                approved.DecisionId, approved.Intent.Symbol, approved.Intent.Quantity, r);
+        }
+
+        return reason;
     }
 
     // 🔴 FR-10, ADR-0040 決定1, #1048, IADR-0481 決定1: 同じ銘柄・同じ方向に別の手法の有効な保護記録があるか（あればログを出して true）。
@@ -641,6 +755,50 @@ public sealed class OrderExecutionAppService(
             phase, approved.DecisionId, intent.Symbol, intent.Side, mechanism,
             string.Join(",", conflicting.Select(r => $"{r.Mechanism}:{r.State}:{r.EntryDecisionId}")));
         return true;
+    }
+
+    // 🔴 FR-10, #1343, IADR-0551 決定4: **書き込む。** 同じ銘柄・同じ方向で新しい手法の新規建てを塞ぐ記録のうち、**そのエントリーの予約が
+    // 見送り（Forgone）＝送っていないと確定した**ものを閉じる（突合の解放が予約を見送りにした後・記録を閉じる前に止まった取り残し、
+    // 人手の後始末で予約だけ片付けた行）。閉じる条件は突合と同じ CloseUnplacedEntryProtection（発注の記録なし・S1 は未確定・未到達・試行 0）。
+    // 閉じられない記録は残り、続く HasConflictingStopLossMethod（読むだけ）が塞ぐ。
+    private void CloseForgoneEntryLeftovers(OrderApproved approved, StopLossMethodDisposition disposition)
+    {
+        if (protectiveStops is null || StopLossMethodCoexistenceGate.MechanismOf(disposition) is not { } mechanism)
+            return;
+
+        var intent = approved.Intent;
+        foreach (var row in StopLossMethodCoexistenceGate.Conflicting(
+                     approved.DecisionId, intent, mechanism, protectiveStops.FindOpenFor(intent.Symbol, intent.Market, intent.Side)))
+        {
+            TryCloseForgoneEntryProtection(row, approved.DecisionId);
+        }
+    }
+
+    // 🔴 FR-10, #1343, IADR-0551 決定4: 予約が Forgone のエントリーの保護の記録を閉じられたら true。例外・閉じられないときは false（塞いだまま＝安全側）。
+    private bool TryCloseForgoneEntryProtection(ProtectiveStopOrder row, Guid requestingDecisionId)
+    {
+        try
+        {
+            if (reservations.Find(row.EntryDecisionId) is not { State: OrderDispatchState.Forgone })
+                return false;
+
+            var closure = CloseUnplacedEntryProtection(row.EntryDecisionId);
+            if (closure is not (UnplacedEntryProtectionClosure.SoftwareStopClosed or UnplacedEntryProtectionClosure.AwaitingEntryClosed))
+                return false;
+
+            _logger.LogWarning(
+                "見送り済み（送っていない）の新規建ての保護の記録が残っていたため閉じました（新規建ての見送りの判定の前）: "
+                    + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 記録={Closure} 判定中の DecisionId={DecisionId}。",
+                row.EntryDecisionId, row.Symbol, closure, requestingDecisionId);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "見送り済みの新規建ての保護の記録を閉じられませんでした（塞いだまま扱います）: EntryDecisionId={EntryDecisionId}",
+                row.EntryDecisionId);
+            return false;
+        }
     }
 
     // 🔴 FR-10, ADR-0040 決定1（S1）, #820 の 8 巡目監査, IADR-0344 追記(8) 決定4:
@@ -744,9 +902,11 @@ public sealed class OrderExecutionAppService(
 
     private OrderDispatchResult Forgone(
         OrderApproved approved, OrderDispatchForgoneReason reason, PositionReconciliationDrift? drift = null,
-        ForgoneCloseProtection? protection = null) =>
+        ForgoneCloseProtection? protection = null, IReadOnlyList<string>? inFlightCloseOrderIds = null) =>
         OrderDispatchResult.FromForgone(
-            new OrderDispatchForgone(approved.DecisionId, approved.Intent, reason, clock.UtcNow, protection), drift);
+            new OrderDispatchForgone(
+                approved.DecisionId, approved.Intent, reason, clock.UtcNow, protection, inFlightCloseOrderIds),
+            drift);
 
     // 🔴 FR-10, FR-09, UC-06, #879, IADR-0424 決定1: 決済を見送る建玉の**保護の記録**を読む（不明・無し・有りを混ぜない）。
     // 対象は決済の反対方向（＝エントリー方向）・同一銘柄・同一市場の Active な行。数量は実効数量（EffectiveProtectedQuantity。下記）であり、
@@ -811,31 +971,19 @@ public sealed class OrderExecutionAppService(
     //     書くまで古い——既に約定した決済を処理中と数えると、建玉照会が映した約定と二重に引き、判断の決済を取り残す。
     //     確かめられない（null・例外）・終端なら数えない＝**是正前と同じ側**（拒否され得る）へ倒す。取り残す側へは倒さない。
     //   - 保護記録ストアが無い／読めないときは保護レグを見分けられないので、**何も引かない**（是正前と同じ）。
-    private async Task<(int Quantity, IReadOnlyList<Guid> DecisionIds)> CountInFlightClosesAsync(
+    // 🔴 FR-04, #1338, IADR-0535 決定2: 数え方の本体は InFlightCloses（照会の口 QueryInFlightCloses と共有する）。ここは倒し方だけを持つ。
+    private async Task<InFlightCloseCount> CountInFlightClosesAsync(
         OrderApproved approved, CancellationToken cancellationToken)
     {
         var intent = approved.Intent;
         if (protectiveStops is null)
-            return (0, []);
+            return InFlightCloseCount.None;
 
-        List<ExecutionRecord> candidates;
+        IReadOnlyList<ExecutionRecord> candidates;
         try
         {
-            var entrySide = intent.Side == TradeSide.Sell ? TradeSide.Buy : TradeSide.Sell;
-            var protectiveLegs = protectiveStops.FindActiveFor(intent.Symbol, intent.Market, entrySide)
-                .Where(s => s.State == ProtectiveStopState.Active && !s.IsSoftwareStop)
-                .ToList();
-            var legOrderIds = protectiveLegs
-                .Select(s => s.StopOrderId)
-                .Where(id => !string.IsNullOrEmpty(id))
-                .ToHashSet(StringComparer.Ordinal);
-            var legDecisionIds = protectiveLegs.Select(s => s.StopDecisionId).ToHashSet();
-
-            candidates = store.FindPendingCloses(intent.Symbol, intent.Market, intent.Side)
-                .Where(r => r.DecisionId != approved.DecisionId
-                    && !legOrderIds.Contains(r.OrderId)
-                    && !legDecisionIds.Contains(r.DecisionId))
-                .ToList();
+            candidates = InFlightCloses.FindCandidates(
+                store, protectiveStops, intent.Symbol, intent.Market, intent.Side, approved.DecisionId);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -843,26 +991,10 @@ public sealed class OrderExecutionAppService(
                 "処理中の決済を読めませんでした（引かずに送ります。是正前と同じく、証券会社に拒否され得ます）: "
                 + "DecisionId={DecisionId} 銘柄={Symbol}",
                 approved.DecisionId, intent.Symbol);
-            return (0, []);
+            return InFlightCloseCount.None;
         }
 
-        var quantity = 0;
-        var decisionIds = new List<Guid>();
-        foreach (var record in candidates)
-        {
-            var live = await TryGetOrderAsync(record.OrderId, cancellationToken).ConfigureAwait(false);
-            if (live is null || OrderStatusLifecycle.IsTerminal(live.Status))
-                continue;
-
-            var remaining = record.Quantity - Math.Max(record.FilledQuantity, live.FilledQuantity);
-            if (remaining <= 0)
-                continue;
-
-            quantity += remaining;
-            decisionIds.Add(record.DecisionId);
-        }
-
-        return (quantity, decisionIds);
+        return await InFlightCloses.CountLiveAsync(candidates, broker, cancellationToken).ConfigureAwait(false);
     }
 
     // #864, IADR-0355 決定5: 乖離は**既存の検知（IADR-0118）と同じイベント**で人へ知らせる（新しい経路を作らない）。
@@ -993,7 +1125,8 @@ public sealed class OrderExecutionAppService(
             reservations.Release(stopDecisionId);
 
         // 未受理: 逆指値なしの建玉を持たない（業務フロー 02 の表）。事前に残した保護の文脈は閉じる（#853, IADR-0428 決定3）。
-        CompleteAwaitingProtection(approved.DecisionId);
+        // 🔴 #1422, IADR-0569: 閉じるのは建玉解消の行き先が確定した枝だけ（ResolveUnprotectedEntryAsync の中）。取消を送ったが結果を
+        // 確かめられない枝は閉じずに「取消の確認待ち」へ移す（閉じると取消の窓で約定した建玉が保護も手仕舞いも無く残る）。
         var coverageLost = await ResolveUnprotectedEntryAsync(approved, entryOrder, cancellationToken)
             .ConfigureAwait(false);
         return (null, coverageLost, attempted);
@@ -1141,6 +1274,50 @@ public sealed class OrderExecutionAppService(
         }
     }
 
+    // 🔴 FR-05, FR-10, ADR-0040 決定1, #1343, IADR-0551 決定1: 送る前に保護の記録を残した新規建てか（S1 の行・S0 / S3 の AwaitingEntry）。
+    // 行の EntryDecisionId は新規建ての DecisionId であり、保護の機構のレグ（StopDecisionId・CloseDecisionId）とは決して一致しない。
+    public bool HasEntryProtectionRecord(Guid decisionId) => protectiveStops?.Find(decisionId) is not null;
+
+    // 🔴 FR-05, FR-10, ADR-0040 決定1, #1343, IADR-0551 決定2: **突合が「未発注」と確定して予約を見送り（Forgone）へ移した後に**、
+    // 送る前に残した保護の記録を閉じる。閉じないと、S1 の行は発注の記録が無いまま「これから約定し得る」として永久に据え置かれ
+    // （ProtectiveStopGuard の未確定の分岐）、同じ銘柄・同じ方向の別の手法の新規建てを見送り続ける（StopLossMethodCoexistenceGate）。
+    // 送る前の見送り（接続確立の失敗・送信の直前の併存）が閉じるのと同じ 2 つ（CompleteSoftwareStopWithoutPosition・CompleteAwaitingProtection）を、
+    // 承認を持たない突合のために DecisionId だけで行う。
+    // 🔴 閉じるのは「建玉が生じていないと言える行」だけである: 発注の記録が無い／S1 は未確定（RemainingProtected が null）・未到達・決済の試行 0・
+    // 外部要因の観測なし。どれか 1 つでも外れたら閉じない（LeftOpen）——到達や決済の経路に入った行を古い写しで閉じると、決済の記録を巻き戻す。
+    // 楽観並行（TrySave）で書き、並行に更新されていたら閉じない。
+    public UnplacedEntryProtectionClosure CloseUnplacedEntryProtection(Guid decisionId)
+    {
+        if (protectiveStops?.Find(decisionId) is not { } row)
+            return UnplacedEntryProtectionClosure.NoProtectionRecord;
+
+        if (row.State == ProtectiveStopState.Completed)
+            return UnplacedEntryProtectionClosure.AlreadyCompleted;
+
+        // 発注の記録がある＝送られている。未発注の判定と食い違うので閉じない（人が確かめる）。
+        if (store.FindByDecisionId(decisionId) is not null)
+            return UnplacedEntryProtectionClosure.LeftOpen;
+
+        var closable = row switch
+        {
+            { State: ProtectiveStopState.AwaitingEntry } => true,
+            { State: ProtectiveStopState.Active, IsSoftwareStop: true } => row.RemainingProtected is null
+                && row.TriggeredAt is null
+                && row.Attempt == 0
+                && row.PendingExternalReduction == 0,
+            _ => false,
+        };
+        if (!closable)
+            return UnplacedEntryProtectionClosure.LeftOpen;
+
+        if (!protectiveStops.TrySave(row with { State = ProtectiveStopState.Completed, UpdatedAt = clock.UtcNow }))
+            return UnplacedEntryProtectionClosure.LeftOpen;
+
+        return row.State == ProtectiveStopState.AwaitingEntry
+            ? UnplacedEntryProtectionClosure.AwaitingEntryClosed
+            : UnplacedEntryProtectionClosure.SoftwareStopClosed;
+    }
+
     // 🔴 FR-10, FR-05, FR-12, ADR-0040 決定1, #853, IADR-0210（2026-09-25 追記）, IADR-0428 決定4: **突合で「発注済み」と確定した
     // エントリーに、承認時の手法で保護レグを張る**（オーナー裁定 2: S0 ブローカー側逆指値・S1 ソフトウェア逆指値の記録・S2 なし・S3 代替注文種別）。
     // 手法の解釈は送る前に StopLossMethodPolicy が済ませており、その結果が保護記録の形（AwaitingEntry の Mechanism / S1 の Active 行 /
@@ -1250,11 +1427,11 @@ public sealed class OrderExecutionAppService(
             try
             {
                 await broker.CancelOrderAsync(entryOrder.OrderId, cancellationToken).ConfigureAwait(false);
-                return CoverageLost(approved, ProtectiveStopRemediation.EntryCancelled, intent.Quantity);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // 取消失敗＝その間に約定した可能性。ブローカ状態を照会して約定分を手仕舞いへ回す。
+                CompleteAwaitingProtection(approved.DecisionId);
                 var snapshot = await TryGetOrderAsync(entryOrder.OrderId, cancellationToken).ConfigureAwait(false);
                 filled = snapshot?.FilledQuantity ?? 0;
                 if (filled == 0)
@@ -1262,20 +1439,194 @@ public sealed class OrderExecutionAppService(
                     // 取消も照会もできない: 状態不明のまま自動で注文を重ねない（人手対応・Critical）。
                     return CoverageLost(approved, ProtectiveStopRemediation.None, intent.Quantity);
                 }
+
+                return await CloseUnprotectedPositionAsync(approved, filled, cancellationToken).ConfigureAwait(false);
             }
+
+            // 🔴 FR-10, UC-02, #1422, IADR-0569 決定1: **取消を送れた＝取り消せた、ではない。** 取消要求の後にも約定し得る
+            // （moomoo は Cancelling_* を経て約定し得る。OrderAmendmentService・SoftwareStopExecutor と同じ規律）。照会して終端を確かめる。
+            //   - 終端・約定 0 → 取消の確定（EntryCancelled）。
+            //   - 終端・約定 > 0（取消の窓で約定した）→ 約定数量を成行で手仕舞う（業務フロー 02 の表の 2 行目）。
+            //   - 非終端・不明 → 「取消済み」と主張せず、保護の文脈を「取消の確認待ち」で残す（約定追跡の終端化で後始末する）。
+            var after = await TryGetOrderAsync(entryOrder.OrderId, cancellationToken).ConfigureAwait(false);
+            if (after is null || !OrderStatusLifecycle.IsTerminal(after.Status))
+                return HoldUnconfirmedEntryCancel(approved, entryOrder, after);
+
+            CompleteAwaitingProtection(approved.DecisionId);
+            var finalFilled = Math.Min(Math.Max(filled, after.FilledQuantity), intent.Quantity);
+            if (finalFilled == 0)
+                return CoverageLost(approved, ProtectiveStopRemediation.EntryCancelled, intent.Quantity);
+
+            _logger.LogError(
+                "保護逆指値が未受理のため取り消したエントリーが、取消の前に約定していました（約定 {Filled}/{Quantity}・終端 {Status}）。"
+                + "約定数量を成行で手仕舞います: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} OrderId={OrderId}",
+                finalFilled, intent.Quantity, after.Status, approved.DecisionId, intent.Symbol, entryOrder.OrderId);
+            return await CloseUnprotectedPositionAsync(approved, finalFilled, cancellationToken).ConfigureAwait(false);
         }
 
+        CompleteAwaitingProtection(approved.DecisionId);
         return await CloseUnprotectedPositionAsync(approved, filled, cancellationToken).ConfigureAwait(false);
     }
 
+    // 🔴 FR-10, UC-02, #1422, IADR-0569 決定2・決定3: 取消を送ったが、終端を確かめられない（照会が非終端・不明）。
+    //   - 「取消済み」と主張しない（EntryCancelled は「建玉は生じていない」と読ませる）。EntryCancelUnconfirmed（Critical）を返す。
+    //   - 承認時の保護の文脈を閉じず「取消の確認待ち」（AwaitingEntryCancel）へ移す。約定追跡がエントリーの終端化を観測したら、
+    //     ResolveUnconfirmedEntryCancelAsync が約定 0 なら取消の確定、約定 > 0 なら約定数量の成行手仕舞いを行う。
+    //   - 成行も逆指値の再発注もここではしない（非終端のまま約定数で手仕舞うと、残りの約定がまた無保護で残る）。
+    private ProtectiveStopCoverageLost HoldUnconfirmedEntryCancel(
+        OrderApproved approved, BrokerOrder entryOrder, BrokerOrder? observed)
+    {
+        var intent = approved.Intent;
+        var now = clock.UtcNow;
+        var held = MarkAwaitingEntryCancel(approved, now);
+
+        _logger.LogError(
+            "保護逆指値が未受理のためエントリーへ取消を送りましたが、取消の結果を確認できていません（照会 {Observed}）。"
+            + "取消済みとは扱いません。取消の窓で約定した分は逆指値なしで残り得ます。"
+            + (held
+                ? "約定追跡がエントリーの終端を確認したら、約定 0 なら取消の確定を、約定があれば約定数量の成行手仕舞いを行います: "
+                : "**取消の確認待ちを記録できなかったため、システムはこのエントリーの後始末をしません。証券会社の画面で注文と建玉を確認してください**: ")
+            + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol} OrderId={OrderId} 数量={Quantity}",
+            observed is null ? "不明" : $"{observed.Status}・約定 {observed.FilledQuantity}",
+            approved.DecisionId, intent.Symbol, entryOrder.OrderId, intent.Quantity);
+
+        return CoverageLost(approved, ProtectiveStopRemediation.EntryCancelUnconfirmed, intent.Quantity);
+    }
+
+    // #1422, IADR-0569 決定2: 承認時の保護の文脈を「取消の確認待ち」へ移す。行が無ければ（事前記録の失敗）新しく残す。
+    // AwaitingEntry 以外（受理・据え置きで Active になった行・完了）には触らない。書けたかを返す（書けなければ後始末は起きない）。
+    private bool MarkAwaitingEntryCancel(OrderApproved approved, DateTimeOffset now)
+    {
+        if (protectiveStops is null)
+            return false;
+
+        var intent = approved.Intent;
+        try
+        {
+            switch (protectiveStops.Find(approved.DecisionId))
+            {
+                case null:
+                    protectiveStops.Save(new ProtectiveStopOrder(
+                        approved.DecisionId, ProtectiveStopIds.StopDecisionId(approved.DecisionId, attempt: 1),
+                        StopOrderId: string.Empty, intent.Symbol, intent.Market, intent.Side, intent.ProductType, intent.Mode,
+                        intent.Quantity, intent.StopLossPrice!.Value, intent.FxRateToBase, Attempt: 0,
+                        ProtectiveStopState.AwaitingEntryCancel, now, now,
+                        Mechanism: approved.StopLossMethod == StopLossExecutionMethod.AlternativeBrokerOrderType
+                            ? StopLossExecutionMethod.AlternativeBrokerOrderType
+                            : StopLossExecutionMethod.BrokerStopOrder));
+                    return true;
+                case { State: ProtectiveStopState.AwaitingEntry } awaiting:
+                    return protectiveStops.TrySave(
+                        awaiting with { State = ProtectiveStopState.AwaitingEntryCancel, UpdatedAt = now });
+                case { State: ProtectiveStopState.AwaitingEntryCancel }:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogCritical(ex,
+                "取消の確認待ちを保護記録へ残せませんでした: EntryDecisionId={EntryDecisionId}", approved.DecisionId);
+            return false;
+        }
+    }
+
+    // 🔴 FR-10, UC-02, #1422, IADR-0569 決定4: 約定追跡がエントリーの終端化を観測したときの後始末（IUnconfirmedEntryCancelResolution）。
+    // 確認待ちの行を楽観並行で Completed へ移せたときだけ進む（同じ終端化を 2 回処理しても成行は 1 本）。約定 0 なら取消の確定、
+    // 約定 > 0 なら約定数量（承認数量を上限）を成行で手仕舞う（平常の経路と同じ CloseUnprotectedPositionAsync＝3 相・拒否・不明の分岐）。
+    public async Task<ProtectiveStopCoverageLost?> ResolveUnconfirmedEntryCancelAsync(
+        ExecutionRecord terminalEntry, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(terminalEntry);
+
+        if (protectiveStops?.Find(terminalEntry.DecisionId) is not { State: ProtectiveStopState.AwaitingEntryCancel } row)
+            return null;
+        if (!OrderStatusLifecycle.IsTerminal(terminalEntry.Status))
+            return null;
+        if (!protectiveStops.TrySave(row with { State = ProtectiveStopState.Completed, UpdatedAt = clock.UtcNow }))
+            return null;
+
+        // 承認は保護記録（承認時の銘柄・方向・数量・損切りライン）と終端化した記録から組み直す。DecisionId はエントリーのもの
+        // （成行手仕舞いの CloseDecisionId をここから導く＝平常の経路と同じ番号）。参照価格は承認時の価格（PlannedPrice）で、
+        // 成行の実約定はブローカー側で決まる。時刻は終端化の時刻（ExecutedAt）。
+        var intent = new OrderIntent(
+            row.Symbol, row.Market, row.EntrySide, row.ProductType, row.Mode, row.Quantity, terminalEntry.PlannedPrice,
+            PositionEffect.Open, row.TriggerPrice, row.FxRateToBase);
+        var approved = new OrderApproved(terminalEntry.DecisionId, intent, row.Quantity, terminalEntry.ExecutedAt);
+        var filled = Math.Min(terminalEntry.FilledQuantity, row.Quantity);
+        if (filled <= 0)
+        {
+            _logger.LogInformation(
+                "取消の確認待ちだったエントリーが約定 0 で終端しました（{Status}）。取消を確定します: EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+                terminalEntry.Status, terminalEntry.DecisionId, row.Symbol);
+            return CoverageLost(approved, ProtectiveStopRemediation.EntryCancelled, row.Quantity);
+        }
+
+        _logger.LogError(
+            "取消の確認待ちだったエントリーが約定して終端しました（約定 {Filled}/{Quantity}・{Status}）。保護逆指値は未受理のため、"
+            + "約定数量を成行で手仕舞います: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} OrderId={OrderId}",
+            filled, row.Quantity, terminalEntry.Status, terminalEntry.DecisionId, row.Symbol, terminalEntry.OrderId);
+        try
+        {
+            // 🔴 PR #1436 の AI 再レビュー, IADR-0569 決定5（追記）: 行を Completed にした後の区間は**取消トークンに依存させない**
+            // （OrderReservationReconciler が確定後の保護レグに渡さないのと同じ）。ホストの停止で抜けると、再び呼ばれる契機が無く、
+            // 約定した建玉が手仕舞いも通知も無いまま残る。成行は 1 回だけ送る点は変わらない（再試行はしない）。
+            return await CloseUnprotectedPositionAsync(approved, filled, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // 取消トークン以外の OperationCanceledException（通信のタイムアウト等）も同じ扱い——握らずに投げ返すと無音になる。
+            // 🔴 PR #1436 の AI レビュー: 行は Completed にした後で、終端化はこの 1 回しか観測できない。例外を投げ返すと
+            // 保護喪失が 1 件も出ず、約定した建玉が逆指値も手仕舞いも無いまま無音で残る。None（解消にも失敗・Critical）を返して
+            // 人へ知らせる（行を確認待ちへ戻しても、再び呼ばれる契機が無い）。
+            _logger.LogCritical(ex,
+                "取消の確認待ちだったエントリーの成行手仕舞いに失敗しました。**逆指値なしの建玉が残っている可能性があります。**"
+                + "証券会社の画面で建玉を確認してください: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 数量={Quantity}",
+                terminalEntry.DecisionId, row.Symbol, filled);
+            return CoverageLost(approved, ProtectiveStopRemediation.None, filled);
+        }
+    }
+
+    // 🔴 NFR, FR-10, #1446, IADR-0575 決定 3: 保護喪失の成行手仕舞いも、予約から記録の保存までを同じ建玉の他の決済と直列にする
+    // （数量は自分のエントリーの約定で決まり、他の決済を読まない。直列にするのは、後から来る判断の決済・S1 がこの記録を読んで数量を決めるため）。
+    // 取れなければ送らない＝確実に未発注（接続確立の失敗と同じ扱い）。
     private async Task<ProtectiveStopCoverageLost> CloseUnprotectedPositionAsync(
         OrderApproved approved, int quantity, CancellationToken cancellationToken)
     {
         var intent = approved.Intent;
-        var protective = (IProtectiveOrderBroker)broker;
-        var closeDecisionId = ProtectiveStopIds.CloseDecisionId(approved.DecisionId, attempt: 1);
         // 参照価格は判断時点の価格（intent.Price）。成行手仕舞いの実約定はブローカ側で決まる。
         var closeIntent = BuildCloseIntent(intent, quantity, intent.Price);
+        IAsyncDisposable serialized;
+        try
+        {
+            serialized = await _closeLock.AcquireAsync(
+                    new ClosePositionKey(closeIntent.Symbol, closeIntent.Market, closeIntent.Side), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (ClosePositionLockUnavailableException ex)
+        {
+            _logger.LogError(ex,
+                "保護逆指値を張れなかった建玉の成行手仕舞いを、決済の直列化を取れなかったため送りません（確実に未発注）。"
+                + "**逆指値なしの建玉が残っています。**証券会社の画面で建玉を確認してください: "
+                + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 数量={Quantity}",
+                approved.DecisionId, intent.Symbol, quantity);
+            return CoverageLost(approved, ProtectiveStopRemediation.None, quantity);
+        }
+
+        await using (serialized.ConfigureAwait(false))
+        {
+            return await CloseUnprotectedPositionSerializedAsync(approved, quantity, closeIntent, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task<ProtectiveStopCoverageLost> CloseUnprotectedPositionSerializedAsync(
+        OrderApproved approved, int quantity, OrderIntent closeIntent, CancellationToken cancellationToken)
+    {
+        var intent = approved.Intent;
+        var protective = (IProtectiveOrderBroker)broker;
+        var closeDecisionId = ProtectiveStopIds.CloseDecisionId(approved.DecisionId, attempt: 1);
 
         // 🔴 FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 7）: 成行手仕舞いもエントリーと同じ
         // 予約 → 発注 → 確定の 3 相（IADR-0057）で送る。「送ったかもしれない」を予約に残し、

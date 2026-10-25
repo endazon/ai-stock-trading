@@ -54,7 +54,7 @@ public class OrderScreeningServiceTests
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
             new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(),
-            TestShortSellContexts.Unavailable(clock));
+            TestShortSellContexts.Unavailable(clock), new InMemoryEntryReservationStore(), ConfiguredSessionAndThemeControls.Default);
         return (service, clock, portfolio, killSwitch, lockout);
     }
 
@@ -229,7 +229,7 @@ public class OrderScreeningServiceTests
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
             new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(),
-            TestShortSellContexts.Unavailable(clock));
+            TestShortSellContexts.Unavailable(clock), new InMemoryEntryReservationStore(), ConfiguredSessionAndThemeControls.Default);
 
         await service.ScreenAsync(Decision(EntryIntent())); // 金曜に到達
         lockout.Get()!.ReleaseOn.Should().Be(new DateOnly(2026, 7, 13)); // 月曜
@@ -262,7 +262,7 @@ public class OrderScreeningServiceTests
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
             new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(),
-            TestShortSellContexts.Unavailable(clock));
+            TestShortSellContexts.Unavailable(clock), new InMemoryEntryReservationStore(), ConfiguredSessionAndThemeControls.Default);
 
         await service.ScreenAsync(Decision(EntryIntent()));
         lockout.Get()!.ReleaseOn.Should().Be(new DateOnly(2026, 7, 10)); // 翌営業日（ET 基準）

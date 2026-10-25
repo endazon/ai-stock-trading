@@ -26,7 +26,9 @@ namespace TradeDecisionService.Tests;
 public class DecisionHeldReportTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 29, 14, 0, 0, TimeSpan.Zero);
-    private static readonly DailyPolicy Policy = new(new DateOnly(2026, 9, 29), "様子見の方針");
+    // ADR-0068 決定4, #1373, IADR-0548 決定5: 確定版の期間キーと版番号つき（判断後の見送りの記録へ載る）。
+    private static readonly DailyPolicy Policy = new(
+        new DateOnly(2026, 9, 29), "様子見の方針", new DailyPolicyReference("daily-2026-09-29", 3));
 
     private const string BuyJson =
         """{"action":"Buy","rationale":"押し目","referencePrice":1000,"stopLossDistancePerShare":30}""";
@@ -197,6 +199,11 @@ public class DecisionHeldReportTests
         report.Reason.Should().Be(nameof(DecisionSkipReason.LlmHold));
         report.DecidedAt.Should().Be(Now);
         report.CycleTrigger.Should().Be(BusinessMetrics.TriggerPriceMovement);
+        // FR-06, FR-08, #1356, IADR-0541 決定 1: 見送った判断も参照の記録を持つ（取得ポート未指定＝0 件。null＝記録なし と区別する）。
+        report.References.Should().NotBeNull();
+        report.References!.Items.Should().BeEmpty();
+        // FR-04, FR-11, ADR-0068 決定4, #1373, IADR-0548 決定5: 見送った判断が参照した方針の期間キーと版番号。
+        report.Policy.Should().Be(new DailyPolicyReference("daily-2026-09-29", 3));
     }
 
     // IADR-0452 決定3: 権威ある現在値（有効時）を起点の価格より優先する（TradeDecisionMade の参照価格と同じ向き）。
@@ -320,13 +327,17 @@ public class DecisionHeldReportTests
         }
     }
 
-    // 判断後の 12 地点と判断前の 8 地点で語彙 20 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
+    // 判断後の 12 地点と判断前の 12 地点で語彙 24 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
     // 判断前の 5 地点目〔#1113 の EntryBlockedByRiskControls〕は EntryBlockersBeforeLlmTests が、判断後の 10 地点目
     // 〔T-10-1907, #1130 の AddOnBlockedByRiskControls〕は HeldAddOnBlockersTests が固定する。#1176 の 2 値〔判断前の EntryCapacityBelowMinimumNotional・判断後の
     // SizedBelowMinimumNotional〕は MinimumEntryNotionalDecisionTests が、#1174 の判断前の EntryCapacityBelowOneShare は OneShareCapacityDecisionTests が固定する）。
     [Fact]
-    public void 判断前と判断後の見送りは語彙20値を過不足なく覆う()
+    public void 判断前と判断後の見送りは語彙24値を過不足なく覆う()
     {
+        // T-10-3060, #1423 M-6, IADR-0583: 判断前に DailyReportNoResponseHalted を足した（23 → 24。振る舞いは DailyReportNoResponseHaltTests）。
+        // T-10-3052, #1423 M-5, IADR-0582: 判断前に LlmCostCapHalted を足した（22 → 23。振る舞いは LlmCostCapHaltBeforeLlmTests）。
+        // T-10-2994, #1434, IADR-0572 決定2: 判断前に BrokerPositionClosed を足した（21 → 22。振る舞いは InFlightCloseBeforeLlmTests）。
+        // T-10-2651, #1338, IADR-0535 決定1: 判断前に InFlightCloseCoversPosition を足した（20 → 21。振る舞いは InFlightCloseBeforeLlmTests）。
         // T-10-2502, #1286, IADR-0521 決定 2: 判断前に ExitOnlyWithoutHolding を足した（19 → 20）。
         // T-10-2496, #1286, IADR-0521 決定 2: 判断後に ExitOnlyOpenOutsideWatchlist を足した（18 → 19。振る舞いは HeldOutsideWatchlistExitOnlyTests）。
         // T-10-2386, #1174, IADR-0500: 判断前に EntryCapacityBelowOneShare を足した（17 → 18）。
@@ -337,6 +348,8 @@ public class DecisionHeldReportTests
             DecisionSkipReason.FxRateUnresolved, DecisionSkipReason.FxRateStaleNoHolding,
             DecisionSkipReason.EntryBlockedByRiskControls, DecisionSkipReason.EntryCapacityBelowMinimumNotional,
             DecisionSkipReason.EntryCapacityBelowOneShare, DecisionSkipReason.ExitOnlyWithoutHolding,
+            DecisionSkipReason.InFlightCloseCoversPosition, DecisionSkipReason.BrokerPositionClosed,
+            DecisionSkipReason.LlmCostCapHalted, DecisionSkipReason.DailyReportNoResponseHalted,
         ];
         DecisionSkipReason[] after =
         [

@@ -148,7 +148,7 @@ public class WatchlistCycleFitTests
         var tight = new WatchlistCycleFit(RequestsPerMinute: 2, PollIntervalSeconds: 60, Holdings: []);
 
         var swap = () => svc.Replace(current with { MonitoredSymbols = [Aapl, Msft, new("META", Market.UnitedStates)] }, "owner", "入れ替え", tight);
-        swap.Should().Throw<ArgumentException>().WithMessage("*Finnhub の巡回に収まりません*収まらない追加: META@UnitedStates*除外だけなら*");
+        swap.Should().Throw<ArgumentException>().WithMessage("*Finnhub の巡回に収まりません*収まらない追加: META（米国）*除外だけなら*");
         store.GetSettings().MonitoredSymbols.Should().BeEquivalentTo([Aapl, Msft, Nvda]);
 
         svc.Replace(current with { MonitoredSymbols = [Nvda, Aapl, Msft] }, "owner", "並べ替え", tight).MonitoredSymbols
@@ -169,7 +169,7 @@ public class WatchlistCycleFitTests
         MonitoredSymbol[] padded = [Aapl, new("aapl", Market.UnitedStates), .. Enumerable.Repeat(Aapl, 10)];
 
         var withFit = () => svc.Replace(current with { MonitoredSymbols = [.. padded] }, "owner", "重複", new WatchlistCycleFit(2, 60, []));
-        withFit.Should().Throw<ArgumentException>().WithMessage("*重複*AAPL@UnitedStates*");
+        withFit.Should().Throw<ArgumentException>().WithMessage("*重複*AAPL（米国）*");
         var withoutFit = () => svc.Replace(current with { MonitoredSymbols = [Aapl, new(" aapl ", Market.UnitedStates)] }, "owner", "重複");
         withoutFit.Should().Throw<ArgumentException>().WithMessage("*重複*");
         store.GetSettings().MonitoredSymbols.Should().BeEquivalentTo([Aapl]);
@@ -223,7 +223,7 @@ public class WatchlistCycleFitTests
 
         var mixed = () => svc.Replace(store.GetSettings() with { MonitoredSymbols = [Aapl, Msft, Toyota, Nvda] }, "owner", "混在", over);
         mixed.Should().Throw<ArgumentException>().Which.Message.Should()
-            .Contain("収まらない追加: NVDA@UnitedStates。").And.NotContain("7203");
+            .Contain("収まらない追加: NVDA（米国）。").And.NotContain("7203");
         store.GetSettings().MonitoredSymbols.Should().Equal([Aapl, Msft]);
 
         svc.Replace(store.GetSettings() with { MonitoredSymbols = [Aapl, Msft, Toyota, Sony] }, "owner", "東証だけ", over)
@@ -324,7 +324,7 @@ public class WatchlistCycleFitTests
 
         var mixed = () => svc.Replace(store.GetSettings() with { MonitoredSymbols = [Aapl, held[0], Msft] }, "owner", "混在", fit);
         mixed.Should().Throw<ArgumentException>().Which.Message.Should()
-            .Contain("収まらない追加: MSFT@UnitedStates。").And.NotContain("QA@");
+            .Contain("収まらない追加: MSFT（米国）。").And.NotContain("QA");
         store.GetSettings().MonitoredSymbols.Should().Equal([Aapl]);
 
         svc.Replace(store.GetSettings() with { MonitoredSymbols = [Aapl, held[0], held[1]] }, "owner", "保有中の銘柄を監視する", fit)

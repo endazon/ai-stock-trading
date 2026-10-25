@@ -26,7 +26,7 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 //      通した記録で、両層の実効モデルがピンと一致した判断による合格）。一次を記録していない旧記録の評価は評価不能であり合格ではない。
 //      どちらの層のモデルを変えても再実施する。**これが満たされるまで本定数を true にしない**（ADR-0054 決定4 の暫定手段）。
 //      #1295, IADR-0524: 利用者裁定 2026-10-10（planning#783）で組を 5.5 系へ改めた。旧組（claude-haiku-4-5 ＋ claude-sonnet-5）での
-//      合格は本前提を満たさない（割当表が移行期間に直前世代を受けても、Stage 0 の組の判定は受けない）。
+//      合格は本前提を満たさない（割当表も Stage 0 の組の判定も旧世代を受けない。#1296）。
 public static class LiveTradingGate
 {
     // 実弾は未解禁。この定数を true にすることが「解禁」そのものであり、別 IADR の承認を要する。

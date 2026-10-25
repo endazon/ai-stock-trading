@@ -132,4 +132,89 @@ public class SoftwareStopLivenessReporterTests
         loads.Should().Be(1);
         log.Entries.Should().BeEmpty();
     }
+
+    // ---- T-10-2667, FR-10, #856, IADR-0538: 発注の記録が無いまま未確定で残る S1（幽霊の疑い）の識別 ----
+
+    // 2026-10-05 の BeforeSend の AAPL と同じ形: 未確定・未到達・作成から 25 時間。
+    private static ProtectiveStopOrder Ghost(DateTimeOffset? createdAt = null) =>
+        SoftwareStop(remaining: null, trigger: 327.83m) with { CreatedAt = createdAt ?? T0.AddHours(-25) };
+
+    private static IEnumerable<string> Warnings(RecordingLogger<SoftwareStopLivenessReporter> log) =>
+        log.Entries.Where(e => e.Level == LogLevel.Warning).Select(e => e.Message);
+
+    [Fact]
+    public void T_10_2667_発注記録の無い古い未確定のS1は要約に印が付き後始末の案内つきのWarningが出る()
+    {
+        // T-10-2667, FR-10, #856, IADR-0538
+        var (reporter, _, log) = Create();
+        var ghost = Ghost();
+
+        reporter.ReportIfDue(() => [ghost], _ => false).Should().BeTrue();
+
+        log.Informations.Should().ContainSingle().Which.Should().Contain("発注記録なし（幽霊の疑い）");
+        var warning = Warnings(log).Should().ContainSingle().Which;
+        warning.Should().Contain($"EntryDecisionId={ghost.EntryDecisionId}");
+        warning.Should().Contain("発注の記録が無いまま残った S1 の記録を閉じる", "Runbook の節へ案内する");
+        warning.Should().Contain("自動で閉じません");
+        ghost.State.Should().Be(ProtectiveStopState.Active);
+    }
+
+    [Theory]
+    [InlineData("記録がある")]
+    [InlineData("若い")]
+    [InlineData("到達済み")]
+    [InlineData("残保護が確定済み")]
+    [InlineData("照会の口が無い")]
+    public void T_10_2667_記録がある_若い_到達済み_確定済み_照会の口が無いS1には印を付けない(string kind)
+    {
+        // T-10-2667, FR-10, #856, IADR-0538: 印は「発注の記録が無い」かつ「経過済み」かつ「未確定・未到達」のときだけ。
+        var (reporter, _, log) = Create();
+        var stop = kind switch
+        {
+            "若い" => Ghost(T0.AddHours(-23)),
+            "到達済み" => Ghost() with { TriggeredAt = T0.AddMinutes(-1), TriggeredPrice = 327m },
+            "残保護が確定済み" => Ghost() with { RemainingProtected = 719 },
+            _ => Ghost(),
+        };
+        Func<Guid, bool>? exists = kind switch
+        {
+            "記録がある" => _ => true,
+            "照会の口が無い" => null,
+            _ => _ => false,
+        };
+
+        reporter.ReportIfDue(() => [stop], exists).Should().BeTrue();
+
+        log.Informations.Should().ContainSingle().Which.Should().NotContain("幽霊の疑い");
+        Warnings(log).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void T_10_2667_幽霊の疑いのWarningは初回と24時間ごとだけ_該当しなくなったら記憶を消す()
+    {
+        // T-10-2667, FR-10, #856, IADR-0538: 要約は 5 分ごとだが、Warning は同じ行について 1 日 1 回（窓の両端）。
+        var (reporter, clock, log) = Create();
+        var ghost = Ghost();
+        var recorded = false;
+
+        for (var minutes = 0; minutes <= 24 * 60; minutes += 5)
+        {
+            clock.UtcNow = T0.AddMinutes(minutes);
+            reporter.ReportIfDue(() => [ghost], _ => recorded);
+        }
+
+        Warnings(log).Should().HaveCount(2, "初回（0 分）と 24 時間後だけ。間隔を見ないと 289 回、時刻を見ないと 1 回");
+        log.Informations.Should().HaveCount(289, "要約そのものは今までどおり 5 分ごと");
+
+        // 該当しなくなった（発注記録が見えた）→ 記憶を消す → 再び該当したら初回として出す。
+        recorded = true;
+        clock.UtcNow = T0.AddMinutes(24 * 60 + 5);
+        reporter.ReportIfDue(() => [ghost], _ => recorded);
+        recorded = false;
+        clock.UtcNow = T0.AddMinutes(24 * 60 + 10);
+        reporter.ReportIfDue(() => [ghost], _ => recorded);
+
+        Warnings(log).Should().HaveCount(3);
+    }
 }
+

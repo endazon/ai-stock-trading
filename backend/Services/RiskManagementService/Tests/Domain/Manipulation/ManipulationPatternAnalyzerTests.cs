@@ -323,4 +323,31 @@ public class ManipulationPatternAnalyzerTests
         verdict.Signals.Should().Contain(ManipulationSignal.NoExecutionIntent);
         verdict.Signals.Should().Contain(ManipulationSignal.Layering);
     }
+
+    // 🔴 T-19-324, FR-19, ADR-0067 決定3・5, #1339, IADR-0539 決定6: 失注（Expired。ブローカーの期限満了による失効）は
+    // 「約定なしの取消」に数えない（取消の過剰・見せ玉の指標にならない。Disabled を拒否から失注へ写し替えても母集団を変えない）。
+    // 系による判断由来の決済の取消は Cancelled なので、従来どおり数える。
+    [Fact]
+    public void T_19_324_失注は約定なしの取消に数えず系の取消は数える()
+    {
+        var expired = CancelledNoFill(0, lifetimeSec: 5) with { Status = OrderStatus.Expired };
+        var cancelled = CancelledNoFill(0, lifetimeSec: 5);
+        expired.IsCancelledWithoutFill.Should().BeFalse("失効は取消ではない");
+        cancelled.IsCancelledWithoutFill.Should().BeTrue("系の取消（Cancelled）は数える");
+
+        // 過剰な取消の窓（8/10 が約定なし取消）を、取消ではなく失効に置き換えると検知しない。
+        var records = new List<OrderActivityRecord>();
+        for (var i = 0; i < 8; i++)
+        {
+            var cancelledRecord = CancelledNoFill(i * 20, lifetimeSec: 5, side: i % 2 == 0 ? TradeSide.Buy : TradeSide.Sell);
+            records.Add(cancelledRecord with { Status = OrderStatus.Expired });
+        }
+
+        records.Add(Filled(170));
+        records.Add(Filled(180));
+
+        var verdict = ManipulationPatternAnalyzer.Analyze(Window([.. records]), Settings());
+
+        verdict.Signals.Should().NotContain(ManipulationSignal.ExcessiveCancellations);
+    }
 }

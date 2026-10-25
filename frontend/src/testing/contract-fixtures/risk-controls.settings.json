@@ -59,5 +59,9 @@
       "buyInBanDurationDays": 30
     }
   },
+  "highVolatility": {
+    "maxOrderAmountRatio": 0.05,
+    "designatedSymbols": []
+  },
   "stopLossMethod": 0
 }

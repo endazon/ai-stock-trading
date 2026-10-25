@@ -8,12 +8,20 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
 {
     public DbSet<ReportRow> Reports => Set<ReportRow>();
 
+    // FR-07, FR-15, ADR-0068 決定2・3, #1373, IADR-0548 決定1: 確定した版の履歴（確定のたびに 1 行。書き換えない）。
+    // 最新の確定済み報告書と、ある時点で確定していた報告書は、この表から二段で選ぶ。
+    public DbSet<ReportConfirmedVersionRow> ReportConfirmedVersions => Set<ReportConfirmedVersionRow>();
+
     // FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 1: `/policy` の試行の台帳（1 日の回数上限・案の監査）。
     public DbSet<PolicyRevisionAttemptRow> PolicyRevisionAttempts => Set<PolicyRevisionAttemptRow>();
 
     // FR-06, FR-14, 計画 ADR-0052 決定 1・4・5, #1156, IADR-0491 決定 3・5: `/report regenerate` の試行の台帳
     // （`/policy` とは別枠の 1 日の回数上限・作り直した版の記録・断った回数）。
     public DbSet<ReportRegenerationAttemptRow> ReportRegenerationAttempts => Set<ReportRegenerationAttemptRow>();
+
+    // 🔴 NFR, FR-10, #1473, IADR-0587: DateTimeOffset（null 許容を含む）の全列を DB の境界で UTC へ揃える（照会のパラメータにも掛かる）。
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) =>
+        configurationBuilder.Properties<DateTimeOffset>().HaveConversion<UtcDateTimeOffsetConverter>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -32,6 +40,22 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
             e.Property(r => r.Version).IsConcurrencyToken();
             // 最新の確定済み日報の照会（種別・状態・期間）に用いるインデックス。
             e.HasIndex(r => new { r.Kind, r.State, r.PeriodStart });
+        });
+
+        mb.Entity<ReportConfirmedVersionRow>(e =>
+        {
+            e.ToTable("report_confirmed_versions");
+            // 種別ごとの確定の通し番号を鍵にする（同じ種別の確定が並行すると鍵が衝突し、後の保存が負ける）。
+            e.HasKey(v => new { v.Kind, v.Sequence });
+            e.Property(v => v.Sequence).ValueGeneratedNever();
+            e.Property(v => v.PeriodKey).HasMaxLength(64);
+            e.Property(v => v.BasedOn).HasMaxLength(64);
+            e.Property(v => v.PolicySummary).HasMaxLength(8192);
+            e.Property(v => v.UnsuppliedInputs).HasMaxLength(1024);
+            // 1 つの版は 1 度だけ確定する（確定は版を 1 進めるので、会話キー＋版で一意）。
+            e.HasIndex(v => new { v.PeriodKey, v.Version }).IsUnique();
+            // 二段の選び方（種別 → 開始日 → 確定時刻）。
+            e.HasIndex(v => new { v.Kind, v.PeriodStart, v.ConfirmedAt });
         });
 
         mb.Entity<PolicyRevisionAttemptRow>(e =>

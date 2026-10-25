@@ -13,7 +13,9 @@ public sealed class ReportAppService(
     IClock clock,
     IReportDraftPresentedNotifier? bootstrapNotifier = null,
     // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 2: 月報の初回を承認待ちにしたら写し（ドラフト）を KB に持つ。未注入は持たない。
-    IReportDraftKnowledgeCopy? draftKnowledgeCopy = null)
+    IReportDraftKnowledgeCopy? draftKnowledgeCopy = null,
+    // 🔴 FR-07, #1423 M-6, ADR-0075, IADR-0583: 無応答時の判定。未注入（単体試験）は印を立てない（従来どおり）。
+    DailyReportNoResponseEvaluator? noResponse = null)
 {
     public VersionedReport? Get(string periodKey) => store.Get(periodKey);
 
@@ -41,6 +43,19 @@ public sealed class ReportAppService(
         return store.Confirm(periodKey, expectedVersion, clock.UtcNow);
     }
 
+    /// <summary>FR-07, ADR-0068 決定1, #1373, IADR-0549: いま効いている日報の期間キー（確定済み日報が無ければ null）。</summary>
+    public string? EffectiveDailyPeriodKey() => EffectiveDailyReport.EffectivePeriodKey(store);
+
+    /// <summary>
+    /// FR-07, FR-08, ADR-0068 決定1・6, #1373, IADR-0549 決定5: この期間キーの行が、効いている日報が移って確定できなくなった
+    /// 版 n+1 のドラフトなら、その行を返す（写しに失効の印を付けるため）。そうでなければ null。
+    /// </summary>
+    public VersionedReport? StaleRevisionDraft(string periodKey) =>
+        store.Get(periodKey) is { } row && EffectiveDailyReport.IsStaleRevisionDraft(store, row) ? row : null;
+
+    /// <summary>FR-07, ADR-0068 決定1, #1373, IADR-0549 決定3: この期間キーの最新の確定版（行が版 n+1 のドラフトでも確定版を読む）。</summary>
+    public VersionedReport? GetLatestConfirmedVersion(string periodKey) => store.GetLatestConfirmedVersion(periodKey);
+
     /// <summary>FR-07, IADR-0042/0071 決定5: 対話的確定のレビュー局面を取得する。対象が無ければ null。</summary>
     public ReportReview? GetReview(string periodKey) => store.GetReview(periodKey);
 
@@ -58,8 +73,16 @@ public sealed class ReportAppService(
         if (review is null)
             return null;
 
-        var unsupplied = store.Get(periodKey)?.Report.UnsuppliedInputs ?? [];
-        return new ReportReviewView(review.PeriodKey, review.State, review.Version, ReportInputs.Labels(unsupplied));
+        var row = store.Get(periodKey);
+        var unsupplied = row?.Report.UnsuppliedInputs ?? [];
+        // FR-07, ADR-0068 決定1, #1373, IADR-0549 決定3: 版 n+1 のドラフトなら、効いている確定版と、確定できるか（効いている日報が移っていないか）を添える。
+        var confirmedBefore = row is null ? null : EffectiveDailyReport.ConfirmedBeforeRevision(store, row);
+        return new ReportReviewView(
+            review.PeriodKey, review.State, review.Version, ReportInputs.Labels(unsupplied),
+            confirmedBefore?.Version,
+            confirmedBefore is not null && !EffectiveDailyReport.IsEffective(store, periodKey),
+            // FR-07, FR-14, #1385, IADR-0556 決定 3: 行が確定済みならその版（最新の確定版）。下書きなら同じ期間キーの最新の確定版。
+            row?.Report.State == ReportState.Confirmed ? row.Version : store.GetLatestConfirmedVersion(periodKey)?.Version);
     }
 
     /// <summary>
@@ -74,13 +97,36 @@ public sealed class ReportAppService(
         return store.ApplyReview(periodKey, new ReviewCommand(action, actor, expectedVersion));
     }
 
-    /// <summary>最新の確定済み日報の方針（取引判断の IDailyPolicyProvider 実データ源）。未確定なら null。</summary>
+    /// <summary>
+    /// 最新の確定済み日報の方針（取引判断の IDailyPolicyProvider 実データ源）。未確定なら null。
+    /// ADR-0068 決定2・4, #1373, IADR-0548: 確定した版の写しから二段で選び、その版の期間キーと版番号を添える。
+    /// </summary>
     public ConfirmedDailyPolicy? GetConfirmedDailyPolicy()
     {
         var latest = store.GetLatestConfirmed(ReportKind.Daily);
         return latest is null
             ? null
-            : new ConfirmedDailyPolicy(latest.Report.PeriodStart, latest.Report.PolicySummary, latest.Report.AssumptionsVersion);
+            : new ConfirmedDailyPolicy(
+                latest.Report.PeriodStart, latest.Report.PolicySummary, latest.Report.AssumptionsVersion,
+                latest.Report.PeriodKey, latest.Version,
+                // FR-07, #1423 M-6, ADR-0075 決定1, IADR-0583 決定3: 方針は返したまま、停止の印を載せる。
+                // 設定が継続（既定）なら印は立ち得ないので評価しない（判断ごとの照会に DB の引きを足さない）。
+                NoResponseHalted: noResponse is { HaltConfigured: true } && noResponse.Evaluate().Halted);
+    }
+
+    /// <summary>
+    /// FR-15, FR-07, ADR-0033 決定2, #1308, IADR-0528 決定3: <paramref name="at"/> の時点で確定していた日報の方針
+    /// （<see cref="GetConfirmedDailyPolicy"/> が時刻 <paramref name="at"/> に返した値）。無ければ null。
+    /// Stage 0 の記録器が判断時点の方針を組むために読む。
+    /// </summary>
+    public ConfirmedDailyPolicyAsOf? GetConfirmedDailyPolicyAsOf(DateTimeOffset at)
+    {
+        var latest = store.GetLatestConfirmedAsOf(ReportKind.Daily, at);
+        return latest is null
+            ? null
+            : new ConfirmedDailyPolicyAsOf(
+                latest.Report.PeriodStart, latest.Report.PolicySummary, latest.Report.AssumptionsVersion,
+                latest.Report.ConfirmedAt!.Value, latest.Report.PeriodKey, latest.Version);
     }
 
     /// <summary>

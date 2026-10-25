@@ -29,12 +29,18 @@ public sealed record OrderActivityRecord
     public DateTimeOffset? TerminalAt { get; init; }
 
     /// <summary>
-    /// 約定ゼロで取消/失効した注文か（見せ玉・過剰取消・レイヤリングの母集団）。
+    /// 約定ゼロで<b>取り消した</b>注文か（見せ玉・過剰取消・レイヤリングの母集団）。
     /// ブローカー拒否（<see cref="OrderStatus.Rejected"/>）は板に載らず約定意思の指標にならないため含めない。
     /// 拒否注文を窓の母集団に含めるか（各比率の分母）は供給側（IOrderActivitySource・#154 の射影）の判断とする。
+    /// <para>
+    /// 🔴 FR-19, ADR-0067 決定3・5, #1339, IADR-0539 決定6: <b>失注（<see cref="OrderStatus.Expired"/>。ブローカーの期限満了による失効）は含めない。</b>
+    /// 失効は発注者の取消ではなく時間切れであり、取消の過剰・見せ玉の指標にならない。moomoo の Disabled を拒否から失注へ写し替えたとき、
+    /// 母集団が変わらないよう（写し替えの前は Rejected として数えていなかった）ここで外す。系による判断由来の決済の取消は
+    /// <see cref="OrderStatus.Cancelled"/> なので、従来どおり数える（ADR-0067 決定3）。
+    /// </para>
     /// </summary>
     public bool IsCancelledWithoutFill =>
-        FilledQuantity == 0 && Status is OrderStatus.Cancelled or OrderStatus.Expired;
+        FilledQuantity == 0 && Status is OrderStatus.Cancelled;
 
     /// <summary>約定または一部約定した注文か（約定意思の有無の判定）。</summary>
     public bool IsFilledOrPartial => FilledQuantity > 0;

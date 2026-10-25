@@ -9,6 +9,8 @@ const PORT = 4173;
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.spec.ts',
+  // IADR-0588（#1416）: live 層（`e2e/live/`）は `playwright.live.config.ts` が流す。L1 のハーネスとモックでは流さない。
+  testIgnore: '**/live/**',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

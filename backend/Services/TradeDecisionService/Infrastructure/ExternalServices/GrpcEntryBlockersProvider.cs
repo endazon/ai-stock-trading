@@ -53,6 +53,9 @@ public sealed class GrpcEntryBlockersProvider(
         Proto.EntryBlocker.TradingPaused => RejectionReason.TradingPaused,
         Proto.EntryBlocker.StoppedOutSameDay => RejectionReason.StoppedOutSameDay,
         Proto.EntryBlocker.DecisionExitSameDay => RejectionReason.DecisionExitSameDay,
+        // #1433, IADR-0572 決定1: 閉場前の新規建ての締め切り・テーマの同時保有の上限。
+        Proto.EntryBlocker.PreCloseEntryCutoff => RejectionReason.PreCloseEntryCutoff,
+        Proto.EntryBlocker.ThemeConcentrationExceeded => RejectionReason.ThemeConcentrationExceeded,
         Proto.EntryBlocker.GoodFaithViolationLimitReached => RejectionReason.GoodFaithViolationLimitReached,
         Proto.EntryBlocker.MaxPositionsExceeded => RejectionReason.MaxPositionsExceeded,
         Proto.EntryBlocker.DailyLossLimitReached => RejectionReason.DailyLossLimitReached,

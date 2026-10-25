@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）機能仕様書
 type: functional-spec
 status: draft
 created: 2026-07-11
-updated: 2026-10-10
+updated: 2026-10-21
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-15, FR-17, FR-20, UC-06, FR-04, FR-13, FR-10]
-adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0011, ADR-0016, ADR-0018, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0054, ADR-0014]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498, IADR-0507, IADR-0495, IADR-0524]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20261007_1196_stage0-two-tier-recording, 20261008_1209_stage0-replay-min-notional-and-decision-exit, 20261010_1295_claude-5-5-models]
-issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049, #1196, #1209, #1295, #1296, planning#783]
+adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0011, ADR-0016, ADR-0018, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0054, ADR-0014, ADR-0064, ADR-0069]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498, IADR-0507, IADR-0495, IADR-0524, IADR-0528, IADR-0537, IADR-0554, IADR-0563]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20261007_1196_stage0-two-tier-recording, 20261008_1209_stage0-replay-min-notional-and-decision-exit, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage, 20261013_1308_stage0-asof-base-input, 20261014_1342_stage0-recorder-idempotent, 20261017_1381_trial-ledger-per-period-sharpe, 20261021_1307_stage0-window-plan-values]
+issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049, #1196, #1209, #1295, #1296, #1308, #1307, #1342, #1381, #1405, planning#783, planning#806]
 -->
 
 
@@ -35,7 +35,7 @@ issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1
 | ① | LLM 学習カットオフ後データ（または銘柄匿名化） | `DataCutoffPolicy`（全バー日付 > カットオフ）／`SymbolAnonymizer`（決定的匿名化） | B |
 | ② | 現実的コスト計上＋コスト 2 倍の感度分析 | `BacktestCostModel`（全体前提条件の `CostCalculator` ＋スリッページ ＋ `CostSensitivity` 1x/2x） | A |
 | ③ | ウォークフォワード検証 | `WalkForwardSplitter`（IS→OOS 窓分割） | B |
-| ④ | 試行数記録と過剰適合補正（DSR/PBO） | `TrialLedger`＋`DeflatedSharpeRatio`＋`ProbabilityOfBacktestOverfitting`（CSCV）。**PBO は探索がある場合にだけ評価する**（2026-09-11 の計画裁定。下記「探索を持たない戦略の PBO」）。**試行数の記録は免除されない** | B |
+| ④ | 試行数記録と過剰適合補正（DSR/PBO） | `TrialLedger`＋`DeflatedSharpeRatio`＋`ProbabilityOfBacktestOverfitting`（CSCV）。**PBO は探索がある場合にだけ評価する**（2026-09-11 の計画裁定。下記「探索を持たない戦略の PBO」）。**試行数の記録は免除されない**。**台帳の IS Sharpe は 1 期間（日次）で記録する**——DSR の観測値と期待最大 Sharpe を同じ単位で比べるため（年率で記録すると期待最大 Sharpe が膨らみ、試行 2 本以上で事実上必ず不合格になる） | B |
 | ⑤ | 生存者バイアスのない銘柄ユニバース | `SecurityUniverse`（Point-in-Time メンバーシップ・廃止銘柄含む） | A |
 
 ## 機能詳細
@@ -50,6 +50,7 @@ issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1
 | 取得（実データ源） | `IHistoricalBarSource`（Application のポート） | 非同期。戻り値 `HistoricalBarLoad(Bars, Gaps)` で欠測を銘柄と理由つきで残す |
 | 実アダプタ（採用） | `MoomooHistoricalBarSource`（Infrastructure） | **米国株日足 OHLC 履歴源を確定させた計画 ADR の決定 5 が採用した moomoo OpenAPI の履歴 K 線**（`QotRequestHistoryKL`・`KLType_Day`・`RehabType_Forward`）。1 リクエスト 1,000 件・`NextReqKey` でページング。米国株のみ（日本株は写像せず欠測）。SDK 依存は `MMApiMoomooHistoryKLineClient` に閉じる。送信前に `IRateLimiter` で自制。**ただし決定 5 の未確認 2 点が済むまで本番のバックテストへ流さない**（下記「米国株日足 OHLC 履歴の現況」） |
 | 実アダプタ（候補・取得不能） | `StooqHistoricalBarSource`（Infrastructure） | 情報源の計画 ADR が検証・学習用に採用した Stooq（日足 EOD・登録不要・日米両市場）。**現在は取得不能**（ボット検知チャレンジ。回避実装は履歴源の計画 ADR の決定 1 が禁止）。**削除しない**（決定 5 でも決定 1 の扱いは不変） |
+| 実アダプタ（Stage 0 用・2026-10-13） | `HttpOrderExecutionHistoricalBarSource`（Infrastructure） | 発注執行の日足の照会（`GET /order-execution/daily-bars`。前復権）から銘柄ごとに取る（`Backtest:BarData:Provider=order-execution`・`Backtest:BarData:OrderExecution:BaseUrl`・サービスの資格）。照会の上限（400 暦日）を超える期間は分けて呼ぶ。`Available` 以外・非 2xx・要求と別の銘柄の答え・欄の欠けた足は**その銘柄を丸ごと欠測**（半端に取れた分も捨てる）。backtest の Pod に OpenD は配線しない（下記「2026-10-13 の利用者裁定」） |
 | 安全既定 | `NoOpHistoricalBarSource`（Infrastructure） | `Backtest:BarData:Provider` 既定 `none`＝**外部へ 1 リクエストも出さない**。未知 provider・構成不備も警告して no-op（**allow-list**: 既知の provider が構成の妥当性を満たしたときだけ実アダプタを返す） |
 | 合成・自己申告・駆動 | `BacktestService`（ホスト） | 構成から過去データ源を解決し、`GET /internal/introspection` で選択中の実装と**定時駆動の有効・無効**を申告する。**定時駆動と verdict の発行を持つ**（下記「Stage 0 判定の定時駆動と verdict の発行」。実 RabbitMQ を介した疎通は #82） |
 | 評価（本番経路） | `MaterializedBarDataSource` | 取得済みバーの `IBarDataSource` 実装。正規化（同一 (Symbol, Market, Date) の重複排除・安定ソート）の単一情報源 |
@@ -88,6 +89,18 @@ issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1
    発火させるには `Backtest:BarData:Provider=moomoo` を**明示的に構成する**必要があり、それは 3 の確認が済んでから行う。
    Stage 0 の最大 DD 許容値を 0.15 から 0.10 へ厳格化した決定も、同じ理由で未発火のままである。
 
+#### 2026-10-13 の利用者裁定（Stage 0 に限った受け入れ）
+
+**Stage 0 では、前復権と費用モデルの不整合を受け入れ、足は発注執行の日足の照会から取る**（backtest の Pod に OpenD は配線しない）。
+上の 3 の確認 2 点のうち、費用モデルの整合は「費用モデルに配当・借株料の項が無い。前復権の値動きは配当を暗に含むので二重計上は起きないが、
+**空売りの借株料が抜ける**」と確かめ、Stage 0 の記録と評価に限ってこれを受け入れた。取得枠は**銘柄単位・総量 300** と実測済みで、
+**回復周期は未測定のまま**である。どちらも残余リスクとして残る（Stage 0 以外の扱いは変えない）。
+
+- 経路 B の構成は `Backtest:BarData:Provider=order-execution`。**本番の既定は `none` のまま**。
+- 発注執行が moomoo 構成でないと照会は「発注先が OpenD を持たない」で取れず、銘柄ごとの欠測になる（合格へは倒れない）。
+- 評価の窓の終端は構成 `Backtest:Stage0:EvaluationEnd`（`YYYY-MM-DD`）で固定できる。空は今日（従来どおり）、今日より後は今日、読めない値は今日へ倒して警告する。
+  記録の窓が過去の日で終わるとき（2026-09-15〜10-09）、終端を記録の終わりに揃えないと翌日以降の評価は「記録の期間の不一致」で判定を組まない。
+
 > **「使える履歴源が無い」と書かないこと**（2 の裁定と実装を否定する）。
 > **「moomoo で解決した」とも書かないこと**（3 を落とすと、未確認のまま本番へ流す経路そのものになる）。
 > **「実装したから使える」と読める記述を作らないこと。**
@@ -107,7 +120,7 @@ issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1
 | 駆動の形 | 常駐（`Hosted/Stage0EvaluationService`）。構成 `Backtest:Stage0`。HTTP の起動口は持たない |
 | 既定 | 🔴 **無効**（`Backtest:Stage0:Enabled=false`）。無効なら巡回もデータ取得も発行も起きない。**有効化はローカル/SIMULATE の有効化プロファイルだけで行う**（本番既定は無効のまま。下記） |
 | 巡回間隔 | `IntervalSeconds`（既定 86,400＝日次・下限 60 秒） |
-| 評価期間 | 当日から `LookbackDays`（既定 365・下限 1 日）遡った範囲 |
+| 評価期間 | 当日から `LookbackDays`（既定 365・下限 1 日）遡った範囲。🔴 **365 暦日は計画の値である**（窓の長さを変えるときは計画を改める。構成だけで変えない）。判定用の構成（開発用の appsettings・本番の Helm の構成）はこの値と試験で突き合わせる。PoC の経路の確認用の構成（values-local の 24 日）は判定用ではなく、その評価の結果を合格の根拠にしない。カットオフ 2026-06-30 のもとでは、窓が届くのは終端 2027-07-01（252 営業日）であり、届くまで汚染対策の覆る条件を判定しない |
 | 取得 | 実過去データ源から**1 回だけ**取得しスナップショットへ固定する（決定性の保全） |
 | 評価対象 | `Backtest:Stage0:Strategy`（既定はプレースホルダ＝不合格固定。下記） |
 | 発行 | `BacktestEvaluated`。共通ヘルパの配線のみを用い、キュー名・再試行・DLQ をサービス側で選ばない |
@@ -140,7 +153,7 @@ LLM 学習カットオフ日（`Backtest:Stage0:LlmTrainingCutoff`）は、ど�
 
 **［2026-09-09 登録］取引判断の割当モデルの学習カットオフ日は計画の全体前提条件へ登録済みであり、実装は `2026-01-31` を構成（Helm values・開発用 appsettings）へ入れている。**
 
-**［2026-10-10 改定］割当モデルを 5.5 系（一次スクリーニング＝`claude-haiku-5-5`・本判断＝`claude-sonnet-5-5`）へ切り替える利用者裁定を受け、構成の値を `2026-06-30` へ引き直した**（提供元の training data cutoff は 3 モデルとも Jun 2026。月末へ写す同じ規則）。汚染対策の窓は 2026-07-01 以降になり、旧値より約 5 か月短い。🔴 **旧割当の組（`claude-haiku-4-5` ＋ `claude-sonnet-5`）で採った記録は、新しい組の合否に使えない**——両層の照合は現行のピンそのものだけを一致と読み、割当表が移行期間に受ける直前世代は一致と読まない（下の「両層の組での評価」）。Stage 0 は 5.5 系の組で採り直す。
+**［2026-10-10 改定］割当モデルを 5.5 系（一次スクリーニング＝`claude-haiku-5-5`・本判断＝`claude-sonnet-5-5`）へ切り替える利用者裁定を受け、構成の値を `2026-06-30` へ引き直した**（提供元の training data cutoff は 3 モデルとも Jun 2026。月末へ写す同じ規則）。汚染対策の窓は 2026-07-01 以降になり、旧値より約 5 か月短い。🔴 **旧割当の組（`claude-haiku-4-5` ＋ `claude-sonnet-5`）で採った記録は、新しい組の合否に使えない**——両層の照合は現行のピンそのものだけを一致と読む（下の「両層の組での評価」）。割当表も 5.5 系の ID だけを受け、切替の間だけ直前世代を受ける段は設けない（#1296 で撤去した）。Stage 0 は 5.5 系の組で採り直す。
 
 - **値は構成に置き、コード既定にはしない。** 未設定と登録済みが区別できなくなるためである。**割当モデルのピンを変えたら本値を引き直し、Stage 0 を再実施する**（計画がモデルのピン変更に求める再検証と同じ扱い）。
 - 🔴 **駆動側（`Backtest:Stage0:LlmTrainingCutoff`）と記録側（`Stage0Recording:LlmTrainingCutoff`）は同値にする。**食い違うと記録・再生の評価は「記録が構成と食い違う」で止まり、原因が構成の不一致だと読み取りにくい。
@@ -245,6 +258,26 @@ LLM 学習カットオフ日（`Backtest:Stage0:LlmTrainingCutoff`）は、ど�
 「**復元できなかったらどうするか**」であって、復元可能性を確かめたのではない。
 日報方針と為替レートの申告は**供給側の正直さ**に依存する（値の有無から痩せを観測できない）。
 
+#### 🔴 記録器は同じ承認値の組を二度課金しない（完了の印・途中からの再開・費用の累計の上限）
+
+記録器は取引判断サービスの起動ごとに走る。ホストの停止や一斉再起動が続くと、同じ承認値の記録がもう一度走り、もう一度課金されうる。
+そのため、記録器は実行の状態を永続領域に置き、同じ承認値の組（期間・銘柄・承認額・承認回数・モデル・トークン量）を次のように扱う。
+
+| 状態 | 扱い |
+| --- | --- |
+| 状態の置き場（永続ボリューム）が構成されていない | **記録しない**（LLM を呼ばない） |
+| 完了済み、または上限で停止済み | **LLM を呼ばずに終える**。記録は書き出さない（上書きしない） |
+| 途中で落ちた | 記録済みの判断時点を飛ばして**途中から再開**する |
+| 印・途中の記録・費用の累計が読めない、またはほかの実行が走っている | **LLM を呼ばない**（人が状態を確かめて消すまで） |
+
+- 費用の累計は、印とは別の鍵（承認額・承認回数・期間・銘柄）と別のファイルで持つ。印が消えても、累計が承認額に届いていれば呼ばない。
+- 判断時点ごとに、**呼ぶ前に**「累計＋1 判断時点の見積り」を円未満 2 桁に丸めて承認額を超えるなら止める。呼んだ後に累計が承認額を超えても止める。
+- 呼ぶ前に見込みを累計へ積み、呼んだ後に実績へ置き換える。応答の直後に落ちても、その費用は累計に入る。
+- 二重に課金されうるのは、応答を受けてから途中の記録を書くまでに落ちた 1 判断時点（一次 1 回＋多数決回数）だけである。
+- 🔴 **課金済みの記録を空の集合で消さない。** 止まった実行（上限・状態の失敗）の記録が 0 件なら、書き出しも終わりの印も行わない。
+  書き出し先は、既存の記録より判断の件数が少ない集合での上書きを拒み、一時ファイルを経て置き換える。
+- 同じ組でもう一度記録するには、人が記録を退避してから、状態の置き場の印と累計を消す。累計を消すと、承認額の上限も最初から数え直しになる。
+
 ### シミュレーション（Slice A）
 
 - 入力: 過去データ（`IBarDataSource`）・銘柄ユニバース（PIT）・戦略（`IBacktestStrategy`）・コストモデル・期間。
@@ -261,7 +294,7 @@ LLM 学習カットオフ日（`Backtest:Stage0:LlmTrainingCutoff`）は、ど�
 
 | 判定 | 条件 | 既定閾値 |
 | --- | --- | --- |
-| エッジ有意 | DSR 補正後もエッジが正 | DSR ≥ 0.95（真 SR>0 の確率） |
+| エッジ有意 | DSR 補正後もエッジが正 | DSR ≥ 0.95（真 SR>0 の確率。**計画の基準の値**であり、実装で動かさない。構成の口は無い。日次の Sharpe で比べる） |
 | 過剰適合 | PBO が閾値以下 | PBO ≤ 0.5。🔴 **PBO を評価した場合にだけ効く**（評価不能なら合否の根拠から外れる。「満たした」と数えるのではない） |
 | 最大 DD | ≤ 10% | **≤ 10%**（0.15 → 0.10 へ厳格化し、運用の DD 停止ラインとの同値性をテストで固定した。リスク統制既定値の計画 ADR §4／全体前提条件 §5 の DD 上限と同値。**本行は 2026-08-06 に是正した**——旧記述「既定 15%＝前提条件の DD 上限」は二重に誤りで、15% は前提条件の値ではなく旧レンジ上限側からの逆算だった） |
 | コスト頑健性 | **コスト 2 倍でも期待値が正** | 2x リターン > 0 |

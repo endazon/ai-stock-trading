@@ -2,6 +2,7 @@ using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.AdoptPositionDrift;
 using OrderExecutionService.Features.OrderExecution.AmendOrder;
+using OrderExecutionService.Features.OrderExecution.CancelUnfilledDecisionCloses;
 using OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
 using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
@@ -11,6 +12,7 @@ using OrderExecutionService.Features.OrderExecution.PollOrderFills;
 using OrderExecutionService.Features.OrderExecution.ProbeKLineQuota;
 using OrderExecutionService.Features.OrderExecution.ProbeOrderFee;
 using OrderExecutionService.Features.OrderExecution.QueryDailyBars;
+using OrderExecutionService.Features.OrderExecution.QueryInFlightCloses;
 using OrderExecutionService.Features.OrderExecution.QueryShortPermit;
 using OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
 using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
@@ -23,7 +25,9 @@ using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Operations;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Observability;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Grpc;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -149,6 +153,10 @@ builder.Services.AddSingleton<IBrokerAdapter>(sp =>
 });
 
 builder.Services.AddSingleton<IClock, SystemClock>();
+// 🔴 FR-10, NFR, #1444（親 #1423 M-1）, IADR-0574 決定1: 保護逆指値ガードと S1 の決済が「今は場中か」を問う口（共有カーネルの MarketHours）。
+// 下の 2 つの組み立てへ渡す。引数は省略できない（渡し忘れはコンパイルで止まる）。実体が MarketHours であることは T-10-3001 が
+// 本番の組み立てで固定する（「常に場中」の偽物は試験のアセンブリにしか無い）。
+builder.Services.AddSingleton<IMarketSessionGate>(MarketHoursSessionGate.Instance);
 // 🔴 NFR, FR-10, FR-11, #1092, IADR-0462 決定1〜3: 建玉照会の成功・失敗を、状態が変わったときだけ監査台帳へ出す報告口。
 // **singleton を 1 つだけ**置き、ガード・S1・発注・観測の常駐へ同じものを渡す（状態は発生源ごとにこの中で持つ）。
 // 発行はランタイムの MessageBus から行う —— 発注・S1 のハンドラの処理中に呼ばれても、その処理が例外で終わったときに
@@ -157,6 +165,15 @@ builder.Services.AddSingleton<IPositionQueryHealthReporter>(sp => new PositionQu
     e => new MessageBus(sp.GetRequiredService<IWolverineRuntime>()).PublishAsync(e),
     sp.GetService<TimeProvider>() ?? TimeProvider.System,
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<PositionQueryHealthReporter>()));
+// 🔴 NFR, FR-10, FR-05, ADR-0050 決定1・3, #1446（親 #1423 M-2）, IADR-0575 決定 2: 同じ建玉を売る決済（承認の決済・S1・保護喪失と
+// ガードの成行手仕舞い）の「読む → 送る → 記録する」を、専有 DB の advisory lock で (銘柄, 市場, 決済の方向) ごとに 1 本ずつにする。
+// 承認の受信が 1 通ずつ（Inline・1 リスナ）でも、S1 は別のキューと常駐の巡回から来るため、それだけでは並行に送り得る（IADR-0575 の実測）。
+// 入れ替え中に新旧の Pod が重なっても DB が持つロックなので効く。渡し忘れるとその経路だけが他の決済と直列にならない（T-10-3008 が固定する）。
+// 関係 DB でない試験の DbContext（InMemory）では、このホストで 1 つのプロセス内のセマフォへ縮退する（PostgresClosePositionLock.ForContext）。
+// static の共有にしない——並列に走る別々の試験のホストどうしが待ち合う（PR #1447 の CI で実測）。
+builder.Services.AddSingleton<InProcessClosePositionLock>();
+builder.Services.AddScoped<IClosePositionLock>(sp => PostgresClosePositionLock.ForContext(
+    sp.GetRequiredService<OrderExecutionDbContext>(), sp.GetRequiredService<InProcessClosePositionLock>()));
 // DbContext が scoped のため発注結果ストアも scoped。
 builder.Services.AddScoped<IExecutedOrderStore, EfExecutedOrderStore>();
 // #131, IADR-0057: 発注前 DecisionId 予約（二重発注の防止）。
@@ -166,6 +183,26 @@ builder.Services.AddScoped<IProtectiveStopOrderStore, EfProtectiveStopOrderStore
 // 🔴 FR-10, FR-05, ADR-0016, #864, IADR-0355: 決済（Close）の発注前に**ブローカーの実建玉と突き合わせる**ため、
 // 建玉照会（IBrokerPositionSource）を任意依存として渡す。**実装しない発注先（内蔵 paper）では null のまま**であり、
 // 突合そのものが起きない（従来どおり。下の moomoo 限定の登録と対になる構造的な非干渉）。
+// 🔴 FR-10, ADR-0009 決定 3・4, NFR-04, IADR-0567 決定 2・4: 新規建てを送る直前に読む停止の状態（kill switch・一時停止）。
+// 照会先はリスク管理の GET /risk-controls/trading-halt（OwnerOrService。s2s は ServiceAuth:*）。待ちの上限 3 秒・1 試行。
+// 🔴 **RiskManagement:BaseUrl が未設定・不正なら常に不明＝新規建てを送らない**（fail-closed。決済・損切りは照会しないので止まらない）。
+// 照会を省く構成の口は持たない。
+builder.Services.AddHttpClient("risk", c => c.Timeout = HttpTradingHaltSource.RequestTimeout)
+    .AddAiStockTradingServiceToken(builder.Configuration);
+builder.Services.AddScoped<ITradingHaltSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl)
+        || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)
+        || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+    {
+        return new UnconfiguredTradingHaltSource(sp.GetRequiredService<ILogger<UnconfiguredTradingHaltSource>>());
+    }
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk");
+    http.BaseAddress = uri;
+    return new HttpTradingHaltSource(http, sp.GetRequiredService<ILogger<HttpTradingHaltSource>>());
+});
 builder.Services.AddScoped(sp => new OrderExecutionAppService(
     sp.GetRequiredService<IBrokerAdapter>(),
     sp.GetRequiredService<IExecutedOrderStore>(),
@@ -175,7 +212,11 @@ builder.Services.AddScoped(sp => new OrderExecutionAppService(
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderExecutionAppService>(),
     sp.GetService<IBrokerPositionSource>(),
     // NFR, FR-10, #1092, IADR-0462: 決済のゲート・S1 の武装前の建玉照会の状態を台帳へ出す。
-    sp.GetRequiredService<IPositionQueryHealthReporter>()));
+    sp.GetRequiredService<IPositionQueryHealthReporter>(),
+    // 🔴 IADR-0567: 渡し忘れると照会が起きない（引数は省略可能）。T-10-2971 が Program.cs そのもので固定する。
+    sp.GetRequiredService<ITradingHaltSource>(),
+    // 🔴 #1446, IADR-0575 決定 1: 決済の「読む → 送る → 記録する」を同じ建玉の他の決済と直列にする（T-10-3008）。
+    sp.GetRequiredService<IClosePositionLock>()));
 // 🔴 FR-10, FR-12, #853, IADR-0428 決定4: 突合で「発注済み」と確定したエントリーに保護レグを張る口。実体は発注執行そのもの
 // （平常の経路と同じ PlaceProtectiveStopAsync を通す）。下の突合（OrderReservationReconciler）へ渡す——渡し忘れると、
 // 引数は省略可能なのでコンパイルも単体の試験も通ったまま、突合で確定したエントリーは保護レグを持たないまま台帳へ載る
@@ -193,9 +234,13 @@ builder.Services.AddScoped(sp => new SoftwareStopExecutor(
     sp.GetRequiredService<IExecutedOrderStore>(),
     sp.GetRequiredService<IOrderReservationStore>(),
     sp.GetRequiredService<IClock>(),
+    // #1444, IADR-0574 決定3: 閉場中は S1 の成行を送らない（省略できない引数）。
+    sp.GetRequiredService<IMarketSessionGate>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<SoftwareStopExecutor>(),
     // NFR, FR-10, #1092, IADR-0462: S1 が自ら照会した回の建玉照会の状態を台帳へ出す。
-    positionQueryHealth: sp.GetRequiredService<IPositionQueryHealthReporter>()));
+    positionQueryHealth: sp.GetRequiredService<IPositionQueryHealthReporter>(),
+    // 🔴 #1446, IADR-0575 決定 1: S1 の決済を同じ建玉の他の決済と直列にする（T-10-3008）。
+    closeLock: sp.GetRequiredService<IClosePositionLock>()));
 
 // FR-11, FR-16, ADR-0016 決定15, ADR-0027 決定2/決定4, #633, IADR-0300: 取引の経費区分の記録（段 1）。
 // 既定の供給口は **常に「取得できない」** を返す no-op であり、経費イベントは 1 本も出ない。
@@ -303,6 +348,16 @@ builder.Services.AddSingleton(sp => new DailyBarsQueryService(
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<DailyBarsQueryService>(),
     sp.GetService<IDailyKLineSource>()));
 
+// 🔴 FR-04, FR-10, #1338, IADR-0535 決定2: 処理中の決済の照会（取引判断が保有中の銘柄で LLM を呼ぶ前に読む）。判定は決済のゲートと同じ
+// InFlightCloses。建玉照会（IBrokerPositionSource）は moomoo 構成でだけ登録されており、内蔵 paper では null ＝ 常に Unknown
+// （ゲートもその構成では処理中の決済を引かない）。記録・保護記録ストアが scoped のため scoped。明示的に組む（省略可能な引数へ黙って落とさない）。
+builder.Services.AddScoped(sp => new InFlightClosesQueryService(
+    sp.GetRequiredService<IExecutedOrderStore>(),
+    sp.GetRequiredService<IBrokerAdapter>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<InFlightClosesQueryService>(),
+    sp.GetRequiredService<IProtectiveStopOrderStore>(),
+    sp.GetService<IBrokerPositionSource>()));
+
 // NFR（運用）, #137, IADR-0059: 予約表の終端行（Completed）の保持期間パージ（既定無効。Retention:Enabled=true で有効化）。
 // Reserved（＝発注済みか不明）はどれだけ古くても対象外。滞留の解消は #141 か人手であって時間経過ではない。
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));
@@ -353,6 +408,13 @@ builder.Services.AddHostedService<OrderReservationReconciliationService>();
 // 返すため、これが無いと約定が取引台帳へ届かず統制上限（SameDayReentry・日次発注上限・段階資金上限）が実効しない。
 // paper は即時終端で非終端の記録が生まれないため、配線を moomoo 選択時に限定する（構造的な非干渉）。
 builder.Services.Configure<FillPollingOptions>(builder.Configuration.GetSection(FillPollingOptions.SectionName));
+// 🔴 FR-10, FR-19, ADR-0067 決定2・6, #1339, IADR-0539: 判断由来の決済の指値の未約定時の取消（**既定は無効**）。構成を問わず検証を起動で
+// 走らせる（有効時の N ≦ 相場操縦の検知の窓・上端超え・回数の範囲外は起動で止める）。有効化は #1214 の実弾確認と PoC の後に利用者が決める。
+builder.Services.AddOptions<DecisionCloseUnfilledCancelOptions>()
+    .Bind(builder.Configuration.GetSection(DecisionCloseUnfilledCancelOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<
+    Microsoft.Extensions.Options.IValidateOptions<DecisionCloseUnfilledCancelOptions>, DecisionCloseUnfilledCancelOptionsValidator>();
 if (brokerSelection.IsMoomoo)
 {
     // 🔴 FR-10, #833 項目1, IADR-0389: 受理だけで完了させた S1 の保護記録の再武装。約定追跡が「確認できた
@@ -372,7 +434,12 @@ if (brokerSelection.IsMoomoo)
         sp.GetRequiredService<SoftwareStopReArmer>(),
         sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderFillPoller>(),
         // 🔴 FR-10, #958, IADR-0406 決定2: Active な S0 の逆指値レグを追跡上限の対象外にする（保護記録は読むだけ）。
-        sp.GetRequiredService<IProtectiveStopOrderStore>()));
+        sp.GetRequiredService<IProtectiveStopOrderStore>(),
+        // 🔴 FR-10, #1422, IADR-0569 決定4: 取消の確認待ちだった新規建ての後始末の口（実体は発注執行）。渡し忘れると
+        // 引数は省略可能なのでコンパイルも単体の試験も通ったまま、取消の窓で約定した建玉が保護も手仕舞いも無く残る。
+        sp.GetRequiredService<OrderExecutionAppService>()));
+    // 🔴 #1339, IADR-0539: 約定追跡の常駐が巡回ごとに呼ぶ（新しい常駐は足さない）。無効なら何もしない。
+    builder.Services.AddScoped<DecisionCloseUnfilledCanceller>();
     builder.Services.AddHostedService<OrderFillPollingService>();
 }
 
@@ -393,7 +460,9 @@ if (brokerSelection.IsMoomoo)
         sp.GetRequiredService<IProtectiveStopOrderStore>(),
         sp.GetRequiredService<IExecutedOrderStore>(),
         sp.GetRequiredService<IClock>(),
-        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProtectiveStopGuardOptions>>().Value.BatchSize));
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProtectiveStopGuardOptions>>().Value.BatchSize,
+        // 🔴 FR-10, #1330, IADR-0534 決定4: 検知の outcome を INF で残す。
+        sp.GetService<ILogger<UnattributedPositionDetector>>()));
     builder.Services.AddHostedService<BrokerPositionSnapshotService>();
 }
 
@@ -422,6 +491,8 @@ if (brokerSelection.IsMoomoo)
             // #848, IADR-0117（改定 7）: 成行手仕舞いも予約 → 発注 → 確定の 3 相で送る（届いたか不明を撃ち直さない）。
             sp.GetRequiredService<IOrderReservationStore>(),
             sp.GetRequiredService<IClock>(),
+            // 🔴 #1444, IADR-0574 決定2: 閉場中は逆指値の張り直し・成行の手仕舞いを送らず、次の開場の巡回で張り直す（省略できない引数）。
+            sp.GetRequiredService<IMarketSessionGate>(),
             sp.GetRequiredService<ILoggerFactory>()
                 .CreateLogger<OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard>(),
             sp.GetRequiredService<
@@ -446,14 +517,21 @@ if (brokerSelection.IsMoomoo)
                 sp.GetRequiredService<IBrokerAdapter>(),
                 sp.GetRequiredService<IClock>(),
                 sp.GetRequiredService<ILoggerFactory>().CreateLogger<
-                    OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor.SoftwareStopFloorRetrofitter>())));
+                    OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor.SoftwareStopFloorRetrofitter>()),
+            // 🔴 #1446, IADR-0575 決定 3: 成行の手仕舞いを同じ建玉の他の決済と直列にする（T-10-3008）。
+            sp.GetRequiredService<IClosePositionLock>()));
     // FR-10, #902, IADR-0365 決定5: Active な S1 行の低頻度の要約（観測のみ。間隔をまたいで状態を持つため singleton）。
+    // #856, IADR-0538: 発注記録の無いまま未確定で残る S1（幽霊の疑い）の経過と再通知の間隔も同じ構成から渡す。
     builder.Services.AddSingleton(sp =>
-        new SoftwareStopLivenessReporter(
+    {
+        var guardOptions = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProtectiveStopGuardOptions>>().Value;
+        return new SoftwareStopLivenessReporter(
             sp.GetRequiredService<IClock>(),
             sp.GetRequiredService<ILoggerFactory>().CreateLogger<SoftwareStopLivenessReporter>(),
-            sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProtectiveStopGuardOptions>>()
-                .Value.SoftwareStopSummaryInterval));
+            guardOptions.SoftwareStopSummaryInterval,
+            guardOptions.UnrecordedSoftwareStopAge,
+            guardOptions.UnrecordedSoftwareStopReminderInterval);
+    });
     builder.Services.AddHostedService<
         OrderExecutionService.Hosted.ProtectiveStopGuardService>();
 }
@@ -485,16 +563,29 @@ builder.Services.AddHostedService<BrokerAvailabilityProbeService>();
 // キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている（サービス側でトポロジを選ばない）。
 // **IADR-0129 決定 3 が効く経路**: OrderApproved は発行元の RiskManagementService 自身も購読しており、
 // ローカルルーティングを無効化しないと承認済みの発注が本サービスへ一通も届かない。
-builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
-    ServiceName,
-    builder.Configuration["RabbitMq:ConnectionString"],
-    typeof(OrderApprovedHandler).Assembly));
+// 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定1: 送信は耐久アウトボックス（専有 DB の `wolverine` スキーマ）に載せる。
+// 既定の RabbitMQ 送信はブローカー断の間も PublishAsync を成功で返して黙って捨てるため、約定（OrderExecuted）が台帳へ届かなくなる（実測）。
+// 構成 Messaging:DurableOutbox:Enabled=false は配備の不具合のときの戻し口（常用しない）。
+var durableOutbox = WolverineDurableOutbox.IsEnabled(builder.Configuration);
+builder.Host.UseWolverine(opts =>
+{
+    opts.UseAiStockTradingRabbitMq(
+        ServiceName,
+        builder.Configuration["RabbitMq:ConnectionString"],
+        typeof(OrderApprovedHandler).Assembly);
+    if (durableOutbox)
+        opts.UseOrderExecutionDurableOutbox(connStr);
+});
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
 // IADR-0111: 自己申告は正準名 Tier（paper ＜ moomoo-sim ＜ moomoo-live＝本番近接順）で行う。
 // 生の Broker:Provider だけでは取引環境（シム／実弾）が判らず「今どの階層か」を実行時に確認できない。
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b.AddPort("broker", brokerSelection.Tier));
+
+// NFR, MSP:ADR-0029, IADR-0328 決定3, IADR-0559 決定 1, #1391 (#753): east-west gRPC の h2c 専用ポート。
+// **`Grpc:Port` が未設定・0 なら立たない**（既定配備の振る舞いは変わらない。helm の `grpcPort` を宣言したときだけ env が入る）。`AddGrpc()` は常に呼ばれる。
+builder.AddAiStockTradingGrpcListener();
 
 var app = builder.Build();
 
@@ -534,6 +625,13 @@ app.MapShortPermitEndpoint();
 
 // FR-04, FR-15, #1118, IADR-0467 決定 2: 日足の照会（判断へ渡す出来高。判断側で有効化したときだけ呼ばれる）。
 app.MapDailyBarsEndpoint();
+
+// FR-04, FR-10, #1338, IADR-0535 決定2: 処理中の決済の照会（取引判断が LLM の前に読む）。
+app.MapInFlightClosesEndpoint();
+
+// NFR, IADR-0284 決定 5（段 5 の追補 2）, IADR-0559 決定 1・2, #1391 (#753): 読み取りの gRPC 面（上の 3 つの照会の口と同じ照会サービス・同じ入力の検証）。
+// 門は GrpcOwnerOrService（deny-by-default）。呼び出し元（リスク管理・取引判断・バックテスト）は `OrderExecution:Grpc` を宣言したときだけ使う（既定は REST）。
+app.MapGrpcService<OrderExecutionReadGrpcService>();
 
 // #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
 return await app.RunAiStockTradingAsync(args);

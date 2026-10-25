@@ -15,7 +15,12 @@ public sealed class CapitalBaselineOptions
     /// <summary>
     /// 基準資金として採る観測の最大経過時間（日）。既定 4 日。
     /// <para>
-    /// 3 連休を挟むと金曜の観測を火曜に使うことになり、経過は最大およそ <b>3.40 日</b>である
+    /// 🔴 #1423 M-3, ADR-0073 決定1, IADR-0581 決定2: <b>新規建ての可否は「直前の米国東部暦日に成功した観測があるか」で
+    /// 決まり、本値はそれに包まれる</b>（直前の暦日の行があれば経過は 2 日を超えない）。本値で新たに止まる場面は無く、
+    /// 帰結の区別（長い停止を <c>UnavailableStale</c> として分けて数える）のためだけに残す。
+    /// </para>
+    /// <para>
+    /// 旧根拠: 3 連休を挟むと金曜の観測を火曜に使うことになり、経過は最大およそ <b>3.40 日</b>である
     /// （金 23:55 ET の観測を火曜の寄り付き 09:30 ET に使う場合の実測値）。4 日はこれを通し、
     /// **巡回が 1 営業週にわたり死んでいる状態は通さない**。超えたら「照会できていない」＝新規建てを止める。
     /// </para>
@@ -26,4 +31,13 @@ public sealed class CapitalBaselineOptions
     public const int DefaultMaxAgeDays = 4;
 
     public TimeSpan MaxAge => TimeSpan.FromDays(MaxAgeDays > 0 ? MaxAgeDays : DefaultMaxAgeDays);
+
+    /// <summary>
+    /// FR-10, FR-09, #1423 M-3, ADR-0073 決定3, IADR-0581 決定3: 観測の欠けを検知して知らせる巡回を動かすか。既定 true。
+    /// <para>計画が通知を求める統制であるため既定で有効にする（無効にできるのは試験・障害時の切り分けのため）。</para>
+    /// </summary>
+    public bool NotifyObservationMissing { get; set; } = true;
+
+    /// <summary>上の巡回の間隔（秒）。既定 300（口座照会の巡回と同じ 5 分）。1 未満は 1 へ丸める。</summary>
+    public int ObservationMissingCheckIntervalSeconds { get; set; } = 300;
 }

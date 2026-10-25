@@ -3,15 +3,15 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-10-10
+updated: 2026-10-23
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-09, NFR-10, NFR-11, NFR-13, FR-10, FR-02, FR-13, NFR-02, NFR-06]
-adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040, ADR-0050, ADR-0044]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496, IADR-0210, IADR-0499, IADR-0505, IADR-0342, IADR-0524, IADR-0526]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production, 20261007_1202_cutover-runbook-adr0040-checks, 20261007_1197_llm-pricing-unset-guard, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261009_1228_planning741-ruling-records, 20261010_1295_claude-5-5-models, 20261010_1300_report-draft-knowledge-copy]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, #1192, #1202, #1214, #1197, #1228, #1275, #1295, #1296, #1300, MSP#266, MSP#635, planning#54, planning#676, planning#704, planning#741, planning#783, planning#784]
+ids: [FR-01, FR-04, FR-07, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-09, NFR-10, NFR-11, NFR-13, FR-10, FR-02, FR-13, NFR-02, NFR-06]
+adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040, ADR-0050, ADR-0044, ADR-0064, ADR-0048, ADR-0051, ADR-0067]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496, IADR-0210, IADR-0499, IADR-0505, IADR-0342, IADR-0524, IADR-0526, IADR-0538, IADR-0544, IADR-0357, IADR-0535, IADR-0536, IADR-0539, IADR-0551, IADR-0553, IADR-0560, IADR-0570, IADR-0573]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production, 20261007_1202_cutover-runbook-adr0040-checks, 20261007_1197_llm-pricing-unset-guard, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261009_1228_planning741-ruling-records, 20261010_1295_claude-5-5-models, 20261010_1300_report-draft-knowledge-copy, 20261011_1296_remove-llm-migration-stage, 20261014_msp1919_host-memory-prereq, 20261015_856_held-warning-throttle-and-ghost-s1, 20261016_1365_daily-policy-self-contained-thresholds, 20261014_1339_close-limit-tif-and-release, 20261016_1339_decision-close-unfilled-cancel, 20261017_1339_operations-unfilled-decision-close, 20261017_1343_release-closes-entry-protection, 20261017_1305_unknown-model-price-setting, 20261020_1395_s1-yield-cancel-suppresses-abandon-notice, 20261023_GHSA-j4qv_mesh-injection-handover, 20261023_1442_order-executed-republish]
+issues: [#1423, #1442, #1395, #13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, #1192, #1202, #1214, #1197, #1228, #1275, #1295, #1296, #1300, #1365, #1339, #1343, #1305, MSP#266, MSP#635, planning#54, planning#676, planning#704, planning#741, planning#783, planning#784, MSP#1919]
 -->
 
 
@@ -37,11 +37,11 @@ issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #
 | --- | --- |
 | 環境 | dev（ローカル k8s: k3d / Rancher Desktop 内蔵 k3s）/ stg・prod（k3s・#24） |
 | 実行基盤 | Kubernetes。Helm chart [`deploy/helm/ai-stock-trading`](../../deploy/helm/ai-stock-trading)。共有インフラは MSP `platform-infra` を ExternalName で参照 |
-| 手順（dev） | `scripts/k8s-local-deploy.sh`（イメージのビルド＆import〔`scripts/k8s-local-images.sh` を呼ぶ〕→ ns/secret → helm → rollout restart）。既定は 12 イメージをすべて作り直す（最大約 30 分）。**変わったサービスだけを作り直すには `--changed-since <ref>`（git の差分から選ぶ）か `SERVICES=a,b`** を付ける。共有物（`backend/Shared`・`backend/TestSupport`・ルートの props・Dockerfile 等）の変更と判定できない差分は全件になり、ランタイムにイメージが無いサービス（初回・作り直したクラスタ）は選択に関わらず作る。絞り込んだときの restart は作り直したサービスだけ。詳細は chart README。fail-safe 既定（外部連携空=no-op / Broker=paper） |
+| 手順（dev） | `scripts/k8s-local-deploy.sh`（イメージのビルド＆import〔`scripts/k8s-local-images.sh` を呼ぶ〕→ ns/secret → helm → rollout restart）。既定は 12 イメージをすべて作り直す（最大約 30 分）。**変わったサービスだけを作り直すには `--changed-since <ref>`（git の差分から選ぶ）か `SERVICES=a,b`** を付ける。共有物（`backend/Shared`・`backend/TestSupport`・ルートの props・Dockerfile 等）の変更と判定できない差分は全件になり、ランタイムにイメージが無いサービス（初回・作り直したクラスタ）は選択に関わらず作る。絞り込んだときの restart は作り直したサービスだけ。**メッシュ参入（サイドカー注入）は `AST_MESH_INJECTION=1`／`0` で選ぶ**（未指定の再実行は現行のリリースの値を引き継ぎ、新規は無効。有効なら名前空間へ注入ラベルを貼り、`0` なら剥がす。状態が変わった回は OpenD を除く全件を作り直す。OpenD は常に注入対象外で作り直さない）。詳細は chart README。fail-safe 既定（外部連携空=no-op / Broker=paper / メッシュ参入=無効） |
 | スケジューラ | 取引サイクルは既定 in-process。本番は `tradingCycle.cronjob.enabled=true` で K8s CronJob 駆動 |
 | 発注経路（ブローカ階層） | 単一スイッチ `broker.tier`（`paper` ＜ `moomoo-sim` ＜ `moomoo-live`・#267。ブローカー選択は provider × environment の直交 2 軸で表現する）。**既定 `paper` ＝プロセス内蔵の擬似約定で moomoo へは接続しない**。`moomoo-sim` は OpenD 経由で moomoo 模擬口座へ実発注する別経路であり、**約定の主体・残高・注文履歴の所在が別**である（取り違え防止・識別手順は [発注経路の区別と識別 Runbook](broker-execution-paths-runbook.md)・#268）。`moomoo-live`（実弾）は未解禁＝描画時 `fail` |
 | moomoo OpenD | 常駐モデル。dev は `deploy/opend/k8s` の生 manifest、**本番は chart の `opend.enabled=true`**。**初回のみ**有人のデバイス検証が要り、以降は「デバイス信頼の永続化＋egress IP の安定（＝ノード固定）」で無人再ログインが成立する。#13 は `opend:11111` へ **SIMULATE** 接続（実弾は撃たない） |
-| リリースとチャートの差（設定の未反映） | **Pod の入れ替え（`kubectl rollout restart`・イメージの焼き直し・Reloader の再起動）では values・テンプレートの変更は入らない**。入れるのは `helm upgrade`（`k8s-local-deploy.sh`）だけである。配備の**前後**に `node scripts/helm-release-drift.js --release ast --namespace ai-stock-trading --values deploy/helm/ai-stock-trading/values-local.yaml`（**読み取り専用**・秘密の値を出さない）で差を出し、前は「入る差が意図どおりか」、後は「差が無い（終了コード 0）」を確かめる。🔴 **OpenD の Deployment は変わってはならない**（出力の 1 行目が「変化なし」。終了コード 3 なら配備しない）。手順と読み方は [chart README「配備の前後でリリースとチャートの差を確かめる」](../../deploy/helm/ai-stock-trading/README.md) |
+| リリースとチャートの差（設定の未反映） | **Pod の入れ替え（`kubectl rollout restart`・イメージの焼き直し・Reloader の再起動）では values・テンプレートの変更は入らない**。入れるのは `helm upgrade`（`k8s-local-deploy.sh`）だけである。配備の**前後**に `node scripts/helm-release-drift.js --release ast --namespace ai-stock-trading --values deploy/helm/ai-stock-trading/values-local.yaml`（**読み取り専用**・秘密の値を出さない）で差を出し、前は「入る差が意図どおりか」、後は「差が無い（終了コード 0）」を確かめる。🔴 **OpenD の Deployment は変わってはならない**（出力の 1 行目が「変化なし」。終了コード 3 なら配備しない。例外は OpenD を注入対象外にする注釈を初めて描く配備の 1 回だけで、OpenD の差がその注釈 1 つなら閉場後に意図して進める。chart README「Istio サイドカー注入」）。手順と読み方は [chart README「配備の前後でリリースとチャートの差を確かめる」](../../deploy/helm/ai-stock-trading/README.md) |
 | 実行環境名（`ASPNETCORE_ENVIRONMENT`） | **全 Worker が `Production`**（chart の `global.aspnetcoreEnvironment`。**`Development` は描画で止まる**＝開発者向け例外ページが要求ヘッダー〔`Authorization: Bearer`〕とスタックを応答へ載せるため。#1192）。エラー応答は ProblemDetails（`status`・`traceId` だけ）で、原因は Pod のログを `traceId` で引いて見る。`appsettings.Development.json` は配備では読まれない —— 経路B が従来その値で動いていたログの最小レベル（`Debug`）と情報収集の巡回 300 秒（鮮度の上限 600 秒の前提）は values で明示している（chart の `README.md`）。docker-compose（ローカル開発）だけが Development |
 | ロールバック | `helm rollback ast <revision>` もしくは Git revert（GitOps・#24） |
 | GitOps（ArgoCD） | AST チャートの宣言的同期は [`deploy/argocd`](../../deploy/argocd/README.md)（Application/AppProject・#24。ローカル経路の GitOps は AST リポ内の opt-in manifest として整備する）。ブートストラップのみ kubectl・以降 Git 同期。ArgoCD 本体 install は MSP 共有 stand-up、実同期は Tier 3 |
@@ -90,6 +90,7 @@ issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #
 | 14 | **保護逆指値そのものの挙動**（受理・損切りラインでの約定・取消／失効の検知と再発注） | 🔴 **未確認**（SIMULATE では逆指値が拒否されるため確かめられない） | 実弾口座・最少数量で、本システムの外から人が逆指値を置いて受理・約定を確かめ、取消／失効時の注文状態（OpenD の `OrderStatus` の数値）を読み取り専用の照会で控える。手順は[実弾解禁 Runbook](live-trading-cutover-runbook.md) の解禁前チェックリスト #11。**確認日・承認した利用者・結果・観測値をこの行に記録する**（有効期限 30 日。再検証の契機は同 Runbook の「確認結果（verdict）の記録先と有効期限」） |
 | 15 | **保護逆指値の有効期限**（GTC の逆指値が翌営業日も残るか） | 🔴 **未確認**（模擬取引の注文は当日限り。現行の実装は保護逆指値に有効期限を指定せず、証券会社の既定の当日限りで出している） | 実弾口座・最少数量で GTC の逆指値を人が置き、翌営業日の場の開始後に残っていることを読み取り専用の照会で確かめる。手順は[実弾解禁 Runbook](live-trading-cutover-runbook.md) の解禁前チェックリスト #12。🔴 **GTC 不可なら、保護逆指値を日次で置き直す経路（[#1214](https://github.com/endazon/ai-stock-trading/issues/1214)）が入るまで解禁しない。** 記録の仕方と有効期限は #14 と同じ |
 | 16 | **起動時の損切りの手法の照会と停止**（実弾で S0 以外のまま起動しない） | 🔴 **未実装**（意図して実弾解禁の時点まで入れない。閂 0 を外す変更と同時。[#1275](https://github.com/endazon/ai-stock-trading/issues/1275)） | 実弾の階層で起動したら発注執行が手法の設定を照会し、S0 以外・照会不能なら停止することを試験で確かめる。それまでは承認ごとの見送り・設定側の 2 方向の拒否・閂 0 が担う。手順は[実弾解禁 Runbook](live-trading-cutover-runbook.md) の解禁前チェックリスト #13 |
+| 17 | **時価評価（含み損益・最大 DD）の有効化**（本番既定の values では無効） | 🔴 **未充足**（既定の `values.yaml` は risk-management の `MarketData__EnableMarkToMarket="false"`。有効なのはローカル経路の `values-local.yaml` だけ） | 🔴 **既定のままの配備では、含み損による日次停止と最大 DD の停止が効かない。** ArgoCD の Application は `valueFiles` を指定せず `values.yaml` だけを読む。無効のあいだ現在値は供給されず、日次損失は実現損益だけで判定され（含みは 0）、DD は常に 0 になる。**既定値は変えない**（fail-safe の既定。切替は人手）。切り替える前に実市況源（Finnhub）を実測する: 保有銘柄の現在値が補充の巡回ごとに取れること、取れないときに含みを 0 として扱う挙動、呼び出し回数と費用の見積り。切り替えは環境別の values（`values-<env>.yaml` を Application の `valueFiles` に足す、または helm の `-f`）で `"true"` にする。確かめ方: 配備後に risk-management の Pod の環境変数が `"true"` であること、建玉を持つ日に統制状況の画面の含み損益・DD が 0 以外で動くこと |
 
 > 🔴 が一つでも残る限り**実弾（`TrdEnv_Real`）は解禁しない**。解禁には**別の実装 ADR ＋ 明示 config** が要り、
 > 現状のコードは `TrdEnv_Simulate` 固定・`BrokerFactory` の config ゲート・`Broker:Moomoo:TrdEnv` の拒否という
@@ -125,6 +126,7 @@ issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #
 | --- | --- | --- | --- |
 | 保有状況が不明なための新規建て見送り（`AstEntriesBlockedByUnknownHoldings`） | `ast_trade_cycle_decision_skips_total{reason=~"HoldingsUnknownOpen\|WorkingEntriesUnknownOpen"}` | 15 分窓で 1 件以上が **30 分継続** | Alertmanager（配備は基盤側の共有 overlay） |
 | 乖離の取り込みの追随の打ち切り（`AstDriftAdoptionFollowUpAbandoned`） | `ast_order_drift_adoption_followup_abandoned_total`（`reason`＝`positions-unknown` / `positions-query-failed`） | 15 分窓で 1 件以上が **1 分継続**（1 件で鳴る） | Alertmanager（配備は基盤側の共有 overlay） |
+| 発行し終えていない約定の滞留（`AstOrderExecutedPublishPending`） | `ast_order_executed_publish_pending`（約定追跡の巡回の末尾の件数） | 0 を超える状態が **10 分継続** | Alertmanager（配備は基盤側の共有 overlay） |
 
 - 🔴 **この閾値は実測を要しない。** 対象の見送りは保有照会が**実結線のときにしか立たず**、
   **平常時の期待値が 0 件**だからである。「N 分間に M 件」という形の閾値は実測してから決める
@@ -264,6 +266,47 @@ done
 
 **孤立した写しが残り得る。** 提示（写しの作成・差し替え）と確定（写しの削除）がほぼ同時に走ると、確定が一覧を引いた後に写しが作られ、確定済みの報告書の写しが 1 件残ることがある。影響は小さい（索引されないので検索・取引判断には出ない。本文は確定版と同じ。報告書サービスは通常 1 レプリカで、重なるのはローリング更新の間だけ）。入れ直しを実行すると消える。
 
+## 日報の方針のしきい値を自己完結にする（移行と再発の確認）
+
+取引判断が読むのは**確定済みの日報の方針だけ**である。週報・月報・前日の日報の本文は判断へ渡らない。
+方針が買い条件・売り条件のしきい値を「週次方針のしきい値に従う」「weekly-2026-W41 の条件」のように参照で済ませると、判断は条件の成立を確かめられず、見送り続ける。
+報告書サービスは、日報の方針が期間キーか他の報告書を指す語（週報・月報・日報・上位方針・週次方針など）を含むと、確定の前に「⚠ 方針が他の報告書を参照しています」と警告する（確定は止めない）。
+
+### 移行（配備の直後に 1 回だけ）
+
+🔴 **系は確定済みの方針を書き換えない。** 配備の前に確定した、参照を含む方針は、そのまま判断に使われ続ける（見送りが続く）。配備の後に、利用者が次の手順で直す。
+
+確定済みの日報は改訂できない。そこで、次の日報（承認待ちの下書き）の方針を改訂して確定し直す。下書きの方針は、確定済みの方針をそのまま継いでいる。
+
+1. 配備の後に最初に来る日報の提示の通知（報告書ドラフト〔承認待ち〕）を読む。要約に「⚠ 方針が他の報告書を参照しています」の行があれば、確定済みの方針は参照で書かれている（下書きはそれを継いでいる）。行が無ければ、この移行は要らない。
+2. 承認待ちの日報（通常は直近の自動生成の下書き）に対して `/policy`（引数 `instruction` に「週報のしきい値を参照で済ませず、数値で方針へ書き写してください」、`period` に `daily-YYYY-MM-DD`）を実行する。`period` を省くと当日（JST）の日報が対象になる。
+3. 返ってきた案の方針に、買い条件・売り条件のしきい値が数値で書かれていること、期間キーと報告書の名前が残っていないことを読んで確かめる。**確認ボタンの前に「⚠ 方針が他の報告書を参照しています」の行が出ていないこと**も確かめる。出ていれば、指示を足して `/policy` をやり直す。
+4. 確定する（確認ボタン）。翌営業日の判断から、書き写したしきい値が使われる。
+
+### 再発の確認（夜間の振り返りのたび）
+
+検出は語と期間キーの照合であり、**言い換え（「先週決めた水準」「前に決めた条件」など）は拾えない。** 判断の理由に「しきい値が材料に無い」の類が出ていないかを、日ごとに数える。
+
+- LLM の応答は取引判断サービスのログの `LLM 応答: … text=…` に残る。ログ基盤（Loki）があれば、次のように日ごとに数える（期間は JST の 1 日。ラベル名は収集の構成に合わせて読み替える）。
+
+  ```logql
+  sum(count_over_time({namespace="ai-stock-trading", service_name="trade-decision-service"}
+    |= "LLM 応答"
+    |~ "(しきい値|閾値|水準|条件)[^。]{0,40}(含まれていない|含まれておらず|分からない|わからない|不明|確認できない|読めない)" [1d]))
+  ```
+
+- 🔴 稼働クラスタにはいま Loki が無く、ログは Pod の再起動で消える。そのため、再起動の前に同じ語で直接数える。
+  **全レプリカの Pod を数える。** `deploy/…` の指定は Pod を 1 つしか読まず、複数レプリカやローリング更新の間は少なく数える。Helm chart が Pod に付けるラベル `app=trade-decision-service` で全 Pod を読む。`--tail=-1` は外さない（ラベルセレクタを付けたときの既定は各 Pod の末尾 10 行だけである）。
+
+  ```bash
+  kubectl -n ai-stock-trading logs -l app=trade-decision-service --since=24h --tail=-1 --max-log-requests=10 --prefix \
+    | grep "LLM 応答" \
+    | grep -cE "(しきい値|閾値|水準|条件)[^。]{0,40}(含まれていない|含まれておらず|分からない|わからない|不明|確認できない|読めない)"
+  ```
+
+- **0 件でなければ**、その日に確定していた日報の方針を読む（知識ユニットの文書画面の `確定報告書 Daily daily-YYYY-MM-DD`）。しきい値が参照や言い換えで書かれていれば、上の「移行」の 2〜4 で次の日報の方針を改訂して確定し直す。
+- **同じ型の言い換えが 2 回見つかったら**、その語を報告書サービスの検出語（日報の方針の参照の検査）へ足す。1 回目は記録に留める（検査を足すのは同型の事故が 2 回起きてから）。
+
 ## メッセージング（RabbitMQ のキュー）
 
 - キュー名は **`<ServiceName>.<メッセージ型名>`**（例 `ai-stock-trading.risk-management-service.TradeDecisionMade`）。
@@ -272,6 +315,29 @@ done
 - **キュー名から所有サービスが読める**（接頭辞）。`consumers = 0` のキューは所有サービスが購読できていない印である。
 - 移行前（MassTransit）の旧キュー 47 本はブローカ上に残るため、Wolverine 版の安定稼働後に削除する:
   [旧キュー削除 Runbook](wolverine-queue-cleanup-runbook.md)。
+
+### 発注執行の送信は保存してから送る（#1442）
+
+発注執行（order-execution）だけは、送信するメッセージ（約定 `OrderExecuted` を含む）を専有 DB の **`wolverine` スキーマ**へ保存してから送る（耐久アウトボックス）。
+既定の RabbitMQ 送信は、ブローカーが落ちている間も発行を成功で返して黙って捨てるため、約定が台帳へ届かなくなる（実測）。
+保存した封筒はブローカーの復旧後・発注執行の再起動の後に送られ、送り終えると消える。
+
+- **配備**: 閉場後に行う。起動時に Wolverine が `wolverine` スキーマと表を作る（DB の利用者に作成権限が要る）。約定の記録の表 `executed_orders` に列が 1 本増える（起動時の移行。既存行は「発行済み」）。
+- **平常時の確認**（`order_execution_svc`）:
+
+  ```sql
+  SELECT count(*) FROM wolverine.wolverine_outgoing_envelopes;          -- 送れずに残っている封筒（平常は 0 に近い）
+  SELECT count(*) FROM executed_orders WHERE "OrderExecutedPublishPending"; -- 発行し終えていない約定（平常は 0）
+  ```
+
+- **ログ**: WRN `発行し終えていなかった約定を再発行します` は、前の巡回で発行し終えなかった約定を約定追跡が送り直した印である。リスク管理の台帳は二重に数えない。
+  監査台帳の行と Discord の「取引実行」は、まれに 2 件になり得る（発行は届いたが「発行済み」を書けなかったとき、または配備の入れ替えで新旧の発注執行が重なったとき）。
+  WRN `発行し終えていなかった約定の再発行に失敗しました` は、送り直しが失敗した印である（その約定は次の巡回で再び試す。巡回の残りの発行は止まらない）。
+- **滞留の検知**: 計器 `ast_order_executed_publish_pending`（巡回の末尾の件数。平常は 0）と警報 `AstOrderExecutedPublishPending`（0 を超える状態が 10 分続く）。
+  鳴ったら、上の WRN の DecisionId・OrderId と、確認クエリの 2 本目で残っている約定を見る。続く原因は多くの場合 DB への書き込みの失敗（`wolverine` スキーマ・接続）である。
+  証券会社の画面で該当の建玉を確かめ、台帳（リスク管理）とずれていれば建玉照会との乖離の取り込みで直す。
+- **戻し口**: 発注執行が起動しない・送信が止まる等の不具合のときは、発注執行の環境変数 `Messaging__DurableOutbox__Enabled=false` で保存をやめて再配備する
+  （ブローカー断の間の送信は再び失われ得る。約定追跡の送り直しは残る）。
 
 ### 定時サイクルの実行時間の上限（#1169）
 
@@ -286,6 +352,8 @@ done
 
 - 起動時に `定時サイクルの実行時間の上限: …` が 1 行出る（導いた値の確認はこれで行う）。
 - 1 銘柄の締め切りを超えた銘柄は**その銘柄の失敗**として扱い（最終の失敗を監査台帳へ 1 件）、次の銘柄へ進む。サイクル全体はやり直さない。
+- 判断の順は**保有中の銘柄が先頭**（監視銘柄に在るものも含む。保有の応答の順）で、その後ろに保有していない監視銘柄が監視銘柄の順で続く。
+  サイクルが上限で打ち切られて判断されずに残るのは、末尾の保有していない監視銘柄である（保有の出口判断を後回しにしない）。
 - 監視銘柄が前提の数を超えると、各サイクルで `監視銘柄 … 件が定時サイクルの上限の前提 … 件を超えています` の警告が出る。
   **監視銘柄を増やしたら `TradeCycle__MaxWatchedSymbols` を trade-decision の env に足して合わせる**（超えたままだとサイクルが上限で打ち切られ得る）。
 - 🔴 **前提には上限がある（巡回 300 秒・LLM 30 秒・二段のとき 12）。** 配信から完了（ack）までが RabbitMQ の `consumer_timeout`
@@ -390,7 +458,7 @@ SELECT count(*) FROM order_dispatch_reservations WHERE "State" = 0;
   | --- | --- | --- | --- |
   | ① | `executed_orders` に記録あり | 確定の自己修復（ブローカへ照会しない） | `終端化` |
   | ② | 照会が発注済み（`Placed`） | 記録して確定＋`OrderExecuted` 発行。続けて、エントリーなら承認時の手法で保護レグを張る（下記） | `終端化` |
-  | ③ | 照会が未発注（`NotPlaced`）**かつその予約の取引環境の解放の門が開いている** | 予約を解放（＝再発注を許可） | `解放` |
+  | ③ | 照会が未発注（`NotPlaced`）**かつその予約の取引環境の解放の門が開いている** | 予約を解放する。**承認の経路の予約**（承認の出どころを持つ、または送る前に保護の記録を残した新規建て）は見送り（`Forgone`）として閉じ、送る前に残した保護の記録（S1・`AwaitingEntry`）も完了にする＝同じ承認は再投入されても発注しない。保護の機構のレグは削除する＝機構が撃ち直す（下記） | `解放` |
   | ④ | 照会が未発注（`NotPlaced`）**だがその予約の取引環境の門が閉じている**（取引環境が不明・照会先と食い違うときも） | **据え置き**（解放しない） | `据え置き〔未発注だが門が閉〕` |
   | ⑤ | 照会不達・判定不能（`Indeterminate`） | **据え置き**（人手/`_error`・解放しない） | `不確定` |
   | ⑥ | 当該 1 件の処理で例外 | **据え置き**（次回巡回で再試行。他の件は巻き添えにしない） | `失敗` |
@@ -407,8 +475,15 @@ SELECT count(*) FROM order_dispatch_reservations WHERE "State" = 0;
   承認時の保護の文脈（エントリーを送る前に残した記録）が残っているエントリーに限り、平常の発注と同じ経路で
   逆指値（S0）か代替注文種別（S3）を 1 本送る。その逆指値が拒否されたら、未約定ならエントリーを取り消し、約定済みなら成行で手仕舞う。
   逆指値が届いたか不明なら、取消も成行もせず据え置く（2026-09-25 のオーナー裁定。#853）。
-  🔴 **③〜⑥では何も書かない。** ③の解放も書き込みではない——予約を消して再発注を**許可**するだけで、送り直すのは
-  `_error` キューからの再投入か保護逆指値ガードの次の巡回である（門を閉じているのはこのため）。
+  🔴 **③〜⑥では何も書かない。** ③の解放も書き込みではない。保護の機構のレグは予約を消して撃ち直しを**許可**するだけで、
+  送り直すのは保護逆指値ガード・S1 の次の巡回である（門を閉じているのはこのため）。
+  承認の経路の予約（新規建て・利用者の手仕舞い・維持率割れの自動縮小・判断の手仕舞い）は**送り直さない**——見送り（`Forgone`）として閉じるので、
+  `_error` キューから再投入しても発注しない。再発注は次の取引判断からのみである（承認の古さを確かめる仕組みが無いため、古い承認を送らない側に倒した）。
+  新規建てが送る前に残した保護の記録（S1 の未確定・未到達の行、S0 / S3 の `AwaitingEntry`）も、予約を閉じた後に完了にする。
+  閉じると Information `…未発注と確定した新規建てを見送りとして閉じ、送る前に残した保護の記録を完了にしました…`、
+  閉じられなかったら（到達済み・発注の記録がある・並行に更新された・処理の失敗）Warning `…保護の記録を閉じられませんでした…` が出る。
+  Warning のときは発注経路の Runbook「発注の記録が無いまま残った S1 の記録を閉じる」に従う。
+  リスク管理の承認の記録は解かれない（見送りを発行しない。統制への算入は承認した ET 日の終わりに外れる）。
 - **プローブ**: 既定の照会実装は**常に `Indeterminate`**（`IndeterminateReservationBrokerProbe`）。
   実 OpenD 照会（`DecisionId` を備考〔remark〕として伝播し注文一覧と突合する）は
   `Reconciliation__UseBrokerProbe=true` かつ証券会社が moomoo のときだけ配線される。
@@ -438,8 +513,9 @@ Reconciliation:
   無効のまま起動するとログに「発注予約の自動リコンサイルは無効です（Reconciliation:Enabled=false）」が出る
   ——**配備でこの行が出たら、構成が Pod に届いていない**ということである。values を変えた後に Pod の入れ替えだけで済ませると
   こうなる（values は `helm upgrade` でしか入らない。実際に 8 日間届いていなかった）。配備の前後に上の「リリースとチャートの差」の手順で確かめる。
-- 🔴 **`ReleaseOnNotPlaced`（解放の門）は、どちらも閉じたままにする。** 解放は予約行を消して**再発注を許可する**操作であり、
-  誤判定は二重発注に直結する。「未発注」の根拠は備考の突合であって証券会社が「無い」と答えた事実ではなく、
+- 🔴 **`ReleaseOnNotPlaced`（解放の門）は、どちらも閉じたままにする。** 解放は「未発注」を事実として扱う操作であり
+  （保護の機構のレグは予約行を消して**撃ち直しを許可する**。承認の経路の予約は見送りとして閉じ、保護の記録も閉じる）、
+  誤判定は二重発注か保護の無い建玉に直結する。「未発注」の根拠は備考の突合であって証券会社が「無い」と答えた事実ではなく、
   備考が往復するかは**実機未検証**である（往復していなければ発注済みの注文も「一致ゼロ」に見える）。
   **`true` にしてよいのは、その取引環境の実機の記録で下記「解放の門を開けるときの記録」の (a)(b) を示した後だけである。**
   **`SIMULATE` の記録で `Real` を開けない**（`SIMULATE` で備考が往復しても、実弾で往復する保証は無い）。
@@ -467,6 +543,16 @@ Reconciliation:
     （Critical）や直後の行が無いときは、証券会社の画面で保護レグの有無を確認する（詳細は発注経路の Runbook）。
   - **Warning** `…照会は「未発注」と答えましたが、この予約の取引環境の解放の門が閉じているため据え置きます（DecisionId=… 取引環境=…）…`。
     滞留は解消していない。Runbook の人手手順で解決する。`取引環境=Unknown` は取引環境を覚える前に取られた予約であり、どちらの門でも解放されない。
+    **同じ予約が据え置かれ続ける間、この Warning は初回と再通知の間隔（`Reconciliation__HeldNotPlacedReminderHours`。既定 24 時間・1〜168）ごとにだけ出る。**
+    間の巡回は Information `…据え置きが続いています（照会は「未発注」・解放の門は閉。DecisionId=… 取引環境=…）…` に残る。
+    取引環境が変わった・不確定など別の判定を挟んだ・全件を走査した巡回に載らなかった予約は、次に据え置かれたとき改めて Warning になる。
+    発注執行の再起動後の最初の巡回でも改めて出る（記憶はプロセス内）。
+    🔴 **門を開ける判断の記録 (b) で `DecisionId` を集めるときは、Warning だけでなく Information の継続の行も含めて grep する**（下の計器は毎巡回数える）。
+  - **Warning** `ソフトウェア逆指値（S1）の記録が、エントリーの発注記録の無いまま…「残保護=未確定」で残っています（幽霊の疑い…）`。
+    送られていない新規建ての S1 の記録が残っている。解放の門が閉じているあいだ、システムは閉じない（門が開いていれば、突合が未発注と確定した時点で閉じる）。
+    発注経路の Runbook「発注の記録が無いまま残った S1 の記録を閉じる」に従う。
+    作成から `ProtectiveStopGuard__UnrecordedSoftwareStopAge`（既定 24 時間）後に初めて出て、以後は同じ行について
+    `ProtectiveStopGuard__UnrecordedSoftwareStopReminderInterval`（既定 24 時間）ごとに出る。
   - **業務メトリクス** `ast_order_reservation_reconciliations_total{outcome,provider}`（#856 / #1051）。上の 6 分岐を件数で数える
     （①＝`self-healed`・②＝`probe-placed`・③＝`released`・④＝`held-not-placed`・⑤＝`indeterminate`・⑥＝`failed`）。
     `provider` は**予約の取引環境**（`MoomooSimulate` / `MoomooReal` / `InternalPaper`、不明は `Unknown`）であり、照会先ではない。
@@ -527,8 +613,9 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 | 見直し契機 | 期日・条件 | 対応 |
 | --- | --- | --- |
 | ~~`claude-sonnet-5` の導入価格終了~~ | ~~2026-08-31~~（**解消済み・2026-08-28 確認**） | Anthropic が $2/$10 を恒久価格にすると公式発表し、2026-09-01 予定の $3/$15 改定は行われない。単価は変更不要（`values-local.yaml` は据え置き）。#243 で確認 |
-| Claude 5.5 系への切り替え（2026-10-10 の利用者裁定） | 基盤のゲートウェイが 5.5 系へ切り替わった後 | 5.5 系の行（`claude_opus_5_5` / `claude_sonnet_5_5` / `claude_haiku_5_5`）を表へ足した。`claude-haiku-5-5` は**プロンプト長で 2 段**（入力 100,000 トークン以下 $0.10/$0.50・超 $0.50/$2.50）で、第 2 段を `__LongContextThresholdTokens` / `__LongContextInputPer1kTokens` / `__LongContextOutputPer1kTokens` で与える（計上時の入力トークン数で引き分ける）。🔴 直前世代の行（`claude_opus_5` / `claude_sonnet_5` / `claude_haiku_4_5`）は**移行期間だけ残す**——基盤の切り替えと PoC で応答の実効モデルが 5.5 系であることを確かめたら外す（[#1296](https://github.com/endazon/ai-stock-trading/issues/1296)） |
-| 公開単価の改定・モデルの追加 | 基盤の `Llm:Routing:PurposeModels` が変わったとき | 新しい実効モデルの行を表へ足す。**足さないと最大単価で過大計上される**（安全側だが実態とずれる） |
+| Claude 5.5 系への切り替え（2026-10-10 の利用者裁定） | 基盤のゲートウェイが 5.5 系へ切り替わった後 | 5.5 系の行（`claude_opus_5_5` / `claude_sonnet_5_5` / `claude_haiku_5_5`）を表へ足した。`claude-haiku-5-5` は**プロンプト長で 2 段**（入力 100,000 トークン以下 $0.10/$0.50・超 $0.50/$2.50）で、第 2 段を `__LongContextThresholdTokens` / `__LongContextInputPer1kTokens` / `__LongContextOutputPer1kTokens` で与える（計上時の入力トークン数で引き分ける）。直前世代の行（`claude_opus_5` / `claude_sonnet_5` / `claude_haiku_4_5`）と `claude_opus_4_8` の行は**撤去した**（#1296。5.5 系の ID だけを受け付け、基盤と同時に配備して切り替える。切替の間だけ旧 ID を受ける段は設けない）。基盤が旧 ID で答えると取引判断は見送りになり、費用は未知モデルの計上単価（`LlmPricing__UnknownModel__*`・既定 $10 / $50）で計上される |
+| 未知モデルの計上単価の専用の設定値（2026-10-10 の利用者裁定） | 単価表に $10 / $50 を超えるモデルの行を足すとき・為替を引き直すとき | 表に無いモデル・モデル名の無い応答は、単価表の行ではない `LlmPricing__UnknownModel__InputPer1kTokens` / `__OutputPer1kTokens`（既定 `1.637` / `8.186` 円/1k）で計上する。禁止モデル `claude_fable_5` の行は**撤去した**（以前はこの行が上限を担っていた）。設定値は表の最大に追随しないので、より高い単価の行を足すときは設定値も上げる。解析できない値・0 以下の値は既定値で計上し、起動時に `未知モデルの計上単価` の WARNING が出る |
+| 公開単価の改定・モデルの追加 | 基盤の `Llm:Routing:PurposeModels` が変わったとき | 新しい実効モデルの行を表へ足す。**足さないと未知モデルの計上単価（既定 $10 / $50）で過大計上される**（安全側だが実態とずれる） |
 | 為替の乖離 | USD→JPY が投入時の **163.71**（FRED `DEXJPUS`）から大きく離れたとき | 換算し直して表を更新する |
 
 - 実測に基づく再ベースライン（実消費と月次上限の妥当性）は
@@ -549,9 +636,9 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 | --- | --- |
 | 1. 対象 | LLM を呼ぶ **trade-decision と report の両方**（単価表はサービスごとに独立して構成される。片方だけでは他方が 0 円計上か起動拒否になる） |
 | 2. 配列を写す | 上書きの values に `services.trade-decision.extraEnv` / `services.report.extraEnv` を、`values.yaml` の同じ配列を**全部写してから**書く。配列は重ねた values で丸ごと置き換わり、写さなかった env は消える（経路B の `values-local.yaml` がこの形） |
-| 3. 行を足す | `LlmGateway__BaseUrl`（または gRPC の宛先）と同じ変更で、`LlmPricing__PerModel__<model>__InputPer1kTokens` / `__OutputPer1kTokens` を足す。**env 名ではモデル ID の `-` を `_` で書く**。値・出典・換算は `deploy/helm/ai-stock-trading/README.md`「LLM 費用の単価」の表（経路B と同じ値） |
-| 4. 描画で確かめる | `helm template … -f values-<env>.yaml` の trade-decision / report に `LlmPricing__PerModel__` の行が在ること |
-| 5. 起動で確かめる | 両 Pod が Running になり、起動ログに `LLM 単価が未設定` が無いこと。LLM の呼び出し後に `LLM 費用計上イベントを発行 … amount=` が 0 より大きいこと |
+| 3. 行を足す | `LlmGateway__BaseUrl`（または gRPC の宛先）と同じ変更で、`LlmPricing__PerModel__<model>__InputPer1kTokens` / `__OutputPer1kTokens` を足す。**env 名ではモデル ID の `-` を `_` で書く**。単価表は 5.5 系の 3 モデルだけにし、`claude_fable_5` の行は入れない。あわせて未知モデルの計上単価 `LlmPricing__UnknownModel__InputPer1kTokens` / `__OutputPer1kTokens`（`1.637` / `8.186`。書かなくても既定は同じ値）を足す。値・出典・換算は `deploy/helm/ai-stock-trading/README.md`「LLM 費用の単価」の表（経路B と同じ値） |
+| 4. 描画で確かめる | `helm template … -f values-<env>.yaml` の trade-decision / report に `LlmPricing__PerModel__` の行が在り、`LlmPricing__PerModel__claude_fable_5__` の行が無いこと |
+| 5. 起動で確かめる | 両 Pod が Running になり、起動ログに `LLM 単価が未設定` と `未知モデルの計上単価` が無いこと。LLM の呼び出し後に `LLM 費用計上イベントを発行 … amount=` が 0 より大きいこと |
 
 - **与え忘れたとき**: 環境名 Production の trade-decision / report は `LLM 単価が未設定` で始まる例外で起動に失敗し、
   Pod は CrashLoopBackOff になる（0 円計上のまま月次上限 ¥15,000 の 80% / 100% 判定が黙って効かなくなるより、
@@ -591,6 +678,99 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 構造テスト（`Stage1SessionUptimeTests.カレンダーを内蔵していない__同じ稼働なら曜日だけで結果が決まる`）が
 **3 年ぶんの全日付**で機械的に止める。**このテストを消さないこと。**
 
+## 判断由来の決済の指値が約定しないとき（#1339）
+
+取引判断（LLM）が選んだ決済（利確・判断の手仕舞い）は、判断した時点の現在値の**指値**で、有効期限を**当日限り（DAY）**として出る。
+値が離れて約定しないと、注文は閉場まで証券会社の側で生きている。
+
+- **その間、その建玉の判断は止まる。** 処理中の決済が建玉を覆うので、次の判断は LLM を呼ぶ前に見送られ、発注のゲートも決済を通さない。
+  当日中に現在値で判断し直す経路は、下の「系による取消」を有効にするまで無い。
+- **損切りは止まらない。** ソフトウェア逆指値は発動する前に同じ建玉の判断の決済を取り消してから送り、保護逆指値は別の注文である。
+  失うのは利確・判断の手仕舞いの水準だけである。
+- **失効した後は自動で戻る。** 証券会社が終端（失効・取消）と答えると、処理中の決済から外れ、リスク管理の台帳も在庫の押さえを解く。
+  次の判断の巡回で、その建玉は現在値で判断し直される。
+- 対象は取引判断の決済だけである。利用者の手仕舞い（既定は成行）と、維持率割れの自動縮小は、この節の対象外である。
+
+### ログと通知の読み方
+
+```bash
+kubectl -n ai-stock-trading logs deploy/order-execution-service --since=24h \
+  | grep -E '未約定の決済が残っています|処理中の決済を解放しました|約定追跡: 非終端|判断由来の決済の指値'
+```
+
+| ログ・通知 | 意味 | 人がすること |
+| --- | --- | --- |
+| WRN `未約定の決済が残っています: DecisionId=… 発注から N 分 追跡=…` | 発注から 15 分以上たっても非終端の決済。**15 分ごとに 1 件ずつ**出る（0 件なら出ない。通知は送らない） | 下の「人がすること」 |
+| INF `処理中の決済を解放しました（追跡を打ち切った後、証券会社が終端 … と答えました…）` | 約定追跡の上限（24 時間）を過ぎた決済を 10 分ごとに照会し直し、終端を確かめたので解放した | なし |
+| INF `追跡を打ち切った決済の照会し直し: … 照会不能 …` | 照会し直したが、非終端か照会不能だったので**解放しない**（迷ったら解放しない） | 続くなら証券会社の画面で注文の結果を確かめる |
+| 状態 `Expired（失注: 期限切れで失効）` | DAY の満了などで、証券会社が未約定のまま失効させた。**時間切れであり、発注の内容の誤りではない** | なし（次の巡回で判断し直される） |
+| 状態 `Rejected（拒否: 証券会社が受理せず）` | 証券会社が発注を受理しなかった。失効とは別の事象である | 発注のログの `retType` と `retMsg` で理由を確かめる |
+| Discord「手仕舞いが約定せず終了」 | 未約定の残りを残して終わった決済（出どころを問わない）。状態に上の表示が添えられる。**ソフトウェア逆指値が損切りの前に自分で取り消した判断の手仕舞いには出ない**（建玉はソフトウェア逆指値の成行が決済し、その通知が別に出る）。本文の「残っている見込み」は終了の時点の記録による推定で、建玉の照会では確かめていない | 手仕舞い直す前に、証券会社の画面で建玉を確かめる（別の決済で既に減っていることがある）。状態が失注なら上と同じ。拒否なら理由を確かめる |
+
+### 人がすること（系による取消が無効の間の暫定手段）
+
+WRN が出続け、**当日中にその建玉を判断し直させたい**ときは、**証券会社の画面でその注文を手で取り消す**。
+
+- 取り消すと、約定追跡が終端（取消）を観測して処理中の決済から外し、次の巡回で判断し直される。
+- 取り消さなければ、DAY の失効（閉場の後）まで待つ。翌営業日に判断し直される。
+- **取消を繰り返さない。** 取消は相場操縦の検知（約定なしの取消の比率）の母集団に入る。
+  ただし、発注から 5 分（検知の窓）を過ぎた注文の取消は、窓の外なので集計に現れない。
+
+### 系による取消（既定は無効）
+
+発注から N 分たっても約定しない判断由来の決済の指値を、約定追跡の常駐が巡回ごとに**取り消すだけ**の機構である。
+取り消した後は何も出さない（置き直し・訂正・成行への切り替えはしない）。次の巡回の判断に任せる。
+
+🔴 **既定は無効であり、本番の配備（`values.yaml`）にも有効化を書いていない。** 本番で有効にするのは、保護逆指値の有効期限（GTC）の
+実弾確認（#1214。[ブロック中のタスク](../blocked-tasks.md) の A-19）と有効化の PoC が済んだ後で、**利用者が決める**。
+**PoC の経路（ローカル SIMULATE の `values-local.yaml`）では、利用者の裁定（2026-10-21）で有効にした**（N は暫定値の 15 分のまま。
+2 晩続けて判断由来の決済の指値が未約定のまま残ったため）。
+値の変更は他の統制値と同じ手続き（方針確定プロセスまたは利用者の設定変更）であり、**生成 AI と自動処理は変えない**。
+
+```yaml
+DecisionCloseUnfilledCancel:
+  Enabled: false # 既定。true で取消を有効にする
+  UnfilledMinutes: 15 # N。発注からこの分数たっても約定しなければ取り消す（暫定値。有効化のときに PoC の実績で見直す）
+  MaxCancelsPerPositionPerDay: 1 # 1 建玉・1 市場の現地取引日（米国株は米国東部の暦日）あたりの取消の上限
+  BatchSize: 50 # 1 巡回で取り消す最大件数
+```
+
+- **有効なときだけ値を検証し、外れたら起動で止まる**（黙って丸めない）。`UnfilledMinutes` は 6〜390
+  （相場操縦の検知の窓 5 分より長く、通常取引時間以下）、`MaxCancelsPerPositionPerDay` は 1〜3。
+  例: `UnfilledMinutes=5` なら `OptionsValidationException`（「相場操縦の検知の窓」）で起動しない。
+- **一部約定の決済も残りを取り消す。** 印（`executed_orders.UnfilledCancelRequestedAt`）を取消の前に書き、
+  取消が失敗しても**再試行しない**（注文は DAY で失効する）。前の取引日以前に発注した非終端の記録は対象にしない。
+- **入れ方**: order-execution の `extraEnv` の配列（本番は `deploy/helm/ai-stock-trading/values.yaml`、PoC の経路は同じ階層の `values-local.yaml`。後者は既に有効）へ
+  `- { name: DecisionCloseUnfilledCancel__Enabled, value: "true" }` を足し、通常の配備（`helm upgrade`）を行う。
+  N・回数を既定から変えるときも同じ配列へ足す。配列は values の上書きで丸ごと置き換わるため、
+  **別の values ファイルや `--set` で足さない**。`kubectl set env` も使わない（次の `helm upgrade` が所有権の競合で落ちる）。
+- **止め方**: 足した行を消して再配備する（既定の無効に戻る）。印を書いた記録はそのまま残るが、無効の間は読まない。
+- **有効化するときは、この節と [ブロック中のタスク](../blocked-tasks.md) §補足 の行を同じ変更で直す**（「既定は無効」が古くなる）。
+
+有効にしたときのログ:
+
+| ログ | 意味 |
+| --- | --- |
+| WRN `判断由来の決済の指値を取り消しました（発注から N 分以上未約定…）: … 取消の確認=… 照会した状態=…` | 取り消した。`取消の確認=False` のときは、約定追跡が終端を確かめてから解放する |
+| WRN `判断由来の決済の指値の取消に失敗しました（再試行はしません…）` | 取消を送れなかった。証券会社の画面で注文を確かめる |
+| INF `判断由来の決済の指値は未約定ですが、取消の上限（1 建玉 1 日あたり）に達したため取り消しません…` | 回数の上限。注文ごとに 1 回だけ出る。DAY の失効に任せる |
+
+取消は注文のライフサイクル台帳（`order_lifecycle_events`）に、理由が `判断由来の決済の指値が未約定のため系が取消` で始まる行として残る。
+
+### 確認クエリ
+
+```sql
+-- 処理中（非終端）の判断由来の決済（order_execution_svc）。
+-- PositionEffect: 1=決済 / ApprovalOrigin: 1=取引判断 / Status: 0=受付・1=一部約定
+SELECT "OrderId", "Symbol", "Side", "Quantity", "FilledQuantity", "Status", "ExecutedAt",
+       "TrackingAbandonedFrom", "UnfilledCancelRequestedAt"
+  FROM executed_orders
+ WHERE "PositionEffect" = 1 AND "ApprovalOrigin" = 1 AND "Status" IN (0, 1)
+ ORDER BY "ExecutedAt" DESC LIMIT 20;
+```
+
+`UnfilledCancelRequestedAt` が入っている行は、系が取消を求めた決済である（無効の間は常に空）。
+
 ## 障害対応（Runbook）
 
 | 事象 | 検知 | 一次対応 | エスカレーション |
@@ -625,7 +805,7 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 | [Discord Webhook 再発行 Runbook](discord-webhook-rotation-runbook.md) | Webhook の URL が漏れたときの失効（新規作成 → Vault へ書く → 旧い方を削除）と、ログ・トレース等の蓄積分の扱い。**値は Vault 側で変える**（`ast-secrets` は ExternalSecret が所有する） |
 | [KB タグ辞書登録 Runbook](kb-tag-dictionary-runbook.md) | 基盤（document-service）のタグ辞書へ事前登録すべきタグ一覧の生成手順。KB 保存が未登録タグで 400 になる事象への対処 |
 | [夜間の台帳の要約 Runbook](nightly-ledger-summary-runbook.md) | 夜間の判断・審査・発注・約定・S1・ブローカ観測の欠けと LLM の費用（窓の円・当月の月次上限に対する使用率）を、ログに頼らず台帳から翌朝に要約する手順と、結果の読み方 |
-| [ホスト側の死活監視 Runbook](host-liveness-monitor-runbook.md) | **クラスタの外から**損切りの生存を見張るスクリプトの登録、Rancher Desktop の自動起動、場中に Windows Update で再起動しない設定（オーナーが行う） |
+| [ホスト側の死活監視 Runbook](host-liveness-monitor-runbook.md) | **クラスタの外から**損切りの生存を見張るスクリプトの登録、Rancher Desktop の自動起動、場中に Windows Update で再起動しない設定、WSL2 の VM のメモリ上限（オーナーが行う） |
 | [基準資金の供給が無いときの Runbook](capital-baseline-seed-runbook.md) | **新規建てが `CapitalBaselineUnavailable` で止まるとき**の手順。供給の条件（当日より前の取引日の観測・鮮度 4 日）と、`account_equity_days` へ 1 行投入する埋め合わせ |
 | [develop のルールセット Runbook](branch-protection-runbook.md) | develop の必須チェック・コードオーナー・バイパスの現況（実測）と、利用者が実行する `gh api` の本文。**リポジトリの統制設定であり AI は実行しない** |
 | [east-west gRPC（h2c）の往復の実測 Runbook](grpc-h2c-measurement-runbook.md) | サービス間の同期呼び出しを稼働クラスタで一時的に gRPC へ切り替え、段 1〜5 の全経路の往復を測って REST の既定へ戻す手順。**values の配列（`extraEnv`）を重ねない**計測用 overlay の適用・合否・中止条件・切り戻し |

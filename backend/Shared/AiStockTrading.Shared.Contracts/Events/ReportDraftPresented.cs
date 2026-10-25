@@ -18,7 +18,10 @@ public record ReportDraftPresented(
     string PeriodLabel,
     string Summary,
     int Version,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    // FR-07, FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: 確定済みの日報に版を足したドラフト（`/policy` の再確定）のときの、
+    // それまでの確定版の版番号。通知は「確定するまで版 n が効き続ける」と書く。🔴 **既定は null＝従来の提示**（末尾・任意＝非破壊）。
+    int? ReconfirmingFromVersion = null);
 
 // FR-06, FR-09, #840, #866, IADR-0352 決定 5: 要約（Summary）に埋め込まれる**印**。
 //
@@ -45,4 +48,11 @@ public static class ReportSummaryMarkers
     /// <c>/policy</c> の承認待ちの案でも確認ボタンの前に見せる）は <see cref="PolicyTakeProfitMissingPrefix"/> と同じ。確定は止めない。
     /// </summary>
     public const string WeeklyGoalLineMissingPrefix = "⚠ 方針に書式どおりの「数値目標:」行がありません";
+
+    /// <summary>
+    /// FR-04, FR-07, ADR-0048 決定 4, #1365, IADR-0544 決定 2: 日報の方針が他の報告書（週報・月報・前日の日報）や期間キーを
+    /// 参照で済ませている（取引判断は日報の方針しか読まないため、参照先のしきい値を確かめられない）ときに、確定の前に見せる警告行の先頭。
+    /// 出しどころと扱いは <see cref="PolicyTakeProfitMissingPrefix"/> と同じ。確定は止めない。
+    /// </summary>
+    public const string PolicyExternalReferencePrefix = "⚠ 方針が他の報告書を参照しています";
 }

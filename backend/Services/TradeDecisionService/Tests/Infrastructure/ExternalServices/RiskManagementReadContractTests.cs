@@ -59,12 +59,15 @@ public class RiskManagementReadContractTests
         var signed = await provider.GetSignedQuantityAsync("AAPL", Market.UnitedStates);
         // T-10-2491（契約）, #1286, IADR-0521 決定 1: 定時サイクルの保有銘柄も同じ口・同じ送り手の型から読める。
         var heldSymbols = await ((IHeldSymbolsProvider)provider).GetHeldSymbolsAsync();
+        // T-10-2943（契約）, #1397, IADR-0562 決定 3: 判断のプロンプトの保有中の全銘柄も同じ口・同じ送り手の型から読める（数量は符号付き）。
+        var holdings = await ((IHeldSymbolsProvider)provider).GetHoldingsAsync();
 
         aapl.Should().Be(new HeldPosition(3_378, 337.63m, 320.75m));
         toyota.Should().Be(new HeldPosition(-100, 2_500m, 2_600m));
         none.Should().Be(HeldPosition.None, "一致しない銘柄は「保有なし」（送り手の型のままでも区別が保たれる）");
         signed.Should().Be(3_378);
         heldSymbols.Should().Equal(new WatchedSymbol("AAPL", Market.UnitedStates), new WatchedSymbol("7203", Market.Japan));
+        holdings.Should().Equal(new HeldHolding("AAPL", Market.UnitedStates, 3_378), new HeldHolding("7203", Market.Japan, -100));
         handler.Paths.Should().OnlyContain(p => p == "/risk-controls/open-positions");
     }
 
@@ -143,7 +146,11 @@ public class RiskManagementReadContractTests
                 // ADR-0013, IADR-0129, #354: 実 RabbitMQ を避けて Wolverine の外部トランスポートを無効化する。
                 services.DisableAllExternalWolverineTransports());
             builder.ConfigureTestServices(services =>
-                services.AddHttpClient("risk").ConfigurePrimaryHttpMessageHandler(() => riskHandler));
+            {
+                services.AddHttpClient("risk").ConfigurePrimaryHttpMessageHandler(() => riskHandler);
+                // 閉場前の手仕舞いの常駐が実時刻の窓でサイジング文脈を照会し、経路の表明に混ざるのを止める（TestHostClock）。
+                services.UseFixedClock(TestHostClock.OutsideMarketHours);
+            });
         }
     }
 }

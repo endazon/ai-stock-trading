@@ -25,6 +25,7 @@ import {
   TableRow,
 } from '@platform/ui';
 import { ApiError } from '@foundation/api/ApiError';
+import { validationMessageOf } from '@ai-stock-trading/lib/validationReasons';
 import type {
   BannedSymbol,
   LimitFieldKey,
@@ -70,6 +71,9 @@ import {
 import { PaperModeBanner } from '@ai-stock-trading/components/PaperModeBanner';
 import { QueryPhase } from '@ai-stock-trading/components/QueryPhase';
 import { ScreenHeader, ScreenLink } from '@ai-stock-trading/components/ScreenHeader';
+import { HighVolatilityForm } from './HighVolatilityForm';
+import { PreCloseControlsFormSection } from './PreCloseControlsForm';
+import { ThemeConcentrationFormSection } from './ThemeConcentrationForm';
 import { MonitorParametersForm } from './MonitorParametersForm';
 import { Stage1TradeCountForm } from './Stage1TradeCountForm';
 import { StopLossMethodForm } from './StopLossMethodForm';
@@ -133,8 +137,8 @@ function saveMessageOf(e: unknown): string {
       return i18n._(msg`競合が発生しました。最新を取得して再試行してください。`);
     }
     if (e.kind === 'validation') {
-      const detail = e.details.length > 0 ? `（${e.details.join(' / ')}）` : '';
-      return `${i18n._(msg`入力内容に誤りがあります。`)}${detail}`;
+      // #1465, IADR-0585: 本ユニットの 400 の本文（`{ error, details }`）からサーバの理由を出す。
+      return validationMessageOf(e, i18n._(msg`入力内容に誤りがあります。`));
     }
     if (e.kind === 'forbidden') {
       return i18n._(msg`変更する権限がありません。`);
@@ -322,6 +326,15 @@ export function RiskSettingsPage() {
                   )}
                 </form>
               </Panel>
+
+              {/* 🔴 SC-02, FR-10, UC-06, ADR-0066 決定2, #1291, IADR-0530: 高ボラティリティ銘柄の明示指定と区分の上限。
+                  区分の上限は「1 注文あたりの発注金額上限」の区分版であるため、リスク上限の直後に置く（保存単位は分ける）。 */}
+              <HighVolatilityForm current={loaded.highVolatility} equity={riskStatus?.capital ?? null} />
+
+              {/* 🔴 SC-02, FR-10, FR-19, ADR-0070 決定 5・ADR-0071 決定 5, #1407, IADR-0564: 閉場前の統制（締め切り・手仕舞い）とテーマの上限。
+                  新規建ての統制であり、リスク上限・高ボラティリティ銘柄の直後に置く（保存単位は分ける。取得も独立して縮退する）。 */}
+              <PreCloseControlsFormSection />
+              <ThemeConcentrationFormSection />
 
               {/* hi-fi モック `.g2`: 取引ガードと「運用段階／発注先」を 2 列に並べる。 */}
               <div className="grid gap-3 lg:grid-cols-2">
@@ -785,12 +798,14 @@ function StagePanel({ stage, provider }: { stage: RiskManagementSettings['stage'
 // **変更操作を持つ画面は SC-02 だけである**（SC-03 は参照専用）。他のリスク設定と同様に変更理由必須・
 // 監査ログ記録・版（楽観排他）の対象とする（05_screens 共通規約）。
 //
-// **実弾（moomoo REAL）への切替は警告モーダルを伴い、「OK」1 押しでは通過できない。** モーダルは計画が
-// 定める 4 点を必ず提示する（05_screens SC-02 / FR-20 (1)）:
+// **実弾（moomoo REAL）への切替は警告モーダルを伴い、「OK」1 押しでは通過できない。** 計画は次の 6 点を
+// 定める（05_screens SC-02 / FR-20 (1)。2026-09-25 に「4 点」から訂正。planning#816）:
 //   ① これ以降の注文は実際の資金で執行される旨
 //   ② 切替先と現在の Stage の組み合わせの妥当性（Stage 1 のままなら段階ゲートを飛ばしている旨）
 //   ③ 現在の equity と、それに対する統制値の実額
 //   ④ 確認のための明示的な操作（チェックボックスの同意と「REAL」の文字入力）
+//   ⑤ 段階が実弾を既定とするまで発注は行われない旨（`STAGE_GATE_BLOCKS_LIVE_ORDERS`。段階が実弾を既定としないときだけ）
+//   ⑥ 損切りの実行機構が S0 以外なら、そもそもモーダルへ進ませない（`blockedByStopLossMethod`。モーダルの手前の関門）
 //
 // 同じ関門はサーバ側にもある（IADR-0141 決定1）。画面だけの統制は API 直叩きで消えるためであり、
 // ここでの二重化は冗長ではない。
@@ -1017,7 +1032,8 @@ function BrokerProviderForm({
   );
 }
 
-// FR-20 (1), 05_screens SC-02, #334, IADR-0141: 実弾切替の警告モーダル。計画が定める 4 点を必ず描く。
+// FR-20 (1), 05_screens SC-02, #334, IADR-0141: 実弾切替の警告モーダル。計画の 6 点のうち本文に出す ①〜⑤ を必ず描く
+// （⑥ はモーダルの手前の関門で、`BrokerProviderForm` が持つ）。
 // **切替ボタンは「同意」と「REAL の入力」が両方揃うまで無効である**（「OK」1 押しで通過させない）。
 //
 // 🔴 **初期フォーカスは取消側に当てる**（`initialFocus`）。危険側にフォーカスが当たった状態で

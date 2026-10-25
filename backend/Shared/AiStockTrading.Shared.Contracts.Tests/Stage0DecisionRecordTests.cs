@@ -336,7 +336,7 @@ public class Stage0DecisionRecordTests
     [InlineData("claude-haiku-5-5", "claude-opus-5-5", false)]     // 本判断だけピン外
     [InlineData(null, "claude-sonnet-5-5", false)]                 // 一次が不明
     [InlineData("claude-haiku-5-5", null, false)]                // 本判断が不明
-    // 🔴 T-15-124, #1295, IADR-0524: 割当表が移行期間に受ける直前世代は、Stage 0 の組の一致と読まない（旧組の合格を新組の合格にしない）。
+    // 🔴 T-15-124, #1295, #1296, IADR-0524: 直前世代（旧組）は Stage 0 の組の一致と読まない（旧組の合格を新組の合格にしない）。
     [InlineData("claude-haiku-4-5", "claude-sonnet-5", false)]       // 旧組そのもの
     [InlineData("claude-haiku-5-5", "claude-sonnet-5", false)]       // 本判断だけ旧世代
     [InlineData("claude-haiku-4-5", "claude-sonnet-5-5", false)]     // 一次だけ旧世代
@@ -416,5 +416,19 @@ public class Stage0DecisionRecordTests
             HashOf(legacy with { EntryBelowMinimumNotional = true }),
             HashOf(legacy with { EntryBelowMinimumNotional = false }),
         }.Distinct().Should().HaveCount(3);
+    }
+
+    // FR-15, 計画 ADR-0068 決定3・4, #1373, IADR-0549 決定7: 記録は判断時点に組み直した方針の期間キーと版を持つが、**戦略 ID には含めない**
+    // （方針の本文は入力の指紋に入っている。版の有無で同じ入力の記録の ID を変えない）。JSON で往復する。
+    [Fact]
+    public void 方針の版は記録に残り戦略IDを変えない()
+    {
+        var plain = Record(new DateOnly(2026, 6, 2), Stage0DecisionAction.Buy, 10, Raw(1, Stage0DecisionAction.Buy));
+        var withPolicy = plain with { Policy = new DailyPolicyReference("daily-2026-06-02", 4) };
+
+        SetOf(withPolicy).StrategyId.Should().Be(SetOf(plain).StrategyId);
+        var restored = Stage0DecisionRecordJson.TryDeserialize(Stage0DecisionRecordJson.Serialize(SetOf(withPolicy)));
+        restored!.Records.Single().Policy.Should().Be(new DailyPolicyReference("daily-2026-06-02", 4));
+        Stage0DecisionRecordJson.TryDeserialize(Stage0DecisionRecordJson.Serialize(SetOf(plain)))!.Records.Single().Policy.Should().BeNull();
     }
 }

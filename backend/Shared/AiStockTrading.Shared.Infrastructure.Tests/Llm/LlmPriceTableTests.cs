@@ -5,26 +5,26 @@ using Xunit;
 namespace AiStockTrading.Shared.Infrastructure.Tests.Llm;
 
 // NFR（費用）, FR-04, IADR-0122 決定2/3: 応答が名乗った実効モデルから単価を引く。
-// fail-safe: 未知モデルは 0 でも既定ペアでもなく**表の最大単価**へ倒す（費用統制の危険側は過小計上のため）。
+// fail-safe: 未知モデルは 0 でも既定ペアでもなく**専用の設定値「未知モデルの計上単価」**（既定 $10 / $50）へ倒す
+// （費用統制の危険側は過小計上のため。NFR-13, ADR-0064 決定9, #1305, IADR-0553 で「表の最大単価」から改めた）。
 public class LlmPriceTableTests
 {
-    // IADR-0122 決定4 の投入値（換算率 163.71）。実運用の values-local.yaml と同じ表を使う。
+    // IADR-0122 決定4 の投入値（換算率 163.71）。実運用の values-local.yaml と同じ表（5.5 系の 3 行だけ）を使う。
     // #1295, IADR-0524: 5.5 系の単価（提供元の公表値 2026-10-10・planning#783）。haiku-5-5 は第 1 段（100,000 トークン以下）。
+    // #1305, IADR-0553: `claude-fable-5` の行は外した（上限は専用の設定値が担う）。
     private static readonly (string Model, string? Input, string? Output)[] Catalog =
     [
-        ("claude-fable-5", "1.637", "8.186"),
         ("claude-opus-5-5", "0.655", "3.274"),
-        ("claude-opus-4-8", "0.819", "4.093"),
         ("claude-sonnet-5-5", "0.327", "1.637"),
         ("claude-haiku-5-5", "0.0164", "0.0819"),
     ];
 
+    private static readonly LlmPrice DefaultUnknown = new(1.637m, 8.186m);
+
     private static LlmPriceTable Table() => LlmPriceTable.From(Catalog);
 
     [Theory]
-    [InlineData("claude-fable-5", 1.637, 8.186)]       // 禁止モデル（fail-safe 上限値）
     [InlineData("claude-opus-5-5", 0.655, 3.274)]        // report-weekly・report-monthly
-    [InlineData("claude-opus-4-8", 0.819, 4.093)]      // ADR-0011 が意図する固定先
     [InlineData("claude-sonnet-5-5", 0.327, 1.637)]      // trade-decision・report-daily
     [InlineData("claude-haiku-5-5", 0.0164, 0.0819)]     // trade-decision-screening・report-daily の第 2 候補
     public void 実効モデルの単価を引く(string model, double input, double output)
@@ -39,35 +39,105 @@ public class LlmPriceTableTests
         Table().Resolve("Claude-Sonnet-5-5", inputTokens: 0).Should().Be(new LlmPrice(0.327m, 1.637m));
     }
 
-    // fail-safe の中核: 未知モデルは最大単価（現行表では fable-5）。0 に倒すと月次上限が構造的に効かなくなる。
-    [Theory]
-    [InlineData("claude-sonnet-4-6")]
-    [InlineData("gpt-5")]
-    public void 表に無いモデルは最大単価へ倒す(string model)
-    {
-        Table().Resolve(model, inputTokens: 0).Should().Be(new LlmPrice(1.637m, 8.186m));
-    }
+    // ---- 未知モデルの計上単価（NFR-13, FR-04, ADR-0064 決定9, #1305, IADR-0553）----
 
-    // 応答がモデル名を名乗らない（上流未更新・部分写像の欠落）場合も未知と同じ扱い＝過小計上を作らない。
+    // 受け入れ基準 1: 表が 5.5 系の 3 行だけのとき、表に無いモデル（旧世代・他社）は専用の設定値で計上する。
+    [Theory]
+    [InlineData("claude-opus-5")]
+    [InlineData("gpt-5")]
+    [InlineData("claude-fable-5")]   // 禁止モデルも単価表には無い（判定は割当表の側。単価は未知モデルと同じ）
+    public void 表に無いモデルは専用の設定値で計上する(string model) =>
+        LlmPriceTable.From(Catalog, unknownModelInputPer1kTokens: "2.5", unknownModelOutputPer1kTokens: "12.5")
+            .Resolve(model, inputTokens: 0).Should().Be(new LlmPrice(2.5m, 12.5m));
+
+    // 受け入れ基準 2: モデル名を名乗らない応答（null・空・空白）も 1 と同じ単価。
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void モデル名が無い場合も最大単価へ倒す(string? model)
+    public void モデル名が無い場合も専用の設定値で計上する(string? model) =>
+        LlmPriceTable.From(Catalog, unknownModelInputPer1kTokens: "2.5", unknownModelOutputPer1kTokens: "12.5")
+            .Resolve(model, inputTokens: 0).Should().Be(new LlmPrice(2.5m, 12.5m));
+
+    // 受け入れ基準 3: 設定値が無ければ既定の $10 / $50（1.637 / 8.186 円/1k）。0 には倒さない。
+    [Theory]
+    [InlineData("gpt-5")]
+    [InlineData(null)]
+    public void 専用の設定値が無ければ既定の_10_50_ドルで計上する(string? model)
     {
-        Table().Resolve(model, inputTokens: 0).Should().Be(new LlmPrice(1.637m, 8.186m));
+        var table = Table();
+
+        table.Resolve(model, inputTokens: 0).Should().Be(DefaultUnknown);
+        table.UnknownModelPrice.Should().Be(DefaultUnknown);
+        table.UnknownModelSettingRejected.Should().BeFalse();
     }
 
-    // 最大は「行」ではなく成分ごとに取る（入力が最大の行と出力が最大の行が別でも過小にしない）。
+    // 既定値の出所を固定する: ADR-0064 決定9 の $10 / $50 per MTok を 05_trading-assumptions §6.1 の 163.71 円/USD で換算し、
+    // 他の行と同じく小数第 3 位で四捨五入した値（10 × 163.71 ÷ 1000 = 1.6371、50 × 163.71 ÷ 1000 = 8.1855）。
     [Fact]
-    public void 最大単価は成分ごとに取る()
+    public void 既定値は_10_50_ドルを_163_71_で換算した値()
     {
-        var table = LlmPriceTable.From([("a", "9", "1"), ("b", "1", "9")]);
+        const decimal rate = 163.71m;
+        var expected = new LlmPrice(
+            decimal.Round(10m * rate / 1000m, 3, MidpointRounding.AwayFromZero),
+            decimal.Round(50m * rate / 1000m, 3, MidpointRounding.AwayFromZero));
 
-        table.Resolve("unknown", inputTokens: 0).Should().Be(new LlmPrice(9m, 9m));
+        LlmPriceTable.DefaultUnknownModelPrice.Should().Be(expected);
+        LlmPriceTable.DefaultUnknownModelPrice.Should().Be(DefaultUnknown);
     }
 
-    // 解析できない・非正の行は表に載せない（→ 未知扱い＝最大単価）。誤設定を 0 円として通さない。
+    // 受け入れ基準 4: 未知モデルの単価はどの行にも結びつかない。表の最大より高い行を足しても、低い表にしても変わらない。
+    [Fact]
+    public void 未知モデルの単価は表の行の足し外しで変わらない()
+    {
+        var withHigherRow = LlmPriceTable.From([.. Catalog, ("claude-future-6", "99", "99")]);
+        var onlyCheapRow = LlmPriceTable.From([("claude-haiku-5-5", "0.0164", "0.0819")]);
+        var withTier = LlmPriceTable.FromRows([new LlmPriceRow("b", "0.05", "0.1", "1000", "30", "60")]);
+
+        withHigherRow.Resolve("gpt-5", inputTokens: 0).Should().Be(DefaultUnknown);
+        onlyCheapRow.Resolve("gpt-5", inputTokens: 0).Should().Be(DefaultUnknown);
+        withTier.Resolve("gpt-5", inputTokens: null).Should().Be(DefaultUnknown);
+    }
+
+    // 受け入れ基準 6（否定形）: 書かれているのに解析できない・0 以下の成分は、0 円にも表の最大にも倒さず既定値で計上し、不正を示す。
+    // 成分は独立に読む（正しく書けた側は活かす）。
+    [Theory]
+    [InlineData("abc", "12.5", 1.637, 12.5)]
+    [InlineData("0", "12.5", 1.637, 12.5)]
+    [InlineData("-1", "12.5", 1.637, 12.5)]
+    [InlineData("2.5", "1.5.0", 2.5, 8.186)]
+    [InlineData("0", "0", 1.637, 8.186)]
+    public void 専用の設定値が不正なら既定値で計上し不正を示す(string input, string output, double expectedInput, double expectedOutput)
+    {
+        var table = LlmPriceTable.From([.. Catalog, ("claude-future-6", "99", "99")], unknownModelInputPer1kTokens: input, unknownModelOutputPer1kTokens: output);
+
+        table.Resolve("gpt-5", inputTokens: 0).Should().Be(new LlmPrice((decimal)expectedInput, (decimal)expectedOutput));
+        table.UnknownModelSettingRejected.Should().BeTrue();
+    }
+
+    // 未設定（null・空・空白）は不正ではない（既定値が意図した値）。起動時の警告を出さない。
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", "")]
+    [InlineData("  ", null)]
+    public void 専用の設定値が未設定なら不正を示さない(string? input, string? output) =>
+        LlmPriceTable.From(Catalog, unknownModelInputPer1kTokens: input, unknownModelOutputPer1kTokens: output)
+            .UnknownModelSettingRejected.Should().BeFalse();
+
+    // 表が空なら従来キーへ倒れる（解決の順序は変えない）。専用の設定値は表が非空のときだけ効く。
+    [Fact]
+    public void 表が空なら専用の設定値があっても既定ペアへ倒れる() =>
+        LlmPriceTable.From([], "0.819", "4.093", "2.5", "12.5")
+            .Resolve("gpt-5", inputTokens: 0).Should().Be(new LlmPrice(0.819m, 4.093m));
+
+    // IsEffectivelyZero の意味は変えない（#817・#1197 / IADR-0499）: 表が空なら設定値は使われず全呼び出しが 0 円なので、
+    // 設定値だけの構成を「単価がある」と読まない（本番の起動拒否を設定値で迂回させない）。
+    [Fact]
+    public void IsEffectivelyZero_専用の設定値だけでは真のまま() =>
+        LlmPriceTable.From([], unknownModelInputPer1kTokens: "2.5", unknownModelOutputPer1kTokens: "12.5")
+            .IsEffectivelyZero.Should().BeTrue();
+
+    // 解析できない・非正の行は表に載せない（→ 未知扱い＝未知モデルの計上単価）。誤設定を 0 円として通さない。
     [Theory]
     [InlineData("abc", "1.637")]
     [InlineData("0", "1.637")]
@@ -76,9 +146,9 @@ public class LlmPriceTableTests
     [InlineData(null, null)]
     public void 単価が不正な行は表に載せない(string? input, string? output)
     {
-        var table = LlmPriceTable.From([("claude-fable-5", "1.637", "8.186"), ("claude-sonnet-5-5", input, output)]);
+        var table = LlmPriceTable.From([("claude-opus-5-5", "0.655", "3.274"), ("claude-sonnet-5-5", input, output)]);
 
-        table.Resolve("claude-sonnet-5-5", inputTokens: 0).Should().Be(new LlmPrice(1.637m, 8.186m));
+        table.Resolve("claude-sonnet-5-5", inputTokens: 0).Should().Be(DefaultUnknown);
     }
 
     // 小数点の記法はロケールに依存させない（InvariantCulture 固定）。
@@ -99,7 +169,7 @@ public class LlmPriceTableTests
         table.Resolve(null, inputTokens: 0).Should().Be(new LlmPrice(0.819m, 4.093m));
     }
 
-    // 全行が不正なら表は空とみなし、既定ペアへ倒れる（誤設定で最大単価に張り付かせない）。
+    // 全行が不正なら表は空とみなし、既定ペアへ倒れる（従来キーの構成を未知モデルの計上単価で上書きしない）。
     [Fact]
     public void 全行が不正なら既定ペアへ倒れる()
     {
@@ -124,25 +194,23 @@ public class LlmPriceTableTests
         LlmPriceTable.From([], "0.819", "abc").Resolve(null, inputTokens: 0).Should().Be(new LlmPrice(0.819m, 0m));
     }
 
-    // 表がある限り、既定ペアは未知モデルの単価にしない（表が真＝最大単価で倒す）。
+    // 表がある限り、既定ペアは未知モデルの単価にしない（表が真＝未知モデルの計上単価で倒す）。
     [Fact]
     public void 表があれば未知モデルに既定ペアを使わない()
     {
         LlmPriceTable.From([("claude-sonnet-5-5", "0.327", "1.637")], "99", "99")
-            .Resolve("claude-opus-5-5", inputTokens: 0).Should().Be(new LlmPrice(0.327m, 1.637m));
+            .Resolve("claude-opus-5-5", inputTokens: 0).Should().Be(DefaultUnknown);
     }
 
     // #817: env 名にハイフンを入れるとイメージの `sh -c` 起動（dash）が非識別子として落とす。
     // 構成は `claude_sonnet_5_5` のアンダースコア形で書き、応答が名乗る `claude-sonnet-5-5` と同一視する。
     [Theory]
-    [InlineData("claude_fable_5", "claude-fable-5")]
     [InlineData("claude_opus_5_5", "claude-opus-5-5")]
-    [InlineData("claude_opus_4_8", "claude-opus-4-8")]
     [InlineData("claude_sonnet_5_5", "claude-sonnet-5-5")]
     [InlineData("claude_haiku_5_5", "Claude-Haiku-5-5")]
     public void アンダースコアのキーはハイフンのモデル名に一致する(string key, string model)
     {
-        // 表に別の高い行を置き、未知扱い（最大単価）に落ちたのではなく一致したことを区別する。
+        // 未知扱い（未知モデルの計上単価＝1.637 / 8.186）に落ちたのではなく一致したことを、値の違いで区別する。
         LlmPriceTable.From([("other_model", "9", "9"), (key, "0.327", "1.637")])
             .Resolve(model, inputTokens: 0).Should().Be(new LlmPrice(0.327m, 1.637m));
     }
@@ -154,14 +222,14 @@ public class LlmPriceTableTests
         Table().Resolve("claude_sonnet_5_5", inputTokens: 0).Should().Be(new LlmPrice(0.327m, 1.637m));
     }
 
-    // 正規化しても fail-safe は不変: 表が非空なら未知モデルは成分ごとの最大単価。
+    // 正規化しても fail-safe は不変: 表が非空なら未知モデルは未知モデルの計上単価。
     [Fact]
-    public void アンダースコアの表でも未知モデルは最大単価へ倒す()
+    public void アンダースコアの表でも未知モデルは未知モデルの計上単価へ倒す()
     {
-        var table = LlmPriceTable.From([("claude_fable_5", "1.637", "8.186"), ("claude_sonnet_5_5", "0.327", "1.637")]);
+        var table = LlmPriceTable.From([("claude_opus_5_5", "0.655", "3.274"), ("claude_sonnet_5_5", "0.327", "1.637")]);
 
-        table.Resolve("claude-sonnet-4-6", inputTokens: 0).Should().Be(new LlmPrice(1.637m, 8.186m));
-        table.Resolve(null, inputTokens: 0).Should().Be(new LlmPrice(1.637m, 8.186m));
+        table.Resolve("claude-sonnet-4-6", inputTokens: 0).Should().Be(DefaultUnknown);
+        table.Resolve(null, inputTokens: 0).Should().Be(DefaultUnknown);
     }
 
     // #817 fail-loud: 表が空 かつ 従来キーも無い＝全呼び出しが 0 円になる構成を判定できる（起動時警告の入力）。
@@ -226,26 +294,14 @@ public class LlmPriceTableTests
     public void 第2段の無い行は入力トークン数に依らない() =>
         TieredTable().Resolve("claude-sonnet-5-5", 500_000).Should().Be(new LlmPrice(0.327m, 1.637m));
 
-    // 未知モデルは従来どおり表の成分ごとの最大（第 2 段も母集合に含める＝過小にしない）。
+    // 未知モデルは入力トークン数に依らず未知モデルの計上単価（#1305, IADR-0553。第 2 段の有無にも依らない）。
     [Theory]
     [InlineData(0)]
     [InlineData(500_000)]
-    public void 未知モデルは入力トークン数に依らず最大単価へ倒す(int inputTokens) =>
-        TieredTable().Resolve("claude-haiku-4-5", inputTokens).Should().Be(new LlmPrice(0.655m, 3.274m));
+    public void 未知モデルは入力トークン数に依らず未知モデルの計上単価へ倒す(int inputTokens) =>
+        TieredTable().Resolve("claude-haiku-4-5", inputTokens).Should().Be(DefaultUnknown);
 
-    [Fact]
-    public void 第2段だけが最大でも未知モデルの単価を過小にしない()
-    {
-        var table = LlmPriceTable.FromRows(
-        [
-            new LlmPriceRow("a", "0.1", "0.2"),
-            new LlmPriceRow("b", "0.05", "0.1", "1000", "0.3", "0.6"),
-        ]);
-
-        table.Resolve("unknown", inputTokens: 0).Should().Be(new LlmPrice(0.3m, 0.6m));
-    }
-
-    // 🔴 第 2 段の誤設定（キーの一部欠け・解析不能・非正）は行ごと載せない（→ 未知モデル＝最大単価）。
+    // 🔴 第 2 段の誤設定（キーの一部欠け・解析不能・非正）は行ごと載せない（→ 未知モデルの計上単価）。
     // 長いプロンプトを第 1 段の安い単価で通さない（過小計上を作らない）。
     [Theory]
     [InlineData("100000", "0.0819", null)]
@@ -255,7 +311,7 @@ public class LlmPriceTableTests
     [InlineData("0", "0.0819", "0.409")]
     [InlineData("100000", "-1", "0.409")]
     public void 第2段の誤設定の行は載せず未知モデル扱いになる(string? threshold, string? longInput, string? longOutput) =>
-        TieredTable(threshold, longInput, longOutput).Resolve("claude-haiku-5-5", 10).Should().Be(new LlmPrice(0.655m, 3.274m));
+        TieredTable(threshold, longInput, longOutput).Resolve("claude-haiku-5-5", 10).Should().Be(DefaultUnknown);
 
     // 費用 = 入力÷1000×単価 + 出力÷1000×単価（段は要求ごとに決まる）。
     [Fact]
@@ -265,4 +321,44 @@ public class LlmPriceTableTests
 
         LlmPricing.Compute(120_000, 1_000, price).Should().Be((120m * 0.0819m) + (1m * 0.409m));
     }
+
+    // ---- 入力トークン数が取れない要求（NFR-13, FR-04, ADR-0064 決定4, #1306, IADR-0550）----
+
+    // 🔴 受け入れ基準 1・2: 取れない（null）要求は第 2 段（高い側）で引く。0 と読むと第 1 段＝過小計上（IADR-0122 の危険側）。
+    [Fact]
+    public void 入力トークン数が取れない要求は第2段の単価で引く() =>
+        TieredTable().Resolve("claude-haiku-5-5", inputTokens: null).Should().Be(new LlmPrice(0.0819m, 0.409m));
+
+    // 受け入れ基準 3: 取れている要求は従来どおり（100,000 ちょうどは第 1 段・100,001 は第 2 段）。取れない要求と並べて固定する。
+    [Theory]
+    [InlineData(100_000, 0.0164, 0.0819)]
+    [InlineData(100_001, 0.0819, 0.409)]
+    public void 取れている要求は従来どおり閾値で引き分ける(int inputTokens, double input, double output) =>
+        TieredTable().Resolve("claude-haiku-5-5", (int?)inputTokens).Should().Be(new LlmPrice((decimal)input, (decimal)output));
+
+    // 受け入れ基準 4: 第 2 段を持たない行・未知モデル・表が空のときは、取れなくても単価は従来と変わらない（段の選択だけを変える）。
+    [Fact]
+    public void 第2段の無い行と未知モデルと空の表は取れなくても従来どおり()
+    {
+        TieredTable().Resolve("claude-sonnet-5-5", inputTokens: null).Should().Be(new LlmPrice(0.327m, 1.637m));
+        TieredTable().Resolve("claude-haiku-4-5", inputTokens: null).Should().Be(DefaultUnknown);
+        TieredTable().Resolve(null, inputTokens: null).Should().Be(DefaultUnknown);
+        LlmPriceTable.From([], "0.819", "4.093").Resolve("claude-haiku-5-5", inputTokens: null)
+            .Should().Be(new LlmPrice(0.819m, 4.093m));
+    }
+
+    // 🔴 注意（#1306）: 金額の式の入力トークン数は 0 のまま（推定しない）。変わるのは出力の単価が第 2 段になることだけ。
+    [Fact]
+    public void 取れない要求の費用は入力を足さず出力を第2段の単価で計算する()
+    {
+        var price = TieredTable().Resolve("claude-haiku-5-5", inputTokens: null);
+
+        LlmPricing.Compute(0, 1_000, price).Should().Be(0.409m);
+    }
+
+    // 受け入れ基準 6（形の固定）: 段の判定は「取れない」を表せる型で受ける。int へ戻すと呼び出し側が 0 へ潰すしかなくなる。
+    [Fact]
+    public void 段の判定は取れないを表せる型で入力トークン数を受ける() =>
+        typeof(LlmPriceTable).GetMethod(nameof(LlmPriceTable.Resolve))!.GetParameters()[1].ParameterType
+            .Should().Be(typeof(int?));
 }

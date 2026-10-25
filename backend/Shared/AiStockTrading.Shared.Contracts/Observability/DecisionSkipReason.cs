@@ -134,4 +134,34 @@ public enum DecisionSkipReason
     /// 発注意図は作られない）。<c>TradeDecisionForgoneBeforeLlm</c> の同名の値と一致させる。
     /// </summary>
     ExitOnlyWithoutHolding,
+
+    /// <summary>
+    /// FR-04, FR-10, #1338, IADR-0535 決定1: <b>LLM を呼ぶ前</b>の見送り。保有中の銘柄で、判断由来の決済が処理中のまま決済方向の建玉を
+    /// すべて覆い（発注執行が決済のゲートと同じ判定で答えた）、買い増し・売り増しも LLM の後で必ず見送られると分かっている。
+    /// <para>
+    /// 🔴 計器の移動: 是正前は同じ判断が LLM を呼び、決済の結論が発注執行で <c>OrderDispatchForgone(InFlightCloseCoversPosition)</c> に、
+    /// Hold が <see cref="LlmHold"/> になっていた（AAPL で 1 セッション 33 回）。その一部がこの値へ移る。<c>TradeDecisionForgoneBeforeLlm</c> の同名の値と一致させる。
+    /// </para>
+    /// </summary>
+    InFlightCloseCoversPosition,
+
+    /// <summary>
+    /// FR-04, FR-10, #1434, IADR-0572 決定2: <b>LLM を呼ぶ前</b>の見送り。保有中（台帳）の銘柄で、発注執行がブローカーの決済方向の建玉を 0 と答え
+    /// （判断由来の決済の約定の直後。台帳は約定の射影がまだ届いていない）、買い増し・売り増しも LLM の後で必ず見送られると分かっている。
+    /// <para>
+    /// 🔴 計器の移動: 是正前は同じ判断が LLM を呼び、結論の Sell が LLM の後の関所（台帳が追いついた保有 0）で <see cref="NakedShortOpen"/> に、
+    /// Hold が <see cref="LlmHold"/> になっていた（HOOD 2026-10-21）。その一部がこの値へ移る。<c>TradeDecisionForgoneBeforeLlm</c> の同名の値と一致させる。
+    /// </para>
+    /// </summary>
+    BrokerPositionClosed,
+    /// <summary>
+    /// 🔴 NFR-13, #1423 M-5, ADR-0074 決定2, IADR-0582: 月次 LLM 費用上限の 100% に達して停止中のため、LLM を呼ぶ前に見送った
+    /// （<c>DecisionForgoneBeforeLlmReason.LlmCostCapHalted</c> と同名）。定時・価格変動の両方。
+    /// </summary>
+    LlmCostCapHalted,
+    /// <summary>
+    /// 🔴 FR-07, #1423 M-6, ADR-0075 決定1, IADR-0583: 日報の無応答（停止）のため LLM を呼ぶ前に見送った
+    /// （<c>DecisionForgoneBeforeLlmReason.DailyReportNoResponseHalted</c> と同名）。定時・価格変動の両方。
+    /// </summary>
+    DailyReportNoResponseHalted,
 }

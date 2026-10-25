@@ -12,7 +12,7 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 // 費用統制サービスが購読して月次台帳へ計上する（HTTP /costs/record は OwnerOnly のため使わない）。
 // #303, IADR-0122: 単価は global 単一ペアではなく**応答が名乗った実効モデル**から引く（用途別モデル割当により
 // trade-decision=sonnet-5 / report-*=fable-5・opus-5・sonnet-5 と混在するため）。未知モデルの倒し先は
-// LlmPriceTable が持つ（0 ではなく最大単価＝過小計上を作らない）。
+// LlmPriceTable が持つ（0 ではなく未知モデルの計上単価＝過小計上を作らない。#1305, IADR-0553）。
 //
 // NFR（費用）, 05_trading-assumptions §6.1, #347, IADR-0218: **用途（purpose）を必ず載せる。**
 // 月次 LLM 費用上限（15,000 円）の対象は取引判断サイクルのみであり、対象範囲の判別は購読側
@@ -30,8 +30,9 @@ public sealed class PublishingLlmUsageReporter(
     public async Task ReportAsync(LlmUsage usage, CancellationToken cancellationToken = default)
     {
         // #1295, IADR-0524: 入力トークン数で 2 段の単価（プロンプト長）を引き分ける。
+        // #1306, IADR-0550: 取れない（null）は段の選択だけ高い側へ倒す。金額の式の入力トークン数は 0 のまま（推定しない）。
         var price = priceTable.Resolve(usage.Model, usage.InputTokens);
-        var amount = LlmPricing.Compute(usage.InputTokens, usage.OutputTokens, price);
+        var amount = LlmPricing.Compute(usage.InputTokens ?? 0, usage.OutputTokens, price);
         // ADR-0013, IADR-0129, #354: 発行は Wolverine の IMessageBus（scoped）。PublishAsync は CancellationToken を取らない。
         await bus.PublishAsync(new LlmCostIncurred(amount, clock.UtcNow, usage.Purpose, usage.Model)).ConfigureAwait(false);
         logger.LogDebug(

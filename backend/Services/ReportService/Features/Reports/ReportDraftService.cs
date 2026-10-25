@@ -24,7 +24,7 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
         var periodLabel = ReportPeriod.Label(request.Kind, request.Date);
         var expectedKey = ReportPeriod.ExpectedKey(request.Kind, request.Date);
         if (!string.Equals(request.PeriodKey, expectedKey, StringComparison.Ordinal))
-            throw new ArgumentException($"{request.Kind} 報告書の PeriodKey は種別・対象日と一致する必要があります（期待 '{expectedKey}'・実際 '{request.PeriodKey}'）。").ClientVisible();
+            throw new ArgumentException($"{ReportSummary.KindLabel(request.Kind)}の PeriodKey は種別・対象日と一致する必要があります（期待 '{expectedKey}'・実際 '{request.PeriodKey}'）。").ClientVisible();
 
         var markets = request.Markets ?? [];
         var fills = request.Fills ?? [];
@@ -66,6 +66,13 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             ? FillPnlAttributionBuilder.Build(fills, assumptions, request.TradeRationales, adoptions, opening)
             : null;
 
+        // FR-06, FR-16, #1357, IADR-0540 決定 3: 散文へ渡す帰属。週報・月報は本文と**同じ値**（上の fillAttributions）を渡し、
+        // 日報も同じ純関数で組み立てる（取引履歴 TradeHistoryViewBuilder と同じ畳み込み）。🔴 約定を取得できなかったら渡さない
+        //（空列＝約定 0 件と読ませない。IADR-0480 決定 1）。
+        var narrativeSettlements = request.UnsuppliedInputs?.Contains(ReportInput.Fills) == true
+            ? null
+            : fillAttributions ?? FillPnlAttributionBuilder.Build(fills, assumptions, request.TradeRationales, adoptions, opening);
+
         // FR-07, IADR-0120 決定3, #293: 上位方針（BasedOn の期間キー＋本文）を散文の文脈として渡す。
         // 期間キーと本文の**両方が揃ったときだけ**参照とする。片方だけでは差異評価も出典提示もできないため、
         // 欠損は「上位未確定」の 1 通りに閉じる（プロンプト側がその旨を明記する＝捏造しない）。
@@ -89,6 +96,10 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
                     UsagePurpose = request.UsagePurpose,
                     // 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 4: 照合の事実（コードの値）。LLM は評価の文章だけを書く。
                     WeeklyGoal = weeklyGoal,
+                    // FR-06, FR-16, #1357, IADR-0540 決定 3: 決済の帰属（本文 §2/§3 と同じ値）と種別。LLM は事実として読むだけ。
+                    Settlements = narrativeSettlements,
+                    // FR-06, FR-08, #1356, IADR-0541 決定 4: 判断が参照したニュース・開示（表題だけ。URL は渡さない）。日報だけ。
+                    DecisionReferences = request.Kind == ReportKind.Daily ? request.DecisionReferences : null,
                 },
                 cancellationToken)
             .ConfigureAwait(false);
@@ -117,6 +128,8 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             PolicySummary = request.PolicySummary,
             Narrative = narrative,
             ReviewNarrative = reviewNarrative,
+            // FR-06, FR-08, #1356, IADR-0541 決定 3: 日報 §5 の出典（コードで描く。LLM に URL を書かせない）。
+            DecisionReferences = request.Kind == ReportKind.Daily ? request.DecisionReferences : null,
             WeeklyGoal = weeklyGoal,
             // FR-10, UC-06, #330: 自動縮小の記録はコード集計値であり LLM に語らせない（散文と分ける）。
             MarginReductions = request.MarginReductions,
@@ -161,6 +174,8 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
                 ? TradeHistoryViewBuilder.Build(fills, assumptions, request.TradeRationales, adoptions, opening)
                 : null,
             FillAttributions = fillAttributions,
+            // #1362, IADR-0552 決定 1: 約定を照会できなかったことを本文へ渡す（散文の Settlements＝null と同じ判定）。
+            FillsUnsupplied = request.UnsuppliedInputs?.Contains(ReportInput.Fills) == true,
             // FR-06, FR-07, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5・月報 §1: 費用の内訳と費用率。
             // 🔴 **同じ帰属から数える**（費用合計が §1 サマリと一致する唯一の形である）。
             // 税は期間合計にのみ課されるため PnlSummary の値をそのまま渡す（約定単位へ按分しない）。
@@ -399,7 +414,10 @@ public sealed record DraftRequest(
     WeeklyGoalReference? WeeklyGoal = null,
     // FR-06, FR-16, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 3: 日報の週初来の窓の入力（週報 §1 と同じ供給元・同じ窓の規則）。
     // **null＝受け取っていない**（§6 は算出不能と書く）。日報以外は使わない。
-    WeekToDateInputs? WeekToDate = null);
+    WeekToDateInputs? WeekToDate = null,
+    // FR-06, FR-08, #1356, IADR-0541 決定 2・3: 日報 §5 の判断が参照したニュース・開示（窓で絞って畳んだもの）。
+    // **null＝照会していない・できていない**（§5 は「参照なし」と書かない）。日報以外は使わない。
+    DecisionReferenceFeed? DecisionReferences = null);
 
 // FR-06, FR-16, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 3: 日報 D の週初来の窓（D の ISO 週の週報の窓を D で打ち切ったもの）の入力。
 // FillsFailed は約定の照会に失敗した（空列へ倒れている）こと、OpeningInventoryUnknown は期間開始時点の在庫を照会できなかったこと。

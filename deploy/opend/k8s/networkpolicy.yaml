@@ -1,0 +1,36 @@
+# NFR, ADR-0002, IADR-0566: 常駐 OpenD の Pod への到達の制限（dev 経路。chart 版は templates/networkpolicy-opend.yaml）。
+# opend.yaml と一緒に適用する: kubectl apply -f deploy/opend/k8s/networkpolicy.yaml
+#
+# ingress だけを絞る（egress は絞らない。OpenD は moomoo のサーバと DNS へ出る）。届いてよい相手は 2 つ:
+#   - API（11111）      … 同じ namespace の発注執行（app: order-execution-service）
+#   - 認証サイドカー（8080）… 基盤の BFF（microservices-platform namespace の app: bff-service）
+# chart 版は authGateway が無効なら 8080 の規則を描かないが、dev の生 manifest はサイドカーを常に置くので常に描く。
+# readinessProbe（kubelet）・kubectl attach / exec / port-forward は Pod 網を通らないため、この規則の影響を受けない。
+# 🔴 NetworkPolicy を強制しない CNI では無害な宣言として残るだけである（そのとき呼び出し元を絞るのは共有シークレットの 1 段）。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: opend-ingress
+  namespace: ai-stock-trading
+  labels:
+    app: opend
+    app.kubernetes.io/part-of: ai-stock-trading
+spec:
+  podSelector:
+    matchLabels: { app: opend }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: order-execution-service
+      ports:
+        - { protocol: TCP, port: 11111 }
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: "microservices-platform" }
+          podSelector:
+            matchLabels:
+              app: bff-service
+      ports:
+        - { protocol: TCP, port: 8080 }

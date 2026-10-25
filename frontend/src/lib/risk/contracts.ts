@@ -69,6 +69,76 @@ export interface RiskManagementSettings {
   // （StopLossExecutionMethod enum・数値。0=S0 ブローカー側逆指値〔既定〕/ 1=S1 / 2=S2 逆指値なしの建玉を許容 / 3=S3）。
   // 変更は `PUT /risk-controls/settings/stop-loss-method`（利用者のみ）。SC-02 の入力は `StopLossMethodForm`（#823・IADR-0422）。
   stopLossMethod: number;
+  // FR-10, UC-06, ADR-0063, ADR-0066 決定2, #1291: **高ボラティリティ銘柄の統制値**（区分の 1 注文上限＝equity 比・既定 0.05 と、利用者の明示指定）。
+  // 変更は `PUT /risk-controls/settings/high-volatility`（利用者のみ）。SC-02 の表示・入力は `HighVolatilityForm`（IADR-0530）。
+  highVolatility: HighVolatilitySettings;
+  // FR-10, SC-02, #1407, IADR-0564: 閉場前の統制とテーマの定義は**この応答に載らない**。効いている値・構成の値・保存値・食い違いは
+  // `GET /risk-controls/settings/pre-close`（PreCloseControlsView）と `GET /risk-controls/settings/theme-concentration`（ThemeConcentrationControlView）が返す。
+}
+
+// ---- 閉場前の統制とテーマの上限（FR-10, FR-19, SC-02, ADR-0070 決定 5, ADR-0071 決定 5, #1407, IADR-0564） ----
+
+// ControlValueSource（0=構成の値が効いている, 1=画面で保存した値が効いている）。
+export const CONTROL_VALUE_SOURCE_CONFIGURATION = 0;
+export const CONTROL_VALUE_SOURCE_SAVED = 1;
+
+// 市場ごとの分（market は Market enum・数値）。
+export interface MarketMinutesView {
+  market: number;
+  minutes: number;
+}
+
+export interface PreCloseEntryCutoffValues {
+  minutes: MarketMinutesView[];
+}
+
+export interface PreCloseFlattenValues {
+  enabled: boolean;
+  minutes: MarketMinutesView[];
+}
+
+// `GET /risk-controls/settings/pre-close`。effective* が効いている値、configured* が構成の値、saved* が保存値（無ければ null）、
+// *Source がどちらが効いているか、*Drift が保存値と構成の値の食い違い。
+export interface PreCloseControlsView {
+  effectiveCutoff: PreCloseEntryCutoffValues;
+  configuredCutoff: PreCloseEntryCutoffValues;
+  savedCutoff: PreCloseEntryCutoffValues | null;
+  cutoffSource: number;
+  cutoffDrift: boolean;
+  effectiveFlatten: PreCloseFlattenValues;
+  configuredFlatten: PreCloseFlattenValues;
+  savedFlatten: PreCloseFlattenValues | null;
+  flattenSource: number;
+  flattenDrift: boolean;
+  cutoffMaxMinutes: MarketMinutesView[];
+  flattenMaxMinutes: number;
+}
+
+export interface ThemeView {
+  name: string;
+  market: number;
+  symbols: string[];
+  maxPositions: number;
+}
+
+// `GET /risk-controls/settings/theme-concentration`。
+export interface ThemeConcentrationControlView {
+  effective: ThemeView[];
+  configured: ThemeView[];
+  saved: ThemeView[] | null;
+  source: number;
+  drift: boolean;
+}
+
+// FR-10, ADR-0063, #1291: 明示指定の銘柄（market は Market enum・数値）。
+export interface HighVolatilitySymbol {
+  symbol: string;
+  market: number;
+}
+
+export interface HighVolatilitySettings {
+  maxOrderAmountRatio: number;
+  designatedSymbols: HighVolatilitySymbol[];
 }
 
 export interface SettingsChangeEntry {
@@ -120,6 +190,12 @@ export interface RiskStatusView {
   // 🔴 **0 は「取り込みが無かった」という事実**であり、未供給ではない（台帳は常に読める）。
   // 本画面から取り込みは行わない（窓口は owner 権限の API）。
   driftAdoptionCountToday: number;
+  // FR-10, SC-03, #1423 M-3, ADR-0073 決定1・3, IADR-0581: **直前の米国東部暦日に成功した口座照会が無いため、
+  // 基準資金を未供給として新規建てを止めているか**（鮮度切れを含む。初回の配備〔行なし〕・人手の 0 は含めない）。
+  // true のとき `capital` は null。解除は自動（直前の暦日の観測が成功すれば戻る）。手仕舞い・損切りは止まらない。
+  capitalBaselineObservationMissing: boolean;
+  // 上が true のとき、最後に観測できた取引日（米国東部の暦日・DateOnly）。false なら null。
+  capitalBaselineLatestTradingDay: string | null;
 }
 
 // ---- 空売りの現況（GET /risk-controls/short-selling） ----
@@ -393,6 +469,11 @@ const CHANGE_TYPE_LABELS: Record<number, string> = {
   // FR-10, SC-02, #823: 9 は #819 で末尾追加された（StopLossMethodChanged）が写像が追随しておらず、
   // 手法の変更が履歴に「不明(9)」と出ていた。
   9: '損切りの実行機構',
+  // FR-10, ADR-0063, #1291: 10 は高ボラティリティ銘柄の統制値（HighVolatilityChanged）。
+  10: '高ボラティリティ銘柄',
+  // FR-10, SC-02, #1407, IADR-0564: 11 は閉場前の統制（締め切り・手仕舞い）、12 はテーマの定義と上限。
+  11: '閉場前の統制',
+  12: 'テーマの同時保有の上限',
 };
 
 // FR-13, SC-03, #334: 発注先の変更履歴を絞り込むための種別値（SettingsChangeType.BrokerProviderChanged）。
@@ -927,4 +1008,297 @@ export function validateStage1TradeCountInput(text: string): string | null {
 export function inputBelowStatisticalBasis(text: string): boolean {
   if (validateStage1TradeCountInput(text) !== null) return false;
   return Number(text) < STAGE1_TRADE_COUNT_DEFAULT;
+}
+
+// ---- 🔴 FR-10, SC-02, UC-06, ADR-0066 決定1・決定2, ADR-0063 決定2, #1291, IADR-0530: 高ボラティリティ銘柄の統制値（画面側の即時提示） ----
+//
+// **実効はサーバ側（`HighVolatilityOrderCap.Validate`）である。** ここに同じ値域を持つのは利用者へ即時に提示する
+// ためであり、画面が統制の実効を担うためではない。**値はサーバ側と一致していなければならない**
+// （下端 0.01＝最小の名目額の比率の既定値・構成値に連動しない〔ADR-0066 決定1〕、上端 0.25＝区分外の上限の既定）。
+
+/** 区分の上限の下端（equity 比・**含む**）。 */
+export const HIGH_VOLATILITY_RATIO_MIN = 0.01;
+/** 区分の上限の上端（equity 比・**含む**）。 */
+export const HIGH_VOLATILITY_RATIO_MAX = 0.25;
+/** 値域の表示（百分率）。 */
+export const HIGH_VOLATILITY_RATIO_RANGE_TEXT = '1% 以上 25% 以下';
+
+/** 区分の上限の入力（百分率の文字列）を検証する。空欄・非数値・値域外は文言、妥当なら null。 */
+export function validateHighVolatilityRatioInput(text: string): string | null {
+  if (text.trim() === '') return '区分の 1 注文あたりの発注金額上限を入力してください。';
+  const ratio = percentTextToRatio(text);
+  if (ratio === null) return '区分の 1 注文あたりの発注金額上限は数値（%）で入力してください。';
+  if (ratio < HIGH_VOLATILITY_RATIO_MIN || ratio > HIGH_VOLATILITY_RATIO_MAX) {
+    return `区分の 1 注文あたりの発注金額上限は ${HIGH_VOLATILITY_RATIO_RANGE_TEXT} の範囲で入力してください。`;
+  }
+  return null;
+}
+
+/** 百分率の入力を比率へ（読めなければ null。黙って既定値を送らない）。 */
+export function highVolatilityRatioInputToWire(text: string): number | null {
+  return percentTextToRatio(text);
+}
+
+/** 比率を百分率の入力へ。 */
+export function wireToHighVolatilityRatioInput(ratio: number): string {
+  return ratioToPercentText(ratio);
+}
+
+/**
+ * 明示指定の銘柄コードを正規化する（前後の空白を落とし大文字にする）。サーバの照合は空白と大小文字を
+ * 無視するが、画面の照合（監視銘柄・重複）と履歴に残る値を揃えるため、送る前にも揃える。
+ */
+export function normalizeDesignatedSymbol(text: string): string {
+  return text.trim().toUpperCase();
+}
+
+/** 銘柄コードに使える文字（英大文字・数字・`.`・`-`。先頭は英数字）。最大 12 文字。 */
+const DESIGNATED_SYMBOL_PATTERN = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
+
+/**
+ * 手入力の銘柄コードの書式を検証する（誤記の防止のうち、書式で分かる分）。妥当なら null。
+ * 🔴 **書式が正しくても実在するとは限らない。** 実在の確からしさは監視銘柄との照合（`watchlistMatchOf`）で示す。
+ */
+export function validateDesignatedSymbolInput(text: string): string | null {
+  const symbol = normalizeDesignatedSymbol(text);
+  if (symbol === '') return '銘柄コードを入力してください。';
+  if (!DESIGNATED_SYMBOL_PATTERN.test(symbol)) {
+    return '銘柄コードは英数字（と「.」「-」）の 12 文字以内で入力してください（空白や記号は使えません）。';
+  }
+  return null;
+}
+
+/**
+ * 明示指定の銘柄と監視銘柄の照合の結果。
+ * - `listed`: 監視銘柄に同じ銘柄・同じ市場がある
+ * - `otherMarket`: 同じ銘柄コードが別の市場でだけ監視銘柄にある（市場の取り違えの疑い）
+ * - `notListed`: 監視銘柄に無い（誤記の疑い、または先回りの指定）
+ * - `unknown`: 監視銘柄を取得できておらず照合できない
+ */
+export type WatchlistMatch = 'listed' | 'otherMarket' | 'notListed' | 'unknown';
+
+/** 正規化済みの銘柄コードと市場を監視銘柄と照合する（監視銘柄が null＝取得できていなければ `unknown`）。 */
+export function watchlistMatchOf(
+  symbol: string,
+  market: number,
+  watchlist: readonly { symbol: string; market: number }[] | null,
+): WatchlistMatch {
+  if (watchlist === null) return 'unknown';
+  const same = watchlist.filter((w) => normalizeDesignatedSymbol(w.symbol) === symbol);
+  if (same.some((w) => w.market === market)) return 'listed';
+  return same.length > 0 ? 'otherMarket' : 'notListed';
+}
+
+/**
+ * 現在値に対して統制を**緩める**変更を列挙する（区分の上限を上げる・明示指定を外す）。空なら緩める変更なし。
+ * 取引ガードの危険な緩和と同じく、保存の前に確認を求めるために使う（IADR-0086 決定3 と同じ規律）。
+ */
+export function highVolatilityLoosenings(
+  current: HighVolatilitySettings,
+  nextRatio: number | null,
+  nextSymbols: readonly HighVolatilitySymbol[],
+): string[] {
+  const loosenings: string[] = [];
+  if (nextRatio !== null && nextRatio > current.maxOrderAmountRatio) {
+    loosenings.push(
+      `区分の上限を ${ratioToPercentText(current.maxOrderAmountRatio)}% から ${ratioToPercentText(nextRatio)}% へ引き上げ`,
+    );
+  }
+  const keyOf = (s: HighVolatilitySymbol) => `${normalizeDesignatedSymbol(s.symbol)}|${s.market}`;
+  const remaining = new Set(nextSymbols.map(keyOf));
+  const removed = current.designatedSymbols.filter((s) => !remaining.has(keyOf(s)));
+  if (removed.length > 0) {
+    loosenings.push(
+      `明示指定を外す（${removed.map((s) => `${s.symbol}（${marketLabel(s.market)}）`).join('、')}）`,
+    );
+  }
+  return loosenings;
+}
+
+// ---- 🔴 FR-10, FR-19, SC-02, UC-06, ADR-0070 決定 5, ADR-0071 決定 2・5, #1407, IADR-0564: 閉場前の統制とテーマの定義（画面側の即時提示） ----
+//
+// **実効はサーバ側（`SessionAndThemeControlValidation`・`PreCloseFlattenSettings.Violations`）である。** 値域はサーバの応答
+// （`cutoffMaxMinutes`・`flattenMaxMinutes`）から受け取り、画面に定数を二重に持たない。
+
+/** 分（N または M）の入力を検証する。空欄・整数でない・値域外は文言、妥当なら null。 */
+export function validateMinutesInput(text: string, label: string, max: number): string | null {
+  if (text.trim() === '') return `${label} を入力してください。`;
+  if (!/^\d+$/.test(text.trim())) return `${label} は整数（分）で入力してください。`;
+  const minutes = Number(text.trim());
+  if (minutes < 1 || minutes > max) return `${label} は 1〜${max} 分で入力してください。`;
+  return null;
+}
+
+/** 市場ごとの分の一覧から、その市場の値（無ければ null）。 */
+export function minutesOf(rows: readonly MarketMinutesView[], market: number): number | null {
+  return rows.find((r) => r.market === market)?.minutes ?? null;
+}
+
+/** 閉場前の統制の下書き（市場 → 分の文字列、有効・無効）。 */
+export interface PreCloseDraft {
+  cutoff: Record<number, string>;
+  flattenEnabled: boolean;
+  flatten: Record<number, string>;
+}
+
+/**
+ * 効いている値に対して統制を**緩める**変更を列挙する（締め切り N を縮める・手仕舞いを無効にする・M を縮める）。空なら緩める変更なし。
+ * 🔴 手仕舞いの M を縮めると手仕舞いの開始が閉場に近づく（持ち越しの危険が増える）ため緩める側に数える。
+ */
+export function preCloseLoosenings(view: PreCloseControlsView, draft: PreCloseDraft): string[] {
+  const loosenings: string[] = [];
+  for (const row of view.effectiveCutoff.minutes) {
+    const next = Number(draft.cutoff[row.market]);
+    if (Number.isFinite(next) && next < row.minutes) {
+      loosenings.push(`${marketLabel(row.market)}の締め切り N を ${row.minutes} 分から ${next} 分へ縮める`);
+    }
+  }
+  if (view.effectiveFlatten.enabled && !draft.flattenEnabled) {
+    loosenings.push('閉場前の手仕舞いを無効にする');
+  }
+  if (draft.flattenEnabled) {
+    for (const row of view.effectiveFlatten.minutes) {
+      const next = Number(draft.flatten[row.market]);
+      if (Number.isFinite(next) && next < row.minutes) {
+        loosenings.push(`${marketLabel(row.market)}の手仕舞いの M を ${row.minutes} 分から ${next} 分へ縮める`);
+      }
+    }
+  }
+  return loosenings;
+}
+
+/** テーマの名前の照合キー（前後の空白を落とす。サーバの正規化と同じ）。 */
+function themeNameKey(name: string): string {
+  return name.trim();
+}
+
+/** テーマの定義の下書きの検証（サーバの値域と同じ。ADR-0071 決定 2）。妥当なら空の一覧。 */
+export function themeDraftErrors(themes: readonly ThemeView[]): string[] {
+  const errors: string[] = [];
+  const names = new Set<string>();
+  themes.forEach((t, i) => {
+    const name = themeNameKey(t.name);
+    const label = name === '' ? `${i + 1} 番目のテーマ` : `テーマ「${name}」`;
+    if (name === '') errors.push(`${label}の名前を入力してください。`);
+    else if (names.has(name)) errors.push(`${label}の名前が重複しています。`);
+    names.add(name);
+    if (t.symbols.length === 0) errors.push(`${label}に銘柄を 1 つ以上追加してください。`);
+    if (!Number.isInteger(t.maxPositions) || t.maxPositions < 1) errors.push(`${label}の上限は 1 以上の整数で入力してください。`);
+  });
+  return errors;
+}
+
+/**
+ * 効いている定義に対して統制を**緩める**変更を列挙する（テーマを外す・銘柄を外す・上限を上げる・市場を変える）。空なら緩める変更なし。
+ * テーマは名前で突き合わせる（名前を変えたテーマは「外して足した」として数える）。
+ */
+export function themeLoosenings(current: readonly ThemeView[], next: readonly ThemeView[]): string[] {
+  const loosenings: string[] = [];
+  const nextByName = new Map(next.map((t) => [themeNameKey(t.name), t]));
+  for (const theme of current) {
+    const name = themeNameKey(theme.name);
+    const target = nextByName.get(name);
+    if (target === undefined) {
+      loosenings.push(`テーマ「${name}」を外す`);
+      continue;
+    }
+    if (target.market !== theme.market) {
+      loosenings.push(`テーマ「${name}」の市場を${marketLabel(theme.market)}から${marketLabel(target.market)}へ変える`);
+    }
+    const remaining = new Set(target.symbols.map(normalizeDesignatedSymbol));
+    const removed = theme.symbols.filter((s) => !remaining.has(normalizeDesignatedSymbol(s)));
+    if (removed.length > 0) loosenings.push(`テーマ「${name}」から銘柄を外す（${removed.join('、')}）`);
+    if (target.maxPositions > theme.maxPositions) {
+      loosenings.push(`テーマ「${name}」の上限を ${theme.maxPositions} から ${target.maxPositions} へ上げる`);
+    }
+  }
+  return loosenings;
+}
+
+/** 2 つのテーマの定義が値の上で同じか（名前・市場・上限・銘柄の集合。並び順は比べない。サーバの比較と同じ）。 */
+export function sameThemes(a: readonly ThemeView[], b: readonly ThemeView[]): boolean {
+  const key = (t: ThemeView) =>
+    `${themeNameKey(t.name)}|${t.market}|${t.maxPositions}|${[...new Set(t.symbols.map(normalizeDesignatedSymbol))].sort().join(',')}`;
+  if (a.length !== b.length) return false;
+  const left = a.map(key).sort();
+  const right = b.map(key).sort();
+  return left.every((k, i) => k === right[i]);
+}
+
+function isMinutesRows(value: unknown): value is MarketMinutesView[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (r) => typeof r === 'object' && r !== null && typeof (r as MarketMinutesView).market === 'number' && typeof (r as MarketMinutesView).minutes === 'number',
+    )
+  );
+}
+
+/** `GET /risk-controls/settings/pre-close` の応答の形か（想定外の形を既定値で埋めて描かないための検査）。 */
+export function isPreCloseControlsView(value: unknown): value is PreCloseControlsView {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Partial<PreCloseControlsView>;
+  const flattenOk = (f: unknown) =>
+    typeof f === 'object' && f !== null && typeof (f as PreCloseFlattenValues).enabled === 'boolean' && isMinutesRows((f as PreCloseFlattenValues).minutes);
+  const cutoffOk = (c: unknown) => typeof c === 'object' && c !== null && isMinutesRows((c as PreCloseEntryCutoffValues).minutes);
+  return (
+    cutoffOk(v.effectiveCutoff) &&
+    cutoffOk(v.configuredCutoff) &&
+    (v.savedCutoff === null || cutoffOk(v.savedCutoff)) &&
+    flattenOk(v.effectiveFlatten) &&
+    flattenOk(v.configuredFlatten) &&
+    (v.savedFlatten === null || flattenOk(v.savedFlatten)) &&
+    typeof v.cutoffSource === 'number' &&
+    typeof v.flattenSource === 'number' &&
+    typeof v.cutoffDrift === 'boolean' &&
+    typeof v.flattenDrift === 'boolean' &&
+    isMinutesRows(v.cutoffMaxMinutes) &&
+    typeof v.flattenMaxMinutes === 'number' &&
+    sameMarkets(v.effectiveCutoff!.minutes, v.cutoffMaxMinutes) &&
+    sameMarkets(v.effectiveCutoff!.minutes, v.effectiveFlatten!.minutes)
+  );
+}
+
+// 🔴 PR #1409 のレビュー: 入力に使う 3 つ（締め切りの効いている値・N の上限・手仕舞いの効いている値）の市場の集合が揃っていなければ、
+// 満たせない検証（「1〜0 分」）や常に入力エラーになる。想定外の形として扱い、区画を縮退させる（入力欄を出さない）。
+function sameMarkets(a: readonly MarketMinutesView[], b: readonly MarketMinutesView[]): boolean {
+  const left = a.map((r) => r.market);
+  const right = b.map((r) => r.market);
+  return (
+    left.length > 0 &&
+    new Set(left).size === left.length &&
+    new Set(right).size === right.length &&
+    left.length === right.length &&
+    left.every((m) => right.includes(m))
+  );
+}
+
+function isThemeRows(value: unknown): value is ThemeView[] {
+  return (
+    Array.isArray(value) &&
+    value.every((t) => {
+      if (typeof t !== 'object' || t === null) return false;
+      const theme = t as ThemeView;
+      return (
+        typeof theme.name === 'string' &&
+        typeof theme.market === 'number' &&
+        typeof theme.maxPositions === 'number' &&
+        Array.isArray(theme.symbols) &&
+        theme.symbols.every((s) => typeof s === 'string')
+      );
+    })
+  );
+}
+
+/** `GET /risk-controls/settings/theme-concentration` の応答の形か。 */
+export function isThemeConcentrationControlView(value: unknown): value is ThemeConcentrationControlView {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Partial<ThemeConcentrationControlView>;
+  return (
+    isThemeRows(v.effective) &&
+    isThemeRows(v.configured) &&
+    (v.saved === null || isThemeRows(v.saved)) &&
+    typeof v.source === 'number' &&
+    typeof v.drift === 'boolean'
+  );
 }

@@ -56,6 +56,7 @@ public sealed class PortfolioSnapshotBuilder(
             DrawdownRatio = state.DrawdownRatio,
             ConsecutiveLosses = state.ConsecutiveLosses,
             SymbolsTradedToday = state.SymbolsTradedToday,
+            HeldOrPendingSymbols = state.HeldOrPendingSymbols,
             Account = accountObservations.GetCurrent(),
             GoodFaithViolations = goodFaithViolations?.GetTally(),
             KillSwitchEngaged = killSwitch.Engaged,

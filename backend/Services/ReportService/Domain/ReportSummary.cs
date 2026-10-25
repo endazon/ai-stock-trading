@@ -81,7 +81,8 @@ public static class ReportSummary
         return sb.ToString();
     }
 
-    private static string KindLabel(ReportKind kind) => kind switch
+    // IADR-0586 決定 3, #1472: 400 の文言（ReportDraftService）も種別を列挙名でなくこの呼び名で書く。
+    internal static string KindLabel(ReportKind kind) => kind switch
     {
         ReportKind.Weekly => "週報",
         ReportKind.Monthly => "月報",

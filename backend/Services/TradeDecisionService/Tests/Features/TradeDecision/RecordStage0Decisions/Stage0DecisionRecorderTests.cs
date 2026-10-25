@@ -40,6 +40,7 @@ public class Stage0DecisionRecorderTests
         string to = "2026-06-02",
         string? cutoff = "2026-03-31",
         string? outputPath = "records.json",
+        string? stateDirectory = "state",
         IReadOnlyList<Stage0RecordingOptions.SymbolEntry>? symbols = null) => new()
         {
             Enabled = enabled,
@@ -58,6 +59,7 @@ public class Stage0DecisionRecorderTests
             // 見積り = 銘柄1 × 平日2 × 1 ×（一次 1 ＋ votes）× (1000/1000×1 + 1000/1000×1) = 4 ×（1 ＋ votes）円
             ApprovedEstimateJpy = approvedJpy ?? 4m * (voteCount + 1),
             OutputPath = outputPath,
+            StateDirectory = stateDirectory,
             Model = "claude-sonnet-5-5",
         };
 
@@ -71,7 +73,8 @@ public class Stage0DecisionRecorderTests
             IReadOnlyList<string>? screening = null,
             Func<string?, string?>? effectiveModel = null,
             DecisionOrchestrationOptions? production = null,
-            LlmPriceTable? prices = null)
+            LlmPriceTable? prices = null,
+            InMemoryStage0RecordingState? state = null)
     {
         var reporter = new RecordingReporter();
         var collector = new Stage0RecordingUsageCollector(reporter);
@@ -83,7 +86,7 @@ public class Stage0DecisionRecorderTests
             wrapInputs is null
                 ? new StubInputProvider(notReconstructable, asOfWatchlist)
                 : wrapInputs(new StubInputProvider(notReconstructable, asOfWatchlist)),
-            sink, collector, prices ?? Prices(),
+            sink, state ?? new InMemoryStage0RecordingState(), state ?? new InMemoryStage0RecordingState(), collector, prices ?? Prices(),
             new FixedTimeProvider(Now), NullLogger<Stage0DecisionRecorder>.Instance);
         return (recorder, llm, sink, reporter);
     }
@@ -208,6 +211,16 @@ public class Stage0DecisionRecorderTests
         Stage0RecordingUsageCollector.CostOf(usages, TieredPrices()).Should().Be(1111.01m);
     }
 
+    // 🔴 NFR-13, ADR-0064 決定4, #1306, IADR-0550（受け入れ基準 5）: Stage 0 の実費も計上と同じ規則で引く。
+    // 入力トークン数が取れない計測は第 2 段（金額の入力は 0 のまま）: 出力 1k × 10 = 10 円。0 として第 1 段なら 1 円だった。
+    [Fact]
+    public void 実費は入力トークン数が取れない計測を第2段で引く()
+    {
+        LlmUsage[] usages = [new(LlmPurposes.TradeDecisionScreening, null, 1_000, "claude-haiku-5-5")];
+
+        Stage0RecordingUsageCollector.CostOf(usages, TieredPrices()).Should().Be(10m);
+    }
+
     // 肯定形（承認ゲートの対）: 承認が一致すれば実行され、記録が保存される。
     [Fact]
     public async Task 承認が一致すれば記録して保存する()
@@ -269,6 +282,19 @@ public class Stage0DecisionRecorderTests
         // ADR-0033 決定4 / ADR-0003: 生の判断は全回分残る（多数決結果だけにしない）。
         record.RawDecisions.Should().HaveCount(voteCount);
         record.VoteCount.Should().Be(voteCount);
+    }
+
+    // T-15-140, FR-15, 計画 ADR-0068 決定3・4, #1373, IADR-0549 決定7: 記録は判断時点に組み直した方針の期間キーと版を持つ
+    // （どの版で記録したかを追える）。戦略 ID には含めない（Stage0DecisionRecordTests が固定する）。
+    [Fact]
+    public async Task 記録は判断時点の方針の期間キーと版を持つ()
+    {
+        var (recorder, _, sink, _) = Build([Decision("Buy")]);
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        sink.Saved!.Records.Should().NotBeEmpty().And.OnlyContain(r =>
+            r.Policy == new DailyPolicyReference($"daily-{r.AsOf:yyyy-MM-dd}", 2));
     }
 
     // 🔴 **否定形**（#290 / IADR-0248）: 解析不能は Hold へ倒すが、**見送りとは区別して記録される**。
@@ -892,7 +918,8 @@ public class Stage0DecisionRecorderTests
             string symbol, Market market, DateOnly asOf, CancellationToken cancellationToken = default) =>
             Task.FromResult<AsOfDecisionInput?>(new AsOfDecisionInput(
                 asOf,
-                new DailyPolicy(asOf, "当日の方針"),
+                // ADR-0068 決定3・4, #1373, IADR-0549 決定7: 判断時点に組み直した方針の出所（記録に残る）。
+                new DailyPolicy(asOf, "当日の方針", new DailyPolicyReference($"daily-{asOf:yyyy-MM-dd}", 2)),
                 sizing ?? new SizingContext(100_000m, 50_000m, 20_000m, 0, 0m,
                     BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits()),
                 new DatedPrice(asOf, 100m),
@@ -961,6 +988,42 @@ public class Stage0DecisionRecorderTests
 
         input.Intraday.Should().Be(new IntradayPriceContext(99m, null, null, null));
         input.WithWatchlist([], unavailableReason: null).Intraday.Should().Be(input.Intraday);
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // FR-04, FR-15, ADR-0011, ADR-0033 決定2, #1308, IADR-0528: 基底の供給の出力を記録器に通す
+    // ------------------------------------------------------------------------------------------------
+
+    // #1308 受け入れ基準 4: 基底の供給が組んだ入力は、本番と同じ組み立て（TradeDecisionPromptBuilder）を通って記録になる。
+    // 方針・参考情報・前日比がプロンプトに載り、記録の (b) の申告の理由欄に欠けた源が残る。
+    [Fact]
+    public async Task 基底の供給の出力を記録器に通すと本番と同じ組み立てで記録が作られる()
+    {
+        var newsAt = new DateTimeOffset(2026, 6, 1, 15, 0, 0, TimeSpan.Zero);
+        var provider = new BaseAsOfDecisionInputProvider(
+            BaseAsOfDecisionInputProviderTests.FakePrices.FollowingAsOf(close: 110m, previousClose: 100m),
+            BaseAsOfDecisionInputProviderTests.FakePolicies.PreviousDay("前日に確定した押し目買いの方針"),
+            new AsOfReferenceAssembler(
+                BaseAsOfDecisionInputProviderTests.AllFeeds(
+                    new RetrievedContext("6 月 1 日の記事", "記事の本文", Tags: ["News", "finnhub-news"], PublishedAt: newsAt)),
+                topK: 5,
+                TimeSpan.FromHours(168)),
+            NullLogger<BaseAsOfDecisionInputProvider>.Instance);
+        var (recorder, llm, sink, _) = Build([Decision("Hold"), Decision("Hold")], wrapInputs: _ => provider);
+
+        var outcome = await recorder.RunAsync(Options(), CancellationToken.None);
+
+        outcome.Status.Should().Be(Stage0RecordingStatus.Completed);
+        sink.Saved!.Records.Should().HaveCount(2, "2026-06-01・06-02 の平日 2 日");
+        llm.Prompts.Should().OnlyContain(p =>
+            p.Contains("前日に確定した押し目買いの方針") && p.Contains("- 前日終値: 100 / 前日比: +10.00%"));
+        llm.Prompts[0].Should().Contain("6 月 1 日の記事");
+        // FR-01, FR-08, ADR-0003, IADR-0542 決定 4, #1359: as-of の記録の経路でも、外部の表題・本文が境界語で囲まれる。
+        llm.Prompts[0].Should().Contain("\"title\":\"<<<UNTRUSTED_DATA\\n6 月 1 日の記事\\nUNTRUSTED_DATA>>>\"");
+        llm.Prompts[0].Should().Contain("\"text\":\"<<<UNTRUSTED_DATA\\n記事の本文\\nUNTRUSTED_DATA>>>\"");
+        var news = sink.Saved.Records[0].AsOfInputs!.Single(a => a.Kind == Stage0AsOfInputKind.NewsAndDisclosures);
+        news.Availability.Should().Be(Stage0AsOfInputAvailability.Reconstructed);
+        news.Reason.Should().Contain("欠けた源: google-news");
     }
 
     private sealed class CapturingSink : IStage0DecisionRecordSink

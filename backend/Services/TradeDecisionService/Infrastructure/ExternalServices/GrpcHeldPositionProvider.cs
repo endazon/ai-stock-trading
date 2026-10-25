@@ -78,6 +78,28 @@ public sealed class GrpcHeldPositionProvider(
         return HttpHeldPositionProvider.InterpretHeldSymbols(rows, logger);
     }
 
+    // 🔴 FR-04, FR-10, #1397, IADR-0562 決定 3: 保有中の全銘柄（数量つき）。REST と同じ解釈（HttpHeldPositionProvider.InterpretHoldings）。
+    public async Task<IReadOnlyList<HeldHolding>?> GetHoldingsAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await transport.CallAsync(
+            "保有中の全銘柄",
+            "プロンプトは「不明」と書きます。",
+            (client, options) => client.GetOpenPositionsAsync(new Proto.GetOpenPositionsRequest(), options),
+            cancellationToken).ConfigureAwait(false);
+        if (response is null)
+            return null;
+
+        try
+        {
+            return HttpHeldPositionProvider.InterpretHoldings([.. response.Positions.Select(ToRow)], logger);
+        }
+        catch (FormatException ex)
+        {
+            logger.LogWarning(ex, "保有中の全銘柄の gRPC 応答を読めません（10 進の書式）。プロンプトは「不明」と書きます。");
+            return null;
+        }
+    }
+
     public async Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(
         string symbol, Market market, CancellationToken cancellationToken = default)
     {
@@ -110,7 +132,17 @@ public sealed class GrpcHeldPositionProvider(
         RiskManagementWire.Side(p.Side),
         p.HasQuantity ? p.Quantity : null,
         RiskManagementWire.Decimal(p.HasEntryPrice, p.EntryPrice),
-        RiskManagementWire.Decimal(p.HasStopLossPrice, p.StopLossPrice));
+        RiskManagementWire.Decimal(p.HasStopLossPrice, p.StopLossPrice),
+        // FR-04, FR-10, #1384, IADR-0558 決定 6: ロットの列。未設定（旧い送り手）は null＝記録の供給なし。
+        p.Entries is null ? null : [.. p.Entries.Rows.Select(ToRow)]);
+
+    // 🔴 DecisionId が UUID として読めない行は null（解釈 InterpretLots が列全体を「供給なし」にする）。10 進・時刻の書式違反は FormatException。
+    internal static HttpHeldPositionProvider.OpenPositionEntryDto ToRow(Proto.OpenPositionEntryRow e) => new(
+        e.HasDecisionId && Guid.TryParse(e.DecisionId, out var decisionId) ? decisionId : null,
+        e.HasQuantity ? e.Quantity : null,
+        RiskManagementWire.Timestamp(e.HasOrderedAt, e.OrderedAt),
+        e.HasEntryCondition ? e.EntryCondition : null,
+        RiskManagementWire.Decimal(e.HasEntryReferencePrice, e.EntryReferencePrice));
 
     internal static HttpHeldPositionProvider.WorkingEntryOrderDto ToRow(Proto.WorkingEntryOrderRow o) => new(
         o.HasSymbol ? o.Symbol : null,

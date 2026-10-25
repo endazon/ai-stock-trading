@@ -13,6 +13,15 @@ MSP 側で `platform-infra` と AST 用 DB（user `ai`・`*_svc`）・Keycloak r
 起動済みであること。MSP リポの `scripts/k8s-local-up.sh` がこれを用意する
 （AST realm は submodule 検出時に同梱 import される）。
 
+🔴 **ブローカ（RabbitMQ）へはサービスごとのユーザーで接続する**（[IADR-0568](../../../.ai-context/adr/IADR-0568_rabbitmq-per-service-credentials.md)）。
+全 Worker は `ast-<サービス名>` のユーザーで、パスワードを Secret `ast-rabbitmq-users`（キー = ユーザー名）から**非 optional** に読む。
+ユーザーと権限は基盤が作る（MSP の `deploy/local/rabbitmq-setup/users.txt`・`reconcile-users.sh`。基盤側の段 1）。
+
+- ESO 所有（既定の経路）: chart の ExternalSecret `ast-rabbitmq-users` が Vault `ai-stock-trading/rabbitmq-users`（種は基盤の bootstrap が乱数で入れる）を同期する。
+- 従来経路（`AST_ESO=0`）: 起動器は Secret を作らない。基盤のブローカのユーザーと同じ値で先に作る（無ければ起動器が helm の前で止まる）。
+- 既定のユーザー（`guest`）は使わない。旧キー `global.rabbitmqConnectionString` は廃止で、与えると描画で止まる。
+- Secret が無い・値が違うと、新しい Pod が起動しない（旧 Pod は残る）。
+
 ## デプロイ
 
 k8s ランタイムは MSP 側と同じく **Rancher Desktop（内蔵 k3s・推奨）** か **Docker Desktop + k3d**。
@@ -24,6 +33,22 @@ k8s ランタイムは MSP 側と同じく **Rancher Desktop（内蔵 k3s・推�
 scripts/k8s-local-deploy.sh              # build（Rancher=nerdctl/k3d=docker+import）→ secret 供給（ESO 所有＝作らない / AST_ESO=0＝ast-secrets 同期）→ helm install（-f values-local.yaml）→ rollout restart
 kubectl -n ai-stock-trading get pods
 ```
+
+### 機密クライアントの secret が開発用の値なら止まる（[IADR-0098](../../../.ai-context/adr/IADR-0098_owner-realm-client.md) 2026-10-22 追記）
+
+`scripts/k8s-local-deploy.sh` は、イメージを作る前（`[0/5]`）に AST の機密クライアント 5 件
+（svc・owner・kb-writer・kb-reader・llm-caller。`ast-secrets` の `*-client-secret`）が**開発用の値（リポジトリに公開されている値）でない**ことを確かめ、
+1 件でも開発用の値なら**止まる**（fail-closed）。確かめられない（ESO 所有で `ast-secrets` がまだ無い・読めない）ときも止まる。
+
+| 経路 | 見る値 |
+| --- | --- |
+| ESO 所有（既定） | 稼働中の `ast-secrets`（Vault から同期された値）。env は見ない |
+| 従来経路（`AST_ESO=0`） | 書き込む予定の値（env の明示 → 既存の値 → 既定値。`sync_ast_secrets` と同じ順） |
+
+- 対処: 開発用でない値を入れる（ESO 所有なら基盤の画面、従来経路なら env）。**認証基盤（Keycloak）の側も同じ値にする**（片側だけ変えると `invalid_client`）。
+- 使い捨ての dev のクラスタで開発用の値のまま動かすときだけ、明示の opt-in で通す（大きく警告する）:
+  `scripts/k8s-local-deploy.sh --allow-dev-client-secrets` か `ALLOW_DEV_CLIENT_SECRETS=1 scripts/k8s-local-deploy.sh`（`1` だけ。`true` 等は opt-in ではない）。
+- 値は表示しない。比べるのは base64 の表現どうしで、復号もしない。空（未設定）は開発用の値とみなさない（その s2s を使わないだけ）。
 
 ### 変わったサービスだけを作り直す（#1094 / [IADR-0457](../../../.ai-context/adr/IADR-0457_deploy-changed-services-selection.md)）
 
@@ -362,6 +387,17 @@ Finnhub の 429 のうち、`X-Ratelimit-Remaining` が残っているのに拒�
   `RateLimitPerMinute × 巡回間隔（分） ÷ 1 銘柄あたりの要求数（finnhub / finnhub-news の有効数）` まで。超えた分は監視銘柄の順の
   後ろから後回しにして警告し、`ast.information_collection.finnhub_symbols_deferred` に数を出す。`values-local`（30 回/分・300 秒・
   finnhub と finnhub-news の 2 要求）なら 75 銘柄まで収まる（**［2026-09-29 / #1082］** 以前は finnhub だけで 150 銘柄）。
+- **保有銘柄の合流（［2026-10-16 / #1363］ / IADR-0547）**: `RiskManagement__BaseUrl`（`information-collection`。本番既定は空、
+  `values-local` は `http://risk-management-service:8080`）を結線すると、巡回ごとにリスク管理の `GET /risk-controls/open-positions` を
+  同じ `trading-service` のトークンで読み、**保有中の米国の銘柄を監視銘柄より先に**対象へ足す（取引判断は監視銘柄 ∪ 保有銘柄を判断する。
+  IADR-0521）。上の「1 巡回を巡回間隔に収める」で後回しになるのは監視銘柄の末尾である。保有を読めない巡回は監視銘柄だけから決め、
+  警告ログ「保有銘柄を読めなかったため…」を出す（直前の保有を使い続けない）。巡回ごとの情報ログ
+  「監視銘柄から Finnhub の対象を決めました: 米国の銘柄 N 件（監視銘柄 M 件・監視銘柄の外の保有 K 件・…）」で内訳を確かめられる。
+- **SEC EDGAR の CIK（［2026-10-16 / #1363］ / IADR-0547）**: `MarketMonitor__BaseUrl` を結線しているとき、CIK は上の対象の銘柄
+  （保有が先、続いて監視銘柄。Finnhub の上限を掛ける前の全件）から SEC の対応表 `https://www.sec.gov/files/company_tickers.json` で導く
+  （読めてから 24 時間は読み直さない。同じ User-Agent・同じ自制）。`Collection__Source__SecEdgar__Ciks__*` は「常に足す分」として併用する。
+  対応表を一度も読めず固定 CIK も空なら、SEC EDGAR はその巡回の欠測として記録される（記録・通知のみ。ADR-0020 決定 3）。
+  対応表に無い銘柄（ETF など）は情報ログ「収集の対象の銘柄から SEC EDGAR の CIK を決めました: …対応表に無い N 件」に出る。
 - `finnhub` と `finnhub-news` は**1 つの自制レート（`Collection__Source__Finnhub__RateLimitPerMinute`）を共有する**（同じ鍵。
   以前はソースごとに別のバケットで、両方を有効にすると同じ鍵へ自制値の 2 倍を送り得た）。
 - **経路 B のニュース源（［2026-09-29 / #1082］ / IADR-0453）**: `values-local` は `finnhub-news` と `google-news` も列挙する。
@@ -467,7 +503,7 @@ fail-safe＝「古い/無いレートで発注しない」）。
 | 系列（第一） | 日銀 `FXERD04`（`db=fm08`・東京市場 ドル・円 スポット **17 時時点＝仲値**・**毎営業日**公表／実装が読む経路への収録は**翌々営業日 8:50 頃**）。🔴 **中心相場 `FXERD05` は別系列**であり、取り違えても値がもっともらしいため**テストでしか捕まらない**（IADR-0194） | `BojFxRateSource.DefaultSeriesCode` 既定 |
 | 系列（フォールバック） | `DEXJPUS`（円/ドル・系列は**営業日次**だが**公表は H.10 週次**＝月曜・前週金曜まで一括収載）。基準通貨が USD のため **JPY のレートは本系列の逆数**（IADR-0152 決定2・丸めない） | `FredFxOptions.SeriesId` 既定 |
 | 鮮度上限（**停止**） | **30 日**（超過した観測は採らない＝レート無し扱い＝新規建てを見送る）。計画 ADR-0022 決定5 の**絶対上限**（#381 / IADR-0174 決定2。旧値 14 日＝#271 / IADR-0112 は FRED の週次公表からの逆算であり、根拠が計画へ移った）。`Fx__MaxRateAgeDays` で変更可・0 以下は既定へ・**30 日超は 30 日へ丸める** | `FxOptions.MaxRateAgeDays` 既定 |
-| 鮮度警告（**続行**） | **5 日**（超過すると WRN を出すが、**新規建ては止めず直近レートで続行する**）。計画 ADR-0022 決定4 / §5 の 3 段縮退の中段（#381 / IADR-0174 決定1）。`Fx__StaleRateWarningDays` で変更可・0 以下は既定へ・**鮮度上限超は上限へ丸める**（警告が上限を超えると警告が一度も出ないまま停止するため）。<br>⚠️ **FRED へフォールバック中は最新観測の齢が最大 12.84 日まで積み上がるため、警告域に常駐しうる**（第一の日銀は毎営業日公表・収録は翌々営業日のため平常時は 2〜4 日） | `FxOptions.StaleRateWarningDays` 既定 |
+| 鮮度警告（**続行**） | **5 日**（超過すると WRN を出すが、**新規建ては止めず直近レートで続行する**）。計画 ADR-0022 決定4 / §5 の 3 段縮退の中段（#381 / IADR-0174 決定1）。`Fx__StaleRateWarningDays` で変更可・0 以下は既定へ・**鮮度上限超は上限へ丸める**（警告が上限を超えると警告が一度も出ないまま停止するため）。<br>**齢は観測日と今日の暦日差**で数える（日銀は日本時間・FRED は UTC の暦。経過時間ではない。#1331 / [IADR-0533](../../../.ai-context/adr/IADR-0533_fx-freshness-calendar-days-and-fetch-observability.md)）。警告は暦日差 6 日から、停止は 31 日から。3 連休明けの火曜・祝日の月曜（暦日差 5 日）は警告しない。<br>⚠️ **FRED へフォールバック中は最新観測の齢が最大 12.84 日まで積み上がるため、警告域に常駐しうる**（第一の日銀は毎営業日公表・収録は翌々営業日のため平常時は 2〜4 日） | `FxOptions.StaleRateWarningDays` 既定 |
 | キャッシュ TTL | 6 時間（日次系列のため判断サイクルごとに叩かない） | `FxOptions.CacheTtlSeconds` 既定 |
 | 既定（`Fx:Provider` 未設定時） | `NoOpFxRateSource`（外部へ 1 リクエストも出さない・**起動は落とさない**）。**chart は 3 サービスとも `boj` を投入するため、この既定に落ちるのは chart を使わない場合だけ**である | `Fx:Provider` 空/`none`/未知 |
 
@@ -488,6 +524,25 @@ warn: Fx:Provider に fred が指定されていますが、APIキー（Fx:Fred:
 
 # 実際に見送られた銘柄（LLM 呼び出しより前・銘柄ごと）
 warn: 基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: AAPL market=UnitedStates
+```
+
+**取得の成否を確かめる**（#1331 / IADR-0533。「観測日が進まない」「鮮度の警告が出た」とき）:
+
+```bash
+# 1) 日銀から取れているか。TTL（既定 6 時間）ごとに 1 行出る。risk-management / report / trade-decision のどれでもよい
+kubectl -n ai-stock-trading logs deploy/risk-management-service --since=24h | grep -E "日銀 FX|FRED FX|為替レート"
+#   info: 日銀 FX を取得しました（系列 FXERD04: 観測日 2026-10-08 / 値 158.19 円 / 系列の最終更新 20261013）。
+#     → 取得は成功している。観測日が古いのは収録待ち（翌々営業日 8:50 頃）。「系列の最終更新」が今日・前営業日なら日銀側も正常
+#   warn: 日銀 FX 取得失敗（系列 …）: 503 / 日銀 FX の取得に失敗しました / 日銀 FX の取得がタイムアウトしました / 日銀 FX 応答に系列がありません（… STATUS … / MESSAGEID …）
+#     → 取得の失敗。FRED の鍵があれば次の行に「フォールバック源 fred」が続く
+#   warn: 為替レートの観測が古くなっています（Jpy: 観測日 … / 暦日差 N 日 / 経過 … 日 / 警告 5 日 / 停止 30 日）
+#     → 暦日差 N が 6 以上のときだけ出る（N が 5 以下で出ていたら是正前のイメージ）
+
+# 2) 日銀 API を直接叩き、末尾の観測と LAST_UPDATE を見る（クラスタの外向き通信を疑うときは Pod 内から同じ URL を叩く）
+curl -s 'https://www.stat-search.boj.or.jp/api/v1/getDataCode?format=json&lang=en&db=fm08&code=FXERD04' \
+  | python3 -c 'import json,sys; s=json.load(sys.stdin)["RESULTSET"][0]; v=s["VALUES"]; print(s["LAST_UPDATE"], [x for x in zip(v["SURVEY_DATES"],v["VALUES"]) if x[1] is not None][-3:])'
+#   例（2026-10-13 21:19 JST）: 20261013 [(20261006, 158.12), (20261007, 158.11), (20261008, 158.19)]
+#   API の末尾とログの観測日が一致すれば実装は正常。API が新しいのにログが古いなら TTL（6 時間）以内か取得の失敗を疑う
 ```
 
 **切り分け**（ログを待たずに現状を確認する）— 自己申告の `fx-rate` ポートが `none` なら効いていない:
@@ -611,31 +666,46 @@ watchlist。結線時は照会に失敗しても使わない＝IADR-0475）と�
 
 | モデル | 公開単価 $/1M（入力/出力） | 投入値 ¥/1k（入力/出力） | 用途 |
 | --- | --- | --- | --- |
-| `claude-fable-5` | 10 / 50 | `1.637` / `8.186` | 使用しない（禁止モデル。＝表の最大単価） |
 | `claude-opus-5-5` | 4 / 20 | `0.655` / `3.274` | `report-monthly`・`report-weekly` |
 | `claude-sonnet-5-5` | 2 / 10 | `0.327` / `1.637` | **`trade-decision`**・`report-daily`（週報・月報の第 2 候補） |
 | `claude-haiku-5-5`（入力 100,000 トークン以下） | 0.10 / 0.50 | `0.0164` / `0.0819` | **`trade-decision-screening`**（日報の第 2 候補） |
 | `claude-haiku-5-5`（入力 100,000 トークン超） | 0.50 / 2.50 | `0.0819` / `0.409` | 同上（第 2 段） |
-| `claude-opus-4-8` | 5 / 25 | `0.819` / `4.093` | ADR-0011 が意図する固定先 |
-| `claude-opus-5`（移行期間のみ） | 5 / 25 | `0.819` / `4.093` | 旧 `report-monthly`・`report-weekly` |
-| `claude-sonnet-5`（移行期間のみ） | 2 / 10（恒久化確認済み・2026-08-28。#243） | `0.327` / `1.637` | 旧 `trade-decision`・`report-daily` |
-| `claude-haiku-4-5`（移行期間のみ） | 1 / 5 | `0.164` / `0.819` | 旧 `trade-decision-screening` |
 
 5.5 系の単価は提供元の公表値（確認日 2026-10-10。#1295 / IADR-0524。利用者裁定は planning#783）。
-**移行期間のみ**の 3 行は、MSP ゲートウェイが 5.5 系へ切り替わるまで応答が直前世代を名乗るために残す（割当表も同じ期間だけ
-直前世代を受ける）。MSP の切り替えと PoC の確認の後に外す（[#1296](https://github.com/endazon/ai-stock-trading/issues/1296)）。
+**旧世代の行（`claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5` / `claude-haiku-4-5`）は撤去した**
+（[#1296](https://github.com/endazon/ai-stock-trading/issues/1296)。5.5 系の ID だけを受け付け、切替の間だけ旧 ID を受ける移行段は設けない。
+計画 ADR-0064 決定 7・8）。基盤が旧 ID で答えた応答は割当表で不一致（取引判断は見送り）になり、費用は表に無いモデルとして
+下の「未知モデルの計上単価」で計上される。CI（`helm.yml`）は旧世代の行が描画されないことも検査する。
+**禁止モデル `claude-fable-5` の行も撤去した**（[#1305](https://github.com/endazon/ai-stock-trading/issues/1305)。計画 ADR-0064 決定 7・9）。
+以前はこの行（$10 / $50）が表の最大として未知モデルの上限を担っていたが、上限は専用の設定値へ移した。禁止の判定（割当表）は変えていない。
+
+**未知モデルの計上単価**（#1305 / [IADR-0553](../../../.ai-context/adr/IADR-0553_unknown-model-price-setting.md)）:
+表に無いモデル・モデル名の無い応答は、単価表の行ではない専用の設定値で計上する。行を足し外ししても変わらない（どのモデル名にも結びつけない）。
+
+| env 名 | 公開単価 $/1M | 投入値 ¥/1k | 未設定のとき |
+| --- | --- | --- | --- |
+| `LlmPricing__UnknownModel__InputPer1kTokens` | 10 | `1.637` | 既定 `1.637` |
+| `LlmPricing__UnknownModel__OutputPer1kTokens` | 50 | `8.186` | 既定 `8.186` |
+
+既定値はコードにある（`LlmPriceTable.DefaultUnknownModelPrice`）。経路B（`values-local.yaml`）は同じ値を明示し、CI（`helm.yml`）は両 Deployment で
+この 2 行の描画と、`claude_fable_5` の行が描画されないことを検査する。解析できない値・0 以下の値は、その成分を既定値で計上し、
+trade-decision / report が起動時に `未知モデルの計上単価（LlmPricing__UnknownModel__…）が解析できない・0 以下` の WARNING を出す（起動は止めない。
+0 円にも表の最大にも倒さない）。単価表が空のときは従来キーへ倒れ、この設定値は使われない（`LLM 単価が未設定` の判定〔#1197〕も変わらない）。
+🔴 表に $10 / $50 を超える単価のモデルの行を足すときは、この設定値も見直す（設定値は表の最大に追随しない）。
 
 **プロンプト長の 2 段（`claude-haiku-5-5`）**: 入力トークン（キャッシュ読み書きを含む合計）が 100,000 を超える要求は単価が 5 倍になる。
 行に `__LongContextThresholdTokens`（`100000`）・`__LongContextInputPer1kTokens`・`__LongContextOutputPer1kTokens` を足すと、
 `LlmPriceTable` が**計上時の入力トークン数**で段を引き分ける（閾値を超えたら第 2 段）。第 2 段のキーの一部だけ書く・解析できない
-値を書くと、その行は表に載らず未知モデル（最大単価）として計上される（長い要求を安い段で通さない）。
+値を書くと、その行は表に載らず未知モデル（未知モデルの計上単価）として計上される（長い要求を安い段で通さない）。
+入力トークン数が取れない応答（ゲートウェイの申告が欠落、または 0）は**第 2 段**で計上する（取れないことを 0 と読んで安い段で通さない）。
+変わるのは段の選択だけで、金額の式へ渡す入力トークン数は 0 のまま（推定値を足さない）。
 
 USD→JPY 換算は **163.71**（システムの為替源 FRED `DEXJPUS` と同一系列・IADR-0107）、小数第 3 位で四捨五入
 （1 円/1k を下回る単価は有効数字 3 桁。`claude-haiku-5-5` の `0.0164` は小数第 3 位で丸めると過小側の `0.016` になる）。
 例: `0.002×163.71=0.32742 ≒ 0.327`。
 
-**fail-safe（IADR-0122 決定3・「安全側 = 0」ではない）**: 表に無いモデル・モデル名なしは**表の最大単価**
-（現行 fable-5）へ倒れる。0 に倒すと未知モデルが素通りして月次上限が効かなくなるため、過小計上を作らない側へ倒す。
+**fail-safe（IADR-0122 決定3・「安全側 = 0」ではない）**: 表に無いモデル・モデル名なしは**未知モデルの計上単価**
+（既定 $10 / $50。#1305 で「表の最大単価」から改めた）へ倒れる。0 に倒すと未知モデルが素通りして月次上限が効かなくなるため、過小計上を作らない側へ倒す。
 表そのものが空なら従来キー `LlmPricing__InputPer1kTokens` / `__OutputPer1kTokens`（global 単一ペア・未設定 0）へ倒れる
 ＝ per-model を持たない既存デプロイは従来どおり動く。
 
@@ -729,6 +799,55 @@ scripts/k8s-local-deploy.sh
 > `helm upgrade -f overlay-cycle.yaml` で手当てする従来運用は、本プロファイルの committed 化により**不要**になった
 > （overlay には #236 の価格文脈が欠けていた点も本プロファイルで解消済み）。overlay ファイルの物理削除は任意。
 
+### Stage 0 の記録器の永続ボリューム（`stage0Recording.persistence`。#1342 / [IADR-0537](../../../.ai-context/adr/IADR-0537_stage0-recorder-idempotent-completion-mark-and-cumulative-cap.md)）
+
+- 記録器（trade-decision の起動ごとに走る）の書き出し先と実行の状態（完了の印・途中の記録・費用の累計・ロック）を PVC `trade-decision-stage0` に置く。
+  **本番の既定は無効**（PVC・mount・env を描かない）。`values-local.yaml` は有効。
+- 有効にすると、描画が `Stage0Recording__StateDirectory=<mountPath>/state` を注入し、trade-decision の更新方式を `Recreate` にする。
+  `Stage0Recording__StateDirectory` を extraEnv に書くと描画で止まる。`Stage0Recording__OutputPath` が mount の外でも止まる。
+- 記録器は、状態の置き場が無ければ走らない。同じ承認値の組は、完了していれば LLM を呼ばずに終え、途中で落ちていれば途中から再開し、費用の累計が承認額に届く見込みなら呼ぶ前に止まる。
+- 書き出し先は、既存の記録より判断の件数が少ない集合での上書きを拒む（課金済みの記録を守る）。止まった実行の記録が 0 件なら書き出さない。
+- 同じ組でもう一度記録するとき（人の明示）。**先に `records.json` を退避する**（退避しないと、件数が減る記録は書き出しを拒まれる。消した記録は戻らない）:
+
+```bash
+# 0) 既存の記録を手元と PVC の中の両方へ退避する
+POD="$(kubectl -n ai-stock-trading get pod -l app=trade-decision-service -o name | head -1 | cut -d/ -f2)"
+kubectl -n ai-stock-trading cp "$POD":/var/lib/ai-stock-trading/stage0/records.json ./records-$(date +%Y%m%d%H%M%S).json
+kubectl -n ai-stock-trading exec deploy/trade-decision-service -- mv /var/lib/ai-stock-trading/stage0/records.json /var/lib/ai-stock-trading/stage0/records-$(date +%Y%m%d%H%M%S).json
+kubectl -n ai-stock-trading exec deploy/trade-decision-service -- ls -R /var/lib/ai-stock-trading/stage0/state
+# 印（runs/）と台帳（ledger/）を消す。台帳を消すと承認額の上限も最初から数え直しになる。
+kubectl -n ai-stock-trading exec deploy/trade-decision-service -- rm -rf /var/lib/ai-stock-trading/stage0/state/runs /var/lib/ai-stock-trading/stage0/state/ledger
+# 記録の取り出し（backtest へ渡す）
+kubectl -n ai-stock-trading cp "$(kubectl -n ai-stock-trading get pod -l app=trade-decision-service -o name | head -1 | cut -d/ -f2)":/var/lib/ai-stock-trading/stage0/records.json ./records.json
+```
+
+- PVC は `helm.sh/resource-policy: keep`（無効化・uninstall でも消えない）。消すときは `kubectl delete pvc trade-decision-stage0 -n <namespace>` を人が実行する。
+
+#### Recreate へ移る最初の upgrade（#1351）
+
+- **既存の環境**（trade-decision が RollingUpdate で作られている）で初めて有効にすると、`helm upgrade` が次で失敗する。新しく作る環境では起きない。
+
+  ```
+  Deployment.apps "trade-decision-service" is invalid: spec.strategy.rollingUpdate: Forbidden: may not be specified when strategy `type` is 'Recreate'
+  ```
+
+- **原因は helm 4 の server-side apply（SSA）である。** RollingUpdate で作った Deployment には、API サーバが既定で補った
+  `rollingUpdate`（maxSurge / maxUnavailable 25%）が残る。補った値には field manager が付かず、SSA は自分の所有でないフィールドを消さない。
+  描画が `type: Recreate` だけになると、残った `rollingUpdate` と並んで拒否される。
+  描画に `rollingUpdate: null` を書いても SSA は消さない（実測）。helm 3 の client-side のパッチでは起きない。
+- **`scripts/k8s-local-deploy.sh` が upgrade の前に自動で直す。** 描画が Recreate になる Deployment のうち、稼働中が Recreate でなく
+  `rollingUpdate` を持つものだけを `kubectl patch --type=json` で `{"type":"Recreate"}` へ置き換え、`strategy 移行（#1351）: ...` を 1 行出す。
+  すでに Recreate・未作成なら何もしない。描画・取得・置き換えのどれかが失敗したら upgrade へ進まずに止まる。
+- ⚠️ **Recreate では Pod が作り直される。** 以後のロールアウト（直後の upgrade・起動器の rollout restart）は、旧 Pod をすべて止めてから新 Pod を作る。入れ替えの間、その Deployment は止まる。
+- 起動器を使わずに手で upgrade するときは、先に次を実行する（`opend` も同じ形。`opend` は最初から Recreate なので通常は要らない）。
+
+  ```bash
+  kubectl -n ai-stock-trading patch deployment trade-decision-service --type=json \
+    -p '[{"op":"replace","path":"/spec/strategy","value":{"type":"Recreate"}}]'
+  ```
+
+  `helm upgrade --server-side=false`（client-side のパッチ）でも通る。すでに失敗した revision があっても、上の patch の後に upgrade をやり直せば通る。
+
 ## 実行環境名（`ASPNETCORE_ENVIRONMENT`）は Production（#1192 / [IADR-0496](../../../.ai-context/adr/IADR-0496_aspnetcore-environment-production-and-problem-details.md)）
 
 - 全 Worker の `ASPNETCORE_ENVIRONMENT` は `services.<name>.aspnetcoreEnvironment` ＞ `global.aspnetcoreEnvironment`（既定 `Production`）の順で決まる。
@@ -754,7 +873,7 @@ scripts/k8s-local-deploy.sh
 | `FINNHUB_API_KEY` | `finnhub-api-key` | information-collection | 空=NoOp（#81） |
 | `DISCORD_WEBHOOK_URL` | `discord-webhook-url` | notification | 空=NoOp（#15） |
 | `DISCORD_OWNERAUTH_CLIENTID` | `discord-owner-auth-client-id` | notification・report・risk-management・market-monitor・audit・configuration・cost-control | dev 既定 `ai-stock-trading-owner`（Bot 制御コマンドの OwnerAuth・#226 / IADR-0098）。**report も同じ鍵を `Reports__DelegatedActor__TrustedClientIds` として読む**（#774 / IADR-0240 決定11: Bot が確定要求で運ぶ「代理される利用者」を信じてよいクライアント。空=誰も信じない）。risk-management は `RiskControls__DelegatedActor__TrustedClientIds`（#868）、market-monitor は `Monitor__DelegatedActor__TrustedClientIds`（#1025 / IADR-0433: `/policy` の入れ替え案の適用の変更者）として同じ鍵を読む。gRPC 面を持つ 6 サービス（audit・configuration・cost-control・market-monitor・report・risk-management）は `Auth__GrpcOwnerClients__0` として読む（#1067 / IADR-0448: gRPC 面の所有者の門が許す呼び出し元のクライアント。鍵が無ければコード既定 `ai-stock-trading-owner`・空なら誰の所有者トークンも gRPC 面を通さない・1 つの値〔`Auth__GrpcOwnerClients`〕は起動時に例外） |
-| `DISCORD_OWNERAUTH_CLIENTSECRET` | `discord-owner-auth-client-secret` | notification | dev 既定 `dev-only-owner-secret`（realm-export.json と一致・本番は Secret/Vault） |
+| `DISCORD_OWNERAUTH_CLIENTSECRET` | `discord-owner-auth-client-secret` | notification | dev 既定（realm-export.json と一致・本番は Secret/Vault）。🔴 **開発用の値のままなら起動器が止まる**（下記「機密クライアントの secret が開発用の値なら止まる」） |
 | （chart 値）`Notifications__Discord__OwnerAuth__TokenEndpoint` | — | notification | AST レルム token エンドポイント（#226。空だと IsEnabled=false→401） |
 | （chart 値）`Broker__Provider` / `Broker__Environment` | — | order-execution | `paper`（実発注しない・#13。`broker.tier` で切替・IADR-0111） |
 | （chart 値）`LlmGateway__BaseUrl` | — | trade-decision | 空=Placeholder LLM（呼ばない＝常に Hold・#11） |
@@ -881,6 +1000,25 @@ PersistentVolumeClaim `opend-persist` には `helm.sh/resource-policy: keep` を
 - **明示的に消す場合は手動で `kubectl delete pvc opend-persist -n ai-stock-trading` を実行する**（Helm には削除させない）。
 - デバイス信頼をリセットしたい（再認証からやり直したい）場合以外は消さないこと。
 
+### 到達の制限と認証サイドカーの呼び出し元検証（[IADR-0566](../../../.ai-context/adr/IADR-0566_opend-ingress-networkpolicy-and-caller-secret.md)）
+
+多層防御として 2 段を置く。片方の設定を誤っても、もう片方が残る。
+
+| 段 | 何を | 既定 | 設定点 |
+| --- | --- | --- | --- |
+| NetworkPolicy `opend-ingress`（ingress だけ） | API（`opend.apiPort`）へは同じ namespace の発注執行だけ、認証サイドカー（`opend.authGateway.port`）へは基盤の BFF（`microservices-platform` の `app: bff-service`）だけ | `opend.enabled=true` なら描く | `opend.networkPolicy.*` |
+| 共有シークレット | 認証サイドカーはヘッダーの値を Secret `opend-auth-caller-secret`（キー `caller-secret`）と比べる。無い・32 文字未満なら 4 本の口すべて 503、違えば 401 | `opend.authGateway.enabled=true` なら必須 | `opend.authGateway.callerSecret.*`・`externalSecrets.opendAuthCallerSecret` |
+
+- **Pod の起動は止めない。** Secret の volume は `optional: true` で、無いあいだはサイドカーが口を閉じるだけである（OpenD の API と発注経路は動く）。
+- **値を回しても OpenD の Pod を作り直さない。** サイドカーは要求ごとにファイルを読む（kubelet が Secret の volume を差し替える）。
+- **送り手（基盤の BFF）は同じ値を env `OpendAuth__CallerSecret` で受ける**（基盤の名前空間の Secret。基盤の構成で配線する）。未構成なら BFF は上流を呼ばず、画面は「接続資格が構成されていません」と示す。
+- ESO 所有（`externalSecrets.enabled=true`）では、Vault の `ai-stock-trading/opend-auth`（プロパティ `caller-secret`）を同期する。値は Git に置かない。
+- egress は絞らない（OpenD は moomoo のサーバと DNS へ出る）。readinessProbe（kubelet）・`kubectl attach` / `exec` / `port-forward` は Pod 網を通らないため影響を受けない。
+  NetworkPolicy を強制しない CNI では宣言が残るだけで、呼び出し元を絞るのは共有シークレットの 1 段になる。
+  k3s（k3d）は上流の既定で組み込みの制御（kube-router 由来）を有効にする（`--disable-network-policy` で外せる。基盤の起動器は付けていない）。
+  稼働クラスタで強制されているかは、許可していない Pod から接続して時間切れになることで確かめる（IADR-0566 の確認手順）。
+- dev の生 manifest の経路は `deploy/opend/k8s/networkpolicy.yaml` を併せて適用する。
+
 ### 非 root 実行へ切り替える（既定は root・**未検証**）
 
 OpenD はデバイス信頼を `$HOME/.com.moomoo.OpenD` に書くため、非 root 化は **HOME の再調整とセット**で行う。
@@ -899,6 +1037,10 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 > ⚠️ **既定 ON にしていない理由**（IADR-0060 決定 2）: HOME が変わると**確立済みのデバイス信頼を失い、有人検証から
 > やり直しになる恐れ**がある。実 OpenD でしか確かめられず、**#132 の実測フェーズで未検証**。切替時は既存 PVC の
 > `.com.moomoo.OpenD` を新 HOME へ移すか、再検証を覚悟すること。
+>
+> ⚠️ 認証サイドカー（`opend.authGateway.enabled=true`）の共有シークレットも同じく**グループ読み（0440）**で、非 root では
+> 上の `fsGroup` が要る（サイドカーは OpenD 本体と同じ uid で動く）。読めないとサイドカーは口を閉じたまま（503）になり、
+> ログに `理由=unreadable` が出る（値は出ない）。
 >
 > ⚠️ `rsaSecretDefaultMode` は **k8s のファイルモード（8 進を 10 進で表す整数）**。values ファイルでは `0400` / `0440`
 > と 8 進で書ける（YAML が解釈する）が、`--set` では **10 進**（`256` / `288`）で渡すこと。非 root では Secret の所有 uid が
@@ -953,14 +1095,45 @@ Pod はサイドカー未注入（平文）のため、AST→基盤方向の HTT
 に RST で全断している（逆方向・MSP BFF→AST は到達可能）。🔴 **本設定点は受け皿であり、実クラスタでの
 有効化・疎通確認は未了**（IADR-0314 は Proposed のまま。再測定手順は同 IADR 参照）。
 
+**連結ローカル（`scripts/k8s-local-deploy.sh`）では `AST_MESH_INJECTION` で選ぶ**（IADR-0570。Refs GHSA-j4qv-2w99-xg5p）。
+helm を手で `--set` しない —— 起動器は `--reuse-values` を使わないため、手で与えた値は次の配備で外れる。
+
+```bash
+AST_MESH_INJECTION=1 scripts/k8s-local-deploy.sh      # メッシュへ入れる（以後の再実行は未指定で引き継ぐ）
+scripts/k8s-local-deploy.sh                           # 未指定: 現行のリリースの値を引き継ぐ（新規・未宣言なら無効）
+AST_MESH_INJECTION=0 scripts/k8s-local-deploy.sh      # メッシュから外す
+```
+
+| `AST_MESH_INJECTION` | helm へ渡す値 | 名前空間の `istio-injection` | 手順 5 の作り直し |
+| --- | --- | --- | --- |
+| `1`（`true`） | `mesh.sidecarInjection.enabled=true` ＋ `excludeOpend=true` | 無ければ貼る | 状態が変わった回は OpenD を除く**全件**（絞り込みがあっても） |
+| `0`（`false`） | `mesh.sidecarInjection.enabled=false` | あれば剥がす | 同上 |
+| 未指定・前回 `true` / `false` | 前回の値（有効なら `excludeOpend=true` も） | 有効なら無ければ貼る。無効なら触らない（手で貼ったラベルが残れば WARN） | 同上 |
+| 未指定・前回に宣言なし（新規・本変更より前の配備） | 何も足さない（chart 既定の無効。従来と同じ引数） | 触らない | 従来どおり |
+| それ以外（空・`yes` 等） | — | — | exit 2（何もしない） |
+
+- **helm upgrade が失敗したら、`AST_MESH_INJECTION=1` か `0` を明示して再実行する。** ラベルは upgrade の前に変えるため、失敗すると
+  「ラベルは新しい状態・chart の値は前回のまま」が残り得る（起動器は失敗時に同じ案内を出す。ロールバックはしない）。
+- **前回リリースの値が真偽値として読めないときは止まる**（黙って無効へ戻さない）。`AST_MESH_INJECTION` を明示すれば進む。
+- **OpenD は常に注入対象外**（作り直さない）。chart は `excludeOpend=true` なら **`enabled` に依らず** OpenD の Pod へ
+  `sidecar.istio.io/inject: "false"` を描くので、注入の切り替えで OpenD の Pod テンプレートは変わらない（`helm.yml` の
+  IADR-0570 の検査が両方の描画を突き合わせる）。起動器は有効なとき `excludeOpend=true` を必ず渡し、手順 5 でも OpenD を作り直さない。
+  🔴 **この注釈を初めて描く配備（本変更を入れた最初の配備）では、`opend.enabled=true` なら OpenD の Pod テンプレートが 1 度だけ変わり、
+  OpenD が作り直される**（認証済みのセッションが切れ、再検証が要り得る）。閉場後に行い、前後で `helm-release-drift.js` の
+  1 行目が OpenD の差（注釈 1 つ）だけであることを確かめる。以後の注入の切り替えでは変わらない。
+- 注入は Pod の作成時にしか効かない。状態が変わった回に起動器が全件を作り直すのはそのためである（OpenD を除く）。
+
+起動器を使わず helm を直接使う構成（`namespace.create=true` で chart が名前空間を持つ）では:
+
 ```bash
 helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
   --set mesh.sidecarInjection.enabled=true
-kubectl -n ai-stock-trading rollout restart deployment   # 既存 Pod への遡及適用は無い
+kubectl -n ai-stock-trading rollout restart deployment   # 既存 Pod への遡及適用は無い（OpenD は除いて個別に）
 ```
 
 - **`namespace.create=false`（namespace を本チャートが所有しない構成）のときはラベルが描画されない。**
-  その場合は運用側で対象 namespace へ手動で `istio-injection=enabled` を付ける。
+  連結ローカルの起動器はこの構成で、ラベルは起動器が `AST_MESH_INJECTION` に従って貼る・剥がす（上の表）。
+  それ以外の構成では運用側で対象 namespace へ手動で `istio-injection=enabled` を付ける。
 - **OpenD は既定でサイドカー注入対象外**（`mesh.sidecarInjection.excludeOpend: true`）。独自プロトコル
   （TCP 11111・常駐 1 セッション）であり HTTP でないためメッシュの恩恵が無く、Envoy 傍受で常駐 TCP
   接続の挙動が変わるリスクの方が上回る（IADR-0314 決定2）。含めたい場合は `excludeOpend=false`。
@@ -975,8 +1148,9 @@ kubectl -n ai-stock-trading rollout restart deployment   # 既存 Pod への遡�
   手順⑤）。
 - **確認コマンド**（有効化後）:
   ```bash
-  kubectl -n ai-stock-trading get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[*].name}{"\n"}{end}'
-  # istio-proxy が opend 以外の全 Pod に含まれ、opend には含まれないこと（excludeOpend=true の既定）
+  kubectl -n ai-stock-trading get pods -o custom-columns='NAME:.metadata.name,INIT:.spec.initContainers[*].name,CONTAINERS:.spec.containers[*].name'
+  # istio-proxy が opend 以外の全 Pod に含まれ、opend には含まれないこと（excludeOpend=true の既定）。
+  # ネイティブサイドカー（k8s 1.29+）では istio-proxy は INIT（initContainers）の列に出る。
   ```
 - **退行観点**（有効化前に確認すること）: OpenD（moomoo セッション TCP 11111 が継続すること）／
   RabbitMQ（AMQP 5672 の接続断が無いこと）／Postgres（5432 の接続断が無いこと）／Keycloak

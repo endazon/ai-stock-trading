@@ -33,6 +33,21 @@ public class HttpReportReviewControllerTests
         result.Version.Should().Be(3);
     }
 
+    // FR-07, ADR-0068 決定1, #1373, IADR-0549 決定3: 確定済みの日報に版を足したドラフト（版 n+1）なら、`/report show` は効いている確定版と
+    // 確定できるか（効いている日報が移っていないか）を見せる。項目の無い旧版の応答は従来の文のまま。
+    [Theory]
+    [InlineData("""{"version":3,"confirmedVersion":2,"noLongerEffective":false}""", "確定するまでは版 2 の方針が効き続けます")]
+    [InlineData("""{"version":3,"confirmedVersion":2,"noLongerEffective":true}""", "この版は確定できません")]
+    public async Task 版nプラス1のドラフトは効いている確定版と確定の可否を見せる(string body, string expected)
+    {
+        var result = await Controller(new FakeHandler(HttpStatusCode.OK, body)).GetReviewAsync(PeriodKey);
+        var legacy = await Controller(new FakeHandler(HttpStatusCode.OK, """{"version":3}""")).GetReviewAsync(PeriodKey);
+
+        (result.Succeeded, result.Version).Should().Be((true, 3));
+        result.Message.Should().Contain(expected).And.Contain("確定済みの版 2");
+        legacy.Message.Should().Be($"報告書 {PeriodKey}: 版 3");
+    }
+
     [Fact]
     public async Task レビュー照会は_state_の表現に依存しない()
     {

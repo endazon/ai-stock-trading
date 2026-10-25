@@ -174,7 +174,15 @@ public class HeldExitAlwaysJudgedInPromptTests
         var exactBudget = 750 + policy.Summary.Length + TradeDecisionPromptBuilder.WatchlistSection(trigger, null).Length
             + 400 + ScreeningContextAssembler.PriceContextReserveChars + ScreeningContextAssembler.NewsStatusReserveChars
             + ScreeningContextAssembler.HeldExitRuleReserveChars
-            + ("記事".Length + 100 + 60);
+            // #1384, IADR-0558 決定 7: 建てた条件の要約の行の予約も銘柄ごとの保護分に入る。
+            + ScreeningContextAssembler.HeldEntryBasisReserveChars
+            // #1396, IADR-0561 決定 5: 市場の現地時刻の行の予約ぶん底上げ。
+            + ScreeningContextAssembler.MarketClockReserveChars
+            // #1397, IADR-0562 決定 3: 保有中の全銘柄の節の予約ぶん底上げ。
+            + ScreeningContextAssembler.PortfolioReserveChars
+            + ("記事".Length + 100 + 60)
+            // #1359, IADR-0542 決定 5: 境界語はプロンプト側で足すため、見積りに 1 件あたりの境界語の文字数が加わる（残す 1 件ぶん同幅ずらす）。
+            + TradeDecisionPromptBuilder.ReferenceBoundaryChars;
 
         ScreeningContextAssembler.Assemble(trigger, policy, [news], currentPrice: null, budgetChars: exactBudget, watchlist: null)
             .Plan.DroppedNewsCount.Should().Be(0, "保護分（予約を含む）と材料 1 件で予算ちょうど");

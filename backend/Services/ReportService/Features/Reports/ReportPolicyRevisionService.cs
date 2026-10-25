@@ -32,7 +32,10 @@ public sealed partial class ReportPolicyRevisionService(
     IOpenPositionSource? openPositionSource = null,
     // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 2: 改訂案を承認待ちにした版で写し（ドラフト）の本文を差し替える
     // （`/policy` は提示の通知を出さないが、承認待ちの版は変わる）。未注入は持たない。
-    IReportDraftKnowledgeCopy? draftKnowledgeCopy = null)
+    IReportDraftKnowledgeCopy? draftKnowledgeCopy = null,
+    // FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: 効いている確定済み日報に版を足したドラフトを Discord へ知らせる（提示の通知の経路）。
+    // 🔴 `/policy` の通常の改訂は従来どおり提示の通知を出さない（応答の確認ボタンで足りる）。版を足したときだけ出す。未注入は出さない。
+    IReportDraftPresentedNotifier? presentedNotifier = null)
 {
     /// <summary>指示の最大長（文字数）。Discord のスラッシュコマンドの上限と揃える。</summary>
     public const int MaxInstructionLength = 1000;
@@ -140,9 +143,12 @@ public sealed partial class ReportPolicyRevisionService(
             .ConfigureAwait(false);
         // 計画 ADR-0059 決定 2, #1218, IADR-0519 決定 2: 週報の案に書式どおりの「数値目標:」行が無ければ、同じ経路で警告する（確定は止めない）。
         var weeklyGoalWarning = WeeklyGoalLineCheck.WarningFor(target.Kind, proposal.PolicySummary);
-        var takeProfitWarning = PolicyTakeProfitCheck.WarningFor(target.Kind, proposal.PolicySummary, heldPositions) ?? weeklyGoalWarning;
+        var takeProfitWarning = PolicyTakeProfitCheck.WarningFor(target.Kind, proposal.PolicySummary, heldPositions);
+        // FR-04, FR-07, #1365, IADR-0544 決定 2・3: 日報の案が他の報告書・期間キーを参照で済ませていれば、同じ経路で警告する（確定は止めない）。
+        var selfContainedWarning = PolicySelfContainedCheck.WarningFor(target.Kind, proposal.PolicySummary);
+        var policyWarning = PolicyDraftWarnings.Join(takeProfitWarning, weeklyGoalWarning, selfContainedWarning);
         var body = AppendRevisionRecord(
-            target.Body, nextVersion, actor, clock.UtcNow, cleanedInstruction, proposal, takeProfitWarning);
+            target.Body, nextVersion, actor, clock.UtcNow, cleanedInstruction, proposal, policyWarning);
         var report = target.Base with
         {
             PolicySummary = proposal.PolicySummary,
@@ -153,7 +159,10 @@ public sealed partial class ReportPolicyRevisionService(
         int version;
         try
         {
-            version = store.UpsertDraft(report, target.ExpectedVersion);
+            // FR-07, ADR-0068 決定1, #1373, IADR-0549 決定1: 効いている確定済み日報なら版を足す（行を版 n+1 のドラフトへ。版 n の写しは残り、効き続ける）。
+            version = target.ConfirmedVersion is not null
+                ? store.StartRevisionDraft(report, target.ExpectedVersion)
+                : store.UpsertDraft(report, target.ExpectedVersion);
         }
         catch
         {
@@ -189,6 +198,10 @@ public sealed partial class ReportPolicyRevisionService(
         if (presented && draftKnowledgeCopy is not null)
             await draftKnowledgeCopy.PublishAsync(report, version, CancellationToken.None).ConfigureAwait(false);
 
+        // FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: 版を足したことを通知する（効いている版はまだ変わらない）。best-effort・取り消しを渡さない。
+        if (presented && target.ConfirmedVersion is { } confirmedVersion && presentedNotifier is not null)
+            await NotifyRevisionDraftBestEffortAsync(key, report.PeriodStart, confirmedVersion, version, proposal.PolicySummary, policyWarning).ConfigureAwait(false);
+
         logger.LogInformation(
             "方針の改訂案を保存し提示しました（Actor={Actor}・PeriodKey={PeriodKey}・版={Version}・新規={Created}・提示={Presented}・"
             + "指示の長さ={InstructionLength}・追加案={Additions}・除外案={Removals}）。",
@@ -202,7 +215,7 @@ public sealed partial class ReportPolicyRevisionService(
                 "週報の方針の改訂案に書式どおりの「数値目標:」行がありません（PeriodKey={PeriodKey}・版={Version}）。確定の前に利用者へ警告します（確定は止めません）。",
                 LogSanitizer.Sanitize(key), version);
         }
-        else if (takeProfitWarning is not null)
+        if (takeProfitWarning is not null)
         {
             // 建玉を得たときの警告は銘柄ごとの名指しである（建玉は案に読める行があるときだけ照会するため）。#1257 監査 F5。
             if (heldPositions is not null)
@@ -215,13 +228,24 @@ public sealed partial class ReportPolicyRevisionService(
                     LogSanitizer.Sanitize(key), version);
         }
 
+        if (selfContainedWarning is not null)
+        {
+            logger.LogWarning(
+                "日報の方針の改訂案が他の報告書を参照しています（PeriodKey={PeriodKey}・版={Version}）。確定の前に利用者へ警告します（確定は止めません）。",
+                LogSanitizer.Sanitize(key), version);
+        }
+
         var usage = $"（本日の /policy: {attemptNumber}/{limit.DailyLimit} 回目）";
         // 案内文の末尾の行に警告を置く（通知サービスは承認待ちにできた案でも、印で始まるこの行を確認ボタンの前に見せる）。
-        var warningSuffix = takeProfitWarning is null ? string.Empty : "\n" + takeProfitWarning;
+        var warningSuffix = policyWarning is null ? string.Empty : "\n" + policyWarning;
+        // ADR-0068 決定1, IADR-0549 決定1: 版を足したときは、効いている版が確定まで変わらないことを書く。
+        var reopened = target.ConfirmedVersion is { } fromVersion
+            ? $"確定済みの日報 {key}（版 {fromVersion}）に版を足して、版 {version} のドラフトにしました。確定するまでは版 {fromVersion} の方針が効き続けます。"
+            : string.Empty;
         return new PolicyRevisionResult(
             PolicyRevisionStatus.Proposed,
             presented
-                ? $"方針の改訂案を保存し、承認待ちにしました（確定するまで取引には適用されません）。{usage}{warningSuffix}"
+                ? $"{reopened}方針の改訂案を保存し、承認待ちにしました（確定するまで取引には適用されません）。{usage}{warningSuffix}"
                 : $"方針の改訂案を保存しましたが、承認待ちにできませんでした（/report show で状態を確認してください）。{usage}{warningSuffix}",
             key, version, target.Created, presented, proposal);
     }
@@ -271,9 +295,28 @@ public sealed partial class ReportPolicyRevisionService(
         if (existing is not null)
         {
             if (existing.Report.State == ReportState.Confirmed)
+            {
+                // FR-07, ADR-0068 決定1, #1373, IADR-0549 決定1: **効いている確定済み日報は、版を足して再確定できる。**
+                // 土台は確定済みの版 n の方針。本文は状態の行だけを未確定へ戻して引き継ぐ（改訂の記録を後ろへ足す）。
+                // 「当日（JST）の日報」には限らない（営業日の 0 時から自動生成までは前日付の日報が効いている。ADR-0068 実測 8）。
+                if (existing.Report.Kind == ReportKind.Daily && EffectiveDailyReport.IsEffective(store, key))
+                {
+                    return new RevisionTarget(
+                        existing.Report, ReportKind.Daily, existing.Report.PolicySummary, ParentOf(existing.Report.BasedOn),
+                        ReportBodyStatus.MarkDraft(existing.Report.Body) ?? string.Empty, existing.Version, Created: false, Rejection: null,
+                        ConfirmedVersion: existing.Version);
+                }
+
                 return RevisionTarget.Reject(PolicyRevisionResult.Rejected(
                     PolicyRevisionStatus.AlreadyConfirmed,
-                    AlreadyConfirmedMessage(key, todaysDailyKey, today, schedule), key));
+                    AlreadyConfirmedMessage(key, todaysDailyKey, schedule, EffectiveDailyReport.EffectivePeriodKey(store)), key));
+            }
+
+            // ADR-0068 決定1, IADR-0549 決定1: 効いている日報が移った後の版 n+1 のドラフトは改訂しない（確定できないものに回数を使わせない）。
+            if (EffectiveDailyReport.IsStaleRevisionDraft(store, existing))
+                return RevisionTarget.Reject(PolicyRevisionResult.Rejected(
+                    PolicyRevisionStatus.NoLongerEffective,
+                    Common.Exceptions.ReportNoLongerEffectiveException.MessageFor(key, EffectiveDailyReport.EffectivePeriodKey(store)), key));
 
             return new RevisionTarget(
                 existing.Report, existing.Report.Kind, existing.Report.PolicySummary, ParentOf(existing.Report.BasedOn),
@@ -290,7 +333,7 @@ public sealed partial class ReportPolicyRevisionService(
                 PolicyRevisionStatus.AutoDailyPending,
                 $"本日（{today:yyyy-MM-dd}・営業日）の日報 {key} はまだ自動生成されていません。いま作ると、数値入りの自動生成の日報が"
                 + $"作られなくなるため作りません。自動生成（{schedule.Schedule.DailyAt:HH:mm} JST 以降）の後に /policy を実行すると、"
-                + "そのドラフトを改訂します。", key));
+                + "そのドラフトを改訂します。" + EffectiveDailyGuidance(), key));
 
         // 新規の当日の日報（休場日、または自動生成が無効な構成）。土台は直近の確定済み日報
         // （方針・上位方針・前提条件の版を引き継ぐ。数値を発明しない）。
@@ -320,47 +363,69 @@ public sealed partial class ReportPolicyRevisionService(
             Body: string.Empty, ExpectedVersion: 0, Created: true, Rejection: null);
     }
 
-    // FR-14, FR-09, #1039: 確定済みに当たったときの返答。「改訂できない」だけでなく、**いつ・どうすれば改訂できるか**を添える。
-    // 状態（AlreadyConfirmed＝409）と「何も保存しない」は変えない。文の中身は本クラスと自動生成の実際の規則から導く（推測で書かない）:
-    // - 対象が当日（JST）の日報なら、明日（JST の暦日 +1）の日報の作られ方を示す。営業日で自動生成が有効なら、生成境界の時刻の後に
-    //   自動生成のドラフトができ（方針は直近の確定済み日報を引き継ぐ。ReportAutoGenerator の継続案）、それを /policy で改訂できる
-    //   （境界の前の /policy は AutoDailyPending）。そうでなければ /policy の実行時に直近の確定済み日報を土台に作る（下の新規作成の分岐）。
-    // - 対象が他の会話キーなら、period を省略した /policy の対象（当日の日報）を示す。
+    // FR-14, FR-09, #1039: 確定済みに当たったときの返答。「改訂できない」だけでなく、**どうすれば改訂できるか**を添える。
+    // 状態（AlreadyConfirmed＝409）と「何も保存しない」は変えない。
+    // ［2026-10-17 改 / #1373・IADR-0549 決定1］効いている確定済み日報は版を足して再確定できるようになった（ADR-0068 決定 1）ため、
+    // ここへ来るのは**効いていない**確定済みの報告書（より古い日報・週報・月報）だけである。従来の「明日の日報の作られ方」の案内は、
+    // 当日の日報が確定済みのとき（＝効いている日報）に出していたもので、その場合は版 n+1 のドラフトを作るため出番が無くなった（削った）。
+    // - 再確定できるのは効いている日報だけで、その会話キーを示す。
+    // - period を省略した /policy の対象（当日の日報）を示す。
     // - 監視銘柄は確定を待たずにリスク設定画面（SC-02）から変えられる。
     // 🔴 通知サービスは `error` を 300 文字で切る（HttpPolicyRevisionController.MaxErrorLength）。会話キーが上限（32 文字）でも収まる長さに保つ。
-    public static string AlreadyConfirmedMessage(string key, string todaysDailyKey, DateOnly today, PolicyRevisionSchedule schedule)
+    public static string AlreadyConfirmedMessage(
+        string key, string todaysDailyKey, PolicyRevisionSchedule schedule, string? effectiveDailyKey = null)
     {
         ArgumentNullException.ThrowIfNull(schedule);
 
         var sb = new StringBuilder();
-        sb.Append(CultureInfo.InvariantCulture, $"報告書 {key} は確定済みのため改訂できません（確定済みの方針は変えられません）。");
-        if (string.Equals(key, todaysDailyKey, StringComparison.Ordinal))
-        {
-            var tomorrow = today.AddDays(1);
-            var tomorrowKey = ReportPeriod.ExpectedKey(ReportKind.Daily, tomorrow);
-            if (schedule.AutoDailyEnabled && ReportSchedule.IsBusinessDay(tomorrow, schedule.Schedule))
-            {
-                sb.Append(CultureInfo.InvariantCulture,
-                    $"明日（{tomorrow:yyyy-MM-dd}・JST・営業日）は {schedule.Schedule.DailyAt:HH:mm} JST 以降に、直近の確定済み日報の方針を引き継いだ");
-                sb.Append(CultureInfo.InvariantCulture, $"日報 {tomorrowKey} のドラフトが自動生成され、その後の /policy で改訂できます。");
-            }
-            else
-            {
-                sb.Append(CultureInfo.InvariantCulture,
-                    $"明日（{tomorrow:yyyy-MM-dd}・JST）に /policy を実行すると、直近の確定済み日報を土台に日報 {tomorrowKey} のドラフトを作り、");
-                sb.Append("それを改訂できます。");
-            }
-        }
-        else
-        {
-            sb.Append(CultureInfo.InvariantCulture, $"period を省略した /policy は当日（JST）の日報 {todaysDailyKey} を対象にします。");
-        }
-
+        sb.Append(CultureInfo.InvariantCulture, $"報告書 {key} は確定済みのため改訂できません。");
+        sb.Append(effectiveDailyKey is null
+            ? "版を足して再確定できるのは効いている日報だけです。"
+            : $"版を足して再確定できるのは効いている日報 {effectiveDailyKey} だけです。");
+        sb.Append(CultureInfo.InvariantCulture, $"period を省略した /policy は当日（JST）の日報 {todaysDailyKey} を対象にします。");
         if (schedule.AutoDailyEnabled)
             sb.Append("自動生成の日報のドラフトがある日は、確定するまでそのドラフトを /policy で改訂できます。");
 
         sb.Append("監視銘柄はいまでもリスク設定画面から変更できます。");
         return sb.ToString();
+    }
+
+    // FR-07, FR-14, ADR-0068 決定1, #1373, IADR-0549 決定1: 会話キーを省略した `/policy` を AutoDailyPending で断るときの案内（行き止まりにしない）。
+    // 営業日の 0 時から自動生成までは前日付の日報が効いている（ADR-0068 実測 8）。その会話キーを指定すれば版を足して再確定できる。
+    private string EffectiveDailyGuidance()
+    {
+        var effective = EffectiveDailyReport.EffectivePeriodKey(store);
+        if (effective is null)
+            return string.Empty;
+
+        var row = store.Get(effective);
+        return row is { Report.State: ReportState.Draft }
+            ? $"いま効いている日報 {effective} には承認待ちの版 {row.Version} のドラフトがあります（/policy period:{effective} で改訂できます）。"
+            : $"いま効いている方針を直すには、効いている日報 {effective} を指定して /policy period:{effective} を実行してください（版を足して再確定できます）。";
+    }
+
+    // FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: 版を足したドラフトの通知（提示の通知の経路・要約は投稿向けに無害化）。失敗しても保存・提示を巻き戻さない。
+    private async Task NotifyRevisionDraftBestEffortAsync(
+        string key, DateOnly periodStart, int confirmedVersion, int draftVersion, string policySummary, string? policyWarning)
+    {
+        var summary = ReportSummarySanitizer.Sanitize(
+            $"日報 {key}: 確定済みの版 {confirmedVersion} に版を足して、版 {draftVersion} のドラフトを作りました（/policy）。"
+            + $"確定するまでは版 {confirmedVersion} の方針が効き続けます。\n\n改訂後の方針（AI の案）:\n{policySummary}"
+            + (policyWarning is null ? string.Empty : "\n" + policyWarning));
+        try
+        {
+            await presentedNotifier!.NotifyAsync(
+                new PresentedReportNotice(
+                    key, ReportKind.Daily, ReportPeriod.Label(ReportKind.Daily, periodStart), summary, draftVersion,
+                    ReconfirmingFromVersion: confirmedVersion),
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "確定済みの日報に版を足しましたが、通知を発行できませんでした（PeriodKey={PeriodKey}・版={Version}）。",
+                LogSanitizer.Sanitize(key), draftVersion);
+        }
     }
 
     // 上位方針は確定済みのものだけを渡す（未確定の上位を方針の根拠にしない。散文ドラフトと同じ扱い）。
@@ -384,7 +449,7 @@ public sealed partial class ReportPolicyRevisionService(
     // 本文の末尾へ改訂の記録を追記する（誰が・いつ・何を指示し・AI が何を案として返したか）。確定時に KB へ保存される。
     internal static string AppendRevisionRecord(
         string existingBody, int version, string actor, DateTimeOffset at, string instruction, PolicyRevisionProposal proposal,
-        string? takeProfitWarning = null)
+        string? policyWarning = null)
     {
         var sb = new StringBuilder();
         if (!string.IsNullOrWhiteSpace(existingBody))
@@ -401,8 +466,9 @@ public sealed partial class ReportPolicyRevisionService(
             sb.Append("> ").Append(line).Append('\n');
 
         // FR-04, FR-07, #1129, IADR-0470 決定 4: 案の方針の直前に警告を置く（/report show・承認の画面で本文を読む利用者へ）。
-        if (takeProfitWarning is not null)
-            sb.Append('\n').Append(takeProfitWarning).Append('\n');
+        // #1365, IADR-0544 決定 3: 利確・数値目標・他の報告書の参照の警告を並べたもの（PolicyDraftWarnings.Join）。
+        if (policyWarning is not null)
+            sb.Append('\n').Append(policyWarning).Append('\n');
 
         sb.Append("\n### 改訂後の方針（AI の案）\n\n");
         sb.Append(proposal.PolicySummary).Append('\n');
@@ -473,7 +539,9 @@ public sealed partial class ReportPolicyRevisionService(
         string Body,
         int ExpectedVersion,
         bool Created,
-        PolicyRevisionResult? Rejection)
+        PolicyRevisionResult? Rejection,
+        // FR-07, ADR-0068 決定1, IADR-0549 決定1: 効いている確定済み日報に版を足すときの、確定済みの版 n（それ以外は null）。
+        int? ConfirmedVersion = null)
     {
         public static RevisionTarget Reject(PolicyRevisionResult rejection) =>
             new(null!, ReportKind.Daily, string.Empty, null, string.Empty, 0, false, rejection);
@@ -500,6 +568,12 @@ public enum PolicyRevisionStatus
 
     /// <summary>FR-13, ADR-0042 決定 1, #1025: 現在の監視銘柄の一覧の形式が不正。</summary>
     InvalidWatchlist,
+
+    /// <summary>
+    /// FR-07, ADR-0068 決定1, #1373, IADR-0549 決定1: 確定済みの日報に版を足したドラフトだが、より新しい日付の日報が確定して
+    /// 効いている日報が移った（確定できないので改訂もしない。409）。
+    /// </summary>
+    NoLongerEffective,
 }
 
 // FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 1: `/policy` の 1 日（JST）の回数上限。構成 `Reports:PolicyRevision:DailyLimit`。

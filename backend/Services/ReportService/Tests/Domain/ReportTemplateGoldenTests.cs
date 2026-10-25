@@ -89,6 +89,21 @@ public class ReportTemplateGoldenTests
             new WeeklyGoalReference("weekly-2026-W34", "weekly-2026-W34", WeeklyGoalLine.Parse("数値目標: -200 〜 +500 USD")),
             WeeklyGoalActual.Of(kind == ReportKind.Weekly ? 1_520m : 320.5m)),
         ReviewNarrative = kind == ReportKind.Daily ? "週初来の損益は目標の範囲内で推移している。" : null,
+        // FR-06, FR-08, #1356, IADR-0541 決定 3: 日報 §5 の出典（コードで描く）。リンクにできる URL・できない出典の両方を固定する。
+        DecisionReferences = kind == ReportKind.Daily
+            ? DecisionReferenceFeedBuilder.Build(
+            [
+                new("AAPL", new DateTimeOffset(2026, 8, 24, 1, 0, 0, TimeSpan.Zero), new AiStockTrading.Shared.Contracts.Trading.DecisionReferences("retrieved",
+                [
+                    new("Apple、新製品を発表 [速報]", "https://news.example.com/a?id=1", new DateTimeOffset(2026, 8, 23, 22, 0, 0, TimeSpan.Zero)),
+                    new("社内メモ", "kb://doc/9", null),
+                ])),
+                new("MSFT", new DateTimeOffset(2026, 8, 24, 2, 0, 0, TimeSpan.Zero), new AiStockTrading.Shared.Contracts.Trading.DecisionReferences("retrieved",
+                [
+                    new("Apple、新製品を発表 [速報]", "https://news.example.com/a?id=1", new DateTimeOffset(2026, 8, 23, 22, 0, 0, TimeSpan.Zero)),
+                ])),
+            ])
+            : null,
         MarginReductions =
         [
             new MaintenanceMarginReductionExecuted(

@@ -27,7 +27,10 @@ public sealed class HttpDailyBarsSource(
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(8);
 
     // 送り手 DailyBarsStatus の数値（web 既定で列挙は数値）。送り手の型は参照しない（別サービス）。
-    private const int StatusAvailable = 1;
+    internal const int StatusAvailable = 1;
+
+    /// <summary>送り手 DailyBarsStatus.Unavailable の数値。</summary>
+    internal const int StatusUnavailable = 0;
 
     public async Task<IReadOnlyList<DailyBar>?> FetchAsync(
         string symbol, Market market, DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
@@ -66,7 +69,8 @@ public sealed class HttpDailyBarsSource(
 
     private static string Format(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-    private static IReadOnlyList<DailyBar>? Interpret(DailyBarsDto? dto, string symbol, Market market, ILogger logger)
+    // NFR, IADR-0559 決定 3, #1391: 応答の解釈（gRPC の実装 GrpcDailyBarsSource と共有する 1 つ。可視性を広げただけで規則は変えていない）。
+    internal static IReadOnlyList<DailyBar>? Interpret(DailyBarsDto? dto, string symbol, Market market, ILogger logger)
     {
         if (dto is not { Symbol: { } answeredSymbol, Market: { } answeredMarket, Status: { } status })
         {
@@ -112,9 +116,10 @@ public sealed class HttpDailyBarsSource(
     }
 
     // 送り手 DailyBarsView の受け皿。欠落を既定値と区別するため全項目 nullable。From・To は読まない（判定に使わない）。
-    private sealed record DailyBarsDto(
+    // gRPC の実装も線上の応答をこの形へ写してから Interpret を通す（状態は送り手 DailyBarsStatus の数値。UNSPECIFIED は null）。
+    internal sealed record DailyBarsDto(
         string? Symbol, Market? Market, int? Status, string? UnavailableReason, IReadOnlyList<DailyBarDto?>? Bars);
 
-    private sealed record DailyBarDto(
+    internal sealed record DailyBarDto(
         DateOnly? Date, decimal? Open, decimal? High, decimal? Low, decimal? Close, long? Volume);
 }

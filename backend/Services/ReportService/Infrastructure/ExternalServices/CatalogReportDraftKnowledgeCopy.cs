@@ -65,6 +65,60 @@ public sealed class CatalogReportDraftKnowledgeCopy(
         }
     }
 
+    public async Task MarkExpiredAsync(TradingReport report, int version, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        if (!options.Enabled)
+            return;
+
+        try
+        {
+            await MarkExpiredCoreAsync(report, version, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "失効した報告書のドラフトの写しに印を付けられませんでした（PeriodKey={PeriodKey}・版={Version}。写しは承認待ちの表記のまま残ります）。",
+                LogSanitizer.Sanitize(report.PeriodKey), version);
+        }
+    }
+
+    // ADR-0068 決定6, #1373, IADR-0549 決定5: 失効の印つきの写しを作ってから、元の承認待ちの写しを消す（作れなければ消さない＝写しを失わない）。
+    // 🔴 一覧を引けないときは何もしない（承認待ちの写しが見えないまま作ると、印つきと承認待ちの 2 件が残る）。
+    private async Task MarkExpiredCoreAsync(TradingReport report, int version, CancellationToken cancellationToken)
+    {
+        var listing = await catalog.ListAsync(cancellationToken).ConfigureAwait(false);
+        if (listing.Outcome != KnowledgeCatalogOutcome.Succeeded)
+        {
+            logger.LogWarning("KB の文書一覧を引けないため、失効した報告書のドラフトの写しに印を付けませんでした（PeriodKey={PeriodKey}）: {Reason}",
+                LogSanitizer.Sanitize(report.PeriodKey), listing.Reason);
+            return;
+        }
+
+        var copies = listing.Entries.Where(e => ReportKnowledgeMapper.IsDraftCopyOf(e, report.Kind, report.PeriodKey)).ToList();
+        var pending = copies.Where(e => !ReportKnowledgeMapper.IsExpiredDraftCopy(e)).ToList();
+        if (pending.Count == 0)
+            return; // 写しが無い・既に印が付いている。
+
+        if (!copies.Any(ReportKnowledgeMapper.IsExpiredDraftCopy))
+        {
+            var created = await catalog.CreateAsync(ReportKnowledgeMapper.ToDraftDocument(report, version, expired: true), cancellationToken)
+                .ConfigureAwait(false);
+            if (created.Outcome != KnowledgeCatalogOutcome.Succeeded)
+            {
+                LogWriteFailure("失効の印つきの作成", report.PeriodKey, version, created);
+                return;
+            }
+        }
+
+        _known.TryRemove((report.Kind, report.PeriodKey), out _);
+        foreach (var entry in pending)
+            await DeleteBestEffortAsync(entry.DocumentId, report.PeriodKey, cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task PublishCoreAsync(TradingReport report, int version, CancellationToken cancellationToken)
     {
         var key = (report.Kind, report.PeriodKey);
@@ -141,7 +195,9 @@ public sealed class CatalogReportDraftKnowledgeCopy(
         var listing = await catalog.ListAsync(cancellationToken).ConfigureAwait(false);
         if (listing.Outcome == KnowledgeCatalogOutcome.Succeeded)
         {
-            foreach (var entry in listing.Entries.Where(e => ReportKnowledgeMapper.IsDraftCopyOf(e, kind, periodKey)))
+            // ADR-0068 決定6, IADR-0549 決定5: 失効の印つきの写しは記録として残す（消さない）。
+            foreach (var entry in listing.Entries.Where(e => ReportKnowledgeMapper.IsDraftCopyOf(e, kind, periodKey)
+                && !ReportKnowledgeMapper.IsExpiredDraftCopy(e)))
                 targets.Add(entry.DocumentId);
         }
         else

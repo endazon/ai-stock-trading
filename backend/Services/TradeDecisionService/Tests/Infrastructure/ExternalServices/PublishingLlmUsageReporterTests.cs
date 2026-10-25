@@ -34,11 +34,10 @@ public class PublishingLlmUsageReporterTests
     }
 
     // IADR-0122 決定4 の投入値（換算率 163.71・2026-07 時点）。values-local.yaml と同じ表。
+    // #1305, IADR-0553: `claude-fable-5` の行は外した（未知モデルの上限は専用の設定値。既定 $10 / $50）。
     private static LlmPriceTable Prices() => LlmPriceTable.From(
     [
-        ("claude-fable-5", "1.637", "8.186"),
         ("claude-opus-5-5", "0.655", "3.274"),  // #1295: 5.5 系の公表値（$4/$20）
-        ("claude-opus-4-8", "0.819", "4.093"),
         ("claude-sonnet-5-5", "0.327", "1.637"),
         ("claude-haiku-5-5", "0.0164", "0.0819"),
     ]);
@@ -87,7 +86,6 @@ public class PublishingLlmUsageReporterTests
 
     // 基準3（#303）: 報告書 3 種別が別モデルへ解決されても、それぞれの単価で計上できる（#282 で経路を足す）。
     [Theory]
-    [InlineData("claude-fable-5", 18.009)]   // report-monthly: 1.637 + 2×8.186
     [InlineData("claude-opus-5-5", 7.203)]     // report-weekly:  0.655 + 2×3.274
     [InlineData("claude-sonnet-5-5", 3.601)]   // report-daily:   0.327 + 2×1.637
     public async Task 報告書の種別ごとのモデルでも実効単価で計上する(string model, double expected)
@@ -97,11 +95,13 @@ public class PublishingLlmUsageReporterTests
         amount.Should().Be((decimal)expected);
     }
 
-    // 基準4（#303）: 未知モデル・モデル名なしは最大単価（fable-5）へ倒す。0 に倒すと月次上限が効かなくなる。
+    // 基準4（#303）→ #1305, IADR-0553: 未知モデル・モデル名なしは未知モデルの計上単価（既定 $10 / $50＝1.637 + 2×8.186）。
+    // 0 に倒すと月次上限が効かなくなる。禁止モデル（fable-5）も単価表に無いので同じ単価で計上される。
     [Theory]
     [InlineData("claude-sonnet-4-6")]
+    [InlineData("claude-fable-5")]
     [InlineData(null)]
-    public async Task 未知のモデルは最大単価で計上する(string? model)
+    public async Task 未知のモデルは未知モデルの計上単価で計上する(string? model)
     {
         var amount = await ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, 1000, 2000, model), Prices());
 
@@ -130,4 +130,40 @@ public class PublishingLlmUsageReporterTests
 
         amount.Should().Be(0m);
     }
+
+    // ---- 入力トークン数が取れない要求（NFR-13, FR-04, ADR-0064 決定4, #1306, IADR-0550）----
+
+    private static LlmPriceTable TieredPrices() => LlmPriceTable.FromRows(
+    [
+        new LlmPriceRow("claude-sonnet-5-5", "0.327", "1.637"),
+        new LlmPriceRow("claude-haiku-5-5", "0.0164", "0.0819", "100000", "0.0819", "0.409"),
+    ]);
+
+    // 受け入れ基準 1・3・5: 計上の経路は、取れない（null）要求を第 2 段で、取れた要求を閾値どおりに引く。
+    // 金額の式の入力トークン数は 0 のまま（推定しない）＝取れない要求は出力 1k × 第 2 段 0.409 円。
+    [Theory]
+    [InlineData(null, "0.409")]            // 取れない → 第 2 段（修正前は第 1 段の 0.0819 だった）
+    [InlineData(100_000, "1.7219")]        // 100 × 0.0164 + 1 × 0.0819（ちょうどは第 1 段）
+    [InlineData(100_001, "8.5990819")]     // 100.001 × 0.0819 + 1 × 0.409
+    public async Task 取れない要求は第2段で計上し取れた要求は閾値どおりに計上する(int? inputTokens, string expected)
+    {
+        var amount = await ReportAsync(
+            new LlmUsage(LlmPurposes.TradeDecisionScreening, inputTokens, 1_000, "claude-haiku-5-5"), TieredPrices());
+
+        amount.Should().Be(decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    // 受け入れ基準 4: 第 2 段を持たない行は取れなくても従来の単価（入力 0 ＋ 出力 1k × 1.637）。
+    [Fact]
+    public async Task 第2段の無い行は取れなくても従来の単価で計上する()
+    {
+        var amount = await ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, null, 1_000, "claude-sonnet-5-5"), TieredPrices());
+
+        amount.Should().Be(1.637m);
+    }
+
+    // 受け入れ基準 6（形の固定）: 計測は「取れない」を表せる型で入力トークン数を運ぶ（int へ戻すと egress が 0 へ潰すしかなくなる）。
+    [Fact]
+    public void 計測は取れないを表せる型で入力トークン数を運ぶ() =>
+        typeof(LlmUsage).GetProperty(nameof(LlmUsage.InputTokens))!.PropertyType.Should().Be(typeof(int?));
 }

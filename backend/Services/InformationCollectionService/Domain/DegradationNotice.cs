@@ -14,7 +14,7 @@ public static class DegradationNotice
 
     /// <summary>
     /// 縮退の内容を述べる収集情報を作る。<b>本文は収集サービスが書き起こす</b>ため、
-    /// 外部テキストのサニタイズ（PromptSafetySanitizer）は経路の共通処理としてのみ通す。
+    /// 外部テキストの無害化（UntrustedDataBoundary.Neutralize）は掛けない（IADR-0222 決定6。プロンプト側の境界は IADR-0542 決定 4）。
     /// </summary>
     public static CollectedInformation Create(CollectionDegradation degradation, DateTimeOffset occurredAt)
     {

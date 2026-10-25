@@ -94,42 +94,66 @@ public class ClientFacingErrorsTests
         }
     }
 
-    // T-10-2419: 印のある例外は文言をそのまま返す。印は型・文言・ParamName・ActualValue を変えない（ArgumentOutOfRangeException のまま）。
-    // 印つきの ThrowIfNullOrWhiteSpace は CoreLib と同じ例外（null は ArgumentNullException）と同じ文言を投げる。
+    // T-10-2419: 印のある例外は文言を返す。印は型・文言・ParamName・ActualValue を変えない（ArgumentOutOfRangeException のまま）。
     // 印は ArgumentException の系統にだけ効く（同じキーを Data に置いた InvalidOperationException は印とみなさない）。
+    // SC-01, SC-02, IADR-0586 決定 1, #1472: 応答の文言からは .NET が付ける末尾（` (Parameter 'x')`・`Actual value was N.` の行）を落とす。
+    // 例外の Message そのものは変えない（ログは従来どおり引数名を持つ）。
     [Fact]
     public void 印のある例外は文言を返し型と文言を変えない()
     {
         var logger = new CapturingLogger();
 
-        var direct = Catch(() => throw new ArgumentException("market は必須です。", "req").ClientVisible());
-        ClientFacingErrors.MessageFor(direct, logger).Should().Be(direct.Message).And.Contain("market は必須です。");
+        var direct = Catch(() => throw new ArgumentException("market（市場）は必須です。", "req").ClientVisible());
+        direct.Message.Should().Contain("'req'", "例外の文言は変えない");
+        ClientFacingErrors.MessageFor(direct, logger).Should().Be("market（市場）は必須です。");
 
         var outOfRange = Catch(() => throw new ArgumentOutOfRangeException("count", 0, "件数は 1 以上").ClientVisible());
         var typed = outOfRange.Should().BeOfType<ArgumentOutOfRangeException>().Which;
         (typed.ParamName, typed.ActualValue).Should().Be(("count", (object?)0));
-        ClientFacingErrors.MessageFor(outOfRange, logger).Should().Be(outOfRange.Message).And.Contain("件数は 1 以上");
+        ClientFacingErrors.MessageFor(outOfRange, logger).Should().Be("件数は 1 以上");
 
-        var expectedBlank = Catch(() => ArgumentException.ThrowIfNullOrWhiteSpace(" ", "reason"));
-        var blank = Catch(() => ClientVisibleArgument.ThrowIfNullOrWhiteSpace(" ", "reason"));
-        blank.Should().BeOfType<ArgumentException>();
-        blank.Message.Should().Be(expectedBlank.Message);
-        ClientFacingErrors.MessageFor(blank, logger).Should().Contain("'reason'");
+        var outOfRangeNoValue = Catch(() => throw new ArgumentOutOfRangeException("count", "件数は 1 以上").ClientVisible());
+        ClientFacingErrors.MessageFor(outOfRangeNoValue, logger).Should().Be("件数は 1 以上");
 
-        var expectedNull = Catch(() => ArgumentException.ThrowIfNullOrWhiteSpace(null, "reason"));
-        var missing = Catch(() => ClientVisibleArgument.ThrowIfNullOrWhiteSpace(null, "reason"));
-        missing.Should().BeOfType<ArgumentNullException>();
-        missing.Message.Should().Be(expectedNull.Message);
-        ClientFacingErrors.MessageFor(missing, logger).Should().Be(missing.Message);
+        var noParam = Catch(() => throw new ArgumentException("引数名の無い文言。").ClientVisible());
+        ClientFacingErrors.MessageFor(noParam, logger).Should().Be("引数名の無い文言。");
 
-        string? reason = "理由";
-        ((Action)(() => ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason))).Should().NotThrow();
+        // 文言の途中に同じ形の文字列があっても、末尾でなければ落とさない。
+        var embedded = Catch(() => throw new ArgumentException("前 (Parameter 'x') 後", "x").ClientVisible());
+        ClientFacingErrors.MessageFor(embedded, logger).Should().Be("前 (Parameter 'x') 後");
 
         logger.Entries.Should().BeEmpty("印のある文言を返すときはログを足さない");
 
         var notArgument = new InvalidOperationException(ConnectionLikeMarker);
         notArgument.Data[ClientVisibleArgument.DataKey] = true;
         notArgument.IsClientVisible().Should().BeFalse();
+    }
+
+    // SC-01, SC-02, IADR-0586 決定 2, #1472: 印つきの空欄検査は CoreLib と同じ型・同じ ParamName の例外を、日本語の文言で投げる
+    // （以前は英語の既定文言 `The value cannot be an empty string …` が画面と Discord に出た）。応答の文言は「理由は必須です。」だけになる。
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void 印つきの空欄検査は日本語の文言で投げる(string? reason)
+    {
+        var logger = new CapturingLogger();
+        var expected = Catch(() => ArgumentException.ThrowIfNullOrWhiteSpace(reason));
+
+        var thrown = Catch(() => ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason, "理由"));
+
+        thrown.GetType().Should().Be(expected.GetType(), "null は ArgumentNullException・空と空白は ArgumentException（CoreLib と同じ）");
+        ((ArgumentException)thrown).ParamName.Should().Be("reason");
+        thrown.IsClientVisible().Should().BeTrue();
+        ClientFacingErrors.MessageFor(thrown, logger).Should().Be("理由は必須です。");
+        logger.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void 印つきの空欄検査は値があれば投げない()
+    {
+        string? reason = "理由";
+        ((Action)(() => ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason, "理由"))).Should().NotThrow();
     }
 
     // T-10-2396: 印の無い例外の文言は固定文言にし、元の例外を Warning で例外ごとログへ出す。印のある文言はそのまま返しログは出さない。

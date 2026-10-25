@@ -204,7 +204,7 @@ public sealed class HttpLlmCompletionClient(
             // NFR, IADR-0316, #708: 生出力は最も直接的な外部入力である。全量記録の目的は変えずに 1 行へ収める。
             if (logPrompts)
                 logger.LogInformation("LLM 応答: model={Model} tokens={Input}/{Output} stopReason={StopReason} text={Text}",
-                    dto.Model, dto.InputTokens ?? 0, dto.OutputTokens ?? 0, dto.StopReason, LogSanitizer.Sanitize(dto.Text));
+                    dto.Model, dto.InputTokens, dto.OutputTokens ?? 0, dto.StopReason, LogSanitizer.Sanitize(dto.Text));
 
             // #79, IADR-0055, IADR-0104 決定4: 送信が成立した（Sent=true）応答のトークンを費用計測へ渡す。本文の扱い
             //（拒否・空・上限到達で破棄するか否か）とは独立に課金は発生しているため、本文を読む前に一度だけ計測する
@@ -219,7 +219,8 @@ public sealed class HttpLlmCompletionClient(
                 // 計上の区分（月次上限の対象範囲）は購読側が purpose だけを見て決めるため、層が混ざると内訳が壊れる。
                 await usageReporter
                     .ReportAsync(
-                        new LlmUsage(effectivePurpose, dto.InputTokens ?? 0, dto.OutputTokens ?? 0, dto.Model),
+                        // NFR-13, ADR-0064 決定4, #1306, IADR-0550: 入力トークン数は 0 へ潰さない（取れない＝null は高い側の段で引く）。
+                        new LlmUsage(effectivePurpose, dto.InputTokens, dto.OutputTokens ?? 0, dto.Model),
                         cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -236,8 +237,6 @@ public sealed class HttpLlmCompletionClient(
             // 鎖（フォールバック先）を持たない用途で別モデルが答えるのは、基盤の用途エントリが未登録・ZDR 除外・
             // 提供終了で `DefaultModel` へ無音に落ちたときであり、**まさに検知したい事象**である。
             var evaluation = LlmAssignmentEvaluator.Evaluate(effectivePurpose, dto.Model);
-            // #1295, IADR-0524（移行期間のみ・#1296 で撤去）: 直前世代を受けたことを用途とモデルの組ごとに 1 回だけ警告する。
-            LlmPreviousGenerationWarning.Shared.WarnOnce(logger, effectivePurpose, evaluation);
             if (!evaluation.Allowed)
             {
                 var reason = evaluation.Outcome switch

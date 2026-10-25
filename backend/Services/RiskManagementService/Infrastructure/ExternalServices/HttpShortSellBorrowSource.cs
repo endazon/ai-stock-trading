@@ -19,9 +19,9 @@ public sealed class HttpShortSellBorrowSource(
     : IShortSellBorrowSource
 {
     // 送り手 ShortPermitStatus の数値（web 既定で列挙は数値）。送り手の型は参照しない（別サービス）。
-    private const int StatusUnknown = 0;
-    private const int StatusPermitted = 1;
-    private const int StatusNotPermitted = 2;
+    internal const int StatusUnknown = 0;
+    internal const int StatusPermitted = 1;
+    internal const int StatusNotPermitted = 2;
 
     public async Task<ShortSellBorrowObservation> GetAsync(
         string symbol, Market market, CancellationToken cancellationToken = default)
@@ -41,32 +41,7 @@ public sealed class HttpShortSellBorrowSource(
             }
 
             var dto = await response.Content.ReadFromJsonAsync<ShortPermitDto>(cancellationToken).ConfigureAwait(false);
-            if (dto is not { Symbol: { } answeredSymbol, Market: { } answeredMarket, Status: { } status })
-            {
-                logger.LogError("借株可否の応答に銘柄・市場・状態のいずれかが無い。送り手との契約の食い違いとみなし、借株可否は不明として扱います。");
-                return ShortSellBorrowObservation.Unknown("contract-mismatch");
-            }
-
-            if (!string.Equals(answeredSymbol, symbol, StringComparison.Ordinal) || answeredMarket != market)
-            {
-                logger.LogError(
-                    "借株可否の応答が要求と別の銘柄・市場を答えた（要求 {Symbol}/{Market}・応答 {AnsweredSymbol}/{AnsweredMarket}）。借株可否は不明として扱います。",
-                    symbol, market, answeredSymbol, answeredMarket);
-                return ShortSellBorrowObservation.Unknown("response-mismatch");
-            }
-
-            switch (status)
-            {
-                case StatusPermitted:
-                    return ShortSellBorrowObservation.Permitted();
-                case StatusNotPermitted:
-                    return ShortSellBorrowObservation.NotPermitted();
-                case StatusUnknown:
-                    return ShortSellBorrowObservation.Unknown(dto.UnknownReason ?? "unknown");
-                default:
-                    logger.LogError("借株可否の応答の状態が未定義値 {Status}。借株可否は不明として扱います。", status);
-                    return ShortSellBorrowObservation.Unknown("contract-mismatch");
-            }
+            return Interpret(dto, symbol, market, logger);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -80,6 +55,39 @@ public sealed class HttpShortSellBorrowSource(
         }
     }
 
+    // NFR, IADR-0559 決定 3, #1391: 応答の解釈（gRPC の実装 GrpcShortSellBorrowSource と共有する 1 つ。REST から切り出しただけで規則は変えていない）。
+    // 🔴 状態の欠落・未定義値・要求と違う銘柄／市場の答えは「分からない」。許可へ倒す経路を持たない。
+    internal static ShortSellBorrowObservation Interpret(ShortPermitDto? dto, string symbol, Market market, ILogger logger)
+    {
+        if (dto is not { Symbol: { } answeredSymbol, Market: { } answeredMarket, Status: { } status })
+        {
+            logger.LogError("借株可否の応答に銘柄・市場・状態のいずれかが無い。送り手との契約の食い違いとみなし、借株可否は不明として扱います。");
+            return ShortSellBorrowObservation.Unknown("contract-mismatch");
+        }
+
+        if (!string.Equals(answeredSymbol, symbol, StringComparison.Ordinal) || answeredMarket != market)
+        {
+            logger.LogError(
+                "借株可否の応答が要求と別の銘柄・市場を答えた（要求 {Symbol}/{Market}・応答 {AnsweredSymbol}/{AnsweredMarket}）。借株可否は不明として扱います。",
+                symbol, market, answeredSymbol, answeredMarket);
+            return ShortSellBorrowObservation.Unknown("response-mismatch");
+        }
+
+        switch (status)
+        {
+            case StatusPermitted:
+                return ShortSellBorrowObservation.Permitted();
+            case StatusNotPermitted:
+                return ShortSellBorrowObservation.NotPermitted();
+            case StatusUnknown:
+                return ShortSellBorrowObservation.Unknown(dto.UnknownReason ?? "unknown");
+            default:
+                logger.LogError("借株可否の応答の状態が未定義値 {Status}。借株可否は不明として扱います。", status);
+                return ShortSellBorrowObservation.Unknown("contract-mismatch");
+        }
+    }
+
     // 送り手 ShortPermitView の受け皿。欠落を既定値と区別するため全項目 nullable。ObservedAt は読まない（判定に使わない）。
-    private sealed record ShortPermitDto(string? Symbol, Market? Market, int? Status, string? UnknownReason);
+    // gRPC の実装も線上の応答をこの形へ写してから Interpret を通す（状態は送り手 ShortPermitStatus の数値。UNSPECIFIED は null）。
+    internal sealed record ShortPermitDto(string? Symbol, Market? Market, int? Status, string? UnknownReason);
 }

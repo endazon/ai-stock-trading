@@ -56,7 +56,7 @@ public class TradingDefaultsTests
     }
 
     // T-10-2311, FR-10, #1176, IADR-0495 決定1: 新規建ての最小の名目額は equity の 1%（オーナー裁定 2026-10-07）。
-    // 🔴 計画の 05_trading-assumptions §5 にはまだ行が無い（実装側の裁定値。計画への記録は planning への issue で求める）。
+    // 計画の 05_trading-assumptions §5「新規建ての最小の名目額」の行（2026-10-09 追加）と一致する（#1291 で旧注記を改めた）。
     // 1 注文上限（25%）より小さい（上限より大きいと新規建てが構造的に成立しない）。
     [Fact]
     public void 新規建ての最小の名目額はequityの1パーセント()
@@ -66,6 +66,27 @@ public class TradingDefaultsTests
         TradingDefaults.MinEntryNotionalRatio.Should().BeLessThan(limits.MaxOrderAmountRatio);
         MinimumEntryNotional.Validate(TradingDefaults.MinEntryNotionalRatio).Should().Be(0.01m);
         MinimumEntryNotional.MaxRatio.Should().Be(limits.MaxOrderAmountRatio, "しきい値の上限は 1 注文上限の既定（25%）");
+    }
+
+    // T-10-2552, FR-10, ADR-0063 決定1・決定2, #1291, IADR-0527 決定1: 高ボラティリティ銘柄の統制値の既定（05_trading-assumptions §5 の 2 行・
+    // 利用者裁定 2026-10-10）。区分の 1 注文上限は equity の 5%（$3,000 で $150）、自動判定は ATR(14) ÷ 参照価格 ≥ 4%、明示指定は既定で無い。
+    // 4% は「1 取引リスク 1% ÷ 区分外の 1 注文上限 25%」の境目であり、区分外の 25% は据え置く（決定3）。
+    [Fact]
+    public void 高ボラティリティ銘柄の統制値の既定は全体前提条件と一致する()
+    {
+        TradingDefaults.HighVolatilityMaxOrderAmountRatio.Should().Be(0.05m);
+        TradingDefaults.HighVolatilityAtrRatioThreshold.Should().Be(0.04m);
+
+        var highVolatility = TradingDefaults.CreateHighVolatilitySettings();
+        highVolatility.MaxOrderAmountRatio.Should().Be(0.05m);
+        highVolatility.DesignatedSymbols.Should().BeEmpty();
+        TradingDefaults.CreateSettings().HighVolatility.Should().Be(highVolatility, "設定の集約の既定も同じ値で効く（不在を統制なしにしない）");
+        (TradingDefaults.InitialEquityUsd * highVolatility.MaxOrderAmountRatio).Should().Be(150m, "§5: 自己資金 $3,000 で $150");
+
+        var limits = TradingDefaults.CreateRiskLimits();
+        limits.MaxOrderAmountRatio.Should().Be(0.25m, "区分外の 25% は据え置く（ADR-0063 決定3）");
+        TradingDefaults.HighVolatilityAtrRatioThreshold.Should().Be(limits.PerTradeRiskRatio / limits.MaxOrderAmountRatio);
+        HighVolatilityOrderCap.Validate(highVolatility).Should().BeEmpty("既定値は構成範囲（最小の名目額の比率〜25%）に入る");
     }
 
     // FR-10, FR-17, #329, #364, IADR-0130 決定3 / IADR-0152 決定3: 初期投入資金は USD 3,000
@@ -186,6 +207,22 @@ public class TradingDefaultsTests
         settings.LayeringOrderCount.Should().Be(3);
     }
 
+    // 🔴 FR-10, FR-19, ADR-0067 決定2・3, 05_trading-assumptions §5, #1339, IADR-0539: 判断由来の決済の指値の未約定時の取消の既定値。
+    // 既定は無効・N＝15 分・1 建玉 1 日 1 回。既定の N は検知の窓（5 分）より長い（有効にしてもそのまま構成の検証を通る）。
+    // 検知の窓は Shared.Kernel の定数と同じ値でなければならない（発注執行が N の下端に使う。片方だけ変えると下端がずれる）。
+    [Fact]
+    public void 判断由来の決済の未約定時の取消の既定値は全体前提条件と一致する()
+    {
+        TradingDefaults.DecisionCloseUnfilledCancelEnabled.Should().BeFalse("ADR-0067 決定2: 既定は無効");
+        TradingDefaults.DecisionCloseUnfilledCancelMinutes.Should().Be(15);
+        TradingDefaults.DecisionCloseUnfilledCancelMaxPerPositionPerDay.Should().Be(1);
+
+        var window = TradingDefaults.CreateManipulationDetectionSettings().LookbackWindow;
+        window.Should().Be(TimeSpan.FromMinutes(DecisionCloseUnfilledCancelDefaults.ManipulationLookbackWindowMinutes));
+        TimeSpan.FromMinutes(TradingDefaults.DecisionCloseUnfilledCancelMinutes).Should().BeGreaterThan(window,
+            "ADR-0067 決定2: 有効時の N は相場操縦の検知の窓より長い");
+    }
+
     // FR-20, #333, 06_daytrading-review §4: Stage 1 は moomoo `SIMULATE`（OpenD 経由のデモ環境）であり、
     // 内蔵 `paper`（擬似約定）とは別物である。**呼称を Paper へ戻す退行を検知する**退行防止テスト。
     // 数値 1 は不変である（永続化された遷移履歴の意味を変えないため）。
@@ -239,5 +276,30 @@ public class TradingDefaultsTests
         // 発注可能額は equity から解決される（equity $3,000 で Stage 2 は $900 ＝ 30%）。
         policy.SettingsFor(TradingStage.Stage2MinimalLive)
             .OrderableCapFor(TradingDefaults.InitialCapital).Should().Be(900m);
+    }
+
+    // T-10-2934, FR-10, FR-19, #1396, IADR-0561 決定 2・3: 閉場前の新規建ての締め切りと閉場前の手仕舞いの既定値（利用者裁定 2026-10-20・planning#808）。
+    // 計画 05_trading-assumptions §5 は 2026-10-20 時点で反映待ちであり、値は裁定の値である（§5 へ行が入ったら一致を確かめ直す）。
+    [Fact]
+    public void T_10_2934_閉場前の締め切りは60分で手仕舞いは15分かつ既定は無効()
+    {
+        TradingDefaults.PreCloseEntryCutoffMinutes.Should().Be(60);
+        TradingDefaults.PreCloseFlattenMinutes.Should().Be(15);
+        TradingDefaults.PreCloseFlattenEnabled.Should().BeFalse();
+
+        var cutoff = TradingDefaults.CreatePreCloseEntryCutoff();
+        cutoff.MinutesFor(AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates).Should().Be(60);
+        cutoff.MinutesFor(AiStockTrading.Shared.Contracts.Trading.Market.Japan).Should().Be(60);
+    }
+
+    // T-10-2941, FR-10, FR-19, #1397, IADR-0562 決定 1: テーマごとの同時保有の上限の既定（利用者裁定 2026-10-20・planning#809）。計画 §5 は反映待ち。
+    [Fact]
+    public void T_10_2941_テーマの同時保有の上限は暗号資産とAI半導体の2つで上限はどちらも1()
+    {
+        var themes = TradingDefaults.CreateThemeConcentration().Themes;
+
+        themes.Select(t => (t.Name, string.Join(",", t.Symbols), t.MaxPositions, t.Market)).Should().Equal(
+            ("暗号資産", "COIN,MARA,MSTR,HOOD", 1, AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates),
+            ("AI・半導体", "NVDA,SMCI", 1, AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates));
     }
 }

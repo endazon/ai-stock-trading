@@ -74,6 +74,57 @@ namespace ReportService.Infrastructure.Migrations
                     b.ToTable("policy_revision_attempts", (string)null);
                 });
 
+            modelBuilder.Entity("ReportService.Infrastructure.Persistence.ReportConfirmedVersionRow", b =>
+                {
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("AssumptionsVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("BasedOn")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Body")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PeriodKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateOnly>("PeriodStart")
+                        .HasColumnType("date");
+
+                    b.Property<string>("PolicySummary")
+                        .IsRequired()
+                        .HasMaxLength(8192)
+                        .HasColumnType("character varying(8192)");
+
+                    b.Property<string>("UnsuppliedInputs")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Kind", "Sequence");
+
+                    b.HasIndex("PeriodKey", "Version")
+                        .IsUnique();
+
+                    b.HasIndex("Kind", "PeriodStart", "ConfirmedAt");
+
+                    b.ToTable("report_confirmed_versions", (string)null);
+                });
+
             modelBuilder.Entity("ReportService.Infrastructure.Persistence.ReportRegenerationAttemptRow", b =>
                 {
                     b.Property<Guid>("Id")

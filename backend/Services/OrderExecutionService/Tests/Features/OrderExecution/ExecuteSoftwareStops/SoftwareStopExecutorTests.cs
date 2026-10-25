@@ -89,7 +89,7 @@ public class SoftwareStopExecutorTests
         var store = new InMemoryExecutedOrderStore();
         var reservations = new InMemoryOrderReservationStore();
         return new Fixture(
-            new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock()),
+            new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock(), AlwaysOpenSessionGate.Instance),
             broker, stops, store, reservations);
     }
 
@@ -429,7 +429,7 @@ public class SoftwareStopExecutorTests
         var store = new InMemoryExecutedOrderStore();
         var health = new RecordingPositionQueryHealth();
         var f = new Fixture(
-            new SoftwareStopExecutor(broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(),
+            new SoftwareStopExecutor(broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance,
                 positionQueryHealth: health),
             broker, stops, store, new InMemoryOrderReservationStore());
         var stop = SoftwareStop();
@@ -459,7 +459,7 @@ public class SoftwareStopExecutorTests
         var store = new InMemoryExecutedOrderStore();
         var health = new RecordingPositionQueryHealth();
         var f = new Fixture(
-            new SoftwareStopExecutor(broker, positions, stops, store, new InMemoryOrderReservationStore(), new FakeClock(),
+            new SoftwareStopExecutor(broker, positions, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance,
                 positionQueryHealth: health),
             broker, stops, store, new InMemoryOrderReservationStore());
         var stop = SoftwareStop();
@@ -473,23 +473,26 @@ public class SoftwareStopExecutorTests
         health.Reports.Should().Equal([(PositionQuerySource.SoftwareStopClose, false, expected)]);
     }
 
+    // ［2026-10-23 追記 / #1446, IADR-0575 決定 1］旧: 「ガードから渡されたスナップショットでは S1 は照会も報告もしない」。
+    // S1 は決済の直列化を取った後に建玉を照会し直す（巡回の先頭の照会は直列化の外で読んだ値で、その後の他の決済を映さない）。
+    // 自ら照会した回なので、S1 の発生源として成否を報告する（ガードの報告と発生源が違うので二重に数えない）。
     [Fact]
-    public async Task T_10_1770_ガードから渡されたスナップショットではS1は照会も報告もしない()
+    public async Task T_10_1770_ガードから渡されたスナップショットでもS1は直列化の後に自ら照会して報告する()
     {
         var broker = new FakeBroker();
         var stops = new InMemoryProtectiveStopOrderStore();
         var store = new InMemoryExecutedOrderStore();
         var health = new RecordingPositionQueryHealth();
         var executor = new SoftwareStopExecutor(
-            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), positionQueryHealth: health);
+            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance, positionQueryHealth: health);
         var stop = SoftwareStop() with { TriggeredAt = Now, TriggeredPrice = 940m };
         stops.Save(stop);
         Entry(new Fixture(executor, broker, stops, store, new InMemoryOrderReservationStore()), stop, OrderStatus.Filled, 10);
 
         await executor.TryCloseAsync(stops.Find(stop.EntryDecisionId)!, [Long(10)]);
 
-        broker.PositionQueries.Should().Be(0);
-        health.Reports.Should().BeEmpty("ガードが巡回の先頭の照会として報告済み（二重に数えない）");
+        broker.PositionQueries.Should().Be(1, "直列化の後に照会し直す");
+        health.Reports.Should().Equal([(PositionQuerySource.SoftwareStopClose, true, (string?)null)]);
     }
 
     [Fact]
@@ -629,6 +632,9 @@ public class SoftwareStopExecutorTests
         f.Broker.CloseStatus = OrderStatus.Filled;
 
         // 1 巡回ぶん: 同じ建玉（15 株）を両方の行へ渡す。手動決済で 5 株減っている状態。
+        // ［2026-10-23 追記 / #1446, IADR-0575 決定 1］S1 は直列化の後に照会し直すので、証券会社の照会も 15 株を返す
+        //（偽の証券会社は約定を建玉へ映さない＝「照会がまだ映していない決済」の窓のまま。是正の前と同じ状況を固定する）。
+        f.Broker.Positions = [Long(15)];
         var snapshot = new[] { Long(15) };
         await f.Executor.TryCloseAsync(f.Stops.Find(first.EntryDecisionId)!, snapshot);
         await f.Executor.TryCloseAsync(f.Stops.Find(second.EntryDecisionId)!, snapshot);

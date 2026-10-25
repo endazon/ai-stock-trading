@@ -38,6 +38,14 @@ public static class LlmPricingStartupGuard
         "（env 名ではモデル ID の - を _ で書く）。LLM を使わないなら LlmGateway__BaseUrl / LlmGateway__Grpc を外す（IADR-0499 / #1197）。";
 
     /// <summary>
+    /// 未知モデルの計上単価（<c>LlmPricing:UnknownModel:*</c>）が解析できない・0 以下のときの起動時の警告（#1305, IADR-0553）。
+    /// 起動は止めない（計上は既定値 $10 / $50 で続き、0 円にも表の最大にも倒れないため）。
+    /// </summary>
+    public const string UnknownModelSettingWarningMessage =
+        "未知モデルの計上単価（LlmPricing__UnknownModel__InputPer1kTokens / __OutputPer1kTokens）が解析できない・0 以下のため、" +
+        "その成分は既定値（入力 1.637・出力 8.186 円/1k＝$10 / $50）で計上する。値を円/1k トークンの正の数（小数点は .）で書き直す。";
+
+    /// <summary>
     /// 起動時に単価の欠けをどう扱うかを決める。
     /// </summary>
     /// <param name="priceTable">各サービスが自前の構成から組み立てた単価表。</param>

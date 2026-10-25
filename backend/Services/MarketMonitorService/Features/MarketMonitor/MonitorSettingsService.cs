@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Errors;
+using AiStockTrading.Shared.Contracts.Trading;
 using MarketMonitorService.Common.Abstractions;
 using MarketMonitorService.Domain;
 
@@ -136,7 +137,7 @@ public sealed class MonitorSettingsService(
         var duplicates = settings.MonitoredSymbols
             .GroupBy(s => (s.Symbol.Trim().ToUpperInvariant(), s.Market))
             .Where(g => g.Count() > 1)
-            .Select(g => $"{g.Key.Item1}@{g.Key.Market}")
+            .Select(g => $"{g.Key.Item1}（{TradingTermDisplay.Label(g.Key.Market)}）")
             .ToList();
         if (duplicates.Count > 0)
         {
@@ -159,7 +160,7 @@ public sealed class MonitorSettingsService(
         {
             throw new ArgumentException(
                 $"監視銘柄を増やす置換は Finnhub の巡回に収まりません（{cycleFit.Describe(settings.MonitoredSymbols)}）。"
-                + $"収まらない追加: {string.Join(", ", costlyAdditions.Select(s => $"{s.Symbol}@{s.Market}"))}。"
+                + $"収まらない追加: {string.Join(", ", costlyAdditions.Select(s => $"{s.Symbol}（{TradingTermDisplay.Label(s.Market)}）"))}。"
                 + "置換は一部だけ適用しません。除外だけなら、追加を含めずに送れば適用されます（除外は止めません）。",
                 nameof(settings)).ClientVisible();
         }
@@ -243,6 +244,6 @@ public sealed class MonitorSettingsService(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         // NFR-06, IADR-0509, #1230: 利用者（Discord・画面）が入力する欄の空欄検査。文言を 400 / INVALID_ARGUMENT へ載せる印を付ける。
-        ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason);
+        ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason, "理由");
     }
 }

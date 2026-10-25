@@ -39,16 +39,23 @@ public class RiskManagementPeriodReadContractTests
         [
             new("7203", Market.Japan, TradeSide.Sell, PositionEffect.Close, 100, 2_600m, At,
                 StopLossPrice: 2_450m, FxRateToBase: 0.0064m, DecisionId: decisionId,
-                Provider: BrokerProvider.MoomooSimulate, FxRateBaseToDisplay: 156.25m),
+                Provider: BrokerProvider.MoomooSimulate, FxRateBaseToDisplay: 156.25m,
+                ApprovalSource: ApprovalSource.SoftwareStopS1),
+            // #1357, IADR-0540 決定 1: 由来が記録されていない行は null のまま読む（種別未供給）。
+            new("AAPL", Market.UnitedStates, TradeSide.Sell, PositionEffect.Close, 1, 200m, At),
         ];
         var source = new HttpPeriodFillSource(Client(JsonSerializer.Serialize(fills, Web)), NullLogger<HttpPeriodFillSource>.Instance);
 
         var read = await source.GetFillsAsync(From, To);
 
-        var f = read.Should().ContainSingle().Subject;
+        read.Should().HaveCount(2);
+        var f = read[0];
         (f.Symbol, f.Market, f.Side, f.PositionEffect, f.Quantity, f.Price, f.ExecutedAt)
             .Should().Be(("7203", Market.Japan, TradeSide.Sell, PositionEffect.Close, 100, 2_600m * 0.0064m, At));
         (f.DecisionId, f.Provider, f.FxRateBaseToDisplay).Should().Be((decisionId, BrokerProvider.MoomooSimulate, 156.25m));
+        // #1357: 承認行の由来（決済の種別の記録源）。
+        f.ApprovalSource.Should().Be(FillApprovalSource.SoftwareStopS1);
+        read[1].ApprovalSource.Should().BeNull("由来が記録されていない行を既定の由来で埋めない");
     }
 
     // 🔴 T-10-883: 期間の乖離の取り込み（GET /risk-controls/drift-adoptions）。

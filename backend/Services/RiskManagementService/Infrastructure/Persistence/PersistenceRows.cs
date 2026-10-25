@@ -166,6 +166,17 @@ public sealed class ApprovedOrderRow
     /// </para>
     /// </summary>
     public RiskManagementService.Features.RiskManagement.ApprovalSource? Source { get; set; }
+
+    /// <summary>
+    /// FR-04, FR-10, #1384, IADR-0558 決定 4: 新規建ての判断が建てた条件の記号（方針の「条件 X:」行・「X 名前:」行の英大文字 1 字。発注意図の EntryBasis）。
+    /// 🔴 <c>null</c> ＝記録なし（本列の追加前の行・決済・保護レグ・判断が答えなかった・方針の条件の集合に無かった）。推定で埋めない。
+    /// </summary>
+    public string? EntryCondition { get; set; }
+
+    /// <summary>
+    /// FR-04, FR-10, #1384, IADR-0558 決定 4: その条件の判定に使った基準価格（ローカル通貨）。<c>null</c> ＝不明（確かめられなかった・記録なし）。
+    /// </summary>
+    public decimal? EntryReferencePrice { get; set; }
 }
 
 // FR-10, FR-05, IADR-0018: 約定（OrderExecuted）を OrderId で保持する追記専用行（取引台帳の一部）。
@@ -669,4 +680,44 @@ public sealed class PositionDriftAdoptionRow
     public string Reason { get; set; } = string.Empty;
 
     public DateTimeOffset AdoptedAtUtc { get; set; }
+}
+
+// 🔴 FR-10, #1319, IADR-0529: 審査が承認した新規建ての予約（DecisionId で 1 件 1 行）。審査のトランザクションの中で書く。
+// 承認行（ApprovedOrderRow）とは別の表にする——承認行は「発行済み」の印（IADR-0407）であり、発行の前には書けない。
+// 承認数量・承認時刻・損切りの実行機構は、発行に失敗して判断が再配送されたときに**同じ承認**を組み直すために持つ。
+public sealed class EntryReservationRow
+{
+    public Guid DecisionId { get; set; }
+
+    public string Symbol { get; set; } = string.Empty;
+
+    public AiStockTrading.Shared.Contracts.Trading.Market Market { get; set; }
+
+    public AiStockTrading.Shared.Contracts.Trading.TradeSide Side { get; set; }
+
+    /// <summary>算入する数量（承認行と同じく Intent の数量）。</summary>
+    public int Quantity { get; set; }
+
+    public decimal Price { get; set; }
+
+    /// <summary>基準通貨（USD）への換算レート（Intent が運ぶ値。承認行と同じ・IADR-0107）。</summary>
+    public decimal FxRateToBase { get; set; }
+
+    /// <summary>OrderApproved.ApprovedQuantity（組み直し用）。</summary>
+    public int ApprovedQuantity { get; set; }
+
+    /// <summary>OrderApproved.ApprovedAt（当日の判定と組み直しに使う）。</summary>
+    public DateTimeOffset ApprovedAt { get; set; }
+
+    /// <summary>承認時点の損切りの実行機構（OrderApproved.StopLossMethod。IADR-0342 決定3。組み直し用）。</summary>
+    public AiStockTrading.Shared.Contracts.Trading.StopLossExecutionMethod StopLossMethod { get; set; }
+
+    /// <summary>
+    /// 🔴 #1319, IADR-0529 決定6: 無効にした時刻（null＝有効）。承認行が無いまま再配送された判断を、新規建てを止める状態か
+    /// 取引日の経過のために再発行しなかった印。立ったら注文源は数えず、再配送でも再発行しない（単調。戻さない）。
+    /// </summary>
+    public DateTimeOffset? VoidedAt { get; set; }
+
+    /// <summary>無効にしたときの拒否の理由（列挙名のカンマ区切り。取引日の経過だけなら空文字）。</summary>
+    public string? VoidReasons { get; set; }
 }

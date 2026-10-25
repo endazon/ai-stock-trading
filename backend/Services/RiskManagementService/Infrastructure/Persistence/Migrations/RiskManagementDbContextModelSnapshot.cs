@@ -49,6 +49,13 @@ namespace RiskManagementService.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("ApprovedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("EntryCondition")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<decimal?>("EntryReferencePrice")
+                        .HasColumnType("numeric");
+
                     b.Property<decimal?>("FxRateBaseToDisplay")
                         .HasColumnType("numeric");
 
@@ -224,6 +231,54 @@ namespace RiskManagementService.Infrastructure.Migrations
                     b.HasIndex("Symbol", "Market");
 
                     b.ToTable("buy_in_inferences", (string)null);
+                });
+
+            modelBuilder.Entity("RiskManagementService.Infrastructure.Persistence.EntryReservationRow", b =>
+                {
+                    b.Property<Guid>("DecisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ApprovedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ApprovedQuantity")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("FxRateToBase")
+                        .HasColumnType("numeric");
+
+                    b.Property<int>("Market")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("Price")
+                        .HasColumnType("numeric");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Side")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StopLossMethod")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("VoidReasons")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTimeOffset?>("VoidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("DecisionId");
+
+                    b.HasIndex("ApprovedAt");
+
+                    b.ToTable("entry_reservations", (string)null);
                 });
 
             modelBuilder.Entity("RiskManagementService.Infrastructure.Persistence.GoodFaithViolationClearanceRow", b =>

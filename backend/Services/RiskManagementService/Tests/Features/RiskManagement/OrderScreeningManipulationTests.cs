@@ -70,7 +70,7 @@ public class OrderScreeningManipulationTests
         return new OrderScreeningService(
             settingsStore, builder, lockout, clock, new WeekendBusinessCalendar(),
             new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(),
-            TestShortSellContexts.Unavailable(clock), detector);
+            TestShortSellContexts.Unavailable(clock), new InMemoryEntryReservationStore(), ConfiguredSessionAndThemeControls.Default, detector);
     }
 
     [Fact]

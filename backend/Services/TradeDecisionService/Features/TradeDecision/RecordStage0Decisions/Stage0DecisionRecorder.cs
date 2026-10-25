@@ -33,6 +33,20 @@ public enum Stage0RecordingStatus
 
     /// <summary>記録は採れたが書き出しに失敗した。</summary>
     SaveFailed,
+
+    /// <summary>
+    /// 🔴 #1342, IADR-0537: 同じ実行（印の鍵）は完了済みか、上限で停止済み（終わりの印がある）。LLM を 1 回も呼んでいない。
+    /// </summary>
+    AlreadyFinished,
+
+    /// <summary>
+    /// 🔴 #1342, IADR-0537: 実行の状態（印・チェックポイント・費用の累計）が読めないか書けない。LLM を呼ぶ前に止めた
+    /// （人が状態のファイルを確かめて消すまで走らない）。途中で書けなくなったときは、ここまでの記録を書き出して止める。
+    /// </summary>
+    StateUnavailable,
+
+    /// <summary>#1342, IADR-0537: ほかの実行が実行のロックを持っている。LLM を 1 回も呼んでいない。</summary>
+    Locked,
 }
 
 /// <summary>記録実行の報告（利用者へ提示する材料）。</summary>
@@ -42,7 +56,8 @@ public sealed record Stage0RecordingOutcome(
     Stage0RecordingEstimate Estimate,
     decimal ActualCostJpy,
     int LlmCallCount,
-    Stage0DecisionRecordSet? RecordSet)
+    Stage0DecisionRecordSet? RecordSet,
+    decimal CumulativeCostJpy = 0m)
 {
     /// <summary>LLM を 1 回でも呼んだか（否定形テストの観測点）。</summary>
     public bool CalledLlm => LlmCallCount > 0;
@@ -67,6 +82,8 @@ public sealed class Stage0DecisionRecorder(
     DecisionOrchestrationOptions production,
     IAsOfDecisionInputProvider inputs,
     IStage0DecisionRecordSink sink,
+    IStage0RecordingStateStore state,
+    IStage0RecordingCostLedger ledger,
     Stage0RecordingUsageCollector usage,
     LlmPriceTable priceTable,
     TimeProvider timeProvider,
@@ -88,12 +105,20 @@ public sealed class Stage0DecisionRecorder(
 
         var period = options.ParsePeriod();
         var tradingDays = period is { } p ? Stage0RecordingBudget.WeekdayCount(p.From, p.To) : 0;
+        return EstimateFor(options, options.ResolveSymbols().Count, tradingDays, options.DecisionsPerDay);
+    }
 
-        return Stage0RecordingBudget.Estimate(
+    // FR-15, ADR-0033 決定5, #1342, IADR-0537 決定3: **1 判断時点**（一次 1 ＋ 多数決回数）の見積り。呼ぶ前の「超える見込み」の判定に使う。
+    private Stage0RecordingEstimate EstimatePerDecision(Stage0RecordingOptions options) =>
+        EstimateFor(options, symbolCount: 1, tradingDays: 1, decisionsPerDay: 1);
+
+    private Stage0RecordingEstimate EstimateFor(
+        Stage0RecordingOptions options, int symbolCount, int tradingDays, int decisionsPerDay) =>
+        Stage0RecordingBudget.Estimate(
             new Stage0RecordingEstimateInput(
-                SymbolCount: options.ResolveSymbols().Count,
+                SymbolCount: symbolCount,
                 TradingDayCount: tradingDays,
-                DecisionsPerDay: options.DecisionsPerDay,
+                DecisionsPerDay: decisionsPerDay,
                 VoteCount: options.VoteCount,
                 InputTokensPerDecision: options.InputTokensPerDecision,
                 OutputTokensPerDecision: options.OutputTokensPerDecision,
@@ -105,7 +130,6 @@ public sealed class Stage0DecisionRecorder(
             priceTable.Resolve(
                 options.ScreeningModel ?? LlmAssignments.For(LlmPurposes.TradeDecisionScreening)?.PrimaryModel,
                 options.ScreeningInputTokensPerDecision));
-    }
 
     public async Task<Stage0RecordingOutcome> RunAsync(
         Stage0RecordingOptions options, CancellationToken cancellationToken = default)
@@ -137,6 +161,16 @@ public sealed class Stage0DecisionRecorder(
         if (approval is not null)
             return Outcome(Stage0RecordingStatus.NotApproved, approval, estimate);
 
+        // 🔴 FR-15, ADR-0033 決定5, #1342, IADR-0537 決定1: 同じ状態を 2 つの実行が同時に進めない（配備の入れ替えで旧 Pod と新 Pod が重なる）。
+        using var runLock = state.TryAcquireRunLock();
+        if (runLock is null)
+        {
+            return Outcome(
+                Stage0RecordingStatus.Locked,
+                "ほかの実行が Stage 0 記録の実行のロックを持っています（LLM は呼んでいません）。",
+                estimate);
+        }
+
         return await RecordAsync(options, estimate, cancellationToken).ConfigureAwait(false);
     }
 
@@ -151,6 +185,9 @@ public sealed class Stage0DecisionRecorder(
             return "記録対象の銘柄（Stage0Recording:Symbols）が未設定です。";
         if (string.IsNullOrWhiteSpace(options.OutputPath))
             return "記録の書き出し先（Stage0Recording:OutputPath）が未設定です（記録が残らない実行は行いません）。";
+        // 🔴 #1342, IADR-0537: 状態（完了の印・費用の累計）を残せない実行は行わない。揮発領域なら再起動のたびに二重に課金される。
+        if (string.IsNullOrWhiteSpace(options.StateDirectory))
+            return "実行の状態の置き場（Stage0Recording:StateDirectory）が未設定です（完了の印と費用の累計を残せない実行は行いません）。";
         if (options.VoteCount < 1 || options.DecisionsPerDay < 1)
             return "多数決回数・1 日あたり判断回数は 1 以上でなければなりません。";
         return null;
@@ -177,22 +214,77 @@ public sealed class Stage0DecisionRecorder(
         return null;
     }
 
+    // FR-15, ADR-0033 決定5, #1342, IADR-0537: 記録の本体。窓（記録の開始 → 完了の印）の両端を状態の置き場で突き合わせる。
+    //   - 終わりの印（完了・上限で停止）がある → LLM を呼ばない。
+    //   - 開始の印だけがある（途中で落ちた） → チェックポイントの判断時点を飛ばして途中から再開する。
+    //   - 印・チェックポイント・台帳が読めない → LLM を呼ばない（人が状態のファイルを消すまで）。
+    // 費用の累計（台帳）は印と別の鍵で持ち、判断時点ごとに**呼ぶ前**に「累計＋1 判断時点の見積り」が承認額を超えないかを見る。
     private async Task<Stage0RecordingOutcome> RecordAsync(
         Stage0RecordingOptions options, Stage0RecordingEstimate estimate, CancellationToken cancellationToken)
     {
         var (from, to) = options.ParsePeriod()!.Value;
         var cutoff = options.ParseLlmTrainingCutoff()!.Value;
         var symbols = options.ResolveSymbols();
+        var runId = Stage0RecordingIdentity.RunId(options);
+        var ledgerId = Stage0RecordingIdentity.LedgerId(options);
+        // ValidateApproval を通った（承認額は見積りと円未満 2 桁で一致する）。上限は承認額そのもの。
+        var approvedJpy = options.ApprovedEstimateJpy!.Value;
+        var perDecision = EstimatePerDecision(options).TotalJpy;
 
-        var records = new List<Stage0DecisionRecord>();
+        // ---- 窓の後の端: 終わりの印 ----
+        var run = await state.LoadAsync(runId, cancellationToken).ConfigureAwait(false);
+        switch (run.Phase)
+        {
+            case Stage0RunPhase.Completed or Stage0RunPhase.Stopped:
+                return Outcome(
+                    Stage0RecordingStatus.AlreadyFinished,
+                    $"この承認値の組の記録は終わっています（{run.Phase}・{run.Detail}）。LLM は呼んでいません。"
+                    + "同じ組でもう一度記録するには、状態の置き場の印と台帳を人が消してください。",
+                    estimate);
+            case Stage0RunPhase.Unreadable:
+                return Outcome(
+                    Stage0RecordingStatus.StateUnavailable,
+                    $"記録の印かチェックポイントが読めません（{run.Detail}）。LLM は呼んでいません。状態の置き場を確かめてください。",
+                    estimate);
+        }
+
+        // ---- 費用の累計（印とは独立）----
+        if (await ledger.ReadAsync(ledgerId, cancellationToken).ConfigureAwait(false) is not { } cumulative)
+        {
+            return Outcome(
+                Stage0RecordingStatus.StateUnavailable,
+                "費用の累計の台帳が読めません。LLM は呼んでいません。状態の置き場を確かめてください。",
+                estimate);
+        }
+
+        var records = new List<Stage0DecisionRecord>(run.Checkpoint?.Records ?? []);
+        var recorded = records.Select(r => (r.Symbol, r.Market, r.AsOf)).ToHashSet();
+        if (records.Count > 0)
+        {
+            logger.LogWarning(
+                "Stage 0 記録: 前の実行が途中で終わっていました。記録済みの判断 {Records} 件を飛ばして途中から再開します（累計 {Cumulative} 円 / 承認額 {Approved} 円）。",
+                records.Count, cumulative, approvedJpy);
+        }
+
+        // ---- 窓の前の端: 開始の印（LLM を呼ぶ前に必ず書く）----
+        if (run.Phase == Stage0RunPhase.NotStarted
+            && !await state.MarkStartedAsync(runId, cancellationToken).ConfigureAwait(false))
+        {
+            return Outcome(
+                Stage0RecordingStatus.StateUnavailable,
+                "記録の開始の印を書けません。LLM は呼んでいません。状態の置き場を確かめてください。",
+                estimate);
+        }
+
         var actualCost = 0m;
         var callCount = 0;
         var stopped = false;
+        var stateFailed = false;
 
         usage.BeginRecording();
         try
         {
-            for (var day = from; day <= to && !stopped; day = day.AddDays(1))
+            for (var day = from; day <= to && !stopped && !stateFailed; day = day.AddDays(1))
             {
                 // 週末は判断時点にならない（見積りの平日基準と揃える）。休場日は供給側が null を返してスキップされる。
                 if (day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
@@ -200,27 +292,59 @@ public sealed class Stage0DecisionRecorder(
 
                 foreach (var (symbol, market) in symbols)
                 {
+                    // 🔴 #1342: 前の実行で記録済みの判断時点は呼ばない（途中からの再開）。
+                    if (recorded.Contains((symbol, market, day)))
+                        continue;
+
                     var input = await inputs.GetAsync(symbol, market, day, cancellationToken).ConfigureAwait(false);
                     if (input is null)
                         continue; // 非取引日・復元できない日（ADR-0033 §残るもの）。判断を発明しない。
+
+                    // 🔴 ADR-0033 決定5, #1342, IADR-0537 決定3: **呼ぶ前に**、累計＋この判断時点の見積りが承認額を超える見込みなら止める。
+                    // 丸めは承認ゲートと同じ円未満 2 桁（承認額は見積りを 2 桁で写した値であり、写した端数で最後の判断時点を落とさない）。
+                    if (decimal.Round(cumulative + perDecision, 2) > approvedJpy)
+                    {
+                        stopped = true;
+                        logger.LogWarning(
+                            "Stage 0 記録: 累計 {Cumulative} 円に次の判断時点の見積り {PerDecision} 円を足すと承認額 {Approved} 円を超えるため、呼ぶ前に停止します。",
+                            cumulative, perDecision, approvedJpy);
+                        break;
+                    }
+
+                    // 🔴 #1342: 呼ぶ前に見込みを台帳へ積む（予約）。呼んだ直後に落ちても、その費用は累計に入っている。
+                    if (!await ledger.WriteAsync(ledgerId, cumulative + perDecision, cancellationToken).ConfigureAwait(false))
+                    {
+                        stateFailed = true;
+                        break;
+                    }
 
                     var (record, calls, cost) = await RecordOneAsync(options, symbol, market, input, cancellationToken)
                         .ConfigureAwait(false);
                     records.Add(record);
                     callCount += calls;
                     actualCost += cost;
+                    cumulative += cost;
 
-                    // 🔴 ADR-0033 決定5: 実行中に見積り額を超えたら停止して報告する（黙って消費しない）。
-                    // 判断時点の単位で見るため、超過は最大 1 判断ぶん（一次 1 回＋多数決回数だけの呼び出し。#1196）に限られる。
-                    // 裏返すと超過幅は VoteCount に比例する（一次＋VoteCount 回 × 1 呼び出しあたりの費用まで上振れし得る）。
-                    // 判断の途中で打ち切ると多数決が成立せず記録が壊れるため、判断単位で見る（IADR-0318）。
-                    if (actualCost > estimate.TotalJpy)
+                    // 予約を実績へ置き換え、ここまでの記録をチェックポイントへ書く（この順。台帳を先に確定させる）。
+                    if (!await ledger.WriteAsync(ledgerId, cumulative, cancellationToken).ConfigureAwait(false)
+                        || !await state.SaveCheckpointAsync(
+                            runId, BuildRecordSet(options, from, to, cutoff, symbols, records), cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        stateFailed = true;
+                        break;
+                    }
+
+                    // 🔴 ADR-0033 決定5: 呼んだ後に累計が承認額を超えたら停止して報告する（黙って消費しない）。
+                    // 呼ぶ前の判定があるため、ここへ来るのは応答が見積りより重かったときに限られる。超過は最大 1 判断時点ぶん
+                    // （一次 1 回＋多数決回数だけの呼び出し。#1196）。判断の途中で打ち切ると多数決が成立せず記録が壊れるため、判断単位で見る（IADR-0318）。
+                    if (decimal.Round(cumulative, 2) > approvedJpy)
                     {
                         stopped = true;
                         logger.LogWarning(
-                            "Stage 0 記録: 実績 {Actual} 円が見積り {Estimate} 円を超えたため停止します"
+                            "Stage 0 記録: 累計 {Cumulative} 円が承認額 {Approved} 円を超えたため停止します"
                             + "（ここまでの判断 {Records} 件は保存します）。",
-                            actualCost, estimate.TotalJpy, records.Count);
+                            cumulative, approvedJpy, records.Count);
                         break;
                     }
                 }
@@ -232,24 +356,53 @@ public sealed class Stage0DecisionRecorder(
         }
 
         var recordSet = BuildRecordSet(options, from, to, cutoff, symbols, records);
-        var saved = await sink.SaveAsync(recordSet, cancellationToken).ConfigureAwait(false);
 
-        var status = stopped
-            ? Stage0RecordingStatus.StoppedOverBudget
-            : saved ? Stage0RecordingStatus.Completed : Stage0RecordingStatus.SaveFailed;
+        // 🔴 #1342, IADR-0537 決定3: 止まった実行（上限・状態の失敗）で記録が 0 件なら、**書き出しも終わりの印も行わない。**
+        // 印だけが消えた・印の鍵だけが変わった（台帳の鍵は同じ）組は、1 件目より前で上限に当たる。空の集合で書き出すと、
+        // 課金済みの既存の記録（書き出し先）を 0 件で上書きし、さらに Stopped の印で固めてしまう。
+        var nothingToWrite = (stopped || stateFailed) && records.Count == 0;
+        var saved = !nothingToWrite && await sink.SaveAsync(recordSet, cancellationToken).ConfigureAwait(false);
+
+        var status = stateFailed
+            ? Stage0RecordingStatus.StateUnavailable
+            : stopped
+                ? Stage0RecordingStatus.StoppedOverBudget
+                : saved ? Stage0RecordingStatus.Completed : Stage0RecordingStatus.SaveFailed;
+
+        // ---- 窓の後の端: 終わりの印。書き出せたときだけ付ける ----
+        // 書き出しに失敗したときは付けない —— 次の起動はチェックポイントから LLM を呼ばずに書き出し直す
+        // （上限で止めた実行も、台帳の累計で呼ぶ前に止まり、書き出し直してから印が付く）。
+        if (saved && (status is Stage0RecordingStatus.Completed or Stage0RecordingStatus.StoppedOverBudget))
+        {
+            var phase = status == Stage0RecordingStatus.Completed ? Stage0RunPhase.Completed : Stage0RunPhase.Stopped;
+            if (!await state.MarkFinishedAsync(
+                    runId, phase, $"判断 {records.Count} 件・累計 {cumulative} 円", cancellationToken)
+                .ConfigureAwait(false))
+            {
+                // 印が書けなくても、次の起動はチェックポイントの全件を飛ばし（LLM 0 回）、台帳の累計でも止まる。
+                logger.LogError("Stage 0 記録: 終わりの印を書けませんでした（次の起動はチェックポイントから書き出し直します）。");
+            }
+        }
+
         var reason = status switch
         {
             Stage0RecordingStatus.StoppedOverBudget =>
-                $"見積り {estimate.TotalJpy} 円を超えたため停止しました（実績 {actualCost} 円）。",
+                $"費用の累計が承認額 {approvedJpy} 円を超える（見込みを含む）ため停止しました（この実行の実績 {actualCost} 円・累計 {cumulative} 円）。"
+                + (nothingToWrite ? "記録は 0 件のため書き出していません（既存の記録はそのまま）。" : string.Empty),
+            Stage0RecordingStatus.StateUnavailable =>
+                nothingToWrite
+                    ? "実行の状態（台帳かチェックポイント）を書けなくなったため停止しました（記録は 0 件のため書き出していません）。"
+                    : "実行の状態（台帳かチェックポイント）を書けなくなったため停止しました（ここまでの記録は書き出しました）。",
             Stage0RecordingStatus.SaveFailed => "記録の書き出しに失敗しました。",
-            _ => $"記録しました（判断 {records.Count} 件・実績 {actualCost} 円）。",
+            _ => $"記録しました（判断 {records.Count} 件・この実行の実績 {actualCost} 円・累計 {cumulative} 円）。",
         };
 
         logger.LogInformation(
-            "Stage 0 記録の結末: {Status}（判断 {Records} 件・LLM 呼び出し {Calls} 回・実績 {Actual} 円 / 見積り {Estimate} 円）。",
-            status, records.Count, callCount, actualCost, estimate.TotalJpy);
+            "Stage 0 記録の結末: {Status}（判断 {Records} 件・LLM 呼び出し {Calls} 回・この実行の実績 {Actual} 円・累計 {Cumulative} 円 / 承認額 {Approved} 円）。",
+            status, records.Count, callCount, actualCost, cumulative, approvedJpy);
 
-        return new Stage0RecordingOutcome(status, reason, estimate, actualCost, callCount, recordSet);
+        return new Stage0RecordingOutcome(
+            status, reason, estimate, actualCost, callCount, nothingToWrite ? null : recordSet, cumulative);
     }
 
     // 1 判断時点の記録。**本番と同じ経路**でプロンプトを組み、多数決回数だけ LLM を呼び、本番と同じ規則で集約する。
@@ -326,7 +479,7 @@ public sealed class Stage0DecisionRecorder(
             // 🔴 FR-04, FR-11, #1290, IADR-0525 決定 3: 一次の根拠文に文字化けの疑いがあれば記録にも目印を付ける。
             // 検出はオーケストレータが受け取った地点で 1 回だけ行い、その印を使う（ここで検出し直さない）。
             RationaleGarbleDetector.Mark(screen.Rationale, orchestrated.ScreeningRationaleGarbleSuspected),
-            screeningCall.Usages.Sum(u => u.InputTokens),
+            screeningCall.Usages.Sum(u => u.InputTokens ?? 0),
             screeningCall.Usages.Sum(u => u.OutputTokens),
             EffectiveModelOf(screeningCall.Usages));
 
@@ -343,7 +496,7 @@ public sealed class Stage0DecisionRecorder(
                 parsed.Decision.Rationale,
                 parsed.Decision.ReferencePrice,
                 parsed.Decision.StopLossDistancePerShare,
-                call.Usages.Sum(u => u.InputTokens),
+                call.Usages.Sum(u => u.InputTokens ?? 0),
                 call.Usages.Sum(u => u.OutputTokens),
                 parsed.IsUnparseable,
                 EffectiveModelOf(call.Usages)));
@@ -352,12 +505,13 @@ public sealed class Stage0DecisionRecorder(
         // 実効モデルで単価を引く（IADR-0122 決定1）。費用は両層の全呼び出しの合計。
         var allUsages = capturing.Calls.SelectMany(c => c.Usages).ToArray();
         var cost = Stage0RecordingUsageCollector.CostOf(allUsages, priceTable);
-        var inputTokens = allUsages.Sum(u => u.InputTokens);
+        // #1306, IADR-0550: 記録のトークン数は取れた分の合計（取れない要求は 0 として数える。単価の段とは別）。
+        var inputTokens = allUsages.Sum(u => u.InputTokens ?? 0);
         var outputTokens = allUsages.Sum(u => u.OutputTokens);
 
         // ADR-0033 決定4: 多数決は本番と同じ規則（同数・空は安全側 Hold）。一次で見送れば一次の Hold（根拠つき）。
         var decision = orchestrated.Decision;
-        var (signedQuantity, belowMinimumNotional) = SignedQuantity(decision, input);
+        var (signedQuantity, belowMinimumNotional) = SignedQuantity(decision, input, symbol, market);
         if (belowMinimumNotional == true)
         {
             // FR-10, #1209, IADR-0507: 本番ならサイジングの直後に SizedBelowMinimumNotional で見送る判断。数量は消さずに判定を記録へ残し、
@@ -377,7 +531,9 @@ public sealed class Stage0DecisionRecorder(
             // FR-15, ADR-0054 決定3, #1196, IADR-0498: 一次の判断と一次に応答したモデルを本判断と別に残す。
             screening,
             // FR-10, #1209, IADR-0507: 新規建てとして最小の名目額に満たないか（本番と同じ判定。null は判定していない）。
-            belowMinimumNotional), capturing.Calls.Count, cost);
+            belowMinimumNotional,
+            // FR-15, ADR-0068 決定3・4, #1373, IADR-0549 決定7: 判断時点に組み直した方針の期間キーと版（戦略 ID には含めない）。
+            input.Policy.Reference), capturing.Calls.Count, cost);
     }
 
     // FR-15, ADR-0054 決定3, #1196, IADR-0498: 記録の二段の構成。本番の構成（一次プロンプトの予算）を引き継ぎ、
@@ -438,7 +594,10 @@ public sealed class Stage0DecisionRecorder(
     // 🔴 FR-10, #1176, IADR-0495 決定1, #1209, IADR-0507: **最小の名目額は本番と同じ関数・同じしきい値で判定する**（数量 > 0 のとき）。
     // 記録器が評価するのは保有なしの枝だけ（IADR-0351 決定7）なので、Buy / Sell はすべて新規建てとして判定する。
     // 数量は 0 にしない —— 再生ではこの注文が建玉の決済として働くことがあり、本番は決済に名目額を掛けない（適用は再生側が新規建てにだけ行う）。
-    private (int SignedQuantity, bool? BelowMinimumNotional) SignedQuantity(LlmDecision decision, AsOfDecisionInput input)
+    // 🔴 FR-10, ADR-0063 決定1〜5, #1291, IADR-0527 決定3: 高ボラティリティ銘柄の 1 注文上限も本番と同じ関数で掛ける（明示指定は記録時のサイジング文脈、
+    // 自動判定は input.StopFloor の ATR(14) ÷ 記録の参照価格。ATR が無効・得られないときは明示指定だけ）。
+    private (int SignedQuantity, bool? BelowMinimumNotional) SignedQuantity(
+        LlmDecision decision, AsOfDecisionInput input, string symbol, Market market)
     {
         if (decision.Action == TradeAction.Hold)
             return (0, null);
@@ -468,7 +627,12 @@ public sealed class Stage0DecisionRecorder(
             context.Limits.PerTradeRiskRatio,
             stopLossDistanceBase,
             referencePriceBase,
-            context.Limits.MaxOrderAmountFor(capital),
+            HighVolatilityOrderCap.MaxOrderAmountFor(
+                context.Limits,
+                context.EffectiveHighVolatility,
+                capital,
+                HighVolatilityOrderCap.IsHighVolatility(
+                    context.EffectiveHighVolatility, symbol, market, input.StopFloor?.Atr14?.Atr, decision.ReferencePrice)),
             availableCapital,
             sizeFactor);
 

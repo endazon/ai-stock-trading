@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-04, FR-06, FR-15, FR-20, NFR, ADR-0011, ADR-0014, ADR-0015, ADR-0017, ADR-0033, ADR-0037, ADR-0054, IADR-0122, IADR-0215, IADR-0313, IADR-0498]
 author: claude (Claude Code)
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-17
 plan_refs:
   - planning#783（利用者裁定 2026-10-10）
   - planning:projects/ai-stock-trading/07_adr/ADR-0014（§決定1・§決定3）
@@ -14,6 +14,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0037（決定1・決定2）
 related_specs:
   - ../specs/20261010_1295_claude-5-5-models.md
+  - ../specs/20261011_1296_remove-llm-migration-stage.md
 ---
 
 # IADR-0524: Claude のモデル割当を 5.5 系へ切り替え、移行期間は直前世代を同じ位置で受ける（#1295）
@@ -106,3 +107,28 @@ related_specs:
 1. #1296: MSP の切り替えと PoC の確認の後、直前世代の受け入れ・旧世代の単価行・関連の注記を外す（本 IADR へ日付つき追記で記録する）。
 2. Stage 0 を 5.5 系の組で採り直す（planning#783 の裁定 (2) を受けて）。
 3. スクリーニング予算の値の見直し（#1290 の Haiku 5.5 での再測定と併せる）。
+
+## ［2026-10-11 追記 / #1296］移行段（決定 1 の後半）を撤去した
+
+- **決定 1 の「移行期間だけ直前世代を同じ位置で受ける」を覆す。** 計画 ADR-0064 決定 8（移行段は一切設けない。基盤と AST を同時に配備する）と、
+  planning#783 の再確認の裁定（PoC への配備の前に #1296 で撤去する）による。オーナー判断 2026-10-11（月曜の開場前に配備する）。
+  #1296 本文の「外す条件」（MSP の配備＋1 営業日の観測）は同裁定で上書きされた。
+- 撤去したもの: `LlmAssignments` の直前世代の定数 3 つ・`PreviousGenerationAccepted`・`IsPreviousGenerationOf` と評価器の分岐、
+  `LlmAssignmentEvaluation.PreviousGenerationAccepted`・`MatchesCurrentPin`（`Primary` と同義になったため。`Stage0TwoTierModels` は
+  `Outcome == Primary` で照合する）、`LlmPreviousGenerationWarning`（と 3 か所の呼び出し）、Helm `values-local.yaml` の旧世代の単価行
+  （`claude_opus_5` / `claude_sonnet_5` / `claude_haiku_4_5` に加え `claude_opus_4_8`。ADR-0064 決定 7「単価表の現行値は 5.5 系だけ」）。
+- **他の決定は変えない。** 決定 2（禁止モデルの集合）・決定 3（Stage 0 の照合は直前世代を受けない。移行段が無くなっても旧組は `Unassigned` で
+  不一致のまま）・決定 4（第 2 段の単価）・決定 5（カットオフ）はそのまま有効である。
+- **`claude-fable-5` の単価行は残す。** 表に無いモデルの上限（$10 / $50）を担っており、外すのは専用の設定値「未知モデルの計上単価」の配備と同時である
+  （ADR-0064 決定 6 の表・決定 9）。旧 ID の応答はこの上限で計上される。
+- 試験: `LlmAssignmentsTests.旧世代のモデルはどの用途でも未割当として受けない`・`割当表に載るモデルは5_5系だけである`・
+  `取引判断系で許可される実効モデルは第1候補だけである`、`HttpLlmCompletionClientFallbackBanTests` の否定形に直前世代 2 行を足した。
+  CI の `helm.yml` は旧世代の単価行が描画されないことを検査する。
+- 結果・影響の 1 行目（「MSP の切り替え前後どちらでも止まらない」）は成り立たなくなった。配備の順序がずれた間は取引判断が割当不一致で見送られる
+  （発注しない側へ倒れる。ADR-0064 決定 8 で利用者が受容した）。
+
+## ［2026-10-17 追記 / #1306］決定 4: 入力トークン数が取れない要求は第 2 段で引く
+
+- 計画 ADR-0064 決定 4（合計が取れないときは高い側へ倒す）を受け、`Resolve(model, inputTokens)` の入力トークン数を `int?` にし、**null（取れない）は第 2 段**で引く。
+  輸送の出口で欠落と 0 以下を null と読み、egress は 0 へ潰さずに計測へ渡す。金額の式の入力トークン数は 0 のまま。詳細は [IADR-0550](IADR-0550_haiku-tier-unknown-input-tokens-high-side.md)。
+- 決定 4 の他の項（閾値を**超える**と第 2 段・第 2 段の誤設定の行は表に載せない・未知モデルの最大に第 2 段を含める）は変えない。

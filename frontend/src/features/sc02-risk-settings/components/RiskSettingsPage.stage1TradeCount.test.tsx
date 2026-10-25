@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '@ai-stock-trading/testing/renderWithProviders';
 import userEvent from '@testing-library/user-event';
-import { ApiError } from '@foundation/api/ApiError';
+import { serverBadRequest } from '@ai-stock-trading/testing/serverErrors';
 
 // SC-02, FR-20, FR-13, FR-11, UC-06, #423, 06_daytrading-review §4.1 条件 3 / §4.3, IADR-0164 決定4〜決定6:
 // **Stage 1 の最小取引件数が SC-02 の設定項目になったことの退行防止。**
@@ -38,9 +38,10 @@ function mockBff(options: { stage1MinimumTradeCount?: number; put?: 'ok' | 'vali
     if (path === '/monitor/settings/history') return [];
     if (path === '/risk-controls/settings/stage1-minimum-trade-count' && req?.method === 'PUT') {
       if (put === 'validation') {
-        throw new ApiError('validation', '入力内容に誤りがあります。', 400, [
-          'Stage 1 の最小取引件数は 1 以上 1000 以下（件）で指定してください。',
-        ]);
+        throw serverBadRequest({
+          error: 'Stage 1 の最小取引件数が設定可能な範囲を外れています。',
+          details: ['Stage 1 の最小取引件数は 1 以上 1000 以下（件）で指定してください。'],
+        });
       }
       return settings;
     }
@@ -279,6 +280,8 @@ describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
     await user.click(within(form).getByRole('button', { name: '最小取引件数を保存' }));
 
     expect(await within(form).findByText(/入力内容に誤りがあります/)).toBeInTheDocument();
+    // #1465: サーバの理由（本文の `details`）が画面に出る。
+    expect(within(form).getByText(/1 以上 1000 以下（件）で指定してください/)).toBeInTheDocument();
     const putCalls = mocks.apiFetch.mock.calls.filter(
       ([path]) => path === '/risk-controls/settings/stage1-minimum-trade-count',
     );

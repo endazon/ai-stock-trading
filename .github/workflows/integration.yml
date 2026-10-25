@@ -48,7 +48,7 @@ jobs:
           restore-keys: nuget-${{ runner.os }}-
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "10.0.403" # #1478: 厳密な版（"10.0.x" は配布元の 409 で導入できない）。全箇所で同じ値であることを scripts.repo.test.js が見る
       # 自動起票が本当に動くかを実測するための入口（IADR-0208 残余リスク）。
       # 自動起票は失敗時にしか走らないため、平時は常に skip で緑になる ——
       # 意図的に失敗させない限り「壊れていること」に永久に気付けない。
@@ -76,11 +76,29 @@ jobs:
       # 門が無いと「0 件実行のまま緑」で通り続ける。
       #
       # NFR / #1200 / IADR-0497: --logger trx は下の skip 検査の入力である（TRX が無ければ検査は赤）。
+      #
+      # 🔴 NFR / MSP#2060: **試験のハングは 5 分で testhost ごと止め、どの試験で止まったかを残す**（--blame-hang-timeout）。
+      # 従前はハングすると timeout-minutes（30 分）まで無出力で待ち、ジョブごと cancelled になった
+      # （run 39630282507 ほか。どの試験かもスタックも残らない）。5 分は「1 試験の無進捗」の上限で、
+      # 統合 E2E の最長（コンテナ起動込み 40 秒前後）に対し十分に長い。ダンプは下の step が成果物に残す。
       - name: All tests including real containers
         id: tests
         run: >-
           dotnet test backend/backend.slnx --no-build --configuration Release --verbosity normal
           --logger trx --results-directory "$PWD/integration-results"
+          --blame-hang-timeout 5m --blame-hang-dump-type mini
+      # NFR / MSP#2060: ハングで止めた testhost のダンプと試験の並びを残す（無ければ何もしない）。
+      # 原因はダンプのスタックで見る（`dotnet-dump analyze <file>` → `clrstack -all`）。
+      - name: Upload hang dumps
+        if: ${{ !cancelled() && steps.tests.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-hang-dumps
+          path: |
+            integration-results/**/*.dmp
+            integration-results/**/Sequence_*.xml
+          if-no-files-found: ignore
+          retention-days: 7
       # 🔴 **「全 skip で緑」を検知する担保**（NFR / #1200 / IADR-0497。正本は MSP/ADR-0090 決定 3・planning#575）。
       #
       # 統合テストは要る依存（PostgreSQL・RabbitMQ・Keycloak）を得られなければ理由つきで skip する

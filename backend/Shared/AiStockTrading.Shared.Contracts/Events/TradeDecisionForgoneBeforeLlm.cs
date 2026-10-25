@@ -9,9 +9,10 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // （IADR-0358 決定4: 流用は誤帰属。TradeDecisionHeld は市場監視が急変の基準値を進める事実であり、判断をしていない見送りで
 // 基準値を動かしてはならない〔IADR-0452 決定1〕）。
 //
-//   - Reason: 8 値（`DecisionSkipReason` のうち LLM より前の全部。名前は同じ）。#1113 / IADR-0463 で EntryBlockedByRiskControls を、
+//   - Reason: 9 値（`DecisionSkipReason` のうち LLM より前の全部。名前は同じ）。#1113 / IADR-0463 で EntryBlockedByRiskControls を、
 //     #1176 / IADR-0495 で EntryCapacityBelowMinimumNotional を、#1174 / IADR-0500 で EntryCapacityBelowOneShare を、
-//     #1286 / IADR-0521 で ExitOnlyWithoutHolding を末尾へ足した。
+//     #1286 / IADR-0521 で ExitOnlyWithoutHolding を、#1338 / IADR-0535 で InFlightCloseCoversPosition を、#1434 / IADR-0572 で BrokerPositionClosed を
+//     末尾へ足した。
 //   - CycleTrigger: `BusinessMetrics.TriggerScheduled` / `TriggerPriceMovement` の語彙（TradeDecisionHeld と同じ）。
 //   - 監査台帳だけが購読する（通知しない。日報の未確定の通知は DailyPolicyUnconfirmed が営業日ごとに出す）。
 public record TradeDecisionForgoneBeforeLlm(
@@ -66,4 +67,29 @@ public enum DecisionForgoneBeforeLlmReason
     /// 0 または不明だった（決済は成立せず、新規建ては出口専用で出さないため、LLM の結論に依らず発注意図は作られない）。
     /// </summary>
     ExitOnlyWithoutHolding,
+
+    /// <summary>
+    /// FR-04, FR-10, #1338, IADR-0535 決定1: 保有中の銘柄で、判断由来の決済が処理中（未約定）のまま決済方向の建玉を<b>すべて覆い</b>
+    /// （発注執行が決済のゲートと同じ判定で答えた）、かつ買い増し・売り増しが LLM の後で必ず見送られると分かっている。決済の結論は
+    /// 発注執行が <c>InFlightCloseCoversPosition</c> で見送り、新規建ての結論も見送られるため、LLM の結論に依らず発注にならない。
+    /// </summary>
+    InFlightCloseCoversPosition,
+
+    /// <summary>
+    /// FR-04, FR-10, #1434, IADR-0572 決定2: 保有中（台帳）の銘柄で、処理中の決済の照会に発注執行が<b>ブローカーの決済方向の建玉 0</b>と答え
+    /// （判断由来の決済が約定した直後で、台帳へ約定の射影がまだ届いていない）、かつ買い増し・売り増しが LLM の後で必ず見送られると分かっている。
+    /// 決済の結論は発注執行の決済のゲートが建玉なしで見送り、新規建ての結論も見送られるため、LLM の結論に依らず発注にならない。
+    /// </summary>
+    BrokerPositionClosed,
+    /// <summary>
+    /// 🔴 NFR-13, FR-02, #1423 M-5, ADR-0074 決定1・2, IADR-0582: 月次 LLM 費用上限の 100% に達して停止中（Halted）。
+    /// 定時・価格変動のどちらの判断も、新規建ても保有中の銘柄の出口の判断も、LLM を呼ぶ前に見送る。
+    /// LLM を使わない保護（損切り・利用者の手仕舞い・閉場前の手仕舞い・維持率割れの自動縮小）は本見送りを通らない。
+    /// </summary>
+    LlmCostCapHalted,
+    /// <summary>
+    /// 🔴 FR-07, UC-03, #1423 M-6, ADR-0075 決定1〜3, IADR-0583: 無応答時の設定が「停止」で、承認待ちの日報が期限（翌営業日の米国市場の開場）を過ぎた。
+    /// 日報が確定するまで、定時・価格変動のどちらの判断も（新規建ても出口の判断も）LLM の前で見送る。損切り・手仕舞いは本見送りを通らない。
+    /// </summary>
+    DailyReportNoResponseHalted,
 }

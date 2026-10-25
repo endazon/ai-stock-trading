@@ -16,7 +16,9 @@ public static class RiskEvaluator
         StageProductPolicy.StageReleaseContext? stageRelease = null,
         BuyInBanSupply? buyInBan = null,
         StopOutReentrySupply? stopOuts = null,
-        DecisionExitReentrySupply? decisionExits = null)
+        DecisionExitReentrySupply? decisionExits = null,
+        PreCloseEntryCutoffSupply? preCloseCutoff = null,
+        ThemeConcentrationSettings? themes = null)
     {
         var reasons = new List<RejectionReason>();
         // FR-10, FR-19, IADR-0004: エントリー判定は建玉効果（PositionEffect）で行う。売買方向（Side）ではない。
@@ -212,6 +214,28 @@ public static class RiskEvaluator
             reasons.Add(RejectionReason.DecisionExitSameDay);
         }
 
+        // 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: **閉場前の新規建ての締め切り**（利用者裁定 2026-10-20）。その市場の当日の閉場の N 分前
+        // （既定 60 分・市場ごと）以降の新規建てを拒否する。**買い増し・売り増しも含める**（建玉効果 Open をすべて止める。方向は問わない）。
+        // 方針の「終盤は新規建てを控える」は判断のプロンプトに時刻が無く効かなかった（PoC 2026-10-19 の MARA）——方針の文言に頼らない。
+        // **手仕舞い（Close）は止めない**（isEntry の短絡。ADR-0009）。preCloseCutoff が null（＝この呼び出し元は供給していない）なら評価しない。
+        // 本番の呼び出し元（OrderScreeningService）は新規建てで**常に**供給する（締め切りの構成は必須依存。IADR-0163 決定2）。
+        // #1433, IADR-0572 決定1: 述語は新規建ての可否の口と同じ関数（EntryStateBlockers.PreCloseCutoff）。
+        if (isEntry && EntryStateBlockers.PreCloseCutoff(preCloseCutoff))
+        {
+            reasons.Add(RejectionReason.PreCloseEntryCutoff);
+        }
+
+        // 🔴 FR-10, FR-19, #1397, IADR-0562 決定 2: **テーマ（相関の高い銘柄の集まり）ごとの同時保有の上限**（利用者裁定 2026-10-20）。新規建ての銘柄が属する
+        // 集まりで、ほかの銘柄を上限の数だけ保有している（未約定の新規建て・予約を含む）なら拒否する。方針の「同時に 1 銘柄まで」は判断のプロンプトに
+        // 他銘柄の保有が無く効かなかった（PoC 2026-10-16 に MARA・MSTR・COIN・HOOD を次々と建てた）——方針の文言に頼らず、設定値の定義で強制する。
+        // **手仕舞い（Close）は止めない**（isEntry の短絡）。themes が null（＝この呼び出し元は供給していない）なら評価しない。
+        // 本番の呼び出し元（OrderScreeningService）は**常に**供給する（定義は必須依存。IADR-0163 決定2）。
+        // #1433, IADR-0572 決定1: 述語は新規建ての可否の口と同じ関数（EntryStateBlockers.ThemeConcentration）。
+        if (isEntry && EntryStateBlockers.ThemeConcentration(themes, intent.Symbol, intent.Market, snapshot))
+        {
+            reasons.Add(RejectionReason.ThemeConcentrationExceeded);
+        }
+
         // FR-19, #375, ADR-0021 決定4-2/決定4-3: **現金口座でのみ**加わる 2 統制。
         // 判定は照会結果（accountType）で行う。信用口座・口座種別不明では評価しない
         // （不明は BrokerAccountTypeUnverified が既に新規建てを止めている）。
@@ -269,9 +293,20 @@ public static class RiskEvaluator
         // FR-10, #329, IADR-0130 決定1/2: 金額上限は equity 比で保持されており、判定時に equity から解決する。
         // equity は snapshot.Capital（＝前営業日終値時点の評価額・当日中は不変。計画 §5 注記）であり、
         // 日次損失上限・最大 DD と同一の基準を用いる（基準がばらけると「厳しい方が効く」の比較が成り立たない）。
+        //
+        // 🔴 FR-10, ADR-0063 決定1〜5, #1291, IADR-0527 決定1・決定3: **高ボラティリティ銘柄の区分には equity の 5%（区分外の上限との小さい方）を掛ける。**
+        // 区分は明示指定（本サービスの設定）または自動判定（発注意図が運ぶ ATR(14) ÷ 参照価格 ≥ 4%）。ATR が運ばれない（得られない・無効）
+        // ときは明示指定だけで判定する。判定と上限はサイジング・LLM の前の見送りと**同じ関数**（HighVolatilityOrderCap）で求める。
+        // 注文単位で判定し、既存建玉は数えない（決定4。空売りの銘柄ごとの累計 10% は下の空売り統制が別に掛ける）。理由は区分外と同じ
+        // PerOrderAmountExceeded（同じ「1 注文あたりの発注金額上限」の統制である）。
         if (isEntry
             && equity is { } perOrderEquity
-            && intent.NotionalInBase > settings.Limits.MaxOrderAmountFor(perOrderEquity))
+            && intent.NotionalInBase > HighVolatilityOrderCap.MaxOrderAmountFor(
+                settings.Limits,
+                settings.HighVolatility,
+                perOrderEquity,
+                HighVolatilityOrderCap.IsHighVolatility(
+                    settings.HighVolatility, intent.Symbol, intent.Market, intent.Atr14, intent.Price)))
         {
             reasons.Add(RejectionReason.PerOrderAmountExceeded);
         }

@@ -118,3 +118,26 @@ spec:
               （「再試行を使い切ったため、このメッセージは _error キューへ送られます」。取り込み ID・銘柄が載る）。
               照会（OpenD）の回復を確かめてから _error のメッセージを元のキューへ戻す（再投入は何度でも安全）。
               reason ラベルで照会が不明（positions-unknown）か例外（positions-query-failed）かを読み分けられる。
+
+        # 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定3: **約定が台帳へ届かないまま残っている。**
+        # 約定追跡は記録を更新した約定に「発行待ち」の印を立て、発行の後に倒す。巡回の末尾で印が残った件数を計器に出す。
+        # 印が残る約定はリスク管理の台帳（建玉数・日次実現損益）と S1 の評価対象がまだ知らない——建ての約定なら保護の評価に載らない建玉、
+        # 決済の約定なら建玉数の過大（新規建てが止まる側）になる。
+        #
+        # 🔴 **この閾値は実測を要しない。** 平常は巡回の末尾で 0 である（発行は同じ巡回の中で済む。再発行が 1 回で通れば次の巡回で 0 へ戻る）。
+        # for: 10m は、巡回（既定 30 秒）で約 20 回、再発行が続けて失敗したことを意味する（耐久アウトボックスへの書き込みの失敗が続いている）。
+        # 系列が無い（約定追跡が無効・paper の構成・送出の断）ときは max() が空になり**鳴らない**。
+        - alert: AstOrderExecutedPublishPending
+          expr: max(ast_order_executed_publish_pending) > 0
+          for: 10m
+          labels:
+            severity: warning
+            service: ai-stock-trading
+          annotations:
+            summary: 発行し終えていない約定が残り、リスク管理の台帳へ届いていない
+            description: >-
+              約定追跡が記録した約定の OrderExecuted を、10 分以上発行し終えられていない（再発行が失敗し続けている）。
+              台帳の建玉・日次実現損益と S1 の評価対象がその約定を知らない。
+              最初に見る場所: 発注執行のログの WRN「発行し終えていなかった約定の再発行に失敗しました」（DecisionId・OrderId が載る）と、
+              order_execution_svc の executed_orders で "OrderExecutedPublishPending" が true の行、wolverine スキーマの表（DB の書き込みの失敗を疑う）。
+              証券会社の画面で該当の建玉を確かめる。対応手順は運用仕様書「発注執行の送信は保存してから送る」。

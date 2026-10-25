@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ReportService.Features.Reports;
+using ReportService.Domain;
 using Proto = AiStockTrading.Shared.Grpc.RiskManagement.V1;
 
 namespace ReportService.Infrastructure.ExternalServices;
@@ -188,6 +189,17 @@ internal static class RiskManagementWire
         Proto.BrokerProvider.InternalPaper => BrokerProvider.InternalPaper,
         Proto.BrokerProvider.MoomooReal => BrokerProvider.MoomooReal,
         Proto.BrokerProvider.MoomooSimulate => BrokerProvider.MoomooSimulate,
+        _ => null,
+    };
+
+    // FR-06, #1357, IADR-0540 決定 1: 承認行の由来。未指定・未知は null（種別未供給。推定で埋めない）。
+    internal static FillApprovalSource? ApprovalSource(Proto.FillApprovalSource value) => value switch
+    {
+        Proto.FillApprovalSource.OrderApproved => FillApprovalSource.OrderApproved,
+        Proto.FillApprovalSource.ProtectiveStopS0 => FillApprovalSource.ProtectiveStopS0,
+        Proto.FillApprovalSource.SoftwareStopS1 => FillApprovalSource.SoftwareStopS1,
+        Proto.FillApprovalSource.ProtectionLostClose => FillApprovalSource.ProtectionLostClose,
+        Proto.FillApprovalSource.TradeDecision => FillApprovalSource.TradeDecision,
         _ => null,
     };
 

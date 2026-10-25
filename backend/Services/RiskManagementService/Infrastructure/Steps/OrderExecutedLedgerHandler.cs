@@ -1,5 +1,6 @@
 using RiskManagementService.Features.RiskManagement;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
 
 namespace RiskManagementService.Infrastructure.Steps;
@@ -59,8 +60,22 @@ public sealed class OrderExecutedLedgerHandler(
         var newlyTerminal = ledger.MarkTerminal(message.DecisionId, message.Status, message.ExecutedAt);
 
         // #847: 冪等キーは「初めて終端を記録したか」である（再配送で失効通知を撃ち直さない）。
-        return newlyTerminal
-            ? PositionCloseAbandonment.Describe(ledger, message.DecisionId, message.Status, message.ExecutedAt)
-            : null;
+        if (!newlyTerminal)
+            return null;
+
+        // 🔴 FR-10, FR-09, UC-06, #1395, IADR-0560: **ソフトウェア逆指値（S1）が損切りの前に自分で取り消した**判断の手仕舞いは
+        // 「手仕舞いが約定せず終了・建玉が残っている」にしない。建玉は直後の S1 の成行が決済しており（その約定は別の
+        // 「取引実行」・「ソフトウェア逆指値」の通知が出る）、この通知は手仕舞い直し＝二重の売りを促す。置き換えの文面も出さない。
+        // 終端の記録（在庫の解放）は上で済んでいる——抑止するのは通知・監査の 1 件だけである。
+        if (message.CancelledBySoftwareStop && message.Status == OrderStatus.Cancelled)
+        {
+            logger.LogInformation(
+                "ソフトウェア逆指値が損切りの前に取り消した判断の手仕舞いの終端を記録しました（「手仕舞いが約定せず終了」は出しません。"
+                    + "建玉はソフトウェア逆指値の成行が決済します）: DecisionId={DecisionId} OrderId={OrderId} 約定済み={Filled}",
+                message.DecisionId, message.OrderId, message.FilledQuantity);
+            return null;
+        }
+
+        return PositionCloseAbandonment.Describe(ledger, message.DecisionId, message.Status, message.ExecutedAt);
     }
 }

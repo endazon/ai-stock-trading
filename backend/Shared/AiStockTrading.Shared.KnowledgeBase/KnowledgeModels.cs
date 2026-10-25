@@ -141,6 +141,12 @@ public static class KnowledgeReportDraftCopy
     public const string StateKey = "reportState";
     public const string DraftState = "draft";
 
+    // FR-07, FR-08, 計画 ADR-0068 決定6, #1373, IADR-0549 決定5: 効いている日報が移って確定できなくなった版 n+1 のドラフトの写しの印。
+    // 🔴 `reportState` は `draft` のまま保つ（基盤の重複の棚卸しは `reportState=draft` でない写しを確定報告書の写しに数えるため）。
+    // 失効は別のキーで示す。写しは削除しない（ADR-0065 決定5「古いドラフトは期限で消さない」と同じ扱い）。
+    public const string DraftStatusKey = "reportDraftStatus";
+    public const string ExpiredDraftStatus = "expired";
+
     public static bool IsDraftTitle(string? title) =>
         title is not null && title.StartsWith(TitlePrefix, StringComparison.Ordinal);
 }
@@ -181,14 +187,79 @@ public enum KnowledgeSearchOutcome
 // FR-08, FR-11, #1283: KB 検索の結果と状態。
 //   FailureCause — 失敗の原因の短い符号（`http-<状態コード>` / `timeout` / `exception:<型名>`）。
 //                  🔴 本文・クエリ・URL・資格情報・例外のメッセージを入れない（ログへそのまま出すため）。
+//   Degraded / DegradedReasons — FR-08, FR-11, #1311: 基盤の検索応答の縮退の印（MSP#1871 の `degraded` / `degradedReasons`）。
+//                  Degraded は true＝部品（埋め込み・グラフ展開・再順位付け）のどれかが働かず劣化して返った／false＝縮退なし／
+//                  **null＝印が無い（旧い基盤）・応答が無い（失敗・未構成）＝不明**。理由は KnowledgeSearchDegradedReasons.Normalize 済みの符号だけ。
 public sealed record KnowledgeSearchResult(
     IReadOnlyList<KnowledgeHit> Hits,
     KnowledgeSearchOutcome Outcome,
-    string? FailureCause = null)
+    string? FailureCause = null,
+    bool? Degraded = null,
+    IReadOnlyList<string>? DegradedReasons = null)
 {
+    /// <summary>縮退の理由（null は空として扱う）。</summary>
+    public IReadOnlyList<string> DegradedReasons { get; init; } = DegradedReasons ?? [];
+
     public static KnowledgeSearchResult Succeeded(IReadOnlyList<KnowledgeHit> hits) => new(hits, KnowledgeSearchOutcome.Succeeded);
+
+    /// <summary>FR-08, #1311: 成功の結果に基盤の縮退の印を添える（<paramref name="degraded"/> が null なら印なし＝不明）。</summary>
+    public static KnowledgeSearchResult Succeeded(IReadOnlyList<KnowledgeHit> hits, bool? degraded, IReadOnlyList<string>? degradedReasons) =>
+        new(hits, KnowledgeSearchOutcome.Succeeded, Degraded: degraded, DegradedReasons: degradedReasons);
 
     public static KnowledgeSearchResult Failed(string cause) => new([], KnowledgeSearchOutcome.Failed, cause);
 
     public static KnowledgeSearchResult NotConfigured { get; } = new([], KnowledgeSearchOutcome.NotConfigured);
+}
+
+// FR-08, FR-11, #1311: 基盤の検索の縮退の理由（MSP の Knowledge.Contracts `SearchDegradedReasons` と同じ文字列・同じ並び）。
+// 判断の記録（ログ）へ符号のまま出すため、Normalize で形を確かめた符号だけを通す（本文・例外メッセージを運ばない）。
+public static class KnowledgeSearchDegradedReasons
+{
+    public const string EmbedFailed = "embed-failed";
+    public const string FusedEmbedFailed = "fused-embed-failed";
+    public const string GraphExpandFailed = "graph-expand-failed";
+    public const string RerankFailed = "rerank-failed";
+
+    // 並びの正（基盤の SearchDegradedReasons.All と同じ順）。
+    public static readonly IReadOnlyList<string> All = [EmbedFailed, FusedEmbedFailed, GraphExpandFailed, RerankFailed];
+
+    // 未知の符号を許す上限（基盤が語彙を足しても落とさない。長い文字列・記号を含むものは符号ではないので落とす）。
+    private const int MaxCodeLength = 40;
+
+    /// <summary>
+    /// 理由を整える: 形（英小文字・数字・ハイフン、40 文字以内）の合わないものを落とし、重複を除き、既知の語彙はその順、未知はその後に序数順で並べる。
+    /// </summary>
+    public static IReadOnlyList<string> Normalize(IEnumerable<string?>? reasons)
+    {
+        if (reasons is null)
+            return [];
+
+        var distinct = reasons
+            .Where(IsCode)
+            .Select(r => r!)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        return distinct
+            .OrderBy(Rank)
+            .ThenBy(r => r, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    // 既知の語彙は All の位置、未知は語彙の後ろ。
+    private static int Rank(string reason)
+    {
+        for (var i = 0; i < All.Count; i++)
+        {
+            if (string.Equals(All[i], reason, StringComparison.Ordinal))
+                return i;
+        }
+
+        return All.Count;
+    }
+
+    private static bool IsCode(string? value) =>
+        !string.IsNullOrEmpty(value)
+        && value.Length <= MaxCodeLength
+        && value.All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-');
 }

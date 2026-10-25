@@ -31,6 +31,11 @@
     <PackageVersion Include="WolverineFx" Version="6.24.5" />
     <PackageVersion Include="WolverineFx.RabbitMQ" Version="6.24.5" />
     <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.24.5" />
+    <!-- NFR, FR-05, FR-10, ADR-0013（platform ADR-0027「イベント発行の原子性は Wolverine の EF Core + PostgreSQL の Outbox を標準とする」）,
+         #1442, IADR-0573 決定1: 発注執行の送信を耐久アウトボックス（PostgreSQL の封筒の保存）に載せる。**発注執行だけが参照する。**
+         Wolverine 6.24.5 の RabbitMQ 送信（Inline）はブローカー断の間も PublishAsync を成功で返し、3 回の再試行の後に黙って捨てる（実測）。
+         版は上の WolverineFx 系と必ず同値に保つ。 -->
+    <PackageVersion Include="WolverineFx.Postgresql" Version="6.24.5" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
     <!-- NFR, MSP:ADR-0029, MSP:ADR-0075, IADR-0284 決定5（段0）, IADR-0328, #584: east-west 同期呼び出しの gRPC。
          Grpc.AspNetCore = 受け側（AddGrpc / MapGrpcService と h2c リスナ）、Grpc.Net.Client = 呼び出し側。

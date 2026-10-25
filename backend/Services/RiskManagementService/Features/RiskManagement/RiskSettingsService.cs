@@ -12,8 +12,13 @@ public sealed class RiskSettingsService(
     IRiskSettingsStore store,
     ISettingsChangeLog changeLog,
     IClock clock,
-    IBrokerAccountObservationStore accountObservations)
+    IBrokerAccountObservationStore accountObservations,
+    ISettingsWriteTransaction? writeTransaction = null)
 {
+    // 🔴 FR-11, #1291, IADR-0532 決定1: 設定の保存と履歴の記録を 1 つのトランザクションにする（本番の配線は EF 実装）。
+    // 省略時（ストアを直接組み立てる単体試験）は本体をそのまま走らせる。本番で省略されないことは T-10-2613 が固定する。
+    private readonly ISettingsWriteTransaction _writeTransaction = writeTransaction ?? DirectWrite.Instance;
+
     public RiskManagementSettings GetCurrent() => store.GetCurrent();
 
     /// <summary>
@@ -56,7 +61,7 @@ public sealed class RiskSettingsService(
         if (unsupported.Count > 0)
         {
             throw new ArgumentException(
-                $"口座種別 {account.AccountType} では商品種別 {string.Join(" / ", unsupported)} を有効にできません"
+                $"口座種別 {TradingTermDisplay.Label(account.AccountType)} では商品種別 {string.Join(" / ", unsupported.Select(TradingTermDisplay.Label))} を有効にできません"
                     + "（現金口座では株を借りられないため信用買い・空売りが成立しません。ADR-0021 決定4-4）。",
                 nameof(guard)).ClientVisible();
         }
@@ -80,6 +85,84 @@ public sealed class RiskSettingsService(
 
         var current = store.GetCurrent();
         Save(current with { Limits = limits }, current.Limits, limits, SettingsChangeType.Limits, actor, reason);
+    }
+
+    /// <summary>
+    /// 🔴 FR-10, UC-06, ADR-0063 決定1・決定2, #1291, IADR-0527 決定2: 高ボラティリティ銘柄の統制値（区分の上限・利用者の明示指定）を変更する。
+    /// <para>
+    /// 値域は <see cref="HighVolatilityOrderCap.Validate"/> が単独で決める（上限は最小の名目額の比率の既定値〔1%〕以上 〜 25% 以下。ADR-0066 決定1）。範囲外なら
+    /// <see cref="ArgumentException"/> を投げ、<b>設定を一切変更せず履歴も残さない</b>（<see cref="UpdateLimits"/> と同じ規律）。
+    /// 明示指定は利用者だけが変える（エンドポイントは OwnerOnly。生成 AI・AI の監視銘柄の入れ替え案〔ADR-0042〕の経路は本メソッドへ届かない）。
+    /// 外した明示指定は区分から出るが、自動判定（ATR 比 ≥ 4%）で入る銘柄はこの操作では外せない（自動判定は設定に持たない）。
+    /// </para>
+    /// </summary>
+    public void UpdateHighVolatility(HighVolatilitySettings highVolatility, string actor, string reason)
+    {
+        ArgumentNullException.ThrowIfNull(highVolatility);
+        RequireActorAndReason(actor, reason);
+        HighVolatilityOrderCap.ThrowIfInvalid(highVolatility);
+
+        // 前後の空白は保存の前に落とす（照合は空白を無視するが、履歴と画面に残る値を揃える）。
+        var normalized = highVolatility with
+        {
+            DesignatedSymbols = [.. highVolatility.DesignatedSymbols.Select(s => s with { Symbol = s.Symbol.Trim() })],
+        };
+        var current = store.GetCurrent();
+        Save(
+            current with { HighVolatility = normalized },
+            current.HighVolatility,
+            normalized,
+            SettingsChangeType.HighVolatilityChanged,
+            actor,
+            reason);
+    }
+
+    /// <summary>
+    /// 🔴 FR-10, FR-19, SC-02, ADR-0070 決定 5, #1407, IADR-0564 決定 4: 閉場前の統制（締め切り N〔市場ごと〕・手仕舞いの有効と M〔市場ごと〕）を<b>保存する</b>。
+    /// 保存した値は構成の値より優先して効く（再起動は要らない。<see cref="SessionAndThemeControlResolution"/>）。
+    /// 値域の外は <see cref="ArgumentException"/>（HTTP 400）で拒み、<b>設定を一切変更せず履歴も残さない</b>。
+    /// 変更は利用者だけ（エンドポイントは OwnerOnly。生成 AI・AI の監視銘柄の入れ替え案の経路は本メソッドへ届かない）。
+    /// </summary>
+    public void UpdatePreCloseControls(PreCloseEntryCutoffSettings cutoff, PreCloseFlattenSettings flatten, string actor, string reason)
+    {
+        ArgumentNullException.ThrowIfNull(cutoff);
+        ArgumentNullException.ThrowIfNull(flatten);
+        RequireActorAndReason(actor, reason);
+        var violations = SessionAndThemeControlValidation.Violations(cutoff).Concat(flatten.Violations()).ToList();
+        if (violations.Count > 0)
+            throw new ArgumentException(string.Join(" ", violations), nameof(cutoff)).ClientVisible();
+
+        var current = store.GetCurrent();
+        Save(
+            current with { PreCloseEntryCutoff = cutoff, PreCloseFlatten = flatten },
+            $"{current.PreCloseEntryCutoff?.ToString() ?? "未保存（構成の値）"}; {current.PreCloseFlatten?.ToString() ?? "未保存（構成の値）"}",
+            $"{cutoff}; {flatten}",
+            SettingsChangeType.PreCloseControlsChanged,
+            actor,
+            reason);
+    }
+
+    /// <summary>
+    /// 🔴 FR-10, FR-19, SC-02, ADR-0071 決定 5, #1407, IADR-0564 決定 4: テーマの定義と上限を<b>保存する</b>（定義の全体を置き換える）。
+    /// 名前の前後の空白を落とし、銘柄コードは大文字へ揃える（照合は大文字小文字と空白を区別しない）。値域（ADR-0071 決定 2）の外は 400・設定も履歴も変えない。
+    /// </summary>
+    public void UpdateThemeConcentration(ThemeConcentrationSettings themes, string actor, string reason)
+    {
+        ArgumentNullException.ThrowIfNull(themes);
+        RequireActorAndReason(actor, reason);
+        var normalized = SessionAndThemeControlValidation.Normalize(themes);
+        var violations = SessionAndThemeControlValidation.Violations(normalized);
+        if (violations.Count > 0)
+            throw new ArgumentException(string.Join(" ", violations), nameof(themes)).ClientVisible();
+
+        var current = store.GetCurrent();
+        Save(
+            current with { ThemeConcentration = normalized },
+            current.ThemeConcentration?.ToString() ?? "未保存（構成の値）",
+            normalized,
+            SettingsChangeType.ThemeConcentrationChanged,
+            actor,
+            reason);
     }
 
     public void UpdateStage(StageSettings stage, string actor, string reason)
@@ -224,16 +307,28 @@ public sealed class RiskSettingsService(
         string reason)
     {
         var now = clock.UtcNow;
-        store.Save(updated);
-        changeLog.Record(new SettingsChangeEntry(
-            actor, changeType, reason, now,
-            Before: before.ToString(), After: after.ToString()));
+        // 🔴 FR-11, #1291, IADR-0532 決定1: 履歴が書けなければ設定も変えない（「設定は変わったが履歴が無い」を残さない）。
+        _writeTransaction.Execute(() =>
+        {
+            store.Save(updated);
+            changeLog.Record(new SettingsChangeEntry(
+                actor, changeType, reason, now,
+                Before: before.ToString(), After: after.ToString()));
+        });
+    }
+
+    // トランザクションを持たない縮退（単体試験の直接組み立て用）。
+    private sealed class DirectWrite : ISettingsWriteTransaction
+    {
+        public static readonly DirectWrite Instance = new();
+
+        public void Execute(Action body) => body();
     }
 
     private static void RequireActorAndReason(string actor, string reason)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         // NFR-06, IADR-0509, #1230: 利用者（Discord・画面）が入力する欄の空欄検査。文言を 400 / INVALID_ARGUMENT へ載せる印を付ける。
-        ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason);
+        ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason, "理由");
     }
 }

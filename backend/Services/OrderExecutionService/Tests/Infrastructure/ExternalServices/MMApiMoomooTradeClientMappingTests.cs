@@ -25,11 +25,30 @@ public class MMApiMoomooTradeClientMappingTests
         MMApiMoomooTradeClient.MapState(14).Should().Be(MoomooOrderState.Cancelled);   // Cancelled_Part
         MMApiMoomooTradeClient.MapState(15).Should().Be(MoomooOrderState.Cancelled);   // Cancelled_All
         MMApiMoomooTradeClient.MapState(24).Should().Be(MoomooOrderState.Cancelled);   // FillCancelled
-        // **確認できた失敗**は Failed（SubmitFailed / Failed / Disabled / Deleted）。
-        foreach (var failed in new[] { 3, 21, 22, 23 })
+        // **確認できた失敗**は Failed（SubmitFailed / Failed / Deleted）。
+        foreach (var failed in new[] { 3, 21, 23 })
         {
             MMApiMoomooTradeClient.MapState(failed).Should().Be(MoomooOrderState.Failed);
         }
+    }
+
+    // 🔴 T-10-2678, FR-05, ADR-0067 決定5, #1339, IADR-0539: OpenD の Disabled（22。失効）は**失注**であり、拒否（Failed）へ畳まない。
+    // 失注は OrderStatus.Expired（未約定の終端。在庫の解放・未約定残の通知は拒否と同じ）、拒否は Rejected へ写る。
+    [Fact]
+    public void T_10_2678_OpenDのDisabledは失注Expiredへ写り拒否と区別する()
+    {
+        MMApiMoomooTradeClient.MapState(22).Should().Be(MoomooOrderState.Expired);
+        MoomooBrokerAdapter.MapState(MMApiMoomooTradeClient.MapState(22)).Should().Be(OrderStatus.Expired);
+        foreach (var rejected in new[] { 3, 21, 23 })
+            MoomooBrokerAdapter.MapState(MMApiMoomooTradeClient.MapState(rejected)).Should().Be(OrderStatus.Rejected);
+
+        // 終端の扱いは拒否と同じ（未約定の終端＝在庫の解放・再武装・未約定残の通知の引き金）。
+        OrderStatusLifecycle.IsTerminal(OrderStatus.Expired).Should().BeTrue();
+        OrderStatusLifecycle.AbandonsUnfilledRemainder(OrderStatus.Expired).Should().BeTrue();
+
+        // 表示は区別する。
+        OrderStatusDisplay.Describe(OrderStatus.Expired).Should().Contain("失注").And.NotContain("拒否");
+        OrderStatusDisplay.Describe(OrderStatus.Rejected).Should().Contain("拒否").And.NotContain("失注");
     }
 
     // 🔴 T-10-407, FR-10, UC-06, #848, IADR-0117（2026-09-19 追記・改定 3）:
@@ -49,7 +68,8 @@ public class MMApiMoomooTradeClientMappingTests
         }
 
         // 確認できた失敗は従来どおり Failed（＝ブローカー拒否として在庫解放の対象に残す）。
-        foreach (var failed in new[] { 3, 21, 22, 23 })
+        // #1339, IADR-0539: Disabled（22）は失注（Expired）へ移した（T-10-2678。未約定の終端としての扱いは同じ）。
+        foreach (var failed in new[] { 3, 21, 23 })
         {
             MMApiMoomooTradeClient.MapState(failed).Should().Be(MoomooOrderState.Failed);
         }
@@ -76,7 +96,8 @@ public class MMApiMoomooTradeClientMappingTests
     [Fact]
     public void 確認できた失敗は従来どおり拒否の終端になる()
     {
-        foreach (var failed in new[] { 3, 21, 22, 23 })
+        // #1339, IADR-0539: Disabled（22）は失注（Expired）の終端になる（T-10-2678。在庫解放の対象であることは変わらない）。
+        foreach (var failed in new[] { 3, 21, 23 })
         {
             var status = MoomooBrokerAdapter.MapState(MMApiMoomooTradeClient.MapState(failed));
 

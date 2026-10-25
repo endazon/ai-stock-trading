@@ -20,5 +20,7 @@
          共通配線ヘルパを持つ shim をテストからのみ参照する。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Messaging\AiStockTrading.TestSupport.Messaging.csproj" />
+    <!-- SC-01, #1470, IADR-0585: `PUT /assumptions` の 400 の契約フィクスチャ（フロントが読む実応答）を生成・突合する。 -->
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.ContractFixtures\AiStockTrading.TestSupport.ContractFixtures.csproj" />
   </ItemGroup>
 </Project>

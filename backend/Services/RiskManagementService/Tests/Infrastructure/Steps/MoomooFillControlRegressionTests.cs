@@ -31,7 +31,8 @@ namespace RiskManagementService.Tests;
 public class MoomooFillControlRegressionTests
 {
     private static readonly DateOnly TradingDay = new(2026, 7, 29);
-    private static readonly DateTimeOffset Now = new(2026, 7, 29, 6, 0, 0, TimeSpan.Zero);
+    // #1396, IADR-0561: 東証の閉場前の新規建ての締め切り（15:30 JST の 60 分前＝14:30 JST）の外に置く（旧 15:00 JST は締め切りの中）。
+    private static readonly DateTimeOffset Now = new(2026, 7, 29, 4, 0, 0, TimeSpan.Zero);
 
     private sealed class FixedClock : IClock
     {
@@ -94,7 +95,7 @@ public class MoomooFillControlRegressionTests
         // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         return (new OrderScreeningService(settingsStore, snapshotBuilder, new InMemoryLockoutStore(), clock,
                 new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(), stores.Ledger,
-                TestShortSellContexts.Unavailable(clock, stores.Ledger)),
+                TestShortSellContexts.Unavailable(clock, stores.Ledger), new InMemoryEntryReservationStore(), ConfiguredSessionAndThemeControls.Default),
             new SizingContextService(snapshotBuilder, settingsStore));
     }
 

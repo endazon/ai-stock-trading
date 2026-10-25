@@ -1184,6 +1184,67 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().NotEndWith("…", "要約の上限に収まり、結論が切れない");
     }
 
+    // T-10-2982, FR-10, UC-02, #1422, IADR-0569 決定3: 取消を送ったが未確認。要約で「取り消した」と読ませず、後始末の行き先を書く。
+    [Fact]
+    public void エントリーの取消が未確認なら_取り消したと書かず未確認と読める()
+    {
+        var entry = AuditEntryFactory.From(
+            new ProtectiveStopCoverageLost(Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.EntryCancelUnconfirmed,
+                10, CloseDecisionId: null, CloseIntent: null, StopT0),
+            Id, RecordedAt);
+
+        entry.Summary.Should().Contain("取消を送ったが未確認").And.Contain("成行手仕舞い");
+        entry.Summary.Should().NotContain("解消にも失敗");
+        entry.Summary.Should().NotEndWith("…", "要約の上限に収まり、結論が切れない");
+    }
+
+    // T-10-3033, FR-10, ADR-0040, #1454, IADR-0580 決定1: 逆指値がエントリーより先に約定した。要約で「解消した」と読ませず、
+    // 反対方向の建玉の可能性と、買い戻しも取消もしていないことを書く。
+    [Fact]
+    public void T_10_3033_逆指値がエントリーより先に約定したら_反対方向の建玉の可能性と人手対応を読める()
+    {
+        var entry = AuditEntryFactory.From(
+            new ProtectiveStopCoverageLost(Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                ProtectiveStopLossCause.FilledBeforeEntry, ProtectiveStopRemediation.StopFilledBeforeEntry,
+                10, CloseDecisionId: Guid.NewGuid(), CloseIntent: null, StopT0),
+            Id, RecordedAt);
+
+        entry.Summary.Should().Contain("エントリーより先に約定").And.Contain("反対方向の建玉").And.Contain("要人手対応");
+        entry.Summary.Should().NotContain("解消にも失敗");
+        entry.Summary.Should().NotEndWith("…", "要約の上限に収まり、結論が切れない");
+    }
+
+    // T-10-3046, FR-10, FR-11, #1423 M-3, ADR-0073, IADR-0581: 基準資金の観測の欠けによる新規建ての拒否は、銘柄に依らない統制の
+    // 状態として固定の相関で残り、要約から判定日と最後の観測日が読める。
+    [Fact]
+    public void T_10_3046_基準資金の観測の欠けは判定日と最後の観測日が要約から読める()
+    {
+        var entry = AuditEntryFactory.From(
+            new CapitalBaselineObservationMissing(new DateOnly(2026, 8, 31), new DateOnly(2026, 8, 29), false, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(CapitalBaselineObservationMissing));
+        entry.Symbol.Should().BeNull();
+        entry.Summary.Should().Contain("新規建てを拒否").And.Contain("2026-08-31").And.Contain("2026-08-29");
+        entry.Summary.Should().NotContain("鮮度超過");
+    }
+
+    // T-10-3059, FR-07, FR-11, #1423 M-6, IADR-0583: 日報の無応答は、期間キー・期限・停止か継続かが要約から読める。
+    [Fact]
+    public void T_10_3059_日報の無応答は期間キーと期限と停止か継続かが要約から読める()
+    {
+        var deadline = new DateTimeOffset(2026, 8, 27, 9, 30, 0, TimeSpan.FromHours(-4));
+        var halted = AuditEntryFactory.From(
+            new DailyReportNoResponse("daily-2026-08-27", new DateOnly(2026, 8, 27), deadline, true, "daily-2026-08-26", StopT0), Id, RecordedAt);
+        var continued = AuditEntryFactory.From(
+            new DailyReportNoResponse("daily-2026-08-27", new DateOnly(2026, 8, 27), deadline, false, null, StopT0), Id, RecordedAt);
+
+        halted.EventType.Should().Be(nameof(DailyReportNoResponse));
+        halted.Summary.Should().Contain("daily-2026-08-27").And.Contain("2026-08-27 09:30").And.Contain("停止");
+        continued.Summary.Should().Contain("継続").And.Contain("なし");
+    }
+
     // 🔴 T-10-640, FR-10, FR-11, #857, IADR-0369: 確認できた拒否は「解消した」とも「不明」とも書かない。
     // 監査要約だけを読んで「建玉が無保護で残っている」と分かること（一次証跡の役目）。
     [Fact]
@@ -1450,6 +1511,25 @@ public class AuditEntryFactoryTests
         entry.EventType.Should().Be(nameof(SoftwareStopExecuted));
         entry.CorrelationId.Should().Be(entryDecisionId);
         entry.Summary.Should().Contain(expected).And.Contain("950").And.Contain("940");
+    }
+
+    // 🔴 T-10-2640, FR-10, FR-11, #1330, IADR-0534 決定3: 承認済みの決済の約定に合わせた縮小は、出どころと決済が要約から読め、
+    // 「外部要因」とは書かない（「なぜ建玉が消えたか」の一次証跡）。
+    [Fact]
+    public void 承認済みの決済の約定に合わせた保護の縮小は出どころと決済が要約から読める()
+    {
+        var closeDecisionId = Guid.NewGuid();
+        var entry = AuditEntryFactory.From(
+            new SoftwareStopExecuted(Guid.NewGuid(), "MSFT", Market.UnitedStates, SoftwareStopOutcome.ApprovedCloseReleased,
+                456, 500m, 500m, 0, closeDecisionId, "close-msft", null, StopT0, CloseOrigin: OrderApprovalOrigin.TradeDecision),
+            Id, RecordedAt);
+
+        entry.Summary.Should().Contain("ApprovedCloseReleased")
+            .And.Contain("出どころ=TradeDecision")
+            .And.Contain($"CloseDecisionId={closeDecisionId}")
+            .And.Contain("OrderId=close-msft")
+            .And.Contain("外部要因ではない");
+        entry.Summary.Should().NotContain("外部要因で建玉が減った");
     }
 
     // FR-10, FR-11, ADR-0040 決定1（S3）, #821, IADR-0347: 🔴 **拒否理由（retType / retMsg）が要約から読めること**

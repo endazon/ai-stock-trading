@@ -4,6 +4,9 @@ import { renderWithProviders } from '@ai-stock-trading/testing/renderWithProvide
 import type { RenderResult } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
+import { serverBadRequest } from '@ai-stock-trading/testing/serverErrors';
+// #1470: 本番サーバの 400 の実応答（契約フィクスチャ）。
+import { CONTRACT_WATCHLIST_DELETE_400 } from '@ai-stock-trading/testing/monitorContractFixtures';
 
 // SC-02, FR-13, FR-03, FR-11, UC-06, IADR-0088, IADR-0090: 監視銘柄（watchlist）変更 UI の振る舞い。
 // リスク上限/ガード（#186/#188）と同じ apiFetch モック方針で、実 BFF 疎通に依存しない。別サービス（MarketMonitor）を
@@ -166,7 +169,7 @@ describe('WatchlistForm (SC-02, FR-13, FR-03, IADR-0090)', () => {
     mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {
       if (path === '/monitor/watchlist/history') return HISTORY;
       if (path === '/monitor/watchlist' && req?.method === 'DELETE')
-        throw new ApiError('validation', '入力不正', 400, ['理由は必須です']);
+        throw serverBadRequest(CONTRACT_WATCHLIST_DELETE_400);
       if (path === '/monitor/watchlist') return WATCHLIST;
       return [];
     });
@@ -177,7 +180,7 @@ describe('WatchlistForm (SC-02, FR-13, FR-03, IADR-0090)', () => {
     await user.type(within(confirm).getByLabelText('削除理由'), '監視終了');
     await user.click(within(confirm).getByRole('button', { name: '監視から削除' }));
 
-    expect(await within(confirm).findByText(/入力内容に誤りがあります/)).toHaveTextContent(/理由は必須です/);
+    expect(await within(confirm).findByText(/入力内容に誤りがあります/)).toHaveTextContent(CONTRACT_WATCHLIST_DELETE_400.error);
   });
 
   it('maps a 403 to a permission message on add (IADR-0090 決定 2)', async () => {

@@ -1,0 +1,92 @@
+{
+  "effectiveCutoff": {
+    "minutes": [
+      {
+        "market": 0,
+        "minutes": 60
+      },
+      {
+        "market": 1,
+        "minutes": 90
+      }
+    ]
+  },
+  "configuredCutoff": {
+    "minutes": [
+      {
+        "market": 0,
+        "minutes": 60
+      },
+      {
+        "market": 1,
+        "minutes": 60
+      }
+    ]
+  },
+  "savedCutoff": {
+    "minutes": [
+      {
+        "market": 0,
+        "minutes": 60
+      },
+      {
+        "market": 1,
+        "minutes": 90
+      }
+    ]
+  },
+  "cutoffSource": 1,
+  "cutoffDrift": true,
+  "effectiveFlatten": {
+    "enabled": true,
+    "minutes": [
+      {
+        "market": 0,
+        "minutes": 15
+      },
+      {
+        "market": 1,
+        "minutes": 15
+      }
+    ]
+  },
+  "configuredFlatten": {
+    "enabled": false,
+    "minutes": [
+      {
+        "market": 0,
+        "minutes": 15
+      },
+      {
+        "market": 1,
+        "minutes": 15
+      }
+    ]
+  },
+  "savedFlatten": {
+    "enabled": true,
+    "minutes": [
+      {
+        "market": 0,
+        "minutes": 15
+      },
+      {
+        "market": 1,
+        "minutes": 15
+      }
+    ]
+  },
+  "flattenSource": 1,
+  "flattenDrift": true,
+  "cutoffMaxMinutes": [
+    {
+      "market": 0,
+      "minutes": 330
+    },
+    {
+      "market": 1,
+      "minutes": 390
+    }
+  ],
+  "flattenMaxMinutes": 60
+}

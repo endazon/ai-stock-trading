@@ -95,7 +95,13 @@ public class ProtectiveStopGuardCompletionBookkeepingTests
                 StopStatus, StopStatus == OrderStatus.Filled ? 10 : 0, StopStatus == OrderStatus.Filled ? 950m : 0m,
                 DateTimeOffset.MinValue, OrderStatusLifecycle.IsTerminal(StopStatus) ? DateTimeOffset.MinValue : null));
 
-        public Task CancelOrderAsync(string orderId, CancellationToken ct = default) => Task.CompletedTask;
+        public Task CancelOrderAsync(string orderId, CancellationToken ct = default)
+        {
+            // #1449, IADR-0576 決定2: 取消した逆指値は照会で終端（Cancelled）に見える（ガードは照会で確かめてから完了する）。
+            if (StopStatus is OrderStatus.Accepted or OrderStatus.PartiallyFilled)
+                StopStatus = OrderStatus.Cancelled;
+            return Task.CompletedTask;
+        }
 
         public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default) =>
             Task.FromResult(Positions);
@@ -168,7 +174,7 @@ public class ProtectiveStopGuardCompletionBookkeepingTests
         var rejections = new CloseRejectionTracker();
         var held = new HeldCloseNotificationTracker();
         var guard = new ProtectiveStopGuard(
-            broker, broker, stops, store, reservations, clock,
+            broker, broker, stops, store, reservations, clock, AlwaysOpenSessionGate.Instance,
             heldCloseNotifications: held, closeRejections: rejections);
         return new Harness(guard, broker, stops, store, reservations, clock, entryDecisionId, rejections, held);
     }

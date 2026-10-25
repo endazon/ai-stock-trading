@@ -23,14 +23,15 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
 | --- | --- | --- |
 | `ast_information_items_collected_total` | — | 収集件数（サイクルの起点が動いているか。**空巡回も 0 として出る**） |
 | `ast_trade_cycle_decisions_total` | `action` / `trigger` | 判断回数と buy / sell / 見送りの内訳 |
-| `ast_trade_cycle_decision_skips_total` | `reason` / `trigger` | **見送りの理由**の内訳（#891）。上の `action=no-trade` を**置き換えない**——1 回の見送りで両方が 1 ずつ増える。最小の名目額（既定 equity の 1%。#1176）に満たない新規建ては、使える金額の上限が最小に届かず LLM を呼ぶ前に見送った分が `EntryCapacityBelowMinimumNotional`、サイジングの後に見送った分が `SizedBelowMinimumNotional` に出る（どちらも審査へ届かないので下の拒否には出ない）。残枠（段階・日次の小さい方）が現在値の 1 株に届かない新規建ては LLM を呼ぶ前に `EntryCapacityBelowOneShare` で見送る（#1174。従来は LLM の後の `SizingZeroQuantity` に出ていた分が移る） |
+| `ast_trade_cycle_decision_skips_total` | `reason` / `trigger` | **見送りの理由**の内訳（#891）。上の `action=no-trade` を**置き換えない**——1 回の見送りで両方が 1 ずつ増える。最小の名目額（既定 equity の 1%。#1176）に満たない新規建ては、使える金額の上限が最小に届かず LLM を呼ぶ前に見送った分が `EntryCapacityBelowMinimumNotional`、サイジングの後に見送った分が `SizedBelowMinimumNotional` に出る（どちらも審査へ届かないので下の拒否には出ない）。残枠（段階・日次の小さい方）が現在値の 1 株に届かない新規建ては LLM を呼ぶ前に `EntryCapacityBelowOneShare` で見送る（#1174。従来は LLM の後の `SizingZeroQuantity` に出ていた分が移る）。判断由来の決済が処理中のまま建玉を覆い、どの結論も発注にならない保有銘柄は LLM を呼ぶ前に `InFlightCloseCoversPosition` で見送る（#1338）。判断由来の決済が約定した直後（発注執行がブローカーの決済方向の建玉 0 を観測・台帳は未反映）の保有銘柄は LLM を呼ぶ前に `BrokerPositionClosed` で見送る（#1434。従来は LLM の後の `NakedShortOpen` に出ていた分が移る） |
 | `ast_trade_cycle_decision_duration_ms_*` | `trigger` | 判断レイテンシ（ヒストグラム） |
 | `ast_risk_screenings_total` | `outcome` | 発注前審査（**承認も拒否も数える**） |
 | `ast_risk_rejections_total` | `reason` | 見送り理由の内訳。保有 0・未約定なしで新規建てが必ず拒否される銘柄は判断が LLM を呼ぶ前に見送り、上の `decision_skips{reason="EntryBlockedByRiskControls"}` に出る。保有中の銘柄の買い増し・売り増しで可否が塞がっていたものは判断が発注せず `decision_skips{reason="AddOnBlockedByRiskControls"}` に出る（審査は不変。推移は両方を足して読む）。判断由来の決済（利確・判断の手仕舞い）の後の同じ取引日・同じ方向の新規建ては `DecisionExitSameDay` で拒否される（#1176）。可否の口が返す理由の 1 つなので、上の 2 つの見送りへ移る分も同じ読み方をする |
-| `ast_risk_capital_baseline_reads_total` | `outcome` | 統制上限の**基準資金を読んだ帰結**（#889）。🔴 `SuppliedWithGap` は「値は返っているが直前の取引日の観測が届いていない」＝**古い分母で統制が回っている**印である |
+| `ast_risk_capital_baseline_reads_total` | `outcome` | 統制上限の**基準資金を読んだ帰結**（#889）。🔴 `UnavailableMissingPreviousDay` は「直前の米国東部暦日に成功した観測が無い」ため**新規建てを拒否している**印である（#1423 M-3 の是正前は `SuppliedWithGap`＝値を返して止めなかった。配備前のラベルと混ぜない） |
 | `ast_order_executions_total` | `status` / `provider` | 発注結果と発注先 |
 | `ast_order_dispatch_forgone_total` | `reason` | 発注に**届いていない**見送り（ブローカーの拒否とは別） |
 | `ast_order_drift_adoption_followup_abandoned_total` | `reason` | 乖離の取り込みの追随を、建玉照会の不明（`positions-unknown`）・失敗（`positions-query-failed`）のまま**再試行を使い切って**打ち切った件数（#942）。🔴 発注執行の起動完了時に 0 で作られる（最初の打ち切りを `increase()` が取りこぼさないため）。ダッシュボードには載せず、アラート `AstDriftAdoptionFollowUpAbandoned` が引く |
+| `ast_order_executed_publish_pending` | — | 約定追跡の巡回の末尾で、発行し終えていない約定の件数（ゲージ）。平常は 0 |
 | `ast_order_reservation_reconciliations_total` | `outcome`, `provider` | 発注予約の自動リコンサイル（滞留した予約を証券会社の注文一覧と備考で突き合わせる巡回）の**判定の内訳**。`probe-placed`（照会で発注済みと確定）/ `self-healed`（記録ありの自己修復）/ `held-not-placed`（照会は未発注と答えたが解放の門が閉じているため据え置き。同じ予約が巡回ごとに数え直される）/ `released`（門が閉じている限り 0）/ `indeterminate` / `failed`（据え置き）。🔴 **実際には証券会社に存在する注文に対して `held-not-placed` が出ていたら、解放の門を開けてはならない**（備考が往復していない）。`provider` は**予約の取引環境**（`MoomooSimulate` / `MoomooReal` / `InternalPaper`、不明は `Unknown`。#1051）で、解放の門は取引環境ごとに分かれている——**門の判断は同じ `provider` の系列だけで行う**（`MoomooSimulate` の系列で実弾の門を開けない）。リコンサイルが有効な構成でだけ、発注執行の起動完了時に 0 で作られる（判定 6 × 取引環境 4）。アラートは置かない（鳴らす基準は未決） |
 | `ast_llm_cost_jpy_total` | `category` | LLM 費用（上限対象 `Llm` / 対象外 `LlmUncapped`） |
 | `ast_llm_cost_limit_ratio_percent` | — | 月次上限に対する比率（80 で間隔延長・100 で停止） |
@@ -79,6 +80,7 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
   （[`../../docs/observability/observability.md`](../../docs/observability/observability.md)）。
   1 件目のルールが実測なしで置けるのは、**平常時の期待値が 0 件**の事象だけを見ているからである。
   2 件目（`AstDriftAdoptionFollowUpAbandoned`。#942）も同じ性質である（再試行を使い切った打ち切りだけを数える）。
+  `AstOrderExecutedPublishPending`（#1442）も同じ性質である（平常は巡回の末尾で 0 件）。
 - **`_error` キューの滞留そのものは見ていない。** RabbitMQ のキュー長（`rabbitmq_queue_messages*`）は
   どこからも scrape されておらず（本リポジトリの otel-collector は OTLP しか受けず、基盤側の Prometheus の scrape 対象は
   otel-collector だけ）、その系列を引くルールは永久に鳴らない。🔴 **`check-observability-assets.js` はこれを止めない**

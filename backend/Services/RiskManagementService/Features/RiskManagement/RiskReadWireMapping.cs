@@ -58,6 +58,17 @@ public static class RiskReadWireMapping
         _ => Proto.BrokerProvider.Unspecified,
     };
 
+    // FR-06, #1357, IADR-0540 決定 1: 承認行の由来。null・未知は未指定（推定で埋めない）。
+    public static Proto.FillApprovalSource ToProto(ApprovalSource? value) => value switch
+    {
+        ApprovalSource.OrderApproved => Proto.FillApprovalSource.OrderApproved,
+        ApprovalSource.ProtectiveStopS0 => Proto.FillApprovalSource.ProtectiveStopS0,
+        ApprovalSource.SoftwareStopS1 => Proto.FillApprovalSource.SoftwareStopS1,
+        ApprovalSource.ProtectionLostClose => Proto.FillApprovalSource.ProtectionLostClose,
+        ApprovalSource.TradeDecision => Proto.FillApprovalSource.TradeDecision,
+        _ => Proto.FillApprovalSource.Unspecified,
+    };
+
     public static Proto.StopLossExecutionMethod ToProto(StopLossExecutionMethod value) => value switch
     {
         StopLossExecutionMethod.BrokerStopOrder => Proto.StopLossExecutionMethod.BrokerStopOrder,
@@ -208,6 +219,26 @@ public static class RiskReadWireMapping
         };
         if (view.Symbol is not null)
             row.Symbol = view.Symbol;
+        // FR-04, FR-10, #1384, IADR-0558 決定 6: 保有中のロット。null（供給なし）は未設定のまま（空の列と区別する）。
+        if (view.Entries is { } entries)
+        {
+            row.Entries = new Proto.OpenPositionEntries();
+            foreach (var e in entries)
+            {
+                var entry = new Proto.OpenPositionEntryRow
+                {
+                    DecisionId = e.DecisionId.ToString(),
+                    Quantity = e.Quantity,
+                    OrderedAt = ToWire(e.OrderedAt),
+                };
+                if (e.EntryCondition is not null)
+                    entry.EntryCondition = e.EntryCondition;
+                if (e.EntryReferencePrice is { } price)
+                    entry.EntryReferencePrice = ToWire(price);
+                row.Entries.Rows.Add(entry);
+            }
+        }
+
         return row;
     }
 
@@ -235,6 +266,9 @@ public static class RiskReadWireMapping
         RejectionReason.TradingPaused => Proto.EntryBlocker.TradingPaused,
         RejectionReason.StoppedOutSameDay => Proto.EntryBlocker.StoppedOutSameDay,
         RejectionReason.DecisionExitSameDay => Proto.EntryBlocker.DecisionExitSameDay,
+        // #1433, IADR-0572 決定1: 閉場前の新規建ての締め切り・テーマの同時保有の上限。
+        RejectionReason.PreCloseEntryCutoff => Proto.EntryBlocker.PreCloseEntryCutoff,
+        RejectionReason.ThemeConcentrationExceeded => Proto.EntryBlocker.ThemeConcentrationExceeded,
         RejectionReason.GoodFaithViolationLimitReached => Proto.EntryBlocker.GoodFaithViolationLimitReached,
         RejectionReason.MaxPositionsExceeded => Proto.EntryBlocker.MaxPositionsExceeded,
         RejectionReason.DailyLossLimitReached => Proto.EntryBlocker.DailyLossLimitReached,
@@ -298,6 +332,27 @@ public static class RiskReadWireMapping
             };
         }
 
+        // #1291, IADR-0527 決定3: 高ボラティリティ銘柄の統制値（区分の上限・明示指定）。
+        if (view.HighVolatility is { } highVolatility)
+        {
+            var controls = new Proto.HighVolatilityControls
+            {
+                MaxOrderAmountRatio = ToWire(highVolatility.MaxOrderAmountRatio),
+            };
+            controls.DesignatedSymbols.AddRange(highVolatility.DesignatedSymbols.Select(s =>
+                new Proto.HighVolatilitySymbolRow { Symbol = s.Symbol, Market = ToProto(s.Market) }));
+            response.HighVolatility = controls;
+        }
+
+        // #1407, IADR-0564 決定 1: 閉場前の手仕舞いの効いている値（有効・無効と市場ごとの M）。
+        if (view.PreCloseFlatten is { } flatten)
+        {
+            var controls = new Proto.PreCloseFlattenControls { Enabled = flatten.Enabled };
+            controls.Minutes.AddRange(flatten.Minutes.OrderBy(kv => kv.Key).Select(kv =>
+                new Proto.MarketMinutesRow { Market = ToProto(kv.Key), Minutes = kv.Value }));
+            response.PreCloseFlatten = controls;
+        }
+
         return response;
     }
 
@@ -316,6 +371,8 @@ public static class RiskReadWireMapping
             DecisionId = fill.DecisionId.ToString("D", CultureInfo.InvariantCulture),
             // 🔴 null（旧版の行・列追加前の行）は未指定＝受け手は「不明」と読む（どちらの段にも算入しない）。
             Provider = ToProto(fill.Provider),
+            // FR-06, #1357, IADR-0540 決定 1: 🔴 null（記録されていない）は未指定＝受け手は「種別未供給」と読む。
+            ApprovalSource = ToProto(fill.ApprovalSource),
         };
         if (fill.Symbol is not null)
             row.Symbol = fill.Symbol;

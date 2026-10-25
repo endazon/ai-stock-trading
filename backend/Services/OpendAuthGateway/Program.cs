@@ -16,8 +16,9 @@ using OpendAuthGateway.Infrastructure;
 //   - **Ingress を持たない。TLS も持たない。**（クラスタ外から到達する経路を作らない）
 //   - bind するのは **Pod 網だけ**である（ASPNETCORE_URLS=http://+:8080。Pod の netns に閉じる）。
 //   - 呼び出し元は **同一クラスタ内の BFF** ただ 1 つで、利用者認証はその手前で済んでいる。
-//     したがって本サービス自身は認証を持たない。
-//   - 入力面の安全は認証ではなく **閉じた 3 コマンドの allowlist**（OpendConsoleCommand）が担う。
+//   - 呼び出し元は 2 段で絞る（IADR-0566）: 共有シークレット（CallerSecretFilter。未構成なら全口 503 = fail-closed）と
+//     NetworkPolicy（chart の templates/networkpolicy-opend.yaml）。
+//   - 入力面の安全は別に **閉じた 3 コマンドの allowlist**（OpendConsoleCommand）が担う。
 //     OpenD のコンソールには relogin -login_pwd= / exit / close_api_conn / set_log_level /
 //     show_delay_report -detail_report_path=<path> / show_sub_info -sub_info_path=<path> があり、
 //     後ろ 2 つは **root 権限で呼び出し側が選んだパスへ書ける**（デバイス信頼の実体や OpenD.xml を潰せる）。
@@ -40,6 +41,15 @@ builder.Services.AddSingleton(sp =>
         sp.GetRequiredService<TimeProvider>(),
         options.RateLimitMaxSubmissions,
         TimeSpan.FromSeconds(options.RateLimitWindowSeconds));
+});
+// #1456, IADR-0579: 再送だけの間隔（② 60 秒に 1 回）。上の ① と同じくサービス全体で 1 つで、① を内側で呼ぶ。
+builder.Services.AddSingleton(sp =>
+{
+    var options = sp.GetRequiredService<IOptions<OpendAuthOptions>>().Value;
+    return new ResendIntervalLimiter(
+        sp.GetRequiredService<TimeProvider>(),
+        TimeSpan.FromSeconds(options.ResendIntervalSeconds),
+        sp.GetRequiredService<SubmissionRateLimiter>());
 });
 // 時刻源は差し替え可能にしておく（流量制限の試験が実時間を待たずに窓を跨げるようにするため）。
 builder.Services.TryAddSingleton(TimeProvider.System);

@@ -45,4 +45,33 @@ public class TrialLedgerTests
         // 平均 1.5、偏差 -0.5/0.5/0、二乗和 0.5、/(n-1=2)=0.25。
         ledger.InSampleSharpeVariance().Should().BeApproximately(0.25d, 1e-12);
     }
+
+    // ---- FR-15, ADR-0039 決定1, #1381, IADR-0554: 台帳の IS Sharpe の単位は 1 期間（日次） ----
+
+    private static BacktestMetrics Alternating(decimal up, decimal down)
+    {
+        var equity = new List<decimal> { 100m };
+        for (var i = 1; i <= 60; i++)
+            equity.Add(equity[^1] * (1m + (i % 2 == 0 ? up : down)));
+        return BacktestMetricsCalculator.Compute(equity, []);
+    }
+
+    // 🔴 FromMetrics は判定器（Stage0GateService）が DSR の観測値に使うのと同じ 1 期間 Sharpe を記録する。
+    // 変異の対照: `metrics.SharpeRatio`（年率）を記録すると √252 倍になり、この試験が赤になる。
+    [Fact]
+    public void FromMetricsは判定器の観測値と同じ1期間Sharpeを記録する()
+    {
+        var metrics = Alternating(0.02m, -0.005m);
+
+        var trial = BacktestTrial.FromMetrics("t", metrics, 0.1);
+
+        var observed = SampleMomentsCalculator.Compute(metrics.DailyReturns).SharpePerPeriod;
+        observed.Should().BeGreaterThan(0d);
+        trial.InSampleSharpePerPeriod.Should().Be(observed);
+        trial.InSampleSharpePerPeriod.Should().BeApproximately(
+            metrics.SharpeRatio / Math.Sqrt(BacktestMetricsCalculator.TradingDaysPerYear), 1e-12);
+        trial.InSampleSharpePerPeriod.Should().NotBeApproximately(metrics.SharpeRatio, 1e-6);
+        trial.OutOfSampleReturn.Should().Be(0.1);
+        trial.Name.Should().Be("t");
+    }
 }

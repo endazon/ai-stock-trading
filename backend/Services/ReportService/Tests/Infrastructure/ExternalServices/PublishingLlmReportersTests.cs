@@ -102,6 +102,35 @@ public class PublishingLlmReportersTests
         await host.StopAsync();
     }
 
+    // 🔴 NFR-13, ADR-0064 決定4, #1306, IADR-0550（受け入れ基準 1・3・5）: 月報の費用（報告書生成の計上）も同じ規則で引く。
+    // 取れない（null）要求は第 2 段（入力 0 ＋ 出力 1k × 0.409）、取れた要求は閾値どおり（100,000 ちょうどは第 1 段）。
+    [Theory]
+    [InlineData(null, "0.409")]
+    [InlineData(100_000, "1.7219")]
+    [InlineData(100_001, "8.5990819")]
+    public async Task 入力トークン数が取れない要求は第2段で計上する(int? inputTokens, string expected)
+    {
+        using var host = await BuildHostAsync();
+        var prices = LlmPriceTable.FromRows(
+            [new LlmPriceRow("claude-haiku-5-5", "0.0164", "0.0819", "100000", "0.0819", "0.409")]);
+        var reporter = new PublishingLlmUsageReporter(
+            host.Services.GetRequiredService<IWolverineRuntime>(),
+            new FixedClock(), prices, NullLogger<PublishingLlmUsageReporter>.Instance);
+
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(
+            _ => reporter.ReportAsync(new LlmUsage(LlmPurposes.ReportDaily, inputTokens, 1_000, "claude-haiku-5-5")));
+
+        session.Sent.MessagesOf<LlmCostIncurred>().Single().Amount
+            .Should().Be(decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture));
+
+        await host.StopAsync();
+    }
+
+    // 受け入れ基準 6（形の固定）: 報告書側の計測も「取れない」を表せる型で入力トークン数を運ぶ。
+    [Fact]
+    public void 計測は取れないを表せる型で入力トークン数を運ぶ() =>
+        typeof(LlmUsage).GetProperty(nameof(LlmUsage.InputTokens))!.PropertyType.Should().Be(typeof(int?));
+
     // ---- ②通知・③台帳: フォールバック発火を publish する（#335） ------------------------------
 
     // ADR-0017 決定4-(2)/(3): 発火は通知（②）と監査台帳（③月報集計の供給元）へ流れる。

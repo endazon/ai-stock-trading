@@ -62,7 +62,11 @@ public record ProtectiveStopOrder(
     // 🔴 FR-10, #833 項目3, IADR-0396: 楽観並行の版番号（アプリ側で加算）。**この写しを読んだ時点の版**であり、
     // IProtectiveStopOrderStore.TrySave は保存先の版がこの値と一致するときだけ書き、版を 1 進める。
     // 古い写しから全列を書き戻して、並行に進んだ状態（完了・再武装・試行番号）を巻き戻さないための印である。
-    int Version = 0)
+    int Version = 0,
+    // 🔴 FR-10, #1330, IADR-0534 決定1: 今の未確定の観測値（PendingExternalReduction）を**最初に**観測した巡回の時刻（窓の前の端）。
+    // 観測値が増えた巡回で書き直し、確定・失効で null へ戻す。確定の分類（承認済みの決済で説明できるか）が
+    // 「その減少の観測より前に送った決済か」を判定するために読む。null＝分からない（列を足す前の行）→ 確定の時刻で代える。
+    DateTimeOffset? ExternalReductionObservedAt = null)
 {
     /// <summary>#820, IADR-0344: S1（ソフトウェア逆指値）の行か。ブローカーに注文を持たない。</summary>
     public bool IsSoftwareStop => Mechanism == StopLossExecutionMethod.SoftwareStop;
@@ -149,4 +153,15 @@ public enum ProtectiveStopState
     /// </para>
     /// </summary>
     AwaitingEntry = 2,
+
+    /// <summary>
+    /// 🔴 FR-10, #1422, IADR-0569 決定2: <b>保護逆指値が未受理で、エントリーへ取消を送ったが、取消の結果（終端）をまだ確かめていない</b>。
+    /// 取消要求の後にも約定し得る（moomoo は <c>Cancelling_*</c> を経て約定し得る）ため、「取消済み」と扱って文脈を閉じない。
+    /// <para>
+    /// <b>巡回の対象ではない</b>（<see cref="Active"/> ではない）。約定追跡がエントリーの終端化を観測したとき、発注執行がこの行を
+    /// <see cref="Completed"/> にして、約定 0 なら取消の確定を、約定 &gt; 0 なら約定数量の成行手仕舞いを行う（業務フロー 02 の表）。
+    /// 完了していない記録（<c>FindIncomplete</c>）には数える（生きているかもしれないエントリー）。<b>末尾へ足す</b>（整数列のため Migration 不要）。
+    /// </para>
+    /// </summary>
+    AwaitingEntryCancel = 3,
 }

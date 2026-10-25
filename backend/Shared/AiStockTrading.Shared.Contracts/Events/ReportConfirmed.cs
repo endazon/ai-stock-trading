@@ -15,4 +15,9 @@ public record ReportConfirmed(
     string Actor,
     int AssumptionsVersion,
     DateTimeOffset ConfirmedAt,
-    string? AuthorizedBy = null);
+    string? AuthorizedBy = null,
+    // FR-07, FR-09, ADR-0068 決定1・6, #1373, IADR-0549 決定6: Version は確定した版の版番号（確定後の行の版）。
+    // SupersededVersion は、この確定が効いている日報の<b>再確定</b>だったとき、それまで効いていた同じ期間キーの確定版の版番号。
+    // 通知は「効いている版が変わった」と書く。🔴 **既定は null**（初回の確定・旧形式）。末尾・任意＝非破壊。
+    int? Version = null,
+    int? SupersededVersion = null);

@@ -525,6 +525,22 @@ builder.Services.AddSingleton<ITradeRationaleSource>(sp =>
         http, sp.GetRequiredService<ILogger<HttpTradeRationaleSource>>());
 });
 
+// FR-06, FR-08, #1356, IADR-0541 決定 2: 日報 §5 の「判断が参照したニュース・開示」。判断根拠と同じ監査台帳・同じ所在から引く。
+// **Audit:BaseUrl 未設定/不正 URI は Unsupplied（常に null）**＝§5 は「照会できませんでした」と描く（「参照なし」へ倒さない）。
+builder.Services.AddSingleton<IDecisionReferenceSource>(sp =>
+{
+    if (sp.GetService<AuditGrpcTransport>() is { } auditGrpc)
+        return new GrpcDecisionReferenceSource(auditGrpc, sp.GetRequiredService<ILogger<GrpcDecisionReferenceSource>>());
+
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["Audit:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new UnsuppliedDecisionReferenceSource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("audit-ledger");
+    http.BaseAddress = uri;
+    return new HttpDecisionReferenceSource(http, sp.GetRequiredService<ILogger<HttpDecisionReferenceSource>>());
+});
+
 // FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §3: ポジション一覧（当日終了時点）。
 // 権威源はリスク管理サービスの取引台帳の射影であり、GET /risk-controls/open-positions（OwnerOrService・
 // IADR-0051）へ s2s 同期照会する。
@@ -608,6 +624,21 @@ builder.Services.AddSingleton<IReportDraftPresentedNotifier>(sp =>
         : new NoOpReportDraftPresentedNotifier());
 // EF ストア・ドラフト生成が scoped のため、オーケストレータも scoped（常駐は巡回ごとにスコープを作る）。
 builder.Services.AddScoped<ReportAutoGenerator>();
+// 🔴 FR-07, UC-03, #1423 M-6, ADR-0075 決定1〜4, IADR-0583: 日報の無応答の判定（方針の照会の停止の印と、無応答の通知が同じ答えを見る）。
+// 期限は日報の生成境界（Reports:AutoGeneration の日報の時刻）より後の最初の米国市場の開場。設定は Reports:NoResponseBehavior（既定は継続）。
+builder.Services.AddSingleton(sp => new ReportNoResponseSettings(
+    ReportNoResponsePolicy.ParseBehavior(sp.GetRequiredService<IConfiguration>()["Reports:NoResponseBehavior"]),
+    sp.GetRequiredService<IOptions<ReportAutoGenerationOptions>>().Value.ToSettings().Schedule));
+builder.Services.AddScoped<DailyReportNoResponseEvaluator>();
+// 無応答の通知（継続・停止とも。期間キーごとに 1 回）。既定で有効（計画が求める通知）。`Reports:NoResponseNotice:Enabled=false` で外せる。
+if (builder.Configuration.GetValue("Reports:NoResponseNotice:Enabled", true))
+{
+    builder.Services.AddHostedService(sp => new DailyReportNoResponseMonitorService(
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<IClock>(),
+        TimeSpan.FromSeconds(Math.Max(1, sp.GetRequiredService<IConfiguration>().GetValue("Reports:NoResponseNotice:IntervalSeconds", 300))),
+        sp.GetRequiredService<ILogger<DailyReportNoResponseMonitorService>>()));
+}
 if (builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName)
         .Get<ReportAutoGenerationOptions>()?.Enabled == true)
     builder.Services.AddHostedService<ReportAutoGenerationService>();
@@ -653,8 +684,8 @@ var app = builder.Build();
 // 配備でない環境（docker-compose の Development・試験の Testing）は従来どおり警告。計上時の解決は変えない（IADR-0055）。
 var llmGatewayConfigured = llmGrpcAddress is not null
     || Uri.TryCreate(app.Configuration["LlmGateway:BaseUrl"], UriKind.Absolute, out _);
-switch (LlmPricingStartupGuard.Evaluate(
-    BuildLlmPriceTable(app.Configuration), llmGatewayConfigured, app.Environment.IsProduction()))
+var startupPriceTable = BuildLlmPriceTable(app.Configuration);
+switch (LlmPricingStartupGuard.Evaluate(startupPriceTable, llmGatewayConfigured, app.Environment.IsProduction()))
 {
     case LlmPricingStartupVerdict.Refuse:
         throw new InvalidOperationException(LlmPricingStartupGuard.RefusalMessage);
@@ -662,13 +693,17 @@ switch (LlmPricingStartupGuard.Evaluate(
         app.Logger.LogWarning(LlmPricingStartupGuard.WarningMessage);
         break;
 }
+// NFR-13, ADR-0064 決定9, #1305, IADR-0553: 未知モデルの計上単価が書かれているのに解析できない・0 以下なら知らせる
+// （計上は既定値で続く＝0 円にも表の最大にも黙って倒さない。起動は止めない）。
+if (startupPriceTable.UnknownModelSettingRejected)
+    app.Logger.LogWarning(LlmPricingStartupGuard.UnknownModelSettingWarningMessage);
 
 // FR-07, IADR-0071 決定2: 無応答時の既定動作を起動時に解釈してログに残す（設定が実際に消費されていることを可視化する）。
-// これによりオペレーターは REPORTS_NORESPONSE_BEHAVIOR の反映を確認できる。期限（翌営業日開場）検知→停止の**実強制**は
-// スケジューラ（#22）が本設定（ReportNoResponsePolicy.Decide）を読み取って行う seam であり、本サービス単体では判定のみを持つ。
+// 🔴 #1423 M-6, ADR-0075, IADR-0583（2026-10-24）: 期限検知→停止の実強制は、方針の照会の停止の印（DailyReportNoResponseEvaluator）と
+// 無応答の通知の常駐（DailyReportNoResponseMonitorService）が行う（旧注記の「スケジューラ #22 が読む seam」は実装が無かった）。
 var noResponseBehavior = ReportNoResponsePolicy.ParseBehavior(builder.Configuration["Reports:NoResponseBehavior"]);
 app.Logger.LogInformation(
-    "報告書の無応答時の既定動作: {Behavior}（確定を経ない新方針は不適用。期限検知→停止の実強制はスケジューラ #22 が本設定を読む）。",
+    "報告書の無応答時の既定動作: {Behavior}（確定を経ない新方針は不適用。停止なら期限後の取引判断の全体を見送り、継続・停止とも無応答を通知する）。",
     noResponseBehavior);
 
 // IADR-0012 準拠: 起動時にスキーマを最新 Migration へ更新（relational のみ。テストの InMemory はスキップ）。
@@ -711,7 +746,10 @@ static LlmPriceTable BuildLlmPriceTable(IConfiguration cfg) =>
                 s.Key, s["InputPer1kTokens"], s["OutputPer1kTokens"],
                 s["LongContextThresholdTokens"], s["LongContextInputPer1kTokens"], s["LongContextOutputPer1kTokens"])),
         cfg["LlmPricing:InputPer1kTokens"],
-        cfg["LlmPricing:OutputPer1kTokens"]);
+        cfg["LlmPricing:OutputPer1kTokens"],
+        // NFR-13, ADR-0064 決定9, #1305, IADR-0553: 表に無いモデルの計上単価（単価表の行ではない。未設定は既定 $10 / $50）。
+        cfg["LlmPricing:UnknownModel:InputPer1kTokens"],
+        cfg["LlmPricing:UnknownModel:OutputPer1kTokens"]);
 
 // IADR-0071 決定1（#11 IADR-0061 決定2 と同形）: 報告書散文 LLM ゲートウェイのタイムアウト（秒）。
 // 未設定・不正・非正値は既定 30 秒（fail-safe）。無限待ちや 0 秒にはしない。

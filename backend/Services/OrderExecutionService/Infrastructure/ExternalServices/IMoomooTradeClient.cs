@@ -90,6 +90,8 @@ public sealed record MoomooPositionRow(
 // Kind=TrailingStop は S3 のトレーリングストップ（TrailValue=トレール幅の絶対額・TrailType_Amount）。
 // FR-10, #856, IADR-0488 決定3: PositionEffect は発注意図の効果（新規建て／手仕舞い）。**OpenD へは送らない**
 // （MMApiMoomooTradeClient は読まない）。故障注入のデコレータが新規建てだけを見分けるために載せる。null は不明（従来の生成元）。
+// 🔴 FR-05, FR-10, #1339, IADR-0536 決定1: TimeInForce は注文の有効期限。null は**欄を送らない**（ブローカーの既定。従来どおり）。
+// 載せるのは承認経路の指値の決済（Kind=Limit・Close）の Day だけである。保護逆指値（Stop。#1214 の対象）には載せない。
 public sealed record MoomooOrderRequest(
     string Symbol,
     MoomooMarket Market,
@@ -100,7 +102,12 @@ public sealed record MoomooOrderRequest(
     MoomooOrderKind Kind = MoomooOrderKind.Limit,
     decimal? TriggerPrice = null,
     decimal? TrailValue = null,
-    PositionEffect? PositionEffect = null);
+    PositionEffect? PositionEffect = null,
+    MoomooTimeInForce? TimeInForce = null);
+
+// 🔴 FR-05, FR-10, #1339, IADR-0536 決定1: 注文の有効期限（SDK 非依存）。Day=TimeInForce_DAY（当日限り）。
+// GTC 等は足さない（保護逆指値の有効期限は #1214 の実弾確認の後に決める。推測で GTC を指定しない）。
+public enum MoomooTimeInForce { Day }
 
 // FR-10, #331, IADR-0210: 注文種別（SDK 非依存）。Limit=OrderType_Normal / Stop=OrderType_Stop / Market=OrderType_Market。
 // FR-10, #821, IADR-0347: S3 の代替種別を末尾へ足す。StopLimit=OrderType_StopLimit / TrailingStop=OrderType_TrailingStop。
@@ -205,8 +212,9 @@ public enum MoomooOrderState
     Cancelled,
 
     /// <summary>
-    /// <b>確認できた失敗</b>（OpenD の SubmitFailed / Failed / Disabled / Deleted）。証券会社が受理しなかった
+    /// <b>確認できた失敗</b>（OpenD の SubmitFailed / Failed / Deleted）。証券会社が受理しなかった
     /// ことが分かっている状態であり、<c>OrderStatus.Rejected</c> へ写る。
+    /// 🔴 #1339, ADR-0067 決定5, IADR-0539: <b>Disabled（失効）はここに入れない</b>（<see cref="Expired"/>）。
     /// </summary>
     Failed,
 
@@ -222,4 +230,12 @@ public enum MoomooOrderState
     /// </para>
     /// </summary>
     Unknown,
+
+    /// <summary>
+    /// 🔴 FR-05, ADR-0067 決定5, #1339, IADR-0539: <b>失効</b>（OpenD の Disabled〈22〉。期限〔DAY〕の満了などで、
+    /// 証券会社が未約定のまま失効させた注文）。FR-05 の<b>失注</b>であり、<c>OrderStatus.Expired</c> へ写る。
+    /// 拒否（<see cref="Failed"/>）と区別する——拒否は発注の内容を見直す事象であり、失注は時間切れである。
+    /// 終端の扱い（在庫の解放・未約定残の通知）は拒否と同じ（<c>OrderStatusLifecycle</c> はどちらも未約定の終端とする）。
+    /// </summary>
+    Expired,
 }

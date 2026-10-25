@@ -28,10 +28,7 @@ public static class DailyBarsEndpoint
                 CancellationToken cancellationToken) =>
             {
                 // 値域外は照会しない（OpenD の取得枠・頻度を使わない）。市場は数値（Market の値）で受ける。
-                if (string.IsNullOrWhiteSpace(symbol) || symbol.Length > MaxSymbolLength
-                    || market is not { } marketValue || !Enum.IsDefined((Market)marketValue)
-                    || from is not { } fromDate || to is not { } toDate
-                    || fromDate > toDate || toDate.DayNumber - fromDate.DayNumber + 1 > MaxRangeDays)
+                if (!IsValidQuery(symbol, market, from, to))
                 {
                     return Results.BadRequest(new
                     {
@@ -40,11 +37,21 @@ public static class DailyBarsEndpoint
                 }
 
                 return Results.Ok(await service
-                    .QueryAsync(symbol, (Market)marketValue, fromDate, toDate, cancellationToken)
+                    .QueryAsync(symbol!, (Market)market!.Value, from!.Value, to!.Value, cancellationToken)
                     .ConfigureAwait(false));
             })
             .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
 
         return app;
     }
+
+    /// <summary>
+    /// 照会してよい入力か（値域外は照会しない＝OpenD の取得枠・頻度を使わない）。REST と gRPC の面（OrderExecutionReadGrpcService）が共有する。
+    /// NFR, IADR-0559, #1391: gRPC の面を足すときに、REST の検証をそのまま切り出した（規則は 1 つも変えていない）。
+    /// </summary>
+    internal static bool IsValidQuery(string? symbol, int? market, DateOnly? from, DateOnly? to) =>
+        !string.IsNullOrWhiteSpace(symbol) && symbol.Length <= MaxSymbolLength
+        && market is { } marketValue && Enum.IsDefined((Market)marketValue)
+        && from is { } fromDate && to is { } toDate
+        && fromDate <= toDate && toDate.DayNumber - fromDate.DayNumber + 1 <= MaxRangeDays;
 }

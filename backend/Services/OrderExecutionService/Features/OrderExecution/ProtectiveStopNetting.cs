@@ -2,6 +2,7 @@ using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using Microsoft.Extensions.Logging;
 
 namespace OrderExecutionService.Features.OrderExecution;
 
@@ -25,6 +26,10 @@ namespace OrderExecutionService.Features.OrderExecution;
 //      （#820 の 5 巡目監査。作成時刻だけで決めると、生きた S0 の逆指値が 0 にされて取り消される）。
 //   3. **確定（外部要因の減少）**（ReconcileShares の観測の巡回）— 同じ観測値が
 //      ExternalReductionConfirmations 回**連続**したときだけ RemainingProtected を減らし、1 行 1 回だけ通知する。
+//      🔴 #1330, IADR-0534: 確定した減少のうち、**承認済みの決済（取引判断の利確・損切り・利用者の手仕舞い・自動縮小）の約定で
+//      説明できる分**は外部要因と呼ばない（ApprovedCloseReleased。数量の扱いは同じで、分類と通知だけが違う）。
+//      判定は窓の両端で行う——決済を送ったのがその減少を**最初に観測した巡回より前**（前の端）で、
+//      約定が**確定の巡回までに**発注の記録へ載っている（後の端）。帰属させた約定は記録へ印を付け、2 回数えない。
 //
 // 自分が出した決済による減算は SoftwareStopExecutor が行う（決定的な SoftwareCloseDecisionId の試行と 1:1）。
 //
@@ -140,6 +145,8 @@ public static class ProtectiveStopNetting
     /// 🔴 <b>外部要因の超過は「観測」として積むだけで、帳簿（RemainingProtected）を書き換えない。</b>
     /// 同じ観測値が <see cref="ExternalReductionConfirmations"/> 回<b>連続</b>したときだけ確定し、
     /// <see cref="SoftwareStopExecuted"/>（<see cref="SoftwareStopOutcome.ProtectionReduced"/>）を<b>1 行 1 回</b>積む。
+    /// 🔴 #1330, IADR-0534: 承認済みの決済の約定で説明できる分は <see cref="SoftwareStopOutcome.ApprovedCloseReleased"/> として
+    /// 別に積む（外部要因と呼ばない）。説明に要る予約ストア（<paramref name="reservations"/>）が無ければ全量を外部要因とする（従来どおり）。
     /// 超過が見えなくなった巡回は<b>観測の連続回数を 0 へ戻すだけ</b>で、書き戻す（復元する）ものは無い。
     /// </para>
     /// <para>
@@ -161,6 +168,11 @@ public static class ProtectiveStopNetting
     /// 確定と通知を行う。決済経路（<c>SoftwareStopExecutor</c>）からの呼び出しは観測値の記録だけを行う。
     /// </param>
     /// <param name="events">確定したときに発行すべきイベントの受け皿（発行は呼び出し側）。</param>
+    /// <param name="reservations">
+    /// 🔴 #1330, IADR-0534 決定1: 承認済みの決済を<b>送った時刻</b>（予約の <c>ReservedAt</c>）を引く口。確定の分類にだけ使う。
+    /// null なら承認済みの決済で説明できるかを判定できないので、確定した減少は全量を外部要因とする（従来どおりの倒し方）。
+    /// </param>
+    /// <param name="logger">🔴 #1330, IADR-0534 決定4: 確定・通知した outcome を INF で残す口（null なら残さない）。</param>
     public static IReadOnlyList<ProtectiveStopOrder> ReconcileShares(
         string symbol,
         Market market,
@@ -171,7 +183,9 @@ public static class ProtectiveStopNetting
         IExecutedOrderStore store,
         DateTimeOffset now,
         bool observing = false,
-        ICollection<object>? events = null)
+        ICollection<object>? events = null,
+        IOrderReservationStore? reservations = null,
+        ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(activeStops);
@@ -205,7 +219,8 @@ public static class ProtectiveStopNetting
             return group;
         }
 
-        return Confirm(group, observed, excess, symbol, market, entrySide, stops, store, events, now);
+        var attribution = new ApprovedCloseAttribution(symbol, market, entrySide, store, reservations, logger);
+        return Confirm(group, observed, excess, symbol, market, entrySide, stops, store, events, now, attribution, logger);
     }
 
     /// <summary>
@@ -276,6 +291,8 @@ public static class ProtectiveStopNetting
                     PendingExternalReduction = take,
                     ExternalReductionObservations = 0,
                     ExternalReductionAbsences = 0,
+                    // #1330, IADR-0534 決定1: 観測値が増えた＝この値を最初に観測したのは今（窓の前の端）。
+                    ExternalReductionObservedAt = now,
                     UpdatedAt = now,
                 },
                 stops))
@@ -305,7 +322,9 @@ public static class ProtectiveStopNetting
         IProtectiveStopOrderStore stops,
         IExecutedOrderStore store,
         ICollection<object>? events,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        ApprovedCloseAttribution attribution,
+        ILogger? logger)
     {
         // 超過が見かけ上小さくなった行がある場合にだけ、その理由を調べる（走査を毎巡回は行わない）。
         var needsEvidence = group.Any(s => s.HasUnconfirmedExternalReduction
@@ -328,6 +347,8 @@ public static class ProtectiveStopNetting
                         PendingExternalReduction = take,
                         ExternalReductionObservations = 1,
                         ExternalReductionAbsences = 0,
+                        // #1330, IADR-0534 決定1: この値を最初に観測した巡回（窓の前の端）。
+                        ExternalReductionObservedAt = now,
                         UpdatedAt = now,
                     },
                     stops);
@@ -365,16 +386,29 @@ public static class ProtectiveStopNetting
 
             // 確定: ここではじめて帳簿を減らす（0 になった行はガードが完了させる）。
             var reduction = row.PendingExternalReduction;
+            var before = row.ProtectedQuantity;
+            var after = Math.Max(0, before - reduction);
+
+            // 🔴 #1330, IADR-0534 決定1: 確定した減少のうち、承認済みの決済の約定で説明できる分を見積もる（まだ帰属させない）。
+            // 窓の前の端＝この観測値を最初に観測した時刻（列を足す前の行は今で代える）。数量の扱い（帳簿の減らし方）は変えない。
+            var classification = attribution.Classify(row, reduction, row.ExternalReductionObservedAt ?? now);
+
+            // 🔴 #1330, IADR-0534 決定2（PR #1336 のレビューで改めた）: 帳簿を書く**前に**記録へ帰属の印を付ける。印を書けなかった約定は
+            // この確定でも以後の確定でも承認済みと呼ばず、外部要因の側へ移す（二重に帰属させない）。帳簿の書き込みが下で衝突しても、
+            // 付けた印は戻さない——その約定は以後「説明に使えない」側に残り、次の確定は外部要因と知らせる（迷ったら外部要因へ倒す）。
+            classification = attribution.Reserve(classification);
+
             // 🔴 #833 項目3, IADR-0396: 並行更新と衝突して書けなかったら、通知も出さない（書いていない減少を「減らした」と言わない）。
             // 行は保存先の最新へ差し替わり、次の巡回が観測からやり直す。
             if (!Replace(
                 group,
                 row with
                 {
-                    RemainingProtected = Math.Max(0, row.ProtectedQuantity - reduction),
+                    RemainingProtected = after,
                     PendingExternalReduction = 0,
                     ExternalReductionObservations = 0,
                     ExternalReductionAbsences = 0,
+                    ExternalReductionObservedAt = null,
                     UpdatedAt = now,
                 },
                 stops))
@@ -382,15 +416,31 @@ public static class ProtectiveStopNetting
                 continue;
             }
 
+            // 🔴 #1330, IADR-0534 決定3: 承認済みの決済で説明できる分は「外部要因」と呼ばない（取引判断の利確・損切り等の約定）。
+            foreach (var part in classification.Parts)
+            {
+                events?.Add(new SoftwareStopExecuted(
+                    row.EntryDecisionId, row.Symbol, row.Market, SoftwareStopOutcome.ApprovedCloseReleased,
+                    part.Quantity, row.TriggerPrice, row.TriggeredPrice ?? row.TriggerPrice, row.Attempt,
+                    CloseDecisionId: part.Close.DecisionId, CloseOrderId: part.Close.OrderId, CloseIntent: null, now,
+                    CloseOrigin: part.Close.ApprovalOrigin));
+            }
+
             // 🔴 無音にしない。外部要因で保護対象を減らしたことを必ず 1 回残す（S0 の行を 0 にして
             // 逆指値を取り消す場合は、この記録が唯一の痕跡になる）。
-            events?.Add(new SoftwareStopExecuted(
-                row.EntryDecisionId, row.Symbol, row.Market, SoftwareStopOutcome.ProtectionReduced,
-                reduction, row.TriggerPrice, row.TriggeredPrice ?? row.TriggerPrice, row.Attempt,
-                CloseDecisionId: null, CloseOrderId: null, CloseIntent: null, now));
+            if (classification.External > 0)
+            {
+                events?.Add(new SoftwareStopExecuted(
+                    row.EntryDecisionId, row.Symbol, row.Market, SoftwareStopOutcome.ProtectionReduced,
+                    classification.External, row.TriggerPrice, row.TriggeredPrice ?? row.TriggerPrice, row.Attempt,
+                    CloseDecisionId: null, CloseOrderId: null, CloseIntent: null, now));
+            }
+
+            // 🔴 #1330, IADR-0534 決定4: outcome を INF で残す（判断 ID・注文 ID・数量の前後・分類の理由）。
+            LogConfirmed(logger, row, before, after, classification);
         }
 
-        NotifySuspended(group, stops, events, now);
+        NotifySuspended(group, stops, events, now, logger);
 
         return group;
     }
@@ -430,6 +480,8 @@ public static class ProtectiveStopNetting
                 PendingExternalReduction = 0,
                 ExternalReductionObservations = 0,
                 ExternalReductionAbsences = 0,
+                // #1330, IADR-0534 決定1: 観測を捨てたら、その観測の前の端（最初に観測した時刻）も捨てる。
+                ExternalReductionObservedAt = null,
                 UpdatedAt = now,
             };
     }
@@ -456,7 +508,8 @@ public static class ProtectiveStopNetting
         List<ProtectiveStopOrder> group,
         IProtectiveStopOrderStore stops,
         ICollection<object>? events,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        ILogger? logger)
     {
         foreach (var row in group.ToList())
         {
@@ -493,6 +546,14 @@ public static class ProtectiveStopNetting
                 row.EntryDecisionId, row.Symbol, row.Market, SoftwareStopOutcome.ProtectionSuspended,
                 row.ProtectedQuantity, row.TriggerPrice, row.TriggeredPrice ?? row.TriggerPrice, row.Attempt,
                 CloseDecisionId: null, CloseOrderId: null, CloseIntent: null, now));
+
+            // 🔴 #1330, IADR-0534 決定4: outcome を INF で残す。
+            logger?.LogInformation(
+                "保護の突き合わせ: outcome={Outcome} EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 市場={Market} "
+                + "主張 {Before} 株 → 実際に動かせる {After} 株 理由=未確定の観測（{Pending} 株）が主張の全量を打ち消したまま "
+                + "{Since:O} から猶予を過ぎた",
+                SoftwareStopOutcome.ProtectionSuspended, row.EntryDecisionId, row.Symbol, row.Market,
+                row.ProtectedQuantity, row.EffectiveProtectedQuantity, row.PendingExternalReduction, since);
         }
     }
 
@@ -515,7 +576,10 @@ public static class ProtectiveStopNetting
     /// 「受理後に取り消された決済の残り」の配置には <c>Active</c> な行が 1 件も残らない——
     /// Active 行の群を回すだけでは見えない。ただし <b>S1 の足跡がある群に限る</b>
     /// （Active な S1 行、または <see cref="IProtectiveStopOrderStore.FindCompletedSoftwareStops"/> が返す完了済みの行）。
-    /// <b>S1 が 1 件も無い構成（実弾・S0 のみ）では 1 バイトも動かない。</b>
+    /// <b>S1 が 1 件も無い構成（実弾・S0 のみ）では、同じ方向の群には 1 バイトも動かない。</b>
+    /// 🔴 <b>#1454, IADR-0580 決定2: 例外は逆方向の群である</b>——建玉の方向と逆の方向をエントリーとする S0 / S3 の記録（有効・完了を問わない）が
+    /// ある群は、S1 の足跡が無くても対象にする（窓開けで逆指値がエントリーより先に約定した売り建玉など）。その印は S0 の行が持ち、
+    /// 印の読み戻しは逆方向の群へ対応させる（<see cref="WatchedSide"/>）。
     /// </para>
     /// <para>
     /// <b>同じ状態で毎巡回鳴らさない</b>: 群の S1 行のうち<b>作成が最も新しい 1 行</b>が
@@ -544,7 +608,8 @@ public static class ProtectiveStopNetting
         IProtectiveStopOrderStore stops,
         IExecutedOrderStore store,
         DateTimeOffset now,
-        ICollection<object>? events = null)
+        ICollection<object>? events = null,
+        ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(activeStops);
@@ -563,7 +628,7 @@ public static class ProtectiveStopNetting
         foreach (var (symbol, market, entrySide) in snapshot
             .Where(p => p.Quantity != 0)
             .Select(p => (p.Symbol, p.Market, EntrySide: p.Quantity > 0 ? TradeSide.Buy : TradeSide.Sell))
-            .Concat(notified.Select(s => (s.Symbol, s.Market, s.EntrySide)))
+            .Concat(notified.Select(s => (s.Symbol, s.Market, WatchedSide(s))))
             .Distinct())
         {
             // #880: 純額が 0（その方向に 0）の群は帰属不明 0 として下のリセット分岐へ入れる（かつては continue で素通りした）。
@@ -573,19 +638,30 @@ public static class ProtectiveStopNetting
                 .Where(s => s.Symbol == symbol && s.Market == market && s.EntrySide == entrySide)
                 .ToList();
             var completed = stops.FindCompletedSoftwareStops(symbol, market, entrySide, SentCloseScanLimit);
+            // 🔴 #1454, IADR-0580 決定2: 印の読み戻しは「その印がどの方向の群の帰属不明か」で対応させる（WatchedSide）。
             var notifiedInGroup = notified
-                .Where(s => s.Symbol == symbol && s.Market == market && s.EntrySide == entrySide)
+                .Where(s => s.Symbol == symbol && s.Market == market && WatchedSide(s) == entrySide)
                 .ToList();
 
-            // S1 の足跡が無い群（実弾・S0 のみ）には触れない。
-            if (!group.Any(s => s.IsSoftwareStop) && completed.Count == 0 && notifiedInGroup.Count == 0)
-                continue;
-
-            // 群を代表して記録を持つ行（作成が最も新しい S1 行）。完了済みでも構わない（状態は変えない）。
-            var anchor = group
+            // 群を代表して記録を持つ候補（S1 行。完了済みでも構わない＝状態は変えない）。
+            var candidates = group
                 .Where(s => s.IsSoftwareStop)
                 .Concat(completed)
                 .Concat(notifiedInGroup)
+                .ToList();
+
+            // S1 の足跡が無い群（実弾・S0 のみ）には触れない。
+            // 🔴 FR-10, ADR-0040, #1454, IADR-0580 決定2: **ただし、この方向と逆の方向をエントリーとする S0 の記録がある群は除外しない。**
+            // その銘柄でシステムが建てたのは逆方向であり、この方向の純額は（窓開けで逆指値がエントリーより先に約定した・二重決済などで）
+            // 保護の決済が建玉を越えて生んだ反対方向の建玉であり得る。売り建玉の損失には上限が無いので、S0 だけの銘柄でも黙らない。
+            // 同じ方向の S0 だけの群（T-10-488）は従来どおり触れない（手動・他の実行機構の建玉を S0 の近似で鳴らさない）。
+            if (candidates.Count == 0)
+                candidates = OppositeBrokerStopFootprints(symbol, market, entrySide, active, stops);
+            if (candidates.Count == 0)
+                continue;
+
+            // 群を代表して記録を持つ行（作成が最も新しい候補）。
+            var anchor = candidates
                 .OrderByDescending(s => s.CreatedAt)
                 .ThenByDescending(s => s.EntryDecisionId)
                 .First();
@@ -645,7 +721,39 @@ public static class ProtectiveStopNetting
                 anchor.EntryDecisionId, symbol, market, SoftwareStopOutcome.UnattributedPosition,
                 unattributed, anchor.TriggerPrice, anchor.TriggeredPrice ?? anchor.TriggerPrice, anchor.Attempt,
                 CloseDecisionId: null, CloseOrderId: null, CloseIntent: null, now));
+
+            // 🔴 #1330, IADR-0534 決定4: outcome を INF で残す（前回知らせた株数 → 今回の株数）。
+            logger?.LogInformation(
+                "保護の突き合わせ: outcome={Outcome} EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 市場={Market} 方向={EntrySide} "
+                + "帰属不明 {Before} 株 → {After} 株 理由=方向の純額 {Net} 株のうち、有効な記録の主張と送信済みの決済等で説明できない株数がある",
+                SoftwareStopOutcome.UnattributedPosition, anchor.EntryDecisionId, symbol, market, entrySide,
+                anchor.UnattributedNotifiedQuantity ?? 0, unattributed, net);
         }
+    }
+
+    /// <summary>
+    /// 🔴 FR-10, #1454, IADR-0580 決定2: 帰属不明の通知済みの印が<b>どの方向の群</b>の帰属不明を指すか。
+    /// S1 の行は自分のエントリー方向の群（従来どおり）。S0 / S3 の行（ブローカー側の注文）が印を持つのは、
+    /// <see cref="OppositeBrokerStopFootprints"/> で<b>逆方向の群</b>の代表になったときだけである（同じ方向の S0 だけの群には触れない）。
+    /// </summary>
+    private static TradeSide WatchedSide(ProtectiveStopOrder row) =>
+        row.IsSoftwareStop ? row.EntrySide : row.CloseSide;
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0040, #1454, IADR-0580 決定2: 方向 <paramref name="side"/> の群に対し、<b>逆の方向をエントリーとする S0 / S3 の記録</b>
+    /// （有効・完了を問わない。完了した記録は更新が新しい順に上限つき）。帰属不明の検知の除外（S1 の足跡が無い群には触れない）を
+    /// 狭めるためだけに使う——帳簿の主張・持ち分の計算には使わない。
+    /// </summary>
+    private static List<ProtectiveStopOrder> OppositeBrokerStopFootprints(
+        string symbol, Market market, TradeSide side, List<ProtectiveStopOrder> active, IProtectiveStopOrderStore stops)
+    {
+        var entrySide = side == TradeSide.Buy ? TradeSide.Sell : TradeSide.Buy;
+        return active
+            .Where(s => s.Symbol == symbol && s.Market == market && s.EntrySide == entrySide)
+            .Concat(stops.FindRecentFor(symbol, market, entrySide, SentCloseScanLimit))
+            .Where(s => !s.IsSoftwareStop && s.Symbol == symbol && s.Market == market && s.EntrySide == entrySide)
+            .DistinctBy(s => s.EntryDecisionId)
+            .ToList();
     }
 
     /// <summary>
@@ -728,6 +836,34 @@ public static class ProtectiveStopNetting
             .Sum(s => store.FindByDecisionId(s.EntryDecisionId) is { } entry && OrderStatusLifecycle.IsPending(entry.Status)
                 ? Math.Max(0, s.Quantity - Math.Max(0, entry.FilledQuantity))
                 : 0);
+
+    // 🔴 FR-10, #1330, IADR-0534 決定4: 確定した縮小の outcome を INF で残す（分類ごとに 1 行。判断 ID・注文 ID・数量の前後・理由）。
+    private static void LogConfirmed(
+        ILogger? logger, ProtectiveStopOrder row, int before, int after, ApprovedCloseClassification classification)
+    {
+        if (logger is null)
+            return;
+
+        foreach (var part in classification.Parts)
+        {
+            logger.LogInformation(
+                "保護の突き合わせ: outcome={Outcome} EntryDecisionId={EntryDecisionId} 機構={Mechanism} 銘柄={Symbol} 市場={Market} "
+                + "主張 {Before} 株 → {After} 株（うち {Quantity} 株） 決済の DecisionId={CloseDecisionId} OrderId={CloseOrderId} "
+                + "出どころ={CloseOrigin} 理由={Reason}",
+                SoftwareStopOutcome.ApprovedCloseReleased, row.EntryDecisionId, row.Mechanism, row.Symbol, row.Market,
+                before, after, part.Quantity, part.Close.DecisionId, part.Close.OrderId, part.Close.ApprovalOrigin,
+                classification.Reason);
+        }
+
+        if (classification.External > 0)
+        {
+            logger.LogInformation(
+                "保護の突き合わせ: outcome={Outcome} EntryDecisionId={EntryDecisionId} 機構={Mechanism} 銘柄={Symbol} 市場={Market} "
+                + "主張 {Before} 株 → {After} 株（うち {Quantity} 株） 決済の DecisionId=なし OrderId=なし 理由={Reason}",
+                SoftwareStopOutcome.ProtectionReduced, row.EntryDecisionId, row.Mechanism, row.Symbol, row.Market,
+                before, after, classification.External, classification.Reason);
+        }
+    }
 
     // 🔴 FR-10, #833 項目3, IADR-0396: 群の写しは呼び出し側が await を跨いで持っていたものであり得る（決済経路・乖離の取り込み）。
     // **楽観並行で書き**、衝突したら何も書かずに群の行を保存先の最新へ差し替えて false を返す

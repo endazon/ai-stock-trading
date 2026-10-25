@@ -3,15 +3,15 @@ title: リスク統制コア（FR-10・再実装）テスト仕様書
 type: test-spec
 status: approved
 created: 2026-08-04
-updated: 2026-10-10
+updated: 2026-10-24
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-10, NFR-09, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02, FR-05, FR-07, FR-14, FR-16, FR-13, UC-07, FR-09, FR-08, NFR-06, UC-03, UC-04, UC-05, NFR-02, NFR-05, NFR-13, NFR-01]
-adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041, ADR-0042, ADR-0043, ADR-0031, ADR-0045, ADR-0033, ADR-0036, ADR-0044, ADR-0046, ADR-0047, ADR-0049, ADR-0050, ADR-0048, ADR-0023, ADR-0052, ADR-0051, ADR-0037, ADR-0017, ADR-0054, ADR-0058, ADR-0011]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413, IADR-0418, IADR-0062, IADR-0075, IADR-0095, IADR-0182, IADR-0271, IADR-0419, IADR-0383, IADR-0423, IADR-0420, IADR-0422, IADR-0424, IADR-0284, IADR-0331, IADR-0352, IADR-0427, IADR-0429, IADR-0428, IADR-0425, IADR-0431, IADR-0432, IADR-0433, IADR-0437, IADR-0435, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0440, IADR-0442, IADR-0445, IADR-0446, IADR-0447, IADR-0448, IADR-0449, IADR-0450, IADR-0458, IADR-0459, IADR-0460, IADR-0461, IADR-0462, IADR-0463, IADR-0465, IADR-0351, IADR-0466, IADR-0467, IADR-0451, IADR-0464, IADR-0471, IADR-0469, IADR-0473, IADR-0472, IADR-0475, IADR-0476, IADR-0454, IADR-0474, IADR-0477, IADR-0478, IADR-0470, IADR-0479, IADR-0480, IADR-0483, IADR-0481, IADR-0482, IADR-0486, IADR-0487, IADR-0488, IADR-0490, IADR-0491, IADR-0248, IADR-0494, IADR-0495, IADR-0496, IADR-0500, IADR-0499, IADR-0503, IADR-0505, IADR-0507, IADR-0509, IADR-0510, IADR-0513, IADR-0512, IADR-0275, IADR-0515, IADR-0072, IADR-0069, IADR-0169, IADR-0520, IADR-0521, IADR-0522, IADR-0523, IADR-0525]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups, 20260925_843_report-period-keys-projection, 20260925_957_cross-service-read-contracts-c, 20260925_990_status-nullable-daily-amount, 20260925_984_audit-free-text-linear-redaction, 20260925_871_discord-drift-adopt, 20260925_952_cross-service-read-contract-guard, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_997_grpc-stage2-risk-read, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1030_finnhub-cycle-fit-control, 20260926_1015_watchlist-driven-finnhub-symbols, 20260926_1028_report-kb-reingest, 20260926_1039_policy-confirmed-reply-guidance, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260926_1044_monitor-replace-residuals, 20260926_826_stop-method-audit-residuals, 20260927_1051_release-gate-per-trading-env, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_1063_grpc-read-latent-residuals, 20260927_1067_grpc-owner-gate-bot-azp, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260929_1093_guard-position-query-retry, 20260929_1099_finnhub-estimate-log-wording, 20260929_1093_stagger-startup-position-queries, 20260930_1104_stop-width-observability, 20260930_1105_close-qty-inflight, 20260930_1108_t786-otel-collect-race, 20260930_1114_unattributed-entry-fill-window, 20260930_1113_entry-blockers-before-llm, 20260930_1120_stop-width-floor, 20260930_1121_s1-vs-decision-close, 20260930_1118_daily-volume-from-kline, 20261001_1130_held-add-on-before-llm, 20261001_1133_finnhub-timeout, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1136_retro-stop-floor, 20261001_1134_watchlist-no-fallback, 20261001_1148_redact-retmsg-account-id, 20261001_1138_kb-market-docs-topk, 20261001_1132_finnhub-request-estimate, 20261001_1140_volume-flag-kline-rate-cost-summary, 20261001_1129_policy-exit-numeric, 20261001_1139_stage0-decision-volume, 20261002_1156_report-unsupplied-inputs, 20261002_1111_decision-final-failure-record, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261002_1000_real-account-readonly-margin-query, 20261003_1122_atr14-stop-floor, 20261003_1164_position-query-classification-single-entry, 20261003_856_indeterminate-dispatch-fault-injection, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261006_1156_report-regenerate, 20261006_1182_report-regenerate-present-notice, 20261007_1187_close-decision-stop-distance-optional, 20261007_1189_dedupe-quote-per-cycle, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1175_take-profit-unreached-explicit, 20261007_1192_aspnetcore-env-production, 20261007_1174_pre-llm-one-share-skip, 20261007_1197_llm-pricing-unset-guard, 20261008_1206_exception-message-hardening, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261008_1209_stage0-replay-min-notional-and-decision-exit, 20261008_1230_explicit-client-visible-marker, 20260919_856_reservation-reconciler-enablement, 20260923_905_risk-worker-factory-prev-trading-day-seed, 20261008_1242_unassigned-test-ids-rows, 20261008_1247_finnhub-limiter-window-burst, 20261008_1222_order-approval-origin, 20261008_1223_take-profit-warning-per-held-symbol, 20261008_1253_reservation-approval-origin, 20261008_1262_reservation-position-effect, 20261008_1251_market-monitor-cycle-duration-observe, 20261009_1228_planning741-ruling-records, 20261009_1283_rag-retrieval-failure-visibility, 20261009_1280_s1-arrival-publish-once-at-detection, 20261009_1281_patrol-warning-boundary, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261010_1292_held-exit-rule-in-prompt, 20261010_1290_screening-rationale-garble]
-issues: [#1281, #1282, #1280, #204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #948, #842, #880, #958, #832, #826, #843, #990, #984, #871, #952, #823, #937, #753, #997, #1002, #853, #967, #1000, #1010, #1006, #1013, #1016, #1024, #1025, #1030, #1015, #1028, #1039, #1022, #856, #1044, #1051, #1034, #1049, #1059, #1061, #1063, #1065, #1067, #1093, #1099, #1104, #1105, #1108, #1114, #1113, #1120, #1121, #1118, #1130, #1133, #1131, #1135, #1136, #1134, #1148, #1138, #1132, #1140, #1129, #1139, #1156, #1111, #1048, #1122, #1164, #1169, #1182, #1187, #1189, #1175, #1176, #1192, #1174, #1197, #1206, #1194, #1209, #1230, #905, #1242, #1247, #1222, #1253, #1223, #1262, #1251, #1228, #1283, #1286, #243, #1292, #1290, planning#703, planning#704, planning#702, planning#711, planning#741, MSP#1871, MSP#1872]
+adrs: [ADR-0073, ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041, ADR-0042, ADR-0043, ADR-0031, ADR-0045, ADR-0033, ADR-0036, ADR-0044, ADR-0046, ADR-0047, ADR-0049, ADR-0050, ADR-0048, ADR-0023, ADR-0052, ADR-0051, ADR-0037, ADR-0017, ADR-0054, ADR-0058, ADR-0011, ADR-0063, ADR-0066, ADR-0067, ADR-0064, ADR-0070, ADR-0071]
+iadrs: [IADR-0587, IADR-0584, IADR-0581, IADR-0580, IADR-0578, IADR-0577, IADR-0576, IADR-0575, IADR-0574, IADR-0573, IADR-0572, IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413, IADR-0418, IADR-0062, IADR-0075, IADR-0095, IADR-0182, IADR-0271, IADR-0419, IADR-0383, IADR-0423, IADR-0420, IADR-0422, IADR-0424, IADR-0284, IADR-0331, IADR-0352, IADR-0427, IADR-0429, IADR-0428, IADR-0425, IADR-0431, IADR-0432, IADR-0433, IADR-0437, IADR-0435, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0440, IADR-0442, IADR-0445, IADR-0446, IADR-0447, IADR-0448, IADR-0449, IADR-0450, IADR-0458, IADR-0459, IADR-0460, IADR-0461, IADR-0462, IADR-0463, IADR-0465, IADR-0351, IADR-0466, IADR-0467, IADR-0451, IADR-0464, IADR-0471, IADR-0469, IADR-0473, IADR-0472, IADR-0475, IADR-0476, IADR-0454, IADR-0474, IADR-0477, IADR-0478, IADR-0470, IADR-0479, IADR-0480, IADR-0483, IADR-0481, IADR-0482, IADR-0486, IADR-0487, IADR-0488, IADR-0490, IADR-0491, IADR-0248, IADR-0494, IADR-0495, IADR-0496, IADR-0500, IADR-0499, IADR-0503, IADR-0505, IADR-0507, IADR-0509, IADR-0510, IADR-0513, IADR-0512, IADR-0275, IADR-0515, IADR-0072, IADR-0069, IADR-0169, IADR-0520, IADR-0521, IADR-0522, IADR-0523, IADR-0525, IADR-0527, IADR-0529, IADR-0532, IADR-0534, IADR-0535, IADR-0536, IADR-0538, IADR-0539, IADR-0040, IADR-0546, IADR-0551, IADR-0555, IADR-0556, IADR-0557, IADR-0559, IADR-0560, IADR-0561, IADR-0562, IADR-0564, IADR-0567, IADR-0569]
+specs: [20261024_1473_db-boundary-utc-datetimeoffset, 20261024_1423_capital-baseline-missing-previous-day, 20261023_1454_stop-filled-before-entry, 20261023_1423_residual-gaps, 20261023_1452_guard-net-owner-closes, 20261023_1448_guard-close-yields-decision-close, 20261023_1449_close-gate-and-guard-cancel-confirm, 20261023_1446_close-serialization, 20261023_1444_stop-guard-market-hours, 20261023_1442_order-executed-republish, 20261023_1433_1434_llm-precheck-cutoff-theme-and-closed-position, 20261022_1422_protective-reject-entry-cancel-confirm, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups, 20260925_843_report-period-keys-projection, 20260925_957_cross-service-read-contracts-c, 20260925_990_status-nullable-daily-amount, 20260925_984_audit-free-text-linear-redaction, 20260925_871_discord-drift-adopt, 20260925_952_cross-service-read-contract-guard, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_997_grpc-stage2-risk-read, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1030_finnhub-cycle-fit-control, 20260926_1015_watchlist-driven-finnhub-symbols, 20260926_1028_report-kb-reingest, 20260926_1039_policy-confirmed-reply-guidance, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260926_1044_monitor-replace-residuals, 20260926_826_stop-method-audit-residuals, 20260927_1051_release-gate-per-trading-env, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_1063_grpc-read-latent-residuals, 20260927_1067_grpc-owner-gate-bot-azp, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260929_1093_guard-position-query-retry, 20260929_1099_finnhub-estimate-log-wording, 20260929_1093_stagger-startup-position-queries, 20260930_1104_stop-width-observability, 20260930_1105_close-qty-inflight, 20260930_1108_t786-otel-collect-race, 20260930_1114_unattributed-entry-fill-window, 20260930_1113_entry-blockers-before-llm, 20260930_1120_stop-width-floor, 20260930_1121_s1-vs-decision-close, 20260930_1118_daily-volume-from-kline, 20261001_1130_held-add-on-before-llm, 20261001_1133_finnhub-timeout, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1136_retro-stop-floor, 20261001_1134_watchlist-no-fallback, 20261001_1148_redact-retmsg-account-id, 20261001_1138_kb-market-docs-topk, 20261001_1132_finnhub-request-estimate, 20261001_1140_volume-flag-kline-rate-cost-summary, 20261001_1129_policy-exit-numeric, 20261001_1139_stage0-decision-volume, 20261002_1156_report-unsupplied-inputs, 20261002_1111_decision-final-failure-record, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261002_1000_real-account-readonly-margin-query, 20261003_1122_atr14-stop-floor, 20261003_1164_position-query-classification-single-entry, 20261003_856_indeterminate-dispatch-fault-injection, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261006_1156_report-regenerate, 20261006_1182_report-regenerate-present-notice, 20261007_1187_close-decision-stop-distance-optional, 20261007_1189_dedupe-quote-per-cycle, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1175_take-profit-unreached-explicit, 20261007_1192_aspnetcore-env-production, 20261007_1174_pre-llm-one-share-skip, 20261007_1197_llm-pricing-unset-guard, 20261008_1206_exception-message-hardening, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261008_1209_stage0-replay-min-notional-and-decision-exit, 20261008_1230_explicit-client-visible-marker, 20260919_856_reservation-reconciler-enablement, 20260923_905_risk-worker-factory-prev-trading-day-seed, 20261008_1242_unassigned-test-ids-rows, 20261008_1247_finnhub-limiter-window-burst, 20261008_1222_order-approval-origin, 20261008_1223_take-profit-warning-per-held-symbol, 20261008_1253_reservation-approval-origin, 20261008_1262_reservation-position-effect, 20261008_1251_market-monitor-cycle-duration-observe, 20261009_1228_planning741-ruling-records, 20261009_1283_rag-retrieval-failure-visibility, 20261009_1280_s1-arrival-publish-once-at-detection, 20261009_1281_patrol-warning-boundary, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261010_1292_held-exit-rule-in-prompt, 20261010_1290_screening-rationale-garble, 20261011_1291_high-volatility-order-cap, 20261013_1319_serialize-entry-screening, 20261013_1291_hv-history-atomic-and-pinned, 20261013_1330_approved-close-not-external-reduction, 20261014_1339_close-limit-tif-and-release, 20261015_1311_rag-search-degraded-mark, 20261015_856_held-warning-throttle-and-ghost-s1, 20261016_1339_decision-close-unfilled-cancel, 20261017_1343_release-closes-entry-protection, 20261017_1383_policy-revision-thinking-max-tokens, 20261017_1388_grpc-late-routes-held-symbols-asof-policy, 20261017_1391_grpc-order-execution-read-surface, 20261020_1395_s1-yield-cancel-suppresses-abandon-notice, 20261020_1396_pre-close-entry-cutoff-and-flatten, 20261020_1397_theme-concentration-limit, 20261021_1407_sc02-pre-close-and-theme-settings, 20261021_order-dispatch-final-halt-check]
+issues: [#1473, #1454, #1423, #1452, #1448, #1449, #1446, #1444, #1442, #1434, #1433, #1422, #1407, #1397, #1396, #1395, #1311, #1383, #1388, #1391, #1339, #1291, #1319, #1281, #1282, #1280, #204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #948, #842, #880, #958, #832, #826, #843, #990, #984, #871, #952, #823, #937, #753, #997, #1002, #853, #967, #1000, #1010, #1006, #1013, #1016, #1024, #1025, #1030, #1015, #1028, #1039, #1022, #856, #1044, #1051, #1034, #1049, #1059, #1061, #1063, #1065, #1067, #1093, #1099, #1104, #1105, #1108, #1114, #1113, #1120, #1121, #1118, #1130, #1133, #1131, #1135, #1136, #1134, #1148, #1138, #1132, #1140, #1129, #1139, #1156, #1111, #1048, #1122, #1164, #1169, #1182, #1187, #1189, #1175, #1176, #1192, #1174, #1197, #1206, #1194, #1209, #1230, #905, #1242, #1247, #1222, #1253, #1223, #1262, #1251, #1228, #1283, #1286, #243, #1292, #1290, #1330, #1343, planning#703, planning#704, planning#702, planning#711, planning#741, MSP#1871, MSP#1872, planning#797, planning#808, planning#809]
 -->
 
 
@@ -1211,6 +1211,38 @@ row20: FR-10
   **止めるかどうかは未裁定**であり、選択肢と害（一過性の 0 で丸一日止まる／買付余力を統制へ引き込む／
   気づけなければ止まらない）は実装 ADR に整理した。**先に必要なのは「実口座が残高 0 で何を返すか」の観測**で、
   それは本書の写像では取れない（接続は模擬取引口座に固定してある）。
+  🔴 **［2026-10-24 追記 / `#1423`］向きを変えた。** 計画の裁定により、**直前の米国東部暦日に成功した観測が無ければ
+  新規建てを拒否する**（下の「基準資金の観測の欠けで新規建てを拒否する」）。残高 0 が続けば**翌暦日から止まる**。
+  当日のうちは止まらない（当日の行は判定に使わない。当日に止めるかは計画の射程の外）。T-10-516 はこの「当日」の向きとして残す。
+
+### 基準資金の観測の欠けで新規建てを拒否する（直前の米国東部暦日・2026-10-24）
+
+計画の裁定: 「照会できない」は、判定する時点の米国東部暦日の**直前の暦日に、成功した観測が 1 件も無い**ことを指す。
+暦日で数え、営業日では数えない。そのときは新規建てを拒否し（手仕舞い・損切りは止めない）、Discord と統制状態参照画面に知らせる。解除は自動である。
+
+| ID | 受け入れ基準 | テスト |
+| --- | --- | --- |
+| T-10-3035 | 月曜の判定は日曜の観測を求める（日曜あり→供給／土曜・金曜が最後→未供給。営業日では数えない） | `CapitalBaselineMissingPreviousDayTests` |
+| T-10-3036 | 直前の暦日の観測が無ければ新規建ては `CapitalBaselineUnavailable` で拒否し、手仕舞いは通す | 同上 |
+| T-10-3037 | 直前の暦日の観測が戻れば、利用者の操作なしに供給へ戻る | 同上 |
+| T-10-3038 | 表示・通知の口（`Read`）は審査と同じ判定を返し、読み出しの帰結の計器を動かさない | 同上 |
+| T-10-3039 | 行なし（初回の配備）と人手の 0 は「観測の欠け」に数えない（通知しない） | 同上 |
+| T-10-3048 | （プロパティベース）どの時刻に判定しても、直前の暦日の行があれば供給し、2 暦日前までしか無ければ未供給 | 同上 |
+| T-10-511（改め） | 4 日の鮮度は直前の暦日の判定に包まれる（2・4 日前は欠けで未供給、5 日前は鮮度切れ） | `CapitalBaselineTests` |
+| T-10-668（改め） | 欠けの帰結は `UnavailableMissingPreviousDay`（未供給）として数え、警告を残す | 同上 |
+| T-10-682（改め） | 試験 fixture の仕込みは、どの時刻を起点にしても直前の米国東部暦日に落ちる | `CapitalBaselineSeedTests` |
+| T-10-3040 | 欠けの通知は取引日ごとに 1 回だけ発行し、翌取引日も欠けていれば改めて発行する（鮮度切れの区別を載せる） | `CapitalBaselineObservationMissingServiceTests` |
+| T-10-3041 | 供給・行なし・人手の 0 では発行しない | 同上 |
+| T-10-3042 | 発行に失敗したら次の巡回で再試行する | 同上 |
+| T-10-3043 | 本番の組み立ては既定で巡回を常駐させ、明示の無効化でだけ外す | 同上 |
+| T-10-3044 | 統制状態の照会は、観測の欠けで未供給のときに欠けの印と最後に観測できた取引日を載せる（行なし・人手の 0 では載せない）。基準資金・上限の実額・欠けの印は同じ 1 回の読み出しから作り、読み出しの間に行が書かれても食い違わない | `RiskStatusServiceTests` |
+| T-10-3045 | 通知の文面（件名・本文・重大度 Critical）。止めていないもの（手仕舞い・損切り）と自動解除を本文に含む | `NotificationTemplateGoldenTests` |
+| T-10-3046 | 監査の要約から判定日と最後の観測日が読める | `AuditEntryFactoryTests` |
+| T-10-3047 | 統制状態参照画面は欠けのときだけ、停止の理由・最後の観測日・止めていないもの・自動解除を文で出す | `ControlStatusPage.capitalBaseline.test.tsx` |
+
+- 🔴 **週末に口座照会が成功するかは確かめていない。** 成功しない構成なら、月曜の新規建てが毎週一日中止まる（安全側）。
+  配備の前に、配備前の版の指標で月曜の欠けが 0 かを確かめる（計画の求め）。
+- 🔴 指標のラベルが変わった（欠けの状態は旧 `SuppliedWithGap`＝供給、新 `UnavailableMissingPreviousDay`＝未供給）。配備をまたいで比べない。
 
 ## 決済の発注前にブローカーの実建玉と突き合わせる（#864。台帳が乖離していても裸のショートを出さない）
 
@@ -1403,7 +1435,7 @@ Helm の描画のアサーション（`helm.yml` の「Assert reservation reconc
 | ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
 | --- | --- | --- | --- | --- | --- |
 | **T-10-600** | 滞留予約 1 件・照会の答えは「未発注」・解放の門は**閉**（既定） | 突合を 1 巡回走らせる（`OrderReservationReconcilerTests`）／保護喪失の成行が結果不明で滞留した後に突合し、ガードを再び巡回する（`ProtectiveStopGuardIndeterminateCloseTests`） | 🔴 **解放しない**。予約は `Reserved` のまま、記録も作らず、約定の通知も出さない。ガード側では**成行を重ねない**（二重決済でショート化しない） | 確認できていない「未発注」で在庫の押さえを解かない | 自動（**否定形・最重要**） |
-| **T-10-601** | 同上で解放の門を**明示的に開** | 突合を 1 巡回走らせる（`OrderReservationReconcilerTests`） | 予約は解放（削除）され、据え置きの一覧には載らない。記録は作らない | 門の実効（開ければ従来どおり解放する） | 自動（対の肯定形） |
+| **T-10-601** | 同上で解放の門を**明示的に開** | 突合を 1 巡回走らせる（`OrderReservationReconcilerTests`） | 予約は解放され、据え置きの一覧には載らない。記録は作らない（出どころも保護の記録も無い予約＝保護の機構のレグの形なので削除。承認の経路の予約の扱いは T-10-2703〜T-10-2713） | 門の実効（開ければ解放する） | 自動（対の肯定形） |
 | **T-10-602** | 照会の答えが「判定不能」（照会不達）・門は開／閉の両方 | 同上 | 🔴 **門の開閉に依らず解放しない**。判定不能として数え、「未発注と出たが据え置いた」の一覧にも載せない | 門を開けることが「不明も解放してよい」へ広がらない | 自動（**否定形**・2 例） |
 | **T-10-603** | 門が閉じた状態で「未発注」と出た予約 | 同上 | 結果の**据え置きの一覧（`HeldNotPlaced`）にその予約が載る**（常駐が警告でログする入力） | 据え置きを無音にしない | 自動 |
 | **T-10-604** | 照会の答えが「発注済み」 | 突合を 1 巡回走らせる（`OrderReservationReconcilerTests`）／常駐経由で 1 巡回（`OrderReservationReconciliationServiceTests`） | 🔴 終端化した予約が**突合で確定した一覧（`ProbeTerminalized`）**に注文番号・銘柄・数量つきで載る。常駐経由では約定の通知も発行され、予約は終端になる | 確定時点で保護レグを持たない建玉を黙って通り過ぎさせない | 自動 |
@@ -1443,6 +1475,8 @@ Helm の描画のアサーション（`helm.yml` の「Assert reservation reconc
 終端の書き込みと出口のあいだには常に窓があり、窓は「巡回全体（最悪で分の単位）」から
 「1 件ぶんの記録＋発行」へ縮んだが**ゼロにはならない**。ゼロにするには送信の永続化（durable outbox）が要る。
 発行が落ちた 1 件の通知も失われる（予約は既に終端であり次の巡回では拾えない）。
+［2026-10-23 追記 / #1442］発注執行の送信の永続化（耐久アウトボックス）が入った。ブローカー断の間の発行と、発行が返った後の落下では通知は失われない。
+残るのは終端の書き込みと発行の呼び出しの間でプロセスが落ちる窓だけである（約定追跡の側は「発行待ち」の印で塞いだが、突合の側には印を置いていない）。
 
 **是正前の実測（変異注入。2026-09-23）**: 出口を巡回の末尾へ戻すと **5 件が赤**になる
 （T-10-646 / T-10-647 / T-10-650 / T-10-651 / T-10-652。合計 702 件中 697 件合格）。
@@ -2046,8 +2080,10 @@ JSON 設定を固定する。
 | **T-10-799** | **同じ銘柄に S1 の記録が 2 本**（AAPL 715 株 / 713 株）。713 株の記録への保存が衝突し続ける | 到達 → ガードの巡回 2 回 → 715 株の決済の失効（再武装・衝突 2 回） | 715 株の決済とその通知は失わず、713 株の記録は**書かずに据え置いて**エラーログを出す。ガードからの 713 株の成行は 1 本だけで、記録を書けなくても**再送しない**。再武装は読み直して当て直し 715 株を戻す | 声に出す・他の記録を巻き込まない・二重に売らない | 自動（**否定形・境界**） |
 
 🔴 **本節が固定していない残余リスク**:
-- **常駐ガードの直接の保存（ブローカー側逆指値の再発注・手仕舞い・完了、S1 の未到達の完了）は無条件の上書きのまま**である。
-  ブローカーへ注文を出した後に書く経路で、保存を落とすと実在する注文と記録が食い違うため、読み直して当て直す形への切り替えは別途行う。
+- ~~**常駐ガードの直接の保存（ブローカー側逆指値の再発注・手仕舞い・完了、S1 の未到達の完了）は無条件の上書きのまま**である。
+  ブローカーへ注文を出した後に書く経路で、保存を落とすと実在する注文と記録が食い違うため、読み直して当て直す形への切り替えは別途行う。~~
+  ［2026-10-23 追記］切り替えた（下の節「ガードは残存逆指値の取消を照会で確かめてから保護記録を完了させる」）。完了は同じレグのときだけ当て直し、
+  ブローカーへの操作の後の書き込みは変えた列だけを条件なしに当て直す（保存を落とさない）。
 - 衝突で書けなかった観測・通知の印は次の巡回（既定 30 秒）でやり直す。観測の確定（2 巡回連続）が 1 巡回ぶん遅れ得る。
 
 ## 有効な保護記録が無い口座でも帰属不明の建玉を知らせる（#880。建玉観測の常駐への相乗り・純額 0 での記録の消去）
@@ -2488,7 +2524,7 @@ row7: FR-10, UC-02
 | **T-10-870** | 保有建玉数の上限 1・保有なし。新規建ての判断を承認し、自分の承認を台帳と注文アクティビティへ射影した | 同じ判断を再配送する | 🔴 **拒否へ反転しない**（拒否理由 0 件）。承認も発行し直さない（再審査しなかった形を返す） | 承認済みの判断を自分の未約定分で拒否しない | 自動（**否定形・最重要**） |
 | **T-10-871** | T-10-870 と同じ状態 | **別の**判断の新規建てを審査する | 保有建玉数の上限超過で拒否される | 抑止は同じ判断に限る（統制を緩めない） | 自動（**否定形**） |
 | **T-10-872** | 手仕舞いの判断を承認し、射影した | 同じ判断を再配送する | 抑止せず再審査して承認する（同じ判断の承認） | 手仕舞いは止めない | 自動 |
-| **T-10-873** | 新規建ての判断を承認したが、まだ射影していない（台帳に承認行が無い） | 同じ判断を再配送する | 通常の審査を受けて承認される | 承認行が無ければ承認済みと推測しない | 自動（**否定形**） |
+| **T-10-873** | 新規建ての判断を承認したが、まだ射影していない（台帳に承認行が無い） | 同じ判断を再配送する | 承認される（［2026-10-13 追記 / #1319］最初の審査が書いた予約から**同じ承認**を組み直す。再審査はしない） | 承認行が無ければ承認済みと推測しない | 自動（**否定形**） |
 | **T-10-874** | 台帳に承認行がある新規建ての判断 | 本番と同じメッセージ配線のハンドラへ再配送する | 観測ログを書かない（統制違反の集計は未供給のまま） | 観測の件数が審査の件数を超えない | 自動 |
 | **T-10-875** | 同上。緊急停止を起動している（再審査すれば拒否が出る状態） | 同上 | 承認も拒否も**発行しない**・例外にならない | ハンドラが第 3 の形で落ちない・拒否へ反転しない | 自動（結線） |
 | **T-10-876** | 統制状態参照画面 | 上限使用率パネルを表示する | 1日発注金額と保有銘柄数が約定前の新規建て注文を含む旨の注記が出る | 画面の値を約定だけと読ませない | 自動（画面） |
@@ -2942,6 +2978,80 @@ Kubernetes API・Pod の Ready・2 つの生存要約の鮮度を読み、クラ
 - 実効構成の自己申告と、情報収集の起動時の日次要求の見積りは REST の宛先しか見ない（gRPC だけを宣言すると、実装名と「監視銘柄に追随するか」を誤って申告する）。
 - 通知サービスが報告書・市場監視を呼ぶ口（利用者の代理のトークン・書き込みと同じ窓口）は本節の対象外（次の段で移す）。
 
+## 段の後に REST だけで足された読み取り（情報収集の保有銘柄・Stage 0 の当時の方針）もサービス間 gRPC で読めるようにする
+
+サービス間の同期照会を gRPC へ移す段を閉じた後に、REST だけで足された読み取りが 2 本あった（情報収集が収集の対象へ足す保有銘柄と、
+Stage 0 の記録が読む当時の確定日報の方針）。提供側の gRPC の面はどちらも既にあるので、同じ切り方で並走させた。**既定は REST のまま**である。
+守りたいのは「輸送を差し替えても、**欠けた行は一覧ごと不明・無かったと取れなかったを分ける・未来の確定を拒む**が変わらない」ことである。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2760** | 本物の組み立て（報告書）・確定済みの日報 1 件／無し | 当時の方針を REST と gRPC で照会する。確定より前の時点・時刻の欠落・オフセットの欠落・書式違い・資格情報なし・関係ないロールでも照会する | 確定済みは REST の本文を送り手の写しで変換したものと等しく、確定の時刻も REST と同じ。無かったときは「方針の無い応答」（REST の 404）。時刻の不備は `INVALID_ARGUMENT`（REST の 400）。未認証・権限不足は拒否 | 評価器と入力の検証を 2 つにしない | 自動（結合・**否定形**） |
+| **T-10-2761** | 実際の h2c の偽の提供側（報告書） | 当時の方針を読む。無い応答・照会の失敗・確定の時刻／日付／要約の欠けた応答・読めない書式・照会の時刻より後の確定を返す | 読めた方針と出所は REST と同じ値、時刻は REST と同じ書式で渡す。無かったときは方針なしで撃ち直さない。取れなかったときは 3 回撃ってから記録を止める。未来の確定は撃ち直さずに止める | 「無かった」と「取れなかった」を取り違えない | 自動（結合） |
+| **T-10-2762** | 取引判断の Stage 0 の組み立て | 報告書の口を REST の宛先／gRPC の宣言／どちらも無しで構成する | gRPC の宣言だけでも基底を組み、宣言があれば REST の宛先より gRPC を選ぶ。発注執行の口が無ければ組まない | 宣言が効かないまま REST へ戻る、を作らない | 自動 |
+| **T-10-2763** | 実際の h2c の偽の提供側（リスク管理） | 保有銘柄を読む。送り手の型・空・相殺・欠けた行・失敗・黙る・一時的に届かない | 送り手の型から REST と同じ一覧を読む。欠けた行（市場・方向の未指定を含む）が 1 つでもあれば一覧ごと不明、失敗も不明。構成した秒数で打ち切り、再試行は構成した回数だけ | 線上の 0 を日本・買いと読まない | 自動（結合） |
+| **T-10-2764** | 本番の組み立て（情報収集） | 宛先を宣言する／しない／使えない宛先を宣言する | 宣言ありは保有を gRPC で読み（REST の宛先より優先）、**実際に偽の提供側を呼ぶ**。宣言なしは輸送が登録されず提供側は呼ばれない。使えない宛先は起動時に落ちる | 配線を外しても緑のまま、を作らない | 自動（結合） |
+
+試験の置き場所: T-10-2760 は `DailyPolicyAsOfGrpcTests`（報告書サービス）、T-10-2761・T-10-2762 は `GrpcAsOfDailyPolicySourceTests`（取引判断サービス）、
+T-10-2763 は `GrpcHeldSymbolsTests`、T-10-2764 は `HeldSymbolsGrpcWiringTests`（情報収集サービス）。
+
+**変異注入の実測**（2026-10-17。1 つずつ入れて実行し、書き戻した）:
+
+| 変異 | 結果 | 殺したテスト |
+| --- | --- | --- |
+| 情報収集の組み立て: 保有の gRPC の読み手を選ばない | 4 件中 1 件赤 | T-10-2764 |
+| 情報収集の受け手: 市場の未指定を日本と読む | 13 件中 1 件赤 | T-10-2763 |
+| 取引判断の受け手: 確定の時刻が欠けたら照会の時刻で埋める | 14 件中 2 件赤 | T-10-2761 |
+| 取引判断の組み立て: 当時の方針の gRPC の選択を外す | 14 件中 1 件赤 | T-10-2762 |
+| 報告書の提供側: 時刻を REST の検証を通さずに読む（オフセットの無い時刻を UTC とみなす） | 7 件中 2 件赤 | T-10-2760 |
+
+🔴 **本節が固定していない残余リスク**:
+- 稼働クラスタでの h2c 往復は未検証（既定は REST のまま）。実測は計測用の overlay（2 本とも宣言済み）で他の経路と同じ窓で行う。
+- 発注執行への読み取り 4 本（借株可否・日足・処理中の決済）は gRPC の面が無く、REST だけのまま（面の新設は別の段）。
+  ［2026-10-17 追記］次節で面を新設して並走させた。
+
+## 発注執行に gRPC の読み取りの面を新設し、REST だけで呼ばれていた 4 本（借株可否・日足・処理中の決済）も gRPC で読めるようにする
+
+前節の時点で、発注執行には gRPC の面（h2c のリスナ・第 2 ポート・門・契約）が無く、そこへの読み取り 4 本（リスク管理の借株可否・取引判断の日足と
+処理中の決済・バックテストの日足）だけが REST のまま残っていた。面を新設し、呼び出し元 3 サービスを同じ切り方で並走させた。**既定は REST のまま**である。
+守りたいのは「輸送を差し替えても、**分からないを許可へ倒さない・取れないを取れたと読まない・覆うを読み違えて見送らない・届かない失敗を欠測へ畳まない**」ことである。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2900** | 本物の組み立て（発注執行）・借株可否の答え（借りられない） | 借株可否を gRPC と REST で照会する | gRPC の応答は REST の本文を送り手の写しで変換したものと等しい。照会は同じ照会サービスを通る（2 回目はそのキャッシュ） | 照会の規則を 2 つにしない | 自動（結合） |
+| **T-10-2901** | 本物の組み立て・日足の答え 2 本 | 日足を gRPC と REST で照会する | 足・価格（不変文化の 10 進）・日付・出来高まで REST と等しい | 写し漏れを作らない | 自動（結合） |
+| **T-10-2902** | 本物の組み立て（内蔵 paper）／送り手の型 | 処理中の決済を照会する。各状態の送り手の型を写す | REST と等しい（分からない・理由つき）。状態は名前で写り、C# の 0 を線上の未指定にしない。覆う・株数・注文 ID を落とさない | 「分からない」と「状態が無い」を取り違えない | 自動（結合） |
+| **T-10-2903** | 本物の組み立て | 銘柄なし・長すぎる銘柄・市場／方向の未指定・期間の欠落・読めない日付・逆順・400 日超で照会する。400 日ちょうども照会する | どれも `INVALID_ARGUMENT`（REST の 400）でブローカーへ照会しない。上限ちょうどは照会する | 入力の検証を 2 つにしない | 自動（結合・**否定形**） |
+| **T-10-2904** | 本物の組み立て | 資格情報なし・関係ないロール・人の利用者（azp なし）・ボット以外のクライアント・サービス・ボットで照会する | 資格情報なしは `UNAUTHENTICATED`（REST は 401）、ロール不足とボット以外の所有者は 3 本とも `PERMISSION_DENIED`。サービスとボットは読める | 門は既定で閉じる | 自動（結合・**否定形**） |
+| **T-10-2905** | 実際の h2c の偽の提供側（発注執行） | リスク管理が借株可否を読む。送り手の 3 状態・状態の未指定・別の銘柄・市場の未指定・失敗（不達・時間切れ・門・入力）・一時的な不達で再試行を宣言 | 送り手の型から REST と同じ観測（理由も同じ）。未指定・食い違いは分からない（契約の食い違い）。失敗はどれも分からない。再試行は宣言したときだけ不達に効く | 分からないを許可へ倒さない | 自動（結合） |
+| **T-10-2906** | 本番の組み立て（リスク管理） | 宛先を宣言する／しない／BaseUrl だけ／使えない宛先を宣言する | 宣言ありは gRPC で読み（BaseUrl より優先・BaseUrl が空でも読む）、**実際に偽の提供側を呼ぶ**。宣言なしは輸送が登録されず従来どおり。使えない宛先は起動時に落ちる | 配線を外しても緑のまま、を作らない | 自動（結合） |
+| **T-10-2907** | 実際の h2c の偽の提供側 | 取引判断が日足を読む。送り手の型・取れない・状態の未指定・別の銘柄・市場の未指定・欄の欠け・読めない価格・失敗 | 送り手の型から REST と同じ足を読み、要求は期間を運ぶ。それ以外はどれも未提供。既定は再試行せず、deadline は REST と同じ 8 秒 | 取れないを取れたと読まない | 自動（結合） |
+| **T-10-2908** | 実際の h2c の偽の提供側 | 取引判断が処理中の決済を読む。送り手の 3 状態・状態／方向の未指定・別の方向・覆うのに株数なし・失敗 | 送り手の型から REST と同じ答え（覆う・覆わない）。分からない・読めない応答・失敗はどれも不明（LLM を呼ぶ） | 覆うを読み違えて見送らない | 自動（結合） |
+| **T-10-2909** | 本番の組み立て（取引判断） | 宛先を宣言する／しない／使えない宛先を宣言する。Stage 0 の基底の口を宣言で構成する | 宣言ありは日足の共有口と処理中の決済が gRPC で、**実際に偽の提供側を呼ぶ**（BaseUrl より優先・BaseUrl が空でも読む）。宣言なしは REST。日足の取得元の選択は Stage 0 の基底と同じで、基底の口は宣言でも満たす。使えない宛先は起動時に落ちる | 2 か所の日足の口で選択を分けない | 自動（結合） |
+| **T-10-2910** | 実際の h2c の偽の提供側 | バックテストが日足を読む。送り手の型・取れない・状態の未指定・欄の欠け・送り手が答えた失敗・届かない失敗。過去データ源の選択を宣言の有無で見る | 送り手の型から REST と同じ読み込み結果（期間外の足は捨てる）。送り手が答えた失敗はその銘柄だけの欠測（他は続ける）。届かない・待ちきれない失敗は送出する。宣言は BaseUrl の代わりになるが、過去データ源の明示は要る | 届かない失敗を欠測へ畳まない | 自動（結合） |
+| **T-10-2911** | 本番の組み立て（バックテスト） | 宛先を宣言する（BaseUrl なし／あり）・しない・宣言だけ・使えない宛先 | 宣言ありは gRPC の源で**実際に偽の提供側を呼び**、自己申告も一致する。宣言は BaseUrl より優先し、REST の名前付きクライアントを作らない（トークンの供給元だけを登録する）。宣言なしは REST。宣言だけでは過去データ源を選ばない。使えない宛先は起動時に落ちる | 選択の allow-list を崩さない | 自動（結合） |
+
+試験の置き場所: T-10-2900〜2904 は `OrderExecutionReadGrpcServiceTests`（発注執行サービス）、T-10-2905 は `GrpcShortSellBorrowSourceTests`・
+T-10-2906 は `ShortPermitGrpcWiringTests`（リスク管理サービス）、T-10-2907・T-10-2908 は `GrpcOrderExecutionReadTests`・T-10-2909 は
+`OrderExecutionGrpcWiringTests`（取引判断サービス）、T-10-2910 は `GrpcOrderExecutionHistoricalBarSourceTests`・T-10-2911 は `OrderExecutionGrpcWiringTests`
+（バックテストサービス）。
+
+**変異注入の実測**（2026-10-17。1 つずつ入れて実行し、書き戻した）:
+
+| 変異 | 結果 | 殺したテスト |
+| --- | --- | --- |
+| 発注執行の組み立て: gRPC の面を登録しない | 23 件中 22 件赤 | T-10-2900〜2904 |
+| 発注執行の写し: 借株可否の「分からない」を線上の未指定で運ぶ | 23 件中 1 件赤 | T-10-2902 |
+| リスク管理の組み立て: 借株可否の gRPC の読み手を選ばない | 6 件中 2 件赤 | T-10-2906 |
+| リスク管理の受け手: 状態の未指定を「分からない」（送り手が答えた）と読む | 10 件中 1 件赤 | T-10-2905 |
+| 取引判断の組み立て: 日足の取得元の選択で gRPC を選ばない | 5 件中 2 件赤 | T-10-2909 |
+| バックテストの受け手: 届かない失敗も欠測へ畳む | 9 件中 2 件赤 | T-10-2910 |
+| バックテストの組み立て: 宣言があっても REST の名前付きクライアントを作る | 7 件中 1 件赤 | T-10-2911 |
+
+🔴 **本節が固定していない残余リスク**:
+- 稼働クラスタでの h2c 往復は未検証（既定は REST のまま）。実測は計測用の overlay で行う。借株可否は REST も未結線のため、overlay の既定では宣言せず別の窓で測る。
+- 発注執行の gRPC 面の門の所有者の分岐（ボット）は、呼び出し元が今は無い（サービスの分岐だけが使われる）。
+
 ## サービス間の読み取りの潜在の残りを塞ぐ（市場の欠けた行・停止中の読めない倍率・10 進の桁あふれ）
 
 段 4 の監査で挙がった、実在の送り手からは届かないが「不明」を別の値に化けさせる 4 つの形を塞いだ。2 つは**意図した振る舞いの変化**である
@@ -3201,7 +3311,7 @@ Kubernetes API・Pod の Ready・2 つの生存要約の鮮度を読み、クラ
 | **T-10-1311** | 当日（JST）の日報が無く、前日の確定済み日報がある | 会話キーを省略して改訂する | 当日の日報を前日の方針・上位・前提条件の版から作り、承認待ちにする。確定済み日報の方針は変わらない | 確定するまで取引に効かない | 自動 |
 | **T-10-1312** | 自動生成の本文と欠けた入力の記録を持つ承認待ちの日報 | 改訂する | 版を 1 進め、本文の末尾へ指示者・指示の原文・入れ替え案を追記し、既存の本文と欠けた入力の記録を残す | 改訂の監査記録を残す | 自動 |
 | **T-10-1313** | AI がタイムアウト | 改訂する | 案なし・当日の日報を作らない | 案が無ければ何も保存しない | 自動（否定形） |
-| **T-10-1314** | 確定済みの日報 | 改訂する | 改訂せず AI も呼ばない | 確定済みは変えない・費用を使わない | 自動（否定形） |
+| **T-10-1314** | 効いていない確定済みの日報（より新しい日付の日報が確定済み）・確定済みの週報 | 改訂する | 改訂せず AI も呼ばない。返答に再確定できる日報（効いている日報）の会話キー。［2026-10-17 / #1373 で前提を「効いていない」に絞った。効いている確定済み日報は版を足す（T-10-2685）］ | 確定済みは変えない・費用を使わない | 自動（否定形） |
 | **T-10-1315** | 未来日・週報・過去日の存在しない会話キー | 改訂する | 作らない（当日の日報のキーを案内する） | 自動生成と衝突する報告書を作らない | 自動（否定形） |
 | **T-10-1316** | 確定済み日報が無い・より新しい日付の確定済み日報がある | 会話キーを省略して改訂する | 作らない | 確定しても効かない報告書を作らない | 自動（否定形） |
 | **T-10-1317** | 空・制御文字だけ・長すぎる指示、空白やパスを含む会話キー | 改訂する | 検証で拒否し AI を呼ばない | 費用を使わない | 自動（否定形） |
@@ -3721,17 +3831,21 @@ OpenD の判定・読み取り専用の閂を固定する。試験は `scripts/s
 
 ## `/policy` が確定済みの報告書に当たったときの返答に、改訂できる時と手段を書く
 
+> ［2026-10-17 / #1373］効いている確定済み日報は `/policy` で版を足して再確定できるようになった（本書末尾「効いている確定済み日報に版を足して再確定する」）。
+> 当日の日報が確定済みのときは効いている日報なので、409 にならず版 n+1 のドラフトを作る。そのため T-10-1520〜T-10-1523 は**廃止**した
+> （「明日の日報の作られ方」の案内は返答から削った）。409 の返答は効いていない確定済みだけに出て、再確定できる日報の会話キーを書く（T-10-1314・T-10-1524・T-10-2688）。
+
 確定済みの報告書への `/policy` は従来どおり 409 で断り、AI を呼ばず何も保存しない。返答の文に、明日（JST の暦日）の日報の作られ方
 （営業日で自動生成が有効なら生成境界の時刻の後の自動生成のドラフト、そうでなければ `/policy` の実行時に直近の確定済み日報を土台に作る）・
 自動生成のドラフトがある日はそれを改訂できること・監視銘柄はリスク設定画面から今すぐ変えられることを添える。日付と時刻は構成と時計から計算する。
 
 | ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
 | --- | --- | --- | --- | --- | --- |
-| **T-10-1520** | 日曜・当日の日報が確定済み・生成境界 16:30 | 会話キー省略の改訂 → 月曜の境界の前に改訂 | 409 相当（AlreadyConfirmed）・文に「明日（2026-09-28・JST・営業日）は 16:30 JST 以降」・明日の会話キー・リスク設定画面。AI を呼ばず版は据え置き。月曜の境界の前は実際に AutoDailyPending | 文と規則の一致・境界の時刻は構成値 | 自動 |
-| **T-10-1521** | 土曜・当日の日報が確定済み（#1039 の事象） | 改訂 → 日曜に改訂 | 文に「明日（2026-09-27・JST）に /policy を実行すると…daily-2026-09-27 のドラフトを作り」。「営業日」を含まない。日曜の改訂は確定済みの方針を土台に日報を作って案を出す | 文と規則の一致 | 自動 |
-| **T-10-1522** | 09-26 15:30 UTC（＝09-27 00:30 JST）・09-27 の日報が確定済み | 改訂 | 明日は 09-28（UTC の翌日 09-27 ではない） | JST の暦日で数える | 自動（境界値） |
-| **T-10-1523** | 自動生成が無効な構成／当日以外の確定済みの会話キー／32 文字の会話キー | 改訂・文を作る | 無効なら明日の実行時に作ると伝え自動生成に触れない。当日以外は period を省略したときの対象（当日の日報）を示し「明日」を書かない。いずれも 300 文字以内 | 構成に応じた手段・通知サービスで切れない長さ | 自動（否定形・境界値） |
-| **T-10-1524** | 本番の組み立て・確定済みの日報 | 改訂を要求する | 409・`error` に改訂の手段。LLM は呼ばれず版・状態・方針は変わらない | 409 の意味は変えない | 自動（結線） |
+| **T-10-1520** | 日曜・当日の日報が確定済み・生成境界 16:30 | ［2026-10-17 / #1373 で廃止］ 会話キー省略の改訂 → 月曜の境界の前に改訂 | 409 相当（AlreadyConfirmed）・文に「明日（2026-09-28・JST・営業日）は 16:30 JST 以降」・明日の会話キー・リスク設定画面。AI を呼ばず版は据え置き。月曜の境界の前は実際に AutoDailyPending | 文と規則の一致・境界の時刻は構成値 | 自動 |
+| **T-10-1521** | 土曜・当日の日報が確定済み（#1039 の事象） | ［2026-10-17 / #1373 で廃止］ 改訂 → 日曜に改訂 | 文に「明日（2026-09-27・JST）に /policy を実行すると…daily-2026-09-27 のドラフトを作り」。「営業日」を含まない。日曜の改訂は確定済みの方針を土台に日報を作って案を出す | 文と規則の一致 | 自動 |
+| **T-10-1522** | 09-26 15:30 UTC（＝09-27 00:30 JST）・09-27 の日報が確定済み | ［2026-10-17 / #1373 で廃止］ 改訂 | 明日は 09-28（UTC の翌日 09-27 ではない） | JST の暦日で数える | 自動（境界値） |
+| **T-10-1523** | 自動生成が無効な構成／当日以外の確定済みの会話キー／32 文字の会話キー | ［2026-10-17 / #1373 で廃止］ 改訂・文を作る | 無効なら明日の実行時に作ると伝え自動生成に触れない。当日以外は period を省略したときの対象（当日の日報）を示し「明日」を書かない。いずれも 300 文字以内 | 構成に応じた手段・通知サービスで切れない長さ | 自動（否定形・境界値） |
+| **T-10-1524** | 本番の組み立て・効いていない確定済みの日報（翌日の日報が確定済み） | 改訂を要求する | 409・`error` に改訂の手段（再確定できる日報の会話キーを含む）。LLM は呼ばれず版・状態・方針は変わらない | 409 の意味は変えない | 自動（結線） |
 | **T-10-1525** | 報告書サービスの本物の関数で作った 32 文字の会話キーの文 | 409 を受ける | 通知サービスは文を切らずに見せる（案なし・不明ではない） | 越境の契約（送り手の文が受け手の上限に収まる） | 自動（契約） |
 
 変異注入（明日を JST の暦日ではなく UTC の壁時計の日付から数える）で、報告書 35 件中 3 件赤（T-10-1520 / T-10-1522 / T-10-1523）。
@@ -3853,7 +3967,7 @@ Stage 0 は**当時の監視銘柄**を as-of 入力として渡し、記録の�
 | **T-10-1551** | 同上・照会は未発注・門は閉（値を書かない既定／明示の `false`） | 1 巡回 | 書き込み 0 回・据え置きに載る・解放 0 | 「未発注」の根拠が未検証のあいだ解放しない | 自動（否定形） |
 | **T-10-1552** | 同上・照会が例外で落ちる | 1 巡回 | 書き込み 0 回・失敗 1・予約は `Reserved` | 例外で書き込まない | 自動（否定形） |
 | **T-10-1553** | 送信結果待ちの保護逆指値（保護記録は `Active`・注文 ID が空・逆指値のレグの予約が `Reserved`）・照会は不明／未発注（門は閉） | 1 巡回 | 逆指値も成行も送り直さない・レグの予約は `Reserved`・送信結果待ちのまま | 届いたか不明な逆指値を重ねない | 自動（否定形） |
-| **T-10-1554** | 同上（エントリー）・照会は未発注・門を開ける | 1 巡回 | 予約は解放される。ブローカーへの書き込みは 0 回・保護の口は呼ばれない | 解放は許可であって発注ではない | 自動（否定形） |
+| **T-10-1554** | 同上（エントリー）・照会は未発注・門を開ける | 1 巡回 | 予約は見送り（`Forgone`）として閉じ、`AwaitingEntry` は完了になる。ブローカーへの書き込みは 0 回・保護レグを張る口は呼ばれない | 解放は発注ではない（送る前に残した記録は閉じる） | 自動（否定形） |
 | **T-10-1555** | 発注済み・不明・未発注（門は閉）の 3 件 | 1 巡回 | 書き込みは発注済みの 1 件の逆指値 1 本だけ（その決定的なレグ）。他の 2 件は保護記録も予約も変わらない | 確定した 1 件の保護が他へ漏れない | 自動（境界） |
 | **T-10-1556** | 構成を渡さないリコンサイラ・照会は未発注 | 1 巡回 | 据え置き・書き込み 0 回 | 構成が無い＝解放してよい、にしない | 自動（否定形） |
 | **T-10-1557** | 6 つの判定（照会で確定・自己修復・門で据え置き・解放・不明・失敗） | 件数つきで計上する | 系列名は `ast.order.reservation_reconciliations`・タグ `outcome`・値は件数 | 名前と語彙 | 自動 |
@@ -4994,10 +5108,37 @@ KB 検索は結果に状態（成功・失敗・未構成）と原因の符号�
 検索 1 本ごとの失敗の行は Debug に下げた（原因は状態で返り、判断が 1 判断 1 行の Warning で出す）。
 
 🔴 **本節が固定していない残余リスク**:
-- 🔴 **PoC の事象（基盤の埋め込みの失敗）は `empty` として記録される**（参照できる文書があれば `retrieved`）。基盤の検索はキーワードのみへ縮退して 200 を印なしで返すため、AST からは成功に見える。縮退の印は基盤側で足し（起票済み）、取り込みは別 issue で行う。
+- PoC の事象（基盤の埋め込みの失敗）は、縮退の印を返す基盤では `empty-degraded` / `retrieved-degraded` として記録する（次節）。🔴 印を返さない旧い基盤では従来どおり `empty` / `retrieved` に見える（`ragDegraded=unknown`）。
 - 状態つきの検索・取得を実装せず従来の検索・取得だけを実装した（包む）実装は、失敗が既定の「成功」に見える。
 - 計量（メトリクス）は置いていない。続く失敗は判断ごとの Warning と記録の `ragContext` で数える。
 - 判断の記録はログの行であり、イベント契約（判断の発行）には載せていない。
+
+## 判断の参考情報（KB 検索）の縮退の印を判断の記録へ残す（#1311）
+
+基盤の検索応答は、部品（埋め込み・グラフ展開・再順位付け）のどれかが働かず劣化して返ったときに縮退の印（`degraded` と理由 `degradedReasons`）を載せる。
+理由は固定の語彙 `embed-failed` / `fused-embed-failed` / `graph-expand-failed` / `rerank-failed`（この順・重複なし）で、本文・例外のメッセージは載らない。
+是正前は印を読まず、語彙検索だけで返った検索も成功に見え、判断の記録は `retrieved` / `empty` だった。
+
+KB 検索は応答の印を結果へ運ぶ（理由は形〔英小文字・数字・ハイフンの 40 文字以内〕の合う符号だけを語彙の順・重複なしで。未知の符号は語彙の後ろ）。印の無い応答（旧い基盤）は「不明」とし、「縮退なし」に倒さない。
+判断の取得は、成功した検索の 1 本でも縮退なら縮退（理由は和集合）、全部が印つきで縮退なしなら縮退なし、印の無い応答が混ざれば不明とする。
+判断は、取得が成功で縮退なら `ragContext` を `retrieved-degraded` / `empty-degraded` とし、Warning を 1 行（銘柄・市場・起点・理由・注入した件数。本文は出さない）出す。
+判断の記録（`LLM 判断:` の行）には `ragDegraded`（`unknown`＝印が無い・取得していない／`none`＝縮退なし／理由のカンマ区切り）を足す。
+🔴 `empty-degraded`（特に `embed-failed` の 0 件）は「該当なし」とは限らない。基盤は埋め込みの鍵が無い間、社内区分の報告書を索引へ書かない。
+取得の失敗は縮退より優先する（`ragContext=failed`。Warning は失敗の 1 行だけ）。縮退（判断を止めず劣化した結果で続ける）は変えない。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2660** | 検索応答が縮退（0 件・理由に重複・不正な文字列・未知の符号）／縮退（1 件）／縮退なし／印なし（旧い応答）／印が null／理由だけ有る。応答が 503 | 状態つきで検索する | 縮退は理由を語彙の順・重複なしで運ぶ（不正な文字列は落とし、未知の符号は後ろ）。縮退なしは false、印なし・null は不明（null）、理由だけ有れば縮退。ヒットの写像は変わらない。503 は印を持たない | 印の無い旧い応答を「縮退なし」に倒さない。ログへ出す理由に符号以外を入れない | 自動（**否定形**） |
+| **T-10-2661** | 銘柄・市場・補充の 3 本の検索の印の組み合わせ（縮退＋縮退＋なし／全部なし／なし＋印なし／全部印なし／縮退＋印なし＋失敗／失敗＋なし＋なし） | 判断の文脈を状態つきで引く | 縮退（理由 `embed-failed,rerank-failed`）／縮退なし／不明／不明／縮退（`embed-failed`）／縮退なし | 1 本でも縮退なら縮退。印の無い応答が混ざれば不明。失敗した検索の印は数えない | 自動 |
+| **T-10-2662** | 取得の状態が成功で、0 件または 1 件、縮退の印が縮退／縮退なし／印なし | 判断する | 判断は止まらない。`ragContext` は `empty-degraded` / `retrieved-degraded`（縮退）・`empty` / `retrieved`（縮退なし・印なし）。`ragDegraded` は理由／`none`／`unknown`。縮退のときだけ Warning が 1 行（銘柄・理由・件数を構造化。本文を含まない）。取得の失敗の Warning は出ない | 縮退した検索に基づく判断を記録で見分けられる。印の無い旧い基盤は従来と同じ `ragContext` | 自動（**最重要**） |
+| **T-10-2663** | 取得が失敗（`http-503`）で、成功した分に縮退の印がある／取得ポートが例外を投げる | 判断する | 失敗: `ragContext=failed`・`ragDegraded=embed-failed`・Warning は失敗の 1 行だけ。例外: `ragContext=failed`・`ragDegraded=unknown` | 失敗は縮退より優先する（1 判断 1 行の Warning） | 自動 |
+
+試験の置き場所: T-10-2660 は `HttpKnowledgeBaseSearchTests`、T-10-2661 は `KnowledgeBaseRetrievalContextProviderTests`、T-10-2662・T-10-2663 は `TradeDecisionServiceTests`。
+
+🔴 **本節が固定していない残余リスク**:
+- 縮退の Warning は判断ごとに出る（基盤の鍵が無い間は全判断で出る）。頻度の閾値・アラート・計量は置いていない。
+- 判断の記録はログの行であり、イベント契約・画面には載せていない（判断詳細の画面には縮退は出ない）。
+- 印は検索 1 本ごとの事実で、どの文書が劣化した結果で入ったかは区別しない。
 
 ## 監視銘柄の権威源が読めないときに構成の既定へ倒さない（直前に読めた一覧、一度も読めていなければ見送る）
 
@@ -5052,7 +5193,7 @@ KB 検索は結果に状態（成功・失敗・未構成）と原因の符号�
 | **T-10-2022** | 両方 true | 判断の `OrderExecution__BaseUrl` が無い・空・相対 | 赤（「絶対 URL でない」） | 判断だけ黙って未提供へ倒れ、報告書だけ「渡る」と示す形を通さない | 自動（**否定形**） |
 | **T-10-2023** | 読めない描画 | 報告書の Deployment が無い／大文字小文字だけが違う同じ設定が 2 つ（完全に同名は後勝ちで潰れるため対象外。Kubernetes も後勝ち）／値が secretKeyRef／空の描画／不明な引数 | 前 4 つは赤（終了コード 1）、不明な引数は 2。不一致の行は `::error::[ラベル]` で出る | 検査の空振りを緑にしない | 自動 |
 | **T-10-2024** | 夜間の要約（psql スタブ・実 PostgreSQL） | 窓の中に `LlmCostIncurred` 3 件・窓の尻ちょうど 1 件 | §12 に用途 × モデル別の件数と円、用途の無い記録は `(不明)`、最後の行に窓の合計。窓の尻ちょうどは数えない | 窓の円を読める | 自動 |
-| **T-10-2025** | 費用の台帳に当月の対象 3 件（うち 1 件は窓の終端ちょうど）・前の月・対象外・インフラ、前提条件の上限 12,000 | 要約を出す | §13 は当月（UTC の暦月）の対象の累計 3,000（窓の終端ちょうど・前の月・インフラを数えない）・上限 12,000・使用率 25.0%・対象外 700。上限は設定サービスの DB から読み（`-A -t`）、その値を費用の照会へ渡す。どちらの照会も読み取り専用で `ROLLBACK` で終わる。スクリプトに上限の値が無い。**月の境界**（実 PostgreSQL）: JST の月初の夜（終端は 10-01 08:00 JST・UTC ではまだ 9 月）は 9 月として累計し 10 月分を含めない。窓の終端がちょうど月初 00:00Z なら終端の月ではなく前の月として扱う | 上限は単一情報源から読む（複写しない）。月は費用統制と同じ UTC の暦月で、窓（半開区間）の最後の瞬間の月 | 自動 |
+| **T-10-2025** | 費用の台帳に当月の対象 3 件（うち 1 件は窓の終端ちょうど）・前の月・対象外・インフラ、前提条件の上限 12,000 | 要約を出す | §13 は当月（JST の暦月。#1461 で UTC から改めた）の対象の累計 3,000（窓の終端ちょうど・前の月・インフラを数えない）・上限 12,000・使用率 25.0%・対象外 700。上限は設定サービスの DB から読み（`-A -t`）、その値を費用の照会へ渡す。どちらの照会も読み取り専用で `ROLLBACK` で終わる。スクリプトに上限の値が無い。**月の境界**（実 PostgreSQL）: JST の月初の夜（終端は 10-01 08:00 JST）は 10 月として累計し 9 月分を含めない。窓の終端がちょうど JST の月初 0:00（09-30T15:00Z）なら終端の月ではなく前の月として扱う | 上限は単一情報源から読む（複写しない）。月は費用統制と同じ JST の暦月で、窓（半開区間）の最後の瞬間の月 | 自動 |
 | **T-10-2026** | 前提条件の行が無い／数値でない応答／上限 0 | 要約を出す | 使用率は「不明（上限を読めない）」と出し、標準エラーへ理由を 1 行出して終了コード 0。上限 0 は割り算せず「統制しない」 | 上限を読めなくても累計は読める | 自動（**否定形**） |
 | **T-10-2027** | — | 費用統制の `CostCategory` の並びと、要約の SQL の序数を読む | 並びは `Llm, Infrastructure, Data, LlmUncapped`、SQL は対象を 0・対象外を 3 で数える | 永続化された序数と SQL が食い違わない | 自動 |
 
@@ -5071,7 +5212,7 @@ KB 検索は結果に状態（成功・失敗・未構成）と原因の符号�
 | §13 の上限を空でも数値へ強制する（`NULLIF` を外す） | T-10-2026（終了コード 3） |
 | §12 の合計の行を外す | T-10-2024 |
 | 上限を設定サービスではなく監査の DB から読む | T-10-2025（スタブの試験） |
-| §13 の月を UTC ではなく JST の暦月で切る | T-10-2025（JST の月初の夜・窓の終端がちょうど月初） |
+| §13 の月を JST ではなく UTC の暦月で切る（#1461 の前の切り方） | T-10-2025（JST の月初の夜・窓の終端がちょうど JST の月初 0:00） |
 | §13 の月を窓の終端そのもので決める（1 マイクロ秒を引かない） | T-10-2025（窓の終端がちょうど月初） |
 
 🔴 **本節が固定していない残余リスク**:
@@ -5938,7 +6079,11 @@ CoreLib の検証補助・コレクション経由の例外を「自前」と誤
 | Y2 | 判定を常に「見せない」にする | T-10-2419・T-10-2396・T-10-2421・T-10-2391・T-10-2423・T-10-2424・T-10-2425・T-10-2399・T-10-2401 |
 | Y3 | 印つきの空欄検査が印を付けない | T-10-2419・T-10-2423・T-10-2401 |
 
-3 本すべて赤（生存 0）。
+| M4 | 🔴 永続値の下端未満を既定の 5% で読む（改める前の挙動） | T-10-2560（3） |
+| M5 | Stage 0 の記録で区分を判定しない | T-10-2567 |
+| M6 | REST の受け手で統制値を捨てる | T-10-2565 |
+
+6 本すべて赤（生存 0）。T-10-2566 は、例外を安全既定へ倒す既存の処理を、統制値の型の食い違いについても固定する試験である（新しい分岐は無い）。
 
 🔴 **本節が固定していない残余リスク**:
 - 印の付け忘れは機械で検査しない。付け忘れた入力検証は固定文言になり、利用者に何が足りないかが伝わらない（漏れの側には倒れない）。
@@ -6099,7 +6244,11 @@ Finnhub へ送る限流器を容量 1（60/r 秒に 1 回の等間隔。間隔�
 | M2 | 間隔をティックで切り捨てる | T-10-2430（割り切れない r） |
 | M3 | 容量を 2 にする | T-10-2429・T-10-2430（全件）・T-10-2431・T-10-2433・T-10-2434 |
 
-3 本すべて赤（生存 0）。
+| M4 | 🔴 永続値の下端未満を既定の 5% で読む（改める前の挙動） | T-10-2560（3） |
+| M5 | Stage 0 の記録で区分を判定しない | T-10-2567 |
+| M6 | REST の受け手で統制値を捨てる | T-10-2565 |
+
+6 本すべて赤（生存 0）。T-10-2566 は、例外を安全既定へ倒す既存の処理を、統制値の型の食い違いについても固定する試験である（新しい分岐は無い）。
 
 🔴 **本節が固定していない残余リスク**:
 - 上界は送出の時刻についてであり、Finnhub に届く時刻のゆらぎで後の要求が先に届くと、サーバの窓では 1 プロセス r + 1 回に見え得る（合計 57 は上限 60 に 3 の余裕）。
@@ -6348,14 +6497,14 @@ Finnhub の限流器は 12 回/分の等間隔なので、市場監視の 1 巡�
 （稼働の実測: 監視銘柄 8 件の外に保有 4 件）。利用者の裁定（2026-10-09「保有銘柄も判断対象に」）に従い、判断対象を「監視銘柄 ∪ 保有中の銘柄」にした。
 
 - 保有中の銘柄はリスク管理の保有建玉の一覧から (銘柄, 市場) ごとに符号付きで合計して導く。照会できない・解釈できない応答は「不明」とし、そのサイクルは監視銘柄だけを判断する（従来の巡回）。
-- 監視銘柄はそのままの順で従来どおり判断する（監視銘柄に在る保有銘柄は新規建ても判断できる）。監視銘柄に無い保有銘柄だけを末尾に足し、**出口専用**で判断する。
+- 監視銘柄は従来どおり判断する（監視銘柄に在る保有銘柄は新規建ても判断できる）。監視銘柄に無い保有銘柄だけを足し、**出口専用**で判断する。並びは保有中の銘柄が先頭（下の「保有中の銘柄を判断対象の先頭に並べる」節。当初は監視銘柄が先で保有のみが末尾だった）。
 - 出口専用の判断では、プロンプトの監視銘柄節の末尾に「選べるのは手仕舞いか Hold だけ」の行を足す。LLM が決済を返せば保有全量の決済として発注意図にし（出口は止めない）、
   新規建て（買い増し・売り増し、判断の間に保有が 0 になった後の新規建てを含む）を返せば発注意図を作らず判断後の見送り（理由 `ExitOnlyOpenOutsideWatchlist`）にする。
 - リスク統制・取引ガードの審査は変えない。
 
 | ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
 | --- | --- | --- | --- | --- | --- |
-| **T-10-2490** | 監視銘柄 8 件と、その外の保有 4 件／重なり・大文字小文字・前後の空白・別市場・重複／保有が不明・空、監視銘柄が空 | 判断対象を組む | 監視銘柄は順もそのまま出口専用にせず、外の保有だけが末尾に出口専用で並ぶ。重なりは 1 回。別市場は別銘柄。不明・空なら監視銘柄だけ | 監視銘柄の判断を変えずに保有のみの銘柄を足す | 自動（**最重要**） |
+| **T-10-2490** | 監視銘柄 8 件と、その外の保有 4 件／重なり・大文字小文字・前後の空白・別市場・重複／保有が不明・空、監視銘柄が空 | 判断対象を組む | 保有のみの銘柄は先頭に出口専用で並び、監視銘柄はその後ろに順もそのまま出口専用にしない（当初は保有のみが末尾。#1367 で改めた）。重なりは 1 回で、監視銘柄の表記・出口専用にしない。別市場は別銘柄。不明・空なら監視銘柄だけ | 監視銘柄の判断を変えずに保有のみの銘柄を足す | 自動（**最重要**） |
 | **T-10-2491** | 保有建玉の一覧（ロング・相殺して 0・ショート）／照会の失敗・`null`・銘柄の無い行・数量 0 の行・方向の無い行／空配列／未結線／配線 | 保有銘柄を読む | 合計が 0 でない銘柄だけを返す。失敗・解釈できない行は不明（null）。空配列は空。未結線は不明。供給口は保有照会と同じ実装に配線される | 不明を「保有なし」へ倒さない（保有のみの銘柄が黙って判断対象から落ちない） | 自動（**否定形**を含む） |
 | **T-10-2492** | 監視銘柄 AAPL・保有 AAPL と MSFT（または保有が不明）・LLM は買いを返す | 定時サイクルを 1 回回す | AAPL は従来どおり発行する。MSFT は出口専用の行つきで LLM に掛け、発行しない。監視銘柄のプロンプトに出口専用の行は無い。保有が不明なら MSFT は判断しない | 定時の巡回が保有のみの銘柄を出口専用で判断する | 自動（**結線**） |
 | **T-10-2493** | 出口専用の判断・保有 10（ロング）／−10（ショート） | LLM が Sell／Buy を返す | 保有全量（10 株）の決済の発注意図になる。見送りは無い | 出口は止めない | 自動 |
@@ -6389,26 +6538,34 @@ T-10-2497 は `EntryBlockersProviderTests`、T-10-2498 は `EntryBlockersService
 - 保有のみの銘柄の情報収集（ニュース）は行わない。プロンプトは従来どおり「未提供」と書く。
 - 判断の前の保有が 0・不明なら LLM を呼ばないが、LLM の呼び出しの間に保有が 0 になった場合は判断後の見送り（`ExitOnlyOpenOutsideWatchlist`）で止める。
 - 出口専用の決済は発注意図・監査の記録に印を持たない（ログの `exitOnly=true` だけ）。
-- 保有のみの銘柄の数は系の外の建玉で増え得る（上限は無い）。末尾に並ぶため、サイクルが上限で打ち切られると最初に判断されなくなる。
+- 保有のみの銘柄の数は系の外の建玉で増え得る（上限は無い）。当初は末尾に並び、サイクルが上限で打ち切られると最初に判断されなくなった（#1367 で先頭へ改めた。下の節）。
 
 ## LLM の出力上限（用途別）と上限到達の警告
 
 稼働 PoC の実測で、出力トークンの最大は方針の改訂が 3,805（上限 4,096 の 93%）、判断・一次スクリーニング・報告書の散文は 1,017 以下だった。
 方針の改訂だけ上限を 8,192 へ上げ、他の用途は 4,096 のまま据え置く。打ち切り（終了理由 `max_tokens`）は、判断・報告書の散文に加えて方針の改訂でも警告ログへ出す。
+その後、5.5 系のモデル（思考を無効にできず、Sonnet 5.5 の既定の effort は high）で方針の改訂が出力 8,192 のうち本文 1,609 文字で切れたため、方針の改訂の上限を 16,384 へ上げた（effort は提供元の既定のまま）。
+上限で切れた JSON は「形式の誤り」ではなく「出力上限で途中で切れた（再試行で通ることがある・通らなければ指示を短く）」と利用者へ返す。
 
 | ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
 | --- | --- | --- | --- | --- | --- |
-| **T-10-2503** | 方針の改訂と報告書の散文（日報） | それぞれ LLM を 1 回呼ぶ | 方針の改訂の要求の上限は 8192、報告書の散文の要求は 4096 | 上限を上げたのは方針の改訂だけ | 自動 |
+| **T-10-2503** | 方針の改訂と報告書の散文（日報） | それぞれ LLM を 1 回呼ぶ | 方針の改訂の要求の上限は 8192（T-10-2717 で 16384 へ改めた）、報告書の散文の要求は 4096 | 上限を上げたのは方針の改訂だけ | 自動 |
 | **T-10-2504** | 方針の改訂の応答（閉じた JSON／途中で切れた JSON × 終了理由 `max_tokens`／`end_turn`／無し） | 改訂する | `max_tokens` なら案として通った場合も形式違反で捨てた場合も上限到達の警告が 1 行出て、終了理由・上限・出力トークンを運ぶ。`end_turn`・無しでは出ない。案の成否は従来どおり | 打ち切りを案の成否と独立に観測する | 自動（否定形） |
 | **T-10-2505** | 一次スクリーニング・本判断の用途 | 判断の LLM を呼ぶ | 要求の上限は 4096 | 判断の上限は据え置き | 自動 |
 | **T-10-2506** | 報告書サービスの構成（方針の改訂の上限時間を未設定・`30`・`0`・負値・非数値・空） | 上限時間を解決する | 未設定と不正値は既定 95 秒、`30` は 30 秒。既定は基盤のゲートウェイが上流の LLM を待つ 100 秒より短く、散文の輸送の上限の最大（既定・開発構成とも 120 秒）より短い | 出力上限の余裕を使える上限時間で、ゲートウェイと輸送のどちらにも先に切られない | 自動（境界値） |
 | **T-10-2507** | 通知サービスの本物の組み立て（`Reports:Grpc` を宣言） | `/policy` の REST の名前付きクライアントと gRPC の deadline の既定を読む | どちらも 120 秒で、報告書サービスの上限の既定（95 秒）＋建玉の照会（10 秒）より長い | 外側の上限が内側より長い（内側が先に切れて「案なし」を確定的に返す） | 自動（配線） |
+| **T-10-2717** | 方針の改訂と報告書の散文（日報） | それぞれ LLM を 1 回呼ぶ | 方針の改訂の要求の上限は 16384、報告書の散文の要求は 4096 | 思考の分を見込んで上げたのは方針の改訂だけ | 自動 |
+| **T-10-2718** | 方針の改訂の応答（途中で切れた JSON・空・本文なし × 終了理由 `max_tokens`／`end_turn`／無し、閉じた JSON〔有効・検証違反〕 × `max_tokens`） | 改訂する | `max_tokens` で JSON として読めなかったものは「上限で途中で切れた」（再試行・指示を短くを含み「JSON」を含まない）で案なし。他の終了理由の形式違反と、`max_tokens` でも閉じた JSON の検証違反（方針が長すぎる等）は従来の形式違反の理由。閉じた有効な JSON は案になる | 打ち切りを形式の誤りと取り違えさせない | 自動（否定形） |
+| **T-10-2719** | 改訂の LLM が「上限で途中で切れた」で失敗する | `/policy` の改訂を実行する | 利用者への応答は「AI の案を作れませんでした（…上限で途中で切れました…）。方針は変わっていません。」で、何も保存しない | 理由を利用者まで運ぶ | 自動 |
+| **T-10-2720** | 方針の改訂の応答 | 改訂する | 所要時間（ms）・出力トークン・上限・本文の長さ・終了理由・モデルを運ぶ情報ログが 1 行出る。本文は載せない | 出力の速さ（上限時間の内に出せる出力の天井）を実運用で測れる | 自動 |
+| **T-10-2721** | 報告書の散文の応答が終了理由 `max_tokens` | 散文を作る | 本文は捨てず、警告が上限 4096・出力トークン・モデルを運ぶ | 散文の上限が 5.5 系で足りるかを実測できる | 自動 |
 
-試験の置き場所: T-10-2503・T-10-2504 は `LlmReportPolicyReviserTests`、T-10-2505 は `HttpLlmCompletionClientTests`、T-10-2506 は `PolicyRevisionTimeoutTests`（報告書サービス）、T-10-2507 は `PolicyRevisionTimeoutOrderingTests`（通知サービス）。
+試験の置き場所: T-10-2503・T-10-2504・T-10-2717・T-10-2718・T-10-2720 は `LlmReportPolicyReviserTests`（T-10-2718 の読めたかどうかの判定は `PolicyRevisionProposalParserTests` も）、T-10-2719 は `ReportPolicyRevisionServiceTests`、T-10-2721 は `HttpReportNarrativeDrafterTests`、T-10-2505 は `HttpLlmCompletionClientTests`、T-10-2506 は `PolicyRevisionTimeoutTests`（報告書サービス）、T-10-2507 は `PolicyRevisionTimeoutOrderingTests`（通知サービス）。
 
 上限時間の連なり（内側から）: 基盤のゲートウェイが上流の LLM を待つ上限 100 秒（固定・構成できない）＞ 報告書サービスの方針の改訂の上限 95 秒（構成で変えられる）、通知サービスの外側の上限 120 秒（REST・gRPC とも）＞ 95 秒＋建玉の照会 10 秒。
 Discord の `/policy` は先に応答を予約し（Defer）、結果を追送で返すため、追送の期限（15 分）には十分収まる。
-出力の速さを毎秒 50〜80 トークンとすると、上限時間の内に出せる出力は約 4,700〜7,600 トークンで、上限 8,192 の全量は使い切れない（実効の上限はゲートウェイの 100 秒 × 出力の速さで決まる）。
+実効の上限は上限時間（95 秒）× 出力の速さで決まる。当初は毎秒 50〜80 トークン（約 4,700〜7,600 トークン）と見積もったが、稼働 PoC で 95 秒以内に 8,192 トークンが返っており、出力の速さは毎秒 86 トークン以上である。
+上限 16,384 は毎秒 172 トークン未満なら時間の天井より上にあり、思考が長い回は打ち切りではなく時間切れ（案なし）になり得る。
 
 **変異で確かめたこと**（1 本ずつ当てて戻した）:
 
@@ -6418,11 +6575,16 @@ Discord の `/policy` は先に応答を予約し（Defer）、結果を追送�
 | M2 | 方針の改訂の上限到達の警告を外す | T-10-2504 |
 | M3 | 通知サービスの外側の上限の既定を 100 秒へ下げる（95＋10 秒を下回る） | T-10-2507・T-10-1736 |
 | M4 | 報告書サービスの上限の既定を 100 秒へ上げる（ゲートウェイの上限と並ぶ） | T-10-2506・T-10-2507 |
+| M5 | 方針の改訂の上限を 8192 へ戻す | T-10-2717・T-10-2504・T-10-2720 |
+| M6 | 上限で切れた JSON を「途中で切れた」と返す分岐を外す | T-10-2718・T-10-1308 |
+| M7 | 終了理由に関係なく形式違反を「途中で切れた」と返す | T-10-2718・T-10-1308 |
+| M8 | JSON として読めたかに関係なく `max_tokens` なら「途中で切れた」と返す | T-10-2718（閉じた JSON の検証違反） |
 
 🔴 **本節が固定していない残余リスク**:
 - 打ち切りの頻度は実運用のログで測る（本節は観測できるようにするまで）。
 - 出力が伸びると所要時間も伸びる。方針の改訂の上限時間（既定 95 秒）を超えれば打ち切りではなくタイムアウト（案なし）になる。
-- 基盤のゲートウェイが上流の LLM を待つ 100 秒は固定で、上限 8,192 の全量を使い切れない（基盤側の構成化は基盤のリポジトリで扱う）。
+- 基盤のゲートウェイが上流の LLM を待つ 100 秒（既定。基盤で構成化されたが既定は変わっていない）と上限時間 95 秒が実効の天井で、出力の速さが毎秒 172 トークン未満なら上限 16,384 の全量を使い切れない。上げるには上限時間の連なりを合わせて見直す。
+- 思考の量の分布（呼び出しごとのぶれ）と、5.5 系での報告書の散文の出力の長さは測っていない。稼働で所要時間と出力トークンの情報ログ・上限到達の警告から測る。
 - タイムアウトした呼び出しの費用は計上されない（費用は応答の後に記録する。1 日の回数の上限 10 回で抑えられる）。
 - 実 LLM での応答（思考トークンを含む出力の長さ）は AI セッションでは確かめられない。
 
@@ -6541,3 +6703,1037 @@ HeaderItem と同じ類のコード断片を見逃す。gapup・YoY は gl・he 
 - 利用者の方針の本文は「監視銘柄」と書き得るが、固定文は「ウォッチリスト」と書き、両者が同じ一覧だと明示する文は無い（節の冒頭の「市場監視に登録されている銘柄の一覧」だけ）。
   モデルが別の一覧と読む余地がある。固定文に「監視銘柄」とは書けない（化けやすい語を戻すことになる）。稼働の判断ログで確かめる。
 - 目印付きの本判断の根拠文は、確定した日報ごと KB へ入り、後の判断へ検索結果として入り得る（化けを明示して渡すため害は小さい）。
+
+## 高ボラティリティ銘柄の 1 注文あたりの発注金額上限を 3 か所で同じ関数にする（#1291）
+
+区分（ATR(14) ÷ 参照価格 ≥ 4% と利用者の明示指定の併用）と区分の上限（equity の 5%）を、サイジング・LLM の前の見送り・審査・Stage 0 の記録が同じ関数で求める。
+どこか 1 か所だけ違うと、サイジングの数量が審査で拒否されるか、見送りの判定が実際の数量と合わなくなる。境界は「ちょうど 4%」「ATR の欠損」「明示指定と自動判定の両方」で固定する。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2540** | ATR ÷ 価格 ＝ 4.00% / 3.99% / 4.01%、TSLA 規模の価格でちょうど 4% と直下 | 自動判定する | ちょうど 4% と直上は区分、直下は区分外 | しきい値の境界 | 自動（境界値） |
+| **T-10-2541** | ATR が null・0・負、価格 0 | 判定する | 自動判定は働かない。明示指定が無ければ区分外、あれば区分 | ATR の欠損は明示指定だけ | 自動（**否定形**） |
+| **T-10-2542** | 明示指定と自動判定の 4 通り | 判定して上限を求める | どちらかで区分。両方でも上限は 5% が 1 回 | 二重に掛からない | 自動 |
+| **T-10-2543** | 明示指定 ` tsla `（米国） | 照合する | 大小文字・空白を無視し、市場は区別する | 取りこぼして緩い側へ倒さない | 自動 |
+| **T-10-2544** | 区分外の比率 25% / 3%、区分・区分外 | 上限を求める | 区分外は従来の値、区分は小さい方（3% の構成では 3%） | 区分が区分外より緩くならない | 自動（**否定形**） |
+| **T-10-2545** | 明示指定の銘柄、名目 4,999 / 5,000 / 5,001（equity 100,000） | 審査する | 5,001 だけ `PerOrderAmountExceeded` | 超過のみ拒否 | 自動（境界値） |
+| **T-10-2546** | 発注意図の ATR が 4% / 3.98% / null、名目 6% | 審査する | 4% だけ拒否 | 審査も発注意図の ATR で同じ区分 | 自動 |
+| **T-10-2547** | 区分外の銘柄（明示指定は別銘柄） | 審査する | 25% の境界のまま | 区分外を締めない | 自動 |
+| **T-10-2548** | 区分の銘柄の決済（名目は上限の数十倍） | 審査する | 拒否しない | 決済は止めない | 自動（**否定形**） |
+| **T-10-2549** | 観測の TSLA（equity 971,017・614 株 @384.94）を明示指定 | 審査する | 614 株・127 株は拒否、126 株は通る | 観測の 1 件は止まる | 自動 |
+| **T-10-2550** | 区分の比率 0.01 / 0.05 / 0.25 / 0.0099 / 0.2501 / 0 | 値域を検査する | 両端は受理、外は拒否。下端は最小の名目額の既定、上端は区分外の既定 | 値域 | 自動（境界値） |
+| **T-10-2551** | 空の銘柄コード・未知の市場 | 値域を検査する | 2 件の違反・例外 | 照合できない指定を受理しない | 自動（**否定形**） |
+| **T-10-2552** | 既定値 | 読む | 5%・4%・明示指定なし。$3,000 で $150。4% ＝ 1% ÷ 25%。区分外 25% は据え置き | 既定値を全体前提条件で固定 | 自動 |
+| **T-10-2553** | equity 100,000・価格 100、明示指定 TSLA | 判断する（TSLA / AAPL） | TSLA は 50 株、AAPL は 250 株。発注意図は審査を通り、1 株多ければ拒否 | サイジングと審査の上限が一致 | 自動 |
+| **T-10-2554** | ATR 4 / 3.99（価格 100） | 判断する | 4 は 50 株、3.99 は 250 株。発注意図は ATR を運び審査と一致 | 自動判定の一致 | 自動（境界値） |
+| **T-10-2555** | ATR の経路は有効だが欠損、明示指定あり / なし | 判断する | なしは 250 株、ありは 50 株。発注意図の ATR は null | ATR の欠損は明示指定だけ | 自動 |
+| **T-10-2556** | 最小の名目額 6% ＞ 区分 5%、明示指定 TSLA | 判断する（TSLA / AAPL） | TSLA は LLM を呼ばずに見送る。AAPL は LLM を呼び 250 株 | LLM の前も同じ上限 | 自動 |
+| **T-10-2557** | 最小の名目額 6%、ATR 5% / 3% / 欠損 | 判断する | 5% だけ LLM の前に見送る。ATR はどれも 1 回だけ読む | 判断ごとに 1 回 | 自動 |
+| **T-10-2558** | サイジング文脈に統制値が無い、ATR 5% | 判断する | 既定の 5% で 50 株 | 不在を統制なしにしない | 自動（**否定形**） |
+| **T-10-2559** | 統制値のキーを持たない旧い設定行 | 読む | 既定（5%・明示指定なし） | 不在を統制なしにしない | 自動（**否定形**） |
+| **T-10-2560** | 比率 3% / 1% / 25% / 50% / 0.1% / 0 / 負と明示指定 | 保存して読む | 値域内（両端を含む）は往復する。下端未満は下端（1%）、上端超は既定 5%。明示指定は残る | 🔴 下端未満を緩い既定へ倒さない | 自動（**否定形**） |
+| **T-10-2561** | 未認証・サービスロール | 変更する | 401 / 403 | 利用者だけが指定できる | 自動（**否定形**） |
+| **T-10-2562** | 利用者・明示指定 ` TSLA `・4% | 変更する | 設定・サイジング文脈・履歴（前後値つき）に現れる。銘柄の空白は落とす | 変更の記録 | 自動 |
+| **T-10-2563** | 0.9% / 26% / 理由が空白 / 一覧の省略 | 変更する | 400。設定も履歴も変わらない | 拒否を履歴に積まない | 自動（**否定形**） |
+| **T-10-2564** | 送り手の型（4%・2 銘柄）／項目の無い応答／市場が未指定の行 | gRPC で読む | 同じ値／null（既定で効く）／行を落とし比率は既定 | 受け渡しで緩めない | 自動 |
+| **T-10-2565** | 送り手の型（4%・米国と日本の 2 銘柄）／項目の無い旧応答 | REST で読む（既定の経路） | 同じ値（市場は数値で往復）／null で既定が効く | 既定の経路で受け渡しを緩めない | 自動 |
+| **T-10-2566** | 統制値の型が食い違う応答（比率が文字列・一覧が文字列・市場が文字列） | REST で読む | 応答全体が安全既定（残枠 0・資金は未供給） | 読めない統制値で新規建てへ進まない | 自動（**否定形**） |
+| **T-10-2567** | Stage 0 の記録、明示指定あり / なし（equity 100,000・価格 100） | 記録する | 50 株 / 250 株 | 記録器も同じ上限 | 自動 |
+| **T-10-2588** | 取引判断の構成値 `Sizing:MinEntryNotionalRatio` が 0 / 0.5% / 1% / 2% / 6% | 区分の上限の値域を検査する | どの構成値でも下端は 1%（1% は受理・0.99% は拒否）。構成値を上げた構成では構成値未満も受理する | 下端は構成値に連動しない固定値 | 自動（境界値） |
+| **T-10-2589** | 構成値が 1%（キー未設定を含む） | 起動時の確認をする | 警告なし | 既定の構成で警告を出さない | 自動（**否定形**） |
+| **T-10-2590** | 構成値が 2% / 25% / 0.5% / 0 | 起動時の確認をする | 上回れば「必ず見送られる」、下回れば「下げられない」の警告（起動は止めない） | 構成値を変えたずれを黙らせない | 自動 |
+| **T-10-2591** | BFF | ルート一覧を読む | `PUT /bff/risk-controls/settings/high-volatility` が認証必須で登録されている | 画面から到達できる | 自動 |
+| **T-10-2592** | 後段が 200 / 400 / 403 | BFF へ PUT する | 本文をそのまま後段の `/risk-controls/settings/high-volatility` へ転送し、状態と本文を透過する | 統制は後段が実効する（BFF は判定しない） | 自動 |
+| **T-10-2593** | 明示指定 TSLA（監視銘柄にある）と TSL（無い） | リスク設定画面を開く | 上限 5% と一覧を表示。TSL の行に「監視銘柄にありません」 | 保存済みの誤記を画面で見つけられる | 自動（画面） |
+| **T-10-2594** | 理由なし／変更なし | 保存しようとする | 保存できない（PUT しない） | 理由必須・空の変更を履歴に積まない | 自動（画面・**否定形**） |
+| **T-10-2595** | 監視銘柄 TSLA（米国） | 選んで追加し理由を入れて保存 | 比率と一覧の全置換を PUT（銘柄と市場は選んだ組） | 主の経路で誤記が起きない | 自動（画面） |
+| **T-10-2596** | 手入力 `tsl`（監視銘柄に無い） | 追加しようとする | 大文字に揃え「監視銘柄にありません」を警告。確認の印までは追加できない | 🔴 誤記を黙って通さない | 自動（画面・**否定形**） |
+| **T-10-2597** | 手入力 NVDA を日本で／米国で | 追加しようとする | 日本は「市場が違います」で確認待ち、米国は確認なしで追加できる | 市場の取り違えを防ぐ | 自動（画面・**否定形**） |
+| **T-10-2598** | 手入力 `TS LA` / `TSLA!` / `$TSLA`／既に指定済みの組 | 追加しようとする | 書式の誤り・重複は追加できない | 書式で分かる誤記を止める | 自動（画面・**否定形**） |
+| **T-10-2599** | 区分の上限 1 / 25 / 3.5 / 0.9 / 25.1 / 0（%） | 保存しようとする | 1〜25 は保存でき、外は値域の文言で止める | 画面の値域がサーバと一致（下端は既定値 1% の固定） | 自動（画面・境界値） |
+| **T-10-2600** | 上限 5%・TSLA 指定 | 3% へ下げる／10% へ上げる／TSLA を外す | 下げるは確認なし。上げる・外すは列挙して確認を求め、緩める変更が増えたら確認を外す | 緩める変更を確かめさせる | 自動（画面） |
+| **T-10-2601** | サーバが 400 を返す | 保存する | 詳細つきで表示し、自動再試行しない（PUT 1 回） | サーバの拒否を隠さない | 自動（画面・**否定形**） |
+| **T-10-2602** | 監視銘柄の取得に失敗 | リスク設定画面を開いて手入力する | 照合できないことを示し、手入力の追加に確認を求める | 照合できないときに黙って通さない | 自動（画面・**否定形**） |
+| **T-10-2604** | 監視銘柄の取得中 | リスク設定画面を開いて手入力する | 保存済みの行は「照合中」（警告を出さない）。手入力は照合の結果が出るまで追加できず警告も出さない | 取得前に警告を点滅させない・確認なしで通る窓を作らない | 自動（画面・**否定形**） |
+| **T-10-2605** | 手入力 TSL（米国）に確認の印を付けた後 | 銘柄コード／市場を書き換える | 印が外れ、追加できない | 確認は確かめた組に紐づく（書き換えた誤記を通さない） | 自動（画面・**否定形**） |
+| **T-10-2603** | 実ブラウザ（BFF はモック） | 監視銘柄 AAPL を選び、誤記 `aaple` を試し、保存する | 誤記は確認待ちで足せない。保存は `/bff/risk-controls/settings/high-volatility` を全置換の本文で叩く | BFF の経路と誤記防止の追認 | 自動（E2E） |
+
+既存の T-10-2196 の ATR 5（価格 100 の 5%）の行は、区分に入るため 6 株から 1 株（equity 3,000 の 5% ＝ 150）へ改めた。
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| M1 | 🔴 審査で区分を判定しない（常に区分外） | T-10-2545・T-10-2546・T-10-2549・T-10-2553・T-10-2554（審査 3・判断 2） |
+| M2 | 🔴 サイジングで区分外の上限を使う | T-10-2553・T-10-2554・T-10-2555・T-10-2558（4） |
+| M3 | LLM の前の見送りで区分外の上限を使う | T-10-2556・T-10-2557（2） |
+
+| M4 | 🔴 永続値の下端未満を既定の 5% で読む（改める前の挙動） | T-10-2560（3） |
+| M5 | Stage 0 の記録で区分を判定しない | T-10-2567 |
+| M6 | REST の受け手で統制値を捨てる | T-10-2565 |
+
+6 本すべて赤（生存 0）。T-10-2566 は、例外を安全既定へ倒す既存の処理を、統制値の型の食い違いについても固定する試験である（新しい分岐は無い）。
+
+🔴 **本節が固定していない残余リスク**:
+- ATR の経路が既定で無効のため、配備直後に効くのは明示指定だけである。明示指定も空なら、配備しても挙動は何も変わらない。
+- 明示指定の銘柄コードの書式と、監視銘柄への実在は**サーバでは**検証しない。書き誤った指定は黙って効かない（画面は監視銘柄との照合と書式で防ぐ〔T-10-2593〜T-10-2605〕が、API を直接呼べば通る）。
+- 下端未満の保存行の 1% への丸めは、既定の 5% よりは厳しいが、保存値と比べると上限を緩める（書き込みの経路では作れない行に限る）。
+- 判断のプロンプトと統制状態の「1 注文上限」は区分外の値を出す。
+- 同じ銘柄の複数回の新規建ての累計は塞がない。
+
+### 高ボラティリティ銘柄の設定変更の履歴と、設定と履歴の原子性
+
+PoC が「明示指定の変更が履歴に 0 件」と報告した。原因は集計の誤りで、種別を 11 で数えていた（正しくは 10。応答の種別は名前ではなく整数）。
+切り分けの途中で、設定の保存と履歴の記録が別々のトランザクションだと分かった。履歴の書き込みだけが失敗すると、設定の変更だけが残る。
+これを 1 つのトランザクションにまとめ、履歴が書けなければ設定も変えないようにした（kill switch と pause は停止を巻き戻さないため対象外）。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2611** | 利用者・明示指定 TSLA（米国）・5% | 変更する | 履歴がちょうど 1 行増える。先頭の行の種別は整数 10（名前は出ない）で、理由と前後値（`TSLA(UnitedStates)`）が載る。種別 11 の行は無い | 変更は 1 行の履歴になる | 自動 |
+| **T-10-2612** | 履歴の種別の全メンバ | 整数値を読む | 0〜10 の対応が固定されている（高ボラは 10） | 種別の値を動かさない（追加は末尾へ） | 自動 |
+| **T-10-2613** | 本番の配線（試験用のホスト） | 設定の書き込みのトランザクションを解決する | EF の実装に解決される。関係 DB でないプロバイダでは本体をそのまま走らせ、例外を透過する | 原子性の配線が抜けない | 自動 |
+| **T-10-2614** | 実 PostgreSQL | 高ボラの統制値を変更する | 履歴に 1 行。列は名前 `HighVolatilityChanged`、照会では種別 10 に戻る | 実 DB でも 1 行書かれる | 自動（統合） |
+| **T-10-2615** | 実 PostgreSQL・履歴の書き込みが確定の後に失敗する | 高ボラの統制値を変更する | 例外になり、設定も履歴も変わらない | 🔴 設定だけが変わって履歴が無い状態を残さない | 自動（統合・**否定形**） |
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| M7 | 🔴 設定の保存と履歴の記録をトランザクションで包まない（改める前の挙動） | T-10-2615 |
+
+M7 は手元の実 PostgreSQL で赤になることを確かめた（生存 0）。
+
+🔴 **本節が固定していない残余リスク**:
+- kill switch と pause は、停止の後に履歴の書き込みが失敗すると「停止したが履歴が無い」状態が残り得る（停止を巻き戻さないことを優先した）。
+- 履歴の GET は絞り込みとページングを持たない。全件を新しい順で返す。
+
+## 新規建ての審査を 1 本ずつ行い、承認した分をその場で予約する（#1319）
+
+定時サイクルの判断は同時に届き、承認行は承認のイベントの往復の後にしか書かれない。予約が無いと、同じサイクルの判断はすべて
+同じ古い状態で保有建玉数・日次発注累計・段階資金を通る。審査を DB の advisory lock で 1 本ずつにし、承認した新規建てを
+同じトランザクションで予約の表へ書く。予約は承認行が届くまで「承認済みで生きている新規建て」として数える。
+各統制は「2 件までは通る」形にして、6 銘柄を審査する（保有建玉数は上限 2。日次・段階資金は equity 100,000 の 50%・1 件 20,000）。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2568** | 台帳に何も反映されていない（承認行なし）・保有建玉数の上限 2 | 新規建てを 6 件続けて審査する | 2 件承認、4 件 `MaxPositionsExceeded`。予約は 2 件 | 先に承認した分を数える | 自動（**最重要**） |
+| **T-10-2569** | 同上・日次発注累計の上限 50,000 | 同上（1 件 20,000） | 2 件承認、4 件 `DailyOrderAmountExceeded` | 同上 | 自動 |
+| **T-10-2570** | 同上・段階の発注可能額 50,000 | 同上 | 2 件承認、4 件 `StageCapitalCapExceeded` | 同上 | 自動 |
+| **T-10-2571** | T-10-2568〜T-10-2570 の 3 通り。審査ごとに別のサービスを作り、読み取りの後に待ちを入れる | 6 件を専用スレッドで同時に審査する | 2 件承認、残りはその統制で拒否 | 並行でもすり抜けない | 自動（**最重要**） |
+| **T-10-2572** | 上限 1。承認して予約を書き、承認行も書いた | 同じ判断を再配送する | 再審査しない（何も発行しない形）。拒否へ反転しない | 承認行がある再配送の扱いは変えない | 自動（**否定形**） |
+| **T-10-2573** | 上限 1。承認して予約を書いたが承認行は無い（発行が失敗した）。その後に損切りの実行機構の設定を変えた | 同じ判断を再配送する | 再審査せず、最初と同じ承認（承認時刻・数量・損切りの実行機構）を返す。予約は 1 件のまま | 発注が永久に出ない状態にしない・現在の設定で埋めない | 自動（**最重要**） |
+| **T-10-2574** | 予約あり・承認行なし・新規建てを止める状態なし・承認は今日。再審査すれば拒否される発注先。本番と同じメッセージ配線のハンドラ | 同じ判断を再配送する | 承認を 1 件発行する（予約の値のまま）。拒否は出さない。観測を記録する | 同上（結線） | 自動 |
+| **T-10-2575** | 1 件承認して予約を書いた | 承認行・注文アクティビティを射影する前後で状態を読む | 前後とも保有建玉数 1・日次発注累計 20,000 | 予約と承認行の両方で数えない | 自動（**否定形**） |
+| **T-10-2576** | 上限 1。予約が枠を埋めている。承認行あり / なし | 取消・失効・見送りを記録する（6 通り） | 次の新規建てが承認される | 終端は枠を返す | 自動 |
+| **T-10-2577** | 予約のみ・承認行へ引き継がれた予約・承認行より先に見送られた予約・窓の下限より前の予約 | 注文源（EF / インメモリ）を読む | 予約のみと引き継がれた分（承認行として 1 回）だけを返す | 2 実装が同じ規則・二重に返さない | 自動 |
+| **T-10-2578** | 新規建ての臨界区間を握ったまま | 手仕舞いと新規建てを審査する | 手仕舞いは待たずに承認される。新規建ては待つ。予約は新規建てだけ | 手仕舞いは直列化で遅延も拒否もされない | 自動（**否定形**） |
+| **T-10-2579** | **実 PostgreSQL**。審査ごとに別の接続。読み取りの後に待ち | 6 件を同時に審査する（上限 3 の既定・日次 50%）／別の接続で再配送する／臨界区間が例外で終わる | 3 件承認・3 件拒否（日次は 2 件承認）。予約は承認分だけコミット／同じ承認を組み直す／予約は残らない | advisory lock とトランザクションが本番の意味論で効く | 自動（統合・日次 CI） |
+| **T-10-2580** | 同じ判断の予約を 2 回書く | 引く | 1 行・最初の値 | 予約は判断 ID で冪等 | 自動 |
+| **T-10-2581** | インメモリ実装・臨界区間で予約を書いた後に例外 | 引く | 予約は残らない | ロールバックと同じ意味論 | 自動 |
+| **T-10-2582** | **実 PostgreSQL**。予約あり・承認行なし | 注文源の SQL 文の実行の直後に、別の接続から承認行をコミットさせて読む | その注文を 1 件と数える（是正前の 2 文の形では 0 件） | 引き継ぎの瞬間に数え落とさない | 自動（統合・**否定形**） |
+| **T-10-2583** | 承認して予約を書いた（承認行なし）。その後に kill switch・一時停止・ロックアウト（3 通り） | 同じ判断を再配送する／状態を解いて再度再配送する | 承認を発行せず、その理由で拒否する。予約は無効になり数えない／解いた後も再発行しない | 緊急停止の後に新規建てを出さない・止める側へ倒す | 自動（**最重要**） |
+| **T-10-2584** | 同上。止める状態は無いが、時計が翌取引日へ進んだ | 同じ判断を 2 回再配送する | どちらも承認も拒否も出さない（取引日の経過）。予約は無効 | 前の取引日の判断を今日の新規建てにしない | 自動 |
+| **T-10-2585** | 予約あり・承認行なし・kill switch 起動中。本番と同じメッセージ配線のハンドラ | 同じ判断を再配送する | 承認を発行しない。`KillSwitchActive` の拒否を 1 件発行する。予約は無効 | 同上（結線） | 自動（**否定形**） |
+| **T-10-2586** | 予約あり・承認行なし・承認は 3 日前。同上 | 同じ判断を再配送する | 何も発行しない・例外にならない。予約は無効 | 同上（結線） | 自動 |
+| **T-10-2587** | 予約を無効にする（理由 2 つ）、続けて別の時刻で 2 回目 | 引く | 最初の時刻と理由のまま | 無効は単調 | 自動 |
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| M1 | 🔴 新規建ての審査を直列化しない | T-10-2571（3）・T-10-2578・T-10-2579（並行 2） |
+| M2 | 🔴 承認しても予約を書かない | T-10-2568〜T-10-2571・T-10-2573・T-10-2575・T-10-2576・T-10-2578・T-10-873・T-10-2579（並行 2・再配送） |
+| M3 | 予約があっても組み直さない（通常の審査へ進む） | T-10-2573・T-10-2574・T-10-873・T-10-2579（再配送） |
+| M4 | 注文源が承認行のある予約も返す | T-10-2577（EF） |
+| M5 | 🔴 注文源を 2 つの SQL 文（承認行 → 予約）に戻す | T-10-2582 |
+| M6 | 🔴 再配送で止める状態を見ない | T-10-2583（3）・T-10-2585 |
+| M7 | 再配送で取引日を見ない | T-10-2584・T-10-2586 |
+| M8 | 無効の予約を再配送で再検査する（無効を尊重しない） | T-10-2583（3） |
+
+M3 では、T-10-873 は承認されても組み直しの印が無いことで赤になる。T-10-2573・T-10-2579 は、自分の予約で自分を拒否する（`MaxPositionsExceeded`）ことで赤になる。
+
+## 承認済みの決済の約定で減った保護対象を「外部要因」と呼ばない（#1330）
+
+取引判断の決済（利確・損切りの判断）・利用者の手仕舞い・維持率割れの自動縮小は発注の記録を書くだけで、ソフトウェア逆指値の帳簿には触れない。
+約定で建玉が減ると、保護の突き合わせが超過を観測し、2 巡回連続で確定して「外部要因（手動決済・強制決済…）」と知らせていた
+（2026-10-12 の PoC: MSFT の利確 456 株の 61 秒後）。数量の仕組みは変えず、確定した減少のうち承認済みの決済の約定で
+説明できる分を分けて Info で知らせる。説明に使えるのは、**その減少を最初に観測した巡回より前に送り**（前の端）、
+**確定の巡回までに約定が発注の記録へ載った**（後の端）決済だけである。一度使った約定は二度使わない。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2630** | S1 1,000 株・取引判断の利確 456 株を送り、約定（建玉 544・記録 Filled） | 巡回を 2 回 | 1 回目は何も出さない。2 回目に承認済みの決済に合わせた縮小を 1 件（456 株・決済の判断と注文の識別子・出どころ＝取引判断）。外部要因は出さない。帳簿 544・記録の帰属 456。序数 10 は末尾 | 承認済みの決済の約定を外部要因と呼ばない | 自動 |
+| **T-10-2631** | 同上。ただし約定追跡が記録を直すのは最初の観測の**後**（記録の時刻は照会した時刻） | 同上 | 承認済み 456 株（窓 P+＝増える側） | 前の端だけで判定しない | 自動 |
+| **T-10-2632** | S1 1,000 株。人手で 300 株を決済した減少を観測した**後**に、取引判断の決済 200 株を送り、約定が記録へ先に載る（建玉照会はまだ 700） | 確定 → 建玉照会が 500 へ → さらに 2 巡回 | 最初の確定は外部要因 300 株だけ（帰属なし）。次の確定で承認済み 200 株（窓 P−＝減る側） | 後の端だけで判定しない | 自動 |
+| **T-10-2633** | T-10-2630 の後、5 分後に人手で 100 株を決済 | 巡回を 2 回 | 外部要因 100 株だけ | 帰属させた約定を二度使わない | 自動 |
+| **T-10-2634** | 利確 456 株と人手の 44 株が同じ観測に入る | 巡回を 2 回 | 承認済み 456 株と外部要因 44 株の 2 件。合計 500＝帳簿の減少 | 内訳の合計＝減少量 | 自動 |
+| **T-10-2635** | 出どころのある決済とない決済（同じ配置）。記録を直すのが観測の前／後の 2 通り | 各巡回の帳簿・実効数量を比べ、到達させて決済させる | 両者の帳簿・実効数量が全巡回で同一（1,000/1,000 → 1,000/544 → 544/544）。到達の決済は 544 株 | 🔴 分類は保護の数量（過小・過大）に波及しない | 自動 |
+| **T-10-2636** | 出どころの無い決済／予約が見つからない決済／予約ストアを渡さない突き合わせ | 確定させる | いずれも外部要因（予約が無いときは理由に残す） | 迷ったら外部要因へ倒す | 自動 |
+| **T-10-2637** | 承認済みの決済に合わせた縮小（出どころ 3 種＋不明）／外部要因の縮小 | 通知を組む | 前者は Info・出どころを名指し・「外部要因ではありません」・決済の識別子・「手動決済」「強制決済」を書かない。後者は従来どおり Warning | 通知の文面で取り違えさせない | 自動 |
+| **T-10-2638** | 利確 456 株＋人手 44 株 | 確定させる | 情報ログが 2 行（分類ごと）。保護記録の判断 ID・決済の判断と注文の識別子・「主張 1000 株 → 500 株（うち N 株）」・出どころ・理由を含む | outcome を追跡できる | 自動 |
+| **T-10-2639** | EF・インメモリの発注の記録／保護記録／移行 | 帰属の印を書く・読み戻す・移行の操作を読む | 印は単調・約定数量で切り詰め・約定の更新で消えない・帰属し終えた記録は問い合わせに出ない。観測の起点は保存・読み戻せる。移行は 2 列を足し、既存の決済行を吸収済みに揃える | 同じ約定を二度使わない（永続化） | 自動 |
+| **T-10-2641** | 利確 456 株の約定。帰属の印の書き込みが例外で失敗／書けない | 確定 → 5 分後に人手で 100 株 | 確定は外部要因 456 株（承認済みと呼ばない）・帳簿 544・エラーログ。例外のときは以後の人手の 100 株も外部要因で、印を書きにいかない | 🔴 印を書けない約定を二重に帰属させない（迷ったら外部要因） | 自動 |
+| **T-10-2640** | 承認済みの決済に合わせた縮小 | 監査の要約を組む | 「外部要因ではない」・出どころ・決済の識別子を含み、「外部要因で建玉が減った」を含まない | 一次証跡で取り違えさせない | 自動 |
+
+窓の 3 つの形（後の端だけ・前の端だけ・両端）を、同じプローブで変異として実測した。両端の形だけがすべて緑になる。
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| Ma | 🔴 後の端だけ（送った時刻 ≦ 確定時刻） | T-10-2632 |
+| Mb | 🔴 前の端だけ（最初の観測の時点で記録に約定がある） | T-10-2631・T-10-2635（記録を直すのが観測の後） |
+| M3 | 分類しない（全量を外部要因） | T-10-2630〜T-10-2635・T-10-2636（予約なし）・T-10-2638 |
+| M4 | 帰属の印を書かない（書けたことにする） | T-10-2630・T-10-2633・T-10-2635（2）・T-10-2641（2） |
+| M6 | 🔴 印を書けなくても承認済みと呼ぶ（レビュー前の形） | T-10-2641（2） |
+| M7 | 例外で印を書けなかった約定を以後の説明から外さない | T-10-2641（例外） |
+| M5 | 観測の起点（前の端）を記録しない | T-10-2631・T-10-2632 |
+
+## 処理中の決済が建玉を覆う間は判断の LLM を呼ばず、見送りの通知を 1 回に畳む（#1338）
+
+判断の指値の決済が約定しない間、取引判断は 5.5 分ごとに同じ決済を判断し直し、発注執行が毎回「処理中の決済が建玉を覆う」で見送っていた
+（2026-10-13 の PoC: AAPL の売り 13 株の指値に対し、一次・二次の LLM 34 回・見送り 33 回・見送りの通知 33 件）。保有中の銘柄で、
+発注執行が決済の判定と同じ関数で「覆う」と答え、かつ買い増し・売り増しが LLM の後で必ず見送られるときだけ、一次スクリーニングの前に見送る。
+処理中かどうかは窓の両端（記録が終わっていない**かつ**ブローカーが生きていると答えた）で決める。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2642** | ロング 13 株・処理中の売り 13 株が建玉を覆う・買い増しは審査で必ず拒否される・二段（一次スクリーニングあり） | 判断を回す | LLM を 0 回呼ぶ。LLM を呼ぶ前の見送り（処理中の決済が建玉を覆う）を 1 件・見送りの計上を 1 件。照会はロングの決済の方向（売り）だけ | 結論が発注にならない LLM を呼ばない | 自動 |
+| **T-10-2643** | 同上。ただし買い増しが発注になり得る | 判断を回す | LLM を呼ぶ。処理中の決済は照会しない | 逆方向の判断（買い増し）を塞がない | 自動 |
+| **T-10-2644** | 覆わない（部分）／照会が不明／照会が例外。保有 0 の銘柄 | 判断を回す | LLM を呼ぶ。保有 0 なら照会しない | 決済（損切り）の判断を止めない | 自動 |
+| **T-10-2645** | 出口専用／為替の鮮度切れ／未約定の新規建てが不明／残枠が 1 株に届かない／使える金額が最小の名目額に届かない／ショート（買いの処理中） | 判断を回す | いずれも LLM を呼ばずに見送る。ショートは買いの方向を照会する | LLM の後の見送りと同じ条件で省く | 自動 |
+| **T-10-2646** | 処理中の決済の照会の口: 発注の直後（記録・ブローカーとも生きている）／約定・失効・取消の直後や照会できない（記録は古い）／記録も終端／保護レグ／建玉照会の最中に保存された決済 | 照会する | 発注の直後だけ覆う。約定・終端の直後は覆わない。終端だけならブローカーへ照会しない。保護レグは数えない。照会の最中の決済も数える | 窓の両端で数える | 自動 |
+| **T-10-2647** | 建玉照会の能力・保護記録ストアが無い／建玉照会が不明／部分・建玉 0・反対方向／逆方向の処理中の決済／口の守り（匿名・値域外）／内蔵 paper の本物の組み立て | 照会する | 不明（理由つき）・覆わない・401・400。内蔵 paper は不明を web 既定で返す | 失敗は LLM を呼ぶ側へ倒す | 自動 |
+| **T-10-2648** | 建玉と処理中の決済の組み合わせ（覆う・部分・不足） | 照会の口と決済の送信を両方回す | 照会が覆うと答えるのは送信が見送るときだけ。見送りに処理中の決済の注文 ID が載る。契約の位置引数と旧形式の読み | 判定を 2 か所に書かない | 自動 |
+| **T-10-2649** | 判断側の照会のアダプタ: 送り手の本物の型の本文／覆わない／別銘柄・別市場・別方向・不明・欠落・未知の状態／非 2xx・例外／未結線／構成 | 読む・組み立てる | 覆う・覆わないを読む。それ以外はすべて不明。接続先が無ければ未結線、あれば実照会が判断サービスへ届く | 見送る向きの読み違いを不明へ倒す | 自動 |
+| **T-10-2650** | 同じ処理中の決済の見送り 33 件／注文 ID・銘柄・方向が違う見送り／注文 ID の無い見送り・ほかの理由／送信の失敗 | 通知する | 33 件は 1 件に畳む。替われば改めて通知。注文 ID が無ければ畳まない。失敗は再試行で送る。記憶は 1 つ | 通知だけを畳み、監査は全件残す | 自動 |
+| **T-10-2651** | 見送りの計上の語彙・LLM を呼ぶ前の見送りの語彙 | 数える | 末尾に同名で 1 値ずつ足し、既存の値の位置を変えない（21 値・9 地点） | 語彙の網羅 | 自動 |
+
+変異を 1 つずつ入れて実測した（窓の前の端だけを見る形は M3。両端の形だけがすべて緑になる）。
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| M1 | 🔴 前段の見送りを外す（常に LLM を呼ぶ） | T-10-2642・T-10-2645（6 条件すべて）・T-10-2644（照会の回数） |
+| M2 | 買い増しの判定を外す（覆えば常に省く） | T-10-2643 |
+| M3 | 🔴 窓の前の端だけ（ブローカーの生死を確かめず、記録が非終端なら数える） | T-10-2646（失効・取消・照会できない）と既存の決済のゲートの試験 3 件。約定の直後は約定数の差し引きで覆わない側へ倒れ、赤にならない |
+| M4 | 通知を畳まない | T-10-2650（2 件） |
+| M5 | 照会の例外を「覆う」へ倒す | T-10-2644（例外） |
+| M6 | 建玉照会の後に候補を読み直さない | T-10-2646（照会の最中に保存された決済） |
+## 判断由来の決済の指値の有効期限と、約定しないまま残った決済（#1339）
+
+判断の利確・損切りの指値は、値が逆へ抜けると約定せず閉場まで残る（2026-10-13 の AAPL の利確 13 株）。最小是正として、
+承認経路の指値の決済に有効期限 DAY を明示し、追跡を打ち切った決済は**証券会社が終端と答えたときだけ**解放し、
+未約定の決済を定期的に警告ログへ出す。窓の両端は発注（前の端）と、終端の観測または追跡の打ち切り（後の端）である。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2652** | 承認経路の指値の決済（売り・買い戻し、識別子の有無）／保護逆指値・代替の注文種別 2 種・成行・新規建ての指値 | アダプタで送る | 前者は有効期限 DAY を載せる。後者はすべて載せない | 保護逆指値の有効期限は変えない | 自動 |
+| **T-10-2653** | 有効期限 DAY の決済と、保護逆指値 | 発注の要求を組む | 前者は要求の有効期限が当日限り。後者は欄を立てない | 指定したときだけ送る | 自動 |
+| **T-10-2654** | 追跡を打ち切った判断の決済。証券会社が拒否（失効）・取消・失効・一部約定の取消・全量約定と答える | 照会し直す | 解放（記録を終端にし、終端の約定の事実を 1 回）。次の照会し直しでは照会しない | 終端を確かめたら解放する | 自動 |
+| **T-10-2655** | 同上。証券会社が生きている・一部約定・不明・例外と答える | 照会し直す | 解放しない（記録は非終端のまま。一部約定は進捗だけ記録） | 🔴 迷ったら解放しない | 自動 |
+| **T-10-2656** | 打ち切った判断・利用者・出どころ不明の決済／出どころの無い決済・新規建て・追跡中・印の無いもの・終端済み | 照会し直す | 前の 3 件だけを古い順に照会する。上限は古い順に効く | 照会の量を承認経路の打ち切った決済に絞る | 自動 |
+| **T-10-2657** | 打ち切った判断の決済（生きている → 失効） | 常駐を 0・9・10 分後に回す | 0 分は解放しない。9 分は照会しない。10 分で失効を観測して終端の約定の事実を出し、解放の情報ログを残す | 間隔ごとに 1 回 | 自動 |
+| **T-10-2658** | 発注から 16 分・14 分の判断の決済、40 分の出どころの無い決済 | 常駐を 0・14・15・30 分後に回す | 0 分は 16 分の 1 件だけ警告。14 分は出さない。15 分は約定した決済を除く 1 件。0 件なら出さない | 未約定の決済が見える・連打しない | 自動 |
+| **T-10-2659** | DB・インメモリのストア | 打ち切った承認経路の決済・発注から一定時間たった承認経路の決済を問い合わせる | 両実装で同じ集合（起点が進んだ記録・出どころの無い記録・終端・境界ちょうどは除く）。解放した記録は消える | 実装間で意味がずれない | 自動 |
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| MT1 | 新規建ての指値にも DAY | T-10-2652 |
+| MT2 | 決済なら種別を問わず DAY | T-10-2652 |
+| MT3 | DAY を載せない | T-10-2652 |
+| MT4 | 有効期限を要求へ載せない | T-10-2653 |
+| MT5 | 🔴 前の端だけ（打ち切ったら照会せずに解放） | T-10-2654〜T-10-2657 |
+| MT6 | 🔴 不明でも解放する | T-10-2655・T-10-2656 |
+| MT7 | 出どころを見ない | T-10-2656・T-10-2659 |
+| MT8 | 後の端だけ（打ち切りの印を問わず照会） | T-10-2656・T-10-2659 |
+| MT9 | 照会し直しの間隔を見ない | T-10-2657 |
+| MT10 | 定期ログの間隔を見ない | T-10-2658 |
+| MT11 | 定期ログで経過を見ない | T-10-2658 |
+| MT12 | DB の問い合わせで打ち切りの印を見ない | T-10-2659 |
+| MT13 | DB の問い合わせで状態を見ない | T-10-2659 |
+
+## 判断由来の決済の指値の未約定時の取消（既定は無効）と、失効の「失注」表示（#1339）
+
+判断由来の決済の指値が発注から N 分（既定 15 分）たっても約定しなければ、系が取り消すだけにする（置き直し・成行はしない）。
+**既定は無効**で、1 建玉 1 日（市場の現地取引日）1 回まで。有効時の N は相場操縦の検知の窓（5 分）より長い。
+窓は 2 つある。取消の窓は発注（前の端）と終端の観測（後の端）、回数の窓は市場の現地取引日である。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2670** | 既定の構成（無効）。発注から 3 時間たった判断の決済 | 取消の部品を回す | 何もしない（ストアを読まない・取消を送らない・印を書かない） | 既定は無効 | 自動 |
+| **T-10-2671** | 有効。発注からちょうど 15 分・14 分・40 分で全量約定・40 分で失効・30 分で一部約定の判断の決済 | 回す → 1 分後にもう一度 | 15 分と一部約定だけ取り消す（一部約定は残りだけ。取消の事実は確認できたものだけ・理由は系の取消）。記録の状態は変えない。1 分後に 14 分だったものを取り消す。同じ注文は二度取り消さない。発注は一度も送らない | 窓の両端。置き直し・成行はしない | 自動 |
+| **T-10-2672** | 有効。米国株の同じ建玉に、同じ現地取引日の 2 本目・UTC では翌日だが米国東部では同じ日・翌取引日に発注した決済。別の建玉。上限 2 の構成 | 回す | 同じ日の 2 本目は取り消さない（上限）。UTC の翌日でも米国東部の同じ日なら取り消さない。翌取引日は（24 時間たっていなくても）取り消す。別の建玉は数えない。上限 2 なら 2 本まで。日の範囲は夏時間・冬時間・日本株で正しい | 1 建玉 1 日 1 回（市場の現地取引日） | 自動 |
+| **T-10-2673** | 有効。利用者の手仕舞い・自動縮小・出どころ不明・出どころなし・新規建て・判断の決済 | 回す | 判断の決済だけを取り消す | 適用は判断由来の決済だけ | 自動 |
+| **T-10-2674** | 有効。取消が例外になる決済と、取消を送っても生きたままの決済 | 回す → 同じ建玉の新しい決済を足して回す | 取消の前に印が書かれる。失敗しても二度取り消さない。確認できない取消は取消の事実にしない。印は回数に数える | 取消の反復を作らない | 自動 |
+| **T-10-2675** | N が 4・5（窓以下）・6・15・390・391、回数 0・3・4、無効で N=5 回数 0／本番の組み立てで有効かつ N=5・N=6・無効かつ N=5 | 構成を検証する／起動する | 窓以下・上端超え・回数の範囲外は誤り。無効なら検証しない。本番の組み立ては有効かつ N=5 で起動に失敗する | 有効時の N は検知の窓より長い | 自動 |
+| **T-10-2676** | 有効・無効の常駐。取消が進行中のまま返る決済／すぐ取り消せる決済 | 常駐を回す → 終端になってから回す | 有効: 進行中なら取消の事実を出さず、終端を観測した次の巡回で約定の事実（取消）を出して解放する。すぐ取り消せたら取消の事実を出す。無効: 取り消さない | 解放は終端を確かめてから | 自動 |
+| **T-10-2677** | DB・インメモリのストア | 対象の問い合わせ・印・回数の数えを行う | 両実装で同じ（ちょうど N 分前は含む・終端・出どころ違い・新規建て・印つきは除く。印は非終端・未印だけ。数えは範囲の終わりを含まない・建玉ごと・終端後も数える） | 実装間で意味がずれない | 自動 |
+| **T-10-2678** | OpenD の状態 22（失効）と 3・21・23 | 写像する | 22 は失注（`Expired`）、他は拒否（`Rejected`）。失注も未約定の終端。表示は失注と拒否を区別する | 失効を拒否と取り違えない | 自動 |
+| **T-10-2679** | 約定の事実（失注・拒否・全量約定）と、手仕舞いが失注で終わった通知 | 通知を整形する | 状態の名前に日本語の区別が付く（失注: 期限切れで失効／拒否: 証券会社が受理せず） | 表示で区別する | 自動 |
+| **T-10-2680** | 有効・1 巡回 1 件。同じ建玉の古い 2 本（1 本目を取り消し、2 本目は上限）と、後から来た別の建玉の 1 本 | 3 回回す（上限で取り消さなかった注文を次から除く） | 3 回目は上限の決済を候補に戻さず、別の建玉の決済を取り消す。除外は件数の上限の前に効く | 上限の決済が窓を塞がない | 自動 |
+| **T-10-2681** | 有効。米国東部の前日 23:59 と当日 00:00 に発注した、同じ建玉の判断の決済 | 回す | 当日の決済だけを取り消す。前日の決済は候補に入らず、印も書かれず、回数の枠を使わない | 取消を送れない古い記録が枠を消費しない | 自動 |
+| **T-10-2682** | 有効の常駐。同じ建玉の 2 本（1 本目を取り消し、2 本目は上限） | 当日中・米国東部の日替わりの直前・直後に回す | 上限で取り消さなかった注文の記憶は、同じ取引日のうちは残り、日が替わると消える。前日の注文は取り消さない | 上限は日ごとに数え直す | 自動 |
+| — | 既定値 | 全体前提条件の既定値の試験 | 無効・15 分・1 回。検知の窓は共有の定数と同じ 5 分で、既定の N は窓より長い | 計画の値を固定する | 自動 |
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| MT-C1 | 🔴 後の端だけ（経過を見ない） | T-10-2671・T-10-2677 |
+| MT-C2 | 🔴 前の端だけ（状態を見ない） | T-10-2677 |
+| MT-C3 | 有効・無効を見ない | T-10-2670・T-10-2676 |
+| MT-C4 | 回数の上限を見ない | T-10-2672・T-10-2674 |
+| MT-C5 | UTC の暦日で数える | T-10-2672 |
+| MT-C6 | 出どころを見ない | T-10-2673・T-10-2677 |
+| MT-C7 | 印を書かずに取り消す | T-10-2671・T-10-2672・T-10-2674 |
+| MT-C8 | N の下端を窓と同じ値まで許す | T-10-2675 |
+| MT-C9 | 失効を拒否のまま | T-10-2678 |
+| MT-C10 | 上限で取り消さなかった注文を問い合わせで除かない | T-10-2677・T-10-2680 |
+| MT-C11 | 失注も検知の約定なしの取消に数える | T-19-324 |
+| MT-C12 | 当日の始まりの下限を見ない | T-10-2672・T-10-2677・T-10-2681・T-10-2682 |
+| MT-C13 | 上限の記憶を日替わりで消さない | T-10-2682 |
+
+### UTC 以外のオフセットの時刻を DB へ渡しても照会・書き込みが通る（#1473）
+
+稼働では取消の照会へ米国東部の取引日の始まり（オフセット −04:00）がそのまま渡り、Npgsql が timestamptz へ書けずに例外を出した。
+取消の巡回は 30 秒ごとに失敗し、一度も取り消さなかった。インメモリのストアと UTC の時計の単体試験では起きない。
+全サービスの DB の境界で時刻を UTC へ揃え、取引日の範囲も UTC で返す。実 PostgreSQL の試験は統合試験のワークフローで回す。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-3067** | 米国株の夏時間・冬時間と日本株の瞬間 | 市場の現地取引日の範囲を求める | 始まりと終わりのオフセットが 0（UTC） | 範囲は UTC で返す | 自動 |
+| **T-10-3068** | 実 PostgreSQL。発注から 20 分・30 分の判断の決済（米国株・日本株） | 上限と下限を −04:00・+09:00 のオフセットで渡して未約定を照会する | 例外にならず、その決済を返す | 境界のオフセットは照会を壊さない | 自動（統合） |
+| **T-10-3069** | 実 PostgreSQL。判断の決済 1 本 | −04:00 の時刻で取消の印を書き、−04:00 の取引日の範囲で回数を数える | 印が書け、回数は 1 | null を許す列でも同じ | 自動（統合） |
+| **T-10-3070** | 実 PostgreSQL | +09:00 の発注時刻の記録を保存して読み戻す | 保存でき、同じ瞬間でオフセット 0 で読み戻る | 書き込みの側も UTC へ揃う | 自動（統合） |
+| **T-10-3071** | `backend/Services` 配下の全 DbContext（7 本） | ソースを走査する | すべてが DateTimeOffset の全列に UTC への変換を掛ける | 新しい DbContext が規約を持たずに増えない | 自動 |
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| MT-U1 | 🔴 DB の境界の変換を外す（修正前の develop） | T-10-3068・T-10-3069・T-10-3070（実測で 4 件とも Npgsql の例外） |
+| MT-U2 | 取引日の範囲を市場のオフセットのまま返す | T-10-3067 |
+| MT-U3 | ある DbContext の規約を消す | T-10-3071（実測） |
+
+## 据え置いた「未発注」判定の警告の畳み込みと、発注の記録が無いまま残る S1（#856）
+
+門が閉じた配備では、未発注と判定された予約は人が片付けるまで毎巡回載り直し、同じ警告が毎時出続けた（2026-10-05 の故障注入の AAPL）。
+警告は同じ予約について初回と 24 時間ごとにだけ出し、継続は識別子つきの情報ログに残す（計器は毎巡回数える）。
+送られていない新規建てで残った S1 の記録は「幽霊の疑い」として識別し、後始末の手順へ案内する。どちらも観測だけで、行は閉じない。
+窓は「同じ予約の据え置きが続く区間」で、前の端（初回・状態の変化）と後の端（再通知の間隔）を両方見る。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2664** | 同じ予約が毎時据え置かれる（49 巡回） | 畳み込みに通す | 警告は 0・24・48 時間目だけ。ほかは継続（次の警告の時刻つき）。初回の時刻は変わらない | 無音にしない・連打しない | 自動 |
+| **T-10-2665** | 不確定を挟む／取引環境が変わる／全件走査の巡回に載らない／バッチが満杯の巡回に載らない／別の予約が加わる | 畳み込みに通す | 前の 3 つは次の据え置きを初回として警告。満杯の巡回では記憶を消さない。予約ごとに独立 | 状態が変われば必ず知らせる | 自動 |
+| **T-10-2666** | 未発注と答える照会・門は閉 | 常駐を 2 巡回回す | 警告 1 行（後始末の案内つき）・継続の情報ログ 1 行（どちらも識別子つき）。計器は 2。予約は据え置きのまま | 観測の記録を消さない | 自動 |
+| **T-10-2667** | 未確定・未到達・作成から 25 時間・発注記録なしの S1／記録あり・若い・到達済み・確定済み・照会の口なし | 要約を出す | 前者だけ要約に印・案内つきの警告（初回と 24 時間ごと。該当しなくなれば記憶を消す）。要約そのものは 5 分ごとのまま | 行を閉じない・正常な約定待ちに印を付けない | 自動 |
+| **T-10-2668** | 同上の S1（作成から 10 日） | 常駐ガードを回す | 発注記録のストアが渡り、印と警告が出る。行は Active のまま | 本番の組み立てで届く | 自動 |
+| **T-10-2669** | 再通知の間隔の構成（未設定・0・負・6・168・1000） | 読む | 24・1・1・6・168・168 時間 | 既定は 1 日 1 回・1 週間より長く黙らせない | 自動 |
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| MT1 | 畳まない（毎巡回警告） | T-10-2664・T-10-2665・T-10-2666 |
+| MT2 | 🔴 後の端だけ（状態が変わっても記憶を消さない） | T-10-2665 |
+| MT3 | 🔴 前の端だけ（再通知の間隔を見ない） | T-10-2664 |
+| MT4 | 発注記録の有無を見ない | T-10-2667 |
+| MT5 | 経過を見ない | T-10-2667 |
+| MT6 | 幽霊の疑いの警告の間隔を見ない | T-10-2667 |
+
+## 保有中の銘柄を判断対象の先頭に並べる（#1367）
+
+定時サイクルは判断対象を直列に判断する。保有のみの銘柄を末尾に並べていたため、保有中の銘柄の出口判断が監視銘柄の判断の後ろに来て、
+2026-10-15 は開場直後の「−1.5% で撤退」の判断が約 3〜4 分遅れた。判断対象の並びを次のように改めた。
+
+- 保有中の銘柄（監視銘柄に在るものも含む）を、保有の応答の順で先頭に並べる。その後ろに、保有していない監視銘柄を監視銘柄の順で並べる。
+- 監視銘柄に在る保有銘柄は出口専用にせず、監視銘柄の側の表記で出す。全注文が必ず拒否される保有のみの銘柄は先頭にも置かない。保有が不明なら監視銘柄だけ（従来どおり）。
+- 保有の中は含み損の順にしない（巡回の前に現在値を引く照会を足さない）。
+- サイクルが実行時間の上限で打ち切られて判断されずに残るのは、末尾の保有していない監視銘柄である。前提を超えたときの警告文もそう書く。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2683** | 監視銘柄 10 件の末尾近くに保有 AMZN（保有の表記は小文字）、監視銘柄の外に保有 GOOGL／保有のみ 3 件のうち 2 件が全注文の拒否（1 件は監視銘柄にも在る） | 判断対象を組む | GOOGL（出口専用）・AMZN（出口専用にしない・監視銘柄の表記）が先頭で、残りの監視銘柄が順もそのまま後ろ。全注文の拒否の保有のみは先頭にも置かず、監視銘柄に在るものは外さない | 保有中の銘柄の出口判断を監視銘柄の判断の後ろに回さない | 自動（**最重要**） |
+| **T-10-2684** | 監視銘柄 AAPL・TSLA、保有 MSFT（監視銘柄の外）・TSLA、AAPL の LLM は応答しない、サイクルの上限 2 秒・試行 1 | 定時サイクルを 1 回回す（実際の受信の実行器） | LLM に掛かる順は MSFT → TSLA → AAPL。打ち切られるのは AAPL の判断で、配信は再試行せずエラーキューへ | 上限で打ち切られても保有中の銘柄の判断は打ち切りの前に済む | 自動（**最重要・否定形**） |
+
+T-10-2499 には、警告文が「末尾の保有していない監視銘柄から」と書き、「末尾の保有のみの銘柄から」と書かないことの検査を足した。
+
+試験の置き場所: T-10-2683 は `ScheduledJudgmentTargetsTests`、T-10-2684 は `ScheduledCycleRedeliveryTests`。
+
+**変異で確かめたこと**（1 本ずつ当てて戻した）:
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| HF1 | 並びを戻す（監視銘柄が先・保有のみが末尾） | T-10-2490・T-10-2683・T-10-2684 |
+| HF2 | 保有のみだけ先頭に置き、監視銘柄に在る保有は監視銘柄の位置のまま | T-10-2490（重なり）・T-10-2683・T-10-2684 |
+
+🔴 **本節が固定していない残余リスク**:
+- 保有の中の順序は含み損に依らない。保有が増えれば、保有の中の後ろの銘柄は遅れる。
+- 急変の判断と定時サイクルの間の順序は対象外である。
+- 監視銘柄の判断の開始は保有の数だけ遅れる（PoC の形で約 1 分）。
+
+## 効いている確定済み日報に版を足して再確定する（#1373）
+
+PoC 2026-10-17 で、確定した日報の方針に矛盾があり、同じ日のうちに直す手段が無かった。効いている確定済み日報（最新の確定済み日報）は、
+`/policy` で版を足して再確定できるようにした。
+
+- 確定済みの版 n の方針を土台に、行を版 n+1 のドラフトへ戻す。確定した版 n の写しは残り、確定するまで版 n が効き続ける。版を足したことは通知する。
+- 版 n+1 は、確定の時点でその日報がなお効いているときだけ確定できる。判定と確定は 1 回の保存で行い、より新しい日付の日報の確定と並行したら先に保存を終えた方が勝つ。
+- 効いている日報が移った後の版 n+1 は、確定・`/policy`・`/report regenerate` のすべてを断り、理由を返す。ドラフトは残し、KB の写しは失効の印つきで残す。
+- 回数は従来の `/policy` の 1 日の上限（作り直しは作り直しの上限）に数える。上限に達した日は再確定もできない。
+- 会話キーを省略した `/policy` を自動生成の前で断るときは、効いている日報の会話キーと再確定のやり方を案内する。
+- 再確定の通知は効いている版が変わったことを書く。KB の確定版の写しは最新の確定版で置き換える。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2685** | 効いている確定済みの当日の日報（版 2） | 会話キー省略の改訂 | 版 3 のドラフト（承認待ち）。土台は版 2 の方針。最新の確定済み日報は版 2 のまま。版を足した通知が 1 件（元の版 2） | 確定まで版 n が効く | 自動 |
+| **T-10-2686** | T-10-2685 の後 | 版 3 を改訂 → 版 4 を確定 | 改訂は版 4（版を足さない）。確定は版 5・それまでの版 2 を返す。最新は版 5、確定の 1 tick 前の判断時点は版 2 | 確定した版が効く・判断時点の版 | 自動 |
+| **T-10-2687** | 版 n+1 のドラフトの後に翌日の日報が確定 | 改訂・確定 | 改訂は NoLongerEffective（AI を呼ばない）。確定は断る（効いている日報の会話キーつき）。ドラフトは残る | 移った後は確定させない | 自動（否定形） |
+| **T-10-2688** | 効いていない確定済みの日報 | 改訂 | 409 の文に再確定できる日報と会話キー省略の対象。32 文字の会話キーでも 300 文字以内 | 通知サービスで切れない長さ | 自動（境界値） |
+| **T-10-2689** | 営業日の 00:30 JST・前日付の日報が効いている | 会話キー省略の改訂 → 案内の会話キーで改訂 | AutoDailyPending の文に効いている日報と `/policy period:` の案内。案内どおりで版を足せる。承認待ちの版があればその版を案内 | 行き止まりにしない・JST の暦日 | 自動（境界値） |
+| **T-10-2690** | `/policy` の 1 日の上限 1 回を使った日 | 再確定のための改訂 | DailyLimitReached・LLM を呼ばない・確定済みのまま | 別枠を作らない | 自動（否定形） |
+| **T-10-2691** | 本番の組み立て・効いている確定済みの日報 | `/policy` → 確認ボタンと同じ確定 | 確定まで `daily-policy` は版 2。レビューは確定版 2 を示す。確定後は新しい方針・版 4。as-of は再確定の前の時点で版 2、後で版 4 | 取引判断の方針と版・判断時点の組み直し | 自動（結線） |
+| **T-10-2692** | 本番の組み立て・版 n+1 の間に翌日の日報が先に確定 | 版 n+1 の確定・改訂 | どちらも 409（AI を呼ばない）。方針は翌日の日報。レビューは確定できないことを示す | 先に保存を終えた方が勝つ | 自動（結線・否定形） |
+| **T-10-2693** | EF・版 n+1 の確定の保存の直前に別の文脈で翌日の日報が確定 | 版 n+1 を確定 | 通し番号の衝突で読み直し、移ったことを見て断る。版 n+1 の写しは足さない | 判定と確定が 1 保存操作 | 自動（並行） |
+| **T-10-2694** | EF・翌日の日報の確定の保存の直前に別の文脈で版 n+1 が確定 | 翌日の日報を確定 | 読み直して通る。判断時点の組み直しは版 2 → 版 4 → 翌日の日報 | 新しい日付の確定は常に通る | 自動（並行） |
+| **T-10-2695** | 古い日報・週報・版不一致 | 版を足す | 断る（効いていない／版不一致）。効いている日報だけ版を足せる | 日報だけ・効いている日報だけ | 自動（否定形） |
+| **T-10-2696** | 版 n+1 のドラフト | 作り直す → 翌日の日報を確定 → 作り直す | 効いている間は作り直せる（作り直しの枠に数える）。移った後は断り LLM も枠も使わない | 確定できないものに回数を使わせない | 自動 |
+| **T-10-2697** | 本番の組み立て・確定版の写しと承認待ちの写しがある | 版 n+1 を確定 | 写しを作らず確定版の写しの本文を置き換え、承認待ちの写しは消える。通知の版 4・それまでの版 2 | 同じ期間の確定版の写しを 2 件にしない | 自動（結線） |
+| **T-10-2698** | 本番の組み立て・初回の確定 | 確定 | 従来どおり保存の口で写しを作る。それまでの版は無い | 初回は変えない | 自動（結線） |
+| **T-10-2699** | 本番の組み立て・版 n+1 のドラフトの間 | 入れ直し | 確定版（版 2）の本文を入れる（ドラフトの本文を入れない） | ドラフトを確定版として入れない | 自動（結線） |
+| **T-10-2700** | 本番の組み立て・版 n+1 の承認待ちの写しがある | 翌日の日報を確定 → 入れ直し | 版 n+1 の写しは失効の印つき（`reportState=draft` のまま・露出は除外のまま）に置き換わり、入れ直しでも消えない | 失効は消さない・基盤の棚卸しに数えさせない | 自動（結線） |
+| **T-10-2701** | 本番の組み立て・版 n+1 が承認待ち（効いている）で承認待ちの写しがある | 入れ直し | 承認待ちの写しは消さない（残った写しと扱わない）。確定版の写しは版 2 で作る | 承認待ちの写しを失わない | 自動（結線） |
+| **T-10-2702** | 本番の組み立て・効いている日報が移った版 n+1 に印の無い承認待ちの写し（確定時に印を付けそこねた） | 入れ直し 2 回 | 1 回目で失効の印つきの写しに置き換わる。2 回目は作らない | 失効の印を入れ直しで回復できる | 自動（結線） |
+
+試験の置き場所: T-10-2685〜T-10-2690 は `ReportPolicyRevisionServiceTests`、T-10-2691・T-10-2692 は `PolicyRevisionWiringTests`、
+T-10-2693〜T-10-2695 は `ReportConfirmedVersionHistoryTests`、T-10-2696 は `ReportRegenerationServiceTests`、
+T-10-2697〜T-10-2702 は `ReportReconfirmKnowledgeTests`。T-10-1524 は効いていない確定済みの 409 を本番の組み立てで固定する。
+
+**変異で確かめたこと**（1 本ずつ当てて戻した）:
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| RC1 | 版 n+1 の確定の「なお効いている」の判定を外す（EF と InMemory） | T-10-2687・T-10-2692・T-10-2693 |
+| RC2 | 入れ直しを行の現在の状態（確定済みの行）から選ぶ | T-10-2699 |
+| RC3 | 再確定でも保存の口で写しを作る | T-10-2697 |
+| RC4 | 入れ直しで版 n+1 の写しも「残った写し」として消し、失効の印を付けない | T-10-2701・T-10-2702 |
+
+🔴 **本節が固定していない残余リスク**:
+- 版を足すドラフトの作成時の「効いている」の判定は保存の外で行う。より新しい日付の日報の確定と並行すると、効いていない日報に版 n+1 のドラフトができ得る。確定は必ず断るので方針には効かない。
+- 再確定の写しの置き換えは、KB の入れ直しが別に走っていると行わない（警告。次の入れ直しで最新の確定版に揃う）。
+
+## 解放の門で閉じた新規建ては見送りとして終端にし、送る前に残した保護の記録も閉じる
+
+突合が「未発注」と確定し、その予約の取引環境の解放の門が開いていたとき、**承認の経路の予約**（承認の出どころを持つ予約、または
+送る前に保護の記録を残した新規建て）は削除せず見送り（`Forgone`）として閉じる。続けて、送る前に残した保護の記録
+（S1 の未確定・未到達の行、S0 / S3 の `AwaitingEntry`）を完了にする。保護の機構のレグ（ガードの逆指値・成行手仕舞い・S1 の決済）は従来どおり削除する。
+是正前は予約行を消すだけで、S1 の行が発注の記録の無いまま永久に残り、同じ銘柄・同じ方向の別の手法の新規建てを見送り続けた。
+消した予約の承認を再投入すると、承認の古さを確かめずに送られた。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2703** | 本物の発注執行で S1 の新規建てを「送る前に結果が不明」にした（予約 `Reserved`・S1 `Active`・発注の記録なし） | 門を開けて 1 巡回（照会は未発注） | 予約は `Forgone`・S1 は `Completed`・閉じた結果は S1。ブローカーへは何も送らない | 未発注の新規建ての S1 を残さない | 自動 |
+| **T-10-2704** | 同上で手法が S0 / S3（`AwaitingEntry`） | 同上 | 予約は `Forgone`・`AwaitingEntry` は `Completed`。逆指値は張らない | 送る前の文脈を残さない | 自動（2 例） |
+| **T-10-2705** | T-10-2703 の後（門は開／閉の 2 通り） | 同じ銘柄・同じ方向の S0 の新規建て | 門が開: 見送らずに送る。門が閉（対照）: 「別の損切りの実行機構の建玉が残っている」で見送る | 閉じた記録は併存の判定に載らない | 自動（2 例・対照つき） |
+| **T-10-2706** | T-10-2703 / T-10-2704 の後・ブローカーは送れる状態 | 元の承認を再投入 | 見送り済みとして抑止し、送らない。S1 を武装し直さない | 古い承認で送らない | 自動（否定形・2 例） |
+| **T-10-2707** | 出どころの列を持たない旧い予約（`ApprovalOrigin` が null）の S1 の新規建て | 門を開けて 1 巡回 → 再投入 | 予約は `Forgone`・S1 は `Completed`・再投入は抑止 | 旧い行も見送りとして閉じる（2026-10-05 の AAPL の形） | 自動 |
+| **T-10-2708** | 利用者の手仕舞いの予約（出どころあり・保護の記録なし） | 門を開けて 1 巡回 | 予約は `Forgone`（削除しない）。閉じた結果は「記録なし」 | 承認の経路の決済も古い承認で送らない | 自動 |
+| **T-10-2709** | 保護の機構のレグの予約（出どころ null・保護の記録の新規建てではない） | 同上 | 予約は削除される（従来どおり）。閉じた結果は無い | 機構が同じ DecisionId で撃ち直せる | 自動（否定形） |
+| **T-10-2710** | T-10-2703 の前提で S1 が損切りラインに到達済み | 同上 | 予約は `Forgone`・S1 は `Active` のまま・閉じた結果は「閉じなかった」 | 決済の経路に入った行を古い写しで閉じない | 自動（否定形） |
+| **T-10-2711** | T-10-2703 の前提・門は閉 | 1 巡回 | 予約は `Reserved`・S1 は `Active`・据え置きに載る・閉じた結果は無い | 門が閉じていれば何も変えない | 自動（否定形） |
+| **T-10-2712** | T-10-2703 の前提・照会が判定不能・門は開 | 1 巡回 | 予約は `Reserved`・S1 は `Active` | 判定不能では閉じない | 自動（否定形） |
+| **T-10-2713** | 保護の記録を閉じる処理が例外で落ちる | 門を開けて 1 巡回 | 予約は `Forgone` のまま（巻き戻さない）・失敗は 0・閉じた結果は「閉じなかった」で例外つき | 記録の失敗で巡回を止めない・黙らせない | 自動（否定形） |
+| **T-10-2714** | T-10-2703 / T-10-2704 の前提・予約を見送りにする書き込みが落ちる | 門を開けて 1 巡回 | 失敗 1・予約は `Reserved`・S1 は `Active`／`AwaitingEntry` のまま・閉じた結果は無い | 順序は予約が先・記録が後 | 自動（否定形・2 例） |
+| **T-10-2715** | 予約は `Forgone` だが S1 の行／`AwaitingEntry` が残っている（記録を閉じる前に止まった形）。対照は予約が `Reserved` | 同じ銘柄・同じ方向の別の手法の新規建て | `Forgone`: 記録を閉じてから判定し、見送らずに送る。`Reserved`（対照）: 閉じず「別の損切りの実行機構」で見送る | 取り残しを害の出る時点で回収する・送ったか不明の記録は閉じない | 自動（3 例・対照つき） |
+| **T-10-2716** | 出どころ null の予約・承認の経路かの判別（保護の記録の有無）が例外で落ちる | 門を開けて 1 巡回 | 失敗 1・解放 0・予約は `Reserved`・記録を閉じる口は呼ばれない | 判別できないものを削除にも見送りにも倒さない | 自動（否定形） |
+
+試験の置き場所: T-10-2703〜T-10-2716 は `UnplacedEntryReleaseForgoneTests`。T-10-1554 は `ReconcilerAmbiguousStateNoBrokerWriteTests`。
+
+**変異で確かめたこと**（1 本ずつ当てて戻した）:
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| UF1 | 承認の経路の予約も削除へ戻す（是正前） | T-10-2703〜T-10-2708・T-10-2710・T-10-2713 |
+| UF2 | 見送りにした後に保護の記録を閉じない | T-10-2703〜T-10-2708・T-10-2710・T-10-2713 |
+| UF3 | 閉じる条件から「未到達」を外す | T-10-2710 |
+| UF4 | 承認の出どころで判別しない | T-10-2708 |
+| UF5 | 保護の記録の有無で判別しない | T-10-2707・T-10-2713 |
+| UF6 | 記録を閉じる処理を予約の見送りより前へ動かす | T-10-2714 ほか |
+| UF7 | 新規建ての判定の前に、予約が見送り済みの取り残しを閉じない | T-10-2715 |
+
+🔴 **本節が固定していない残余リスク**:
+- 予約を見送りにした後、保護の記録を閉じる前に処理が止まると、記録は次の同じ銘柄・同じ方向の別の手法の新規建てまで残る（そこで閉じる。T-10-2715）。
+  S1 の行は 24 時間後の幽霊の疑いの警告も出る。`AwaitingEntry` には警告が無い（併存の判定だけに効く）。
+- リスク管理の承認の記録は、見送りにしても解かれない（突合は見送りを発行しない。統制への算入は承認した ET 日の終わりに外れる）。
+- 出どころの列を持たない旧い予約のうち、保護の記録を持たない承認（決済・S2 の新規建て）は機構のレグと区別できず、従来どおり削除される。
+
+
+## 報告書の確定の時間上限と時間切れの照会
+
+Discord からの確定が通知サービスの 5 秒で時間切れになり、報告書サービスでは確定が通っているのに「失敗（結果は不明）」と返っていた。
+内側（報告書サービス）は確定の後の KB の後処理を時間予算（既定 20 秒）で打ち切り、外側（通知サービス）は確定だけ専用の上限（既定 30 秒）を置く。
+時間切れでは、レビュー局面の最新の確定版の版番号を照会して返す。
+
+上限の連なり（内側から）: KB の 1 呼び出しの上限（文書 5 秒・カタログ 30 秒）＜ KB の後処理の時間予算 20 秒（構成で変えられる）、
+通知サービスの確定の上限 30 秒（REST・gRPC とも）≧ 20 秒＋余白 10 秒（DB の遷移・通知の発行・台帳）。照会・差し戻し・一覧は 5 秒のまま。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2726** | 本番の組み立て・KB の保存が返らない（初回の確定）／KB の一覧が予算より遅い（再確定）。ドラフトの写しがある | 確定 | 予算の後に 200（遷移した・確定後の版）。通知は出る。保存には予算の取り消しが届く。ドラフトの写しは消さない・確定版の写しは古いまま | 確定の可否を KB に左右させない・置き換えの後にだけドラフトの写しを消す | 自動（否定形・2 例） |
+| **T-10-2727** | 予算の構成（未設定・空・非数値・0・負値・無限・`12`・`0.5`） | 予算を解決する | 不正値は既定 20 秒、`12` は 12 秒、`0.5` は 0.5 秒 | 不正な構成で上限を失わない | 自動（境界値） |
+| **T-10-2728** | 本番の組み立て | 確定前・確定後・版 n+1 のドラフトの間にレビュー局面を読む（REST・gRPC の写し） | 最新の確定版の版番号は 確定前 null・確定後 2・版 n+1 の間 2（行の版は 3） | 状態 enum に結合せずに「この版で確定されたか」を判定できる | 自動 |
+| **T-10-2729** | 通知サービスの本物の組み立て | 確定の REST の名前付きクライアント・gRPC の deadline の既定を読む | どちらも 30 秒で、報告書サービスの予算の既定（20 秒）＋余白 10 秒以上。照会の 5 秒は変わらない。構成で gRPC の deadline を変えられる | 外側＞内側（全経路） | 自動（配線） |
+| **T-10-2730** | 確定が時間切れ・照会で最新の確定版 == 押した版 + 1 | 確定 → 同じ版を再押下 | 「確定しました（照会して確かめました）」で確定扱い（`/policy` は適用へ進む）。再押下は確定 API を呼ばない | 確定できていたのに「不明」と返さない・二重確定しない | 自動 |
+| **T-10-2731** | 確定が時間切れ・照会で行が押した版のまま／版 n+1 のドラフト（確定版はその前） | 確定 → 押し直し | 「確定できていません」。予約を解放し、押し直しは報告書サービスを呼ぶ | 未確定を確定と騙らない・詰ませない | 自動（2 例） |
+| **T-10-2732** | 確定が時間切れ・照会も失敗／旧版で項目が無く行の版が進んでいる | 確定 → 押し直し | 「結果は不明」に `/report show` の案内と「二重には確定されません」。予約を解放 | 見分けられないものを確定とも未確定とも言わない | 自動（否定形・2 例） |
+| **T-10-2733** | 確定が時間切れ・照会で別の版で確定済み（後の版／行のいまの版）。対照は時間切れでない失敗 | 確定 | 「別の版で確定済み・この版は確定していません」。対照は照会しない | 別の版の確定をこの版の確定と読まない | 自動（否定形・3 例） |
+| **T-10-2734** | REST（確定のクライアントが 200 ms で切れる）・gRPC（確定の deadline 500 ms・照会 30 秒）。送り手の本物の型と写し | 確定・照会 | 確定は専用の上限で切れて「不明」の印つき。照会は最新の確定版の版番号を読む（旧版は null・写しは欠落） | 確定だけが長い上限を使う・項目の無い旧版を確定と読まない | 自動（結合） |
+
+試験の置き場所: T-10-2726〜T-10-2728 は `ReportConfirmKnowledgeBudgetTests`（報告書サービス）。T-10-2729〜T-10-2734 は `ReportConfirmTimeoutTests`（通知サービス）。
+
+**変異で確かめたこと**（1 本ずつ当てて戻した）:
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| CT1 | 時間切れの後に照会しない（是正前） | T-10-2730〜T-10-2733 |
+| CT2 | gRPC の確定を照会の deadline で呼ぶ | T-10-2734 |
+| CT3 | 予算を構成に従わず 20 秒に固定する | T-10-2726 |
+| CT4 | ドラフトの写しの削除を「置き換えできたとき」に限らない | T-10-2726（再確定） |
+
+🔴 **本節が固定していない残余リスク**:
+- DB の遷移・通知の発行・台帳の書き込みには明示の上限が無い。余白 10 秒を超えると外側が先に切れるが、時間切れの照会が確かめる。
+- 予算と外側の上限は別のサービスの構成で、片方だけを変えると大小が逆転し得る（起動時の検査は無い。既定の配備はどちらも置かない）。
+- 予算切れの後の KB の後始末は、入れ直しを走らせるまで残る。
+
+
+## ソフトウェア逆指値が損切りの前に取り消した判断の手仕舞いを「手仕舞いが約定せず終了」にしない
+
+ソフトウェア逆指値は、同じ建玉を売る判断の手仕舞い（指値）が板に残っていると、損切りの成行の前にそれを取り消す。
+従来は約定追跡がその取消を観測すると「手仕舞いが約定せず終了・建玉はこの数量ぶん残っています」が出ていた（建玉は直後の成行が決済している）。
+取消の主体は、ソフトウェア逆指値が取消を送る前に発注の記録へ書く印で運び、約定追跡が取消の終端に載せる。リスク管理はその取消では通知を出さない。
+通知の本文の「残った建玉」は終了の時点の記録による推定と書く。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2912** | 判断の手仕舞い 7,165 株の承認 | 約定追跡の取消の終端（主体＝ソフトウェア逆指値）を受ける | 「手仕舞いが流れた」を出さない。終端は記録される（在庫の解放） | 二重の売りを促さない・在庫の解放は変えない | 自動（否定形） |
+| **T-10-2913** | 判断の手仕舞いの承認 3 件 | 主体の印の無い取消・印があっても失効・系の未約定取消（取消のイベント） | 3 件とも従来どおり出る | ソフトウェア逆指値以外の取消・失効を黙らせない | 自動 |
+| **T-10-2914** | 判断の手仕舞いが板にある・ソフトウェア逆指値が到達 | 発動 | 取消が板に届いた時点で印が保存先にある。取り消す注文・成行の数量と結果は従来どおり。記録の状態は書かない | 発注の挙動は変えない・印は取消より前 | 自動 |
+| **T-10-2915** | ソフトウェア逆指値が取り消した注文／利用者が取り消した注文／印つきで失効・約定し切った注文 | 約定追跡を 1 巡回 | 主体の印は最初の 1 件の取消の終端にだけ立つ | 主体は取消の終端だけに載せる | 自動 |
+| **T-10-2916** | 巡回が記録を読んだ後、照会の直前に印が書かれて取り消される | 約定追跡を 1 巡回 | 主体の印が立つ（保存先から読み直す） | 巡回の頭の写しで判定しない | 自動（窓） |
+| **T-10-2917** | EF・インメモリの発注の記録 | 印を書く・読み直す | 非終端にだけ書け、上書きしない。先に記録を読んだ文脈からも保存先の値を読む。系の未約定取消の印・対象とは独立 | 2 つの実装で意味論が同じ | 自動（境界値） |
+| **T-10-2918** | 判断の手仕舞いが板にある・取消が例外で失敗し注文は生きたまま／例外だが板で取消が効いた | 発動 → 利用者が取り消す → 約定追跡を 1 巡回 | 前者は印を戻し、利用者の取消の終端に主体の印は立たない（通知される側）。後者は印が残り立つ。成行は取消の確定まで送らない | 失敗した取消で後の利用者の取消を黙らせない | 自動 |
+
+試験の置き場所: T-10-2912・T-10-2913 は `PositionCloseAbandonedTests`（リスク管理）、T-10-2914〜T-10-2916・T-10-2918 は `SoftwareStopDecisionCloseYieldTests`、
+T-10-2917 は `ExecutedOrderStoreSoftwareStopCancelMarkTests`（発注執行）。通知の文面は通知の黄金（`NotificationTemplateGoldenTests`）が固定する。
+
+**変異で確かめたこと**（1 本ずつ当てて戻した）:
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| SY1 | リスク管理で主体の判定を外す（是正前） | T-10-2912 |
+| SY2 | 主体の判定で終端の状態（取消）を見ない | T-10-2913 |
+| SY3 | 約定追跡が主体の印を載せない | T-10-2915・T-10-2916 |
+| SY4 | 約定追跡が印を保存先から読み直さない（巡回の頭の写しだけを見る） | T-10-2916 |
+| SY5 | ソフトウェア逆指値が印を書かない | T-10-2914・T-10-2915 |
+| SY6 | 取消が例外で失敗しても印を戻さない | T-10-2918 |
+
+🔴 **本節が固定していない残余リスク**:
+- 取消が例外で失敗したときは印を戻す（T-10-2918）。取消が受け付けられたが板でまだ効いていない間に利用者が取り消した場合は、通知は出ない（ソフトウェア逆指値は到達済みで決済を続ける）。
+- 失効は印があっても通知する。その間にソフトウェア逆指値が売っていれば、本文の「見込み（推定）」で読む。
+- 印の書き込み・読み直しに失敗すると従来どおり通知が出る（黙らない側）。
+
+## 閉場前の新規建ての締め切りと閉場前の手仕舞い
+
+閉場の 60 分前（既定・市場ごと）以降の新規建て（買い増し・売り増しを含む）を審査で拒否する。閉場前の手仕舞い（既定は無効）は、有効なとき閉場の 15 分前（既定・市場ごと）以降の場中に
+保有の全量を成行で手仕舞い、方針の「持ち越し可:」の行の銘柄だけを残す。閉場は市場の暦で求める（半日取引日は前倒し・休場日は無し）。判断のプロンプトには市場の現地時刻と閉場までの残り時間を渡す。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2919** | 米国の通常日（夏・冬）・半日取引日・休場日・週末・臨時の休場と半日・東証・市場ローカルの日付の境 | 当日の閉場を求める／N 分前以降かと残り時間を求める | 16:00 ET（現地）・13:00 ET・無し・15:30 JST。60 分前ちょうどから入り、閉場の後の残りは 0 | 閉場は 1 つの暦から求める | 自動 |
+| **T-10-2920** | 拒否理由の列挙 | 序数・分類を見る | `PreCloseEntryCutoff` は序数 33・クラス A | 序数は不変・クラス C へ混ぜない | 自動 |
+| **T-10-2921** | 閉場の 58〜5 分前 | 買い・空売り・保有中の買い増し・手仕舞い（売り・買い戻し）を判定コアで審査 | 新規建ては `PreCloseEntryCutoff` だけで拒否。手仕舞いは承認 | 手仕舞いは止めない | 自動 |
+| **T-10-2922** | 閉場の 61 分前・60 分前・1 分前・閉場ちょうど・閉場の 2 時間後・休場日・30 分の構成・供給なし | 判定コアで審査 | 60 分前ちょうどから閉場の後まで拒否。61 分前・休場日・供給なしは通す。分数は供給の値 | 境界は「以降」 | 自動（境界値） |
+| **T-10-2923** | 審査のサービス（米国の通常日・半日取引日・感謝祭・東証の前場と大引け前・市場ごとの構成・手仕舞い） | 新規建てを審査 | 18:59 UTC は承認・19:00 UTC は拒否。半日取引日は 17:00 UTC から。休場日は理由を立てない。東証は 14:30 JST から（11:25 JST は通す）。30 分の構成では 45 分前は通す。手仕舞いは承認 | 暦と構成で供給する | 自動 |
+| **T-10-2924** | 締め切りの 10 分前に承認して予約した新規建て（承認行なし） | 締め切りの 5 分後に再配送 | `PreCloseEntryCutoff` で拒否し予約を無効にする（組み直して発行しない） | 締め切りの後に新規建てを出さない | 自動 |
+| **T-10-2925** | 本番の構成（`Program.cs`）・構成の読み取り・実時刻の試験の時計 | 15:00 ET と 14:58 ET に審査／構成 30 分で審査／構成を読む／1 日を 5 分刻みで時計を引く | 本番の構成で 15:00 ET は拒否・14:58 ET は承認。30 分の構成は 60 分前を通す。既定 60・市場ごとに変えられ、0・負・場中の長さ超・読めない値・未知の市場は起動を止める。実時刻の試験の時計は常に締め切りの外 | 締め切りは必須依存・統制を外す値は持たない | 自動 |
+| **T-10-2926** | 方針の行（全角コロン・箇条書き・「無効」「する」・自由文・行頭でない・区切りの違い・銘柄でない語） | 共有カーネルで読む | 「閉場前の手仕舞い: 有効」だけを有効化と読む。「持ち越し可:」の行の英数字の銘柄だけを大文字で集める | 自由文は読まない | 自動 |
+| **T-10-2927** | 既定の構成・方針に行なし・閉場の 10 分前 | 手仕舞いを 1 巡回 | 何も出さない | 既定は無効 | 自動 |
+| **T-10-2928** | 構成で有効・MARA 150 株ロング・NVDA 10 株ショート | 同上 | 2 件。MARA は売り 150 株・NVDA は買い戻し 10 株。いずれも決済・成行・損切り価格なし・参照価格は現在値・発注先は文脈の値・根拠文の頭は「閉場前の手仕舞い（統制）」 | 全量を成行で手仕舞う | 自動 |
+| **T-10-2929** | 構成は無効・方針に「閉場前の手仕舞い: 有効」の行／自由文だけ | 同上 | 行があれば 2 件、自由文だけなら出さない | 方針の行でも有効になる | 自動 |
+| **T-10-2930** | 方針に「持ち越し可: nvda」の行／方針が無い（構成で有効） | 同上 | MARA だけ出す／2 件とも出す | 持ち越しは明記した銘柄だけ・確かめられなければ持ち越さない | 自動 |
+| **T-10-2931** | 窓の前（15:44 ET）・閉場（16:00）・閉場の後・15:45 ちょうど・半日取引日・感謝祭・処理中の決済が覆う・全注文が拒否される・保有の照会が不明・換算レートなし・現在値なし・東証 | 同上 | 窓の外・閉場後・休場日・覆う・拒否・不明・レートなしは出さない。15:45 ちょうど・半日の 12:50 ET・東証の 15:20 JST は出す。現在値が無ければ平均取得単価を参照価格にする。DecisionId は同じ 5 分の区切りの中で同じ（重複は下流の冪等が止める）、区切りが変われば別 | 暦・既存のゲートと矛盾しない・二重に決済しない | 自動 |
+| **T-10-2932** | 15:02 ET・半日取引日・感謝祭・閉場の後・東証・材料なし・構成の臨時の半日 | プロンプトの行を組む／判断を 1 回（一次＋本判断） | 「2026-10-19 15:02（米国東部時間） / 本日の閉場: 16:00（残り 58 分）」等。材料なしは行なし。最長は縮退の予約に収まる。一次と本判断の両方に載る。臨時の半日は市場カレンダーから 13:00 | AI が時刻の条件を読める | 自動 |
+| **T-10-2933** | 本番の構成・構成の読み取り・5 分と 60 分の設定・閉場の 61 分前 | DI から解決／構成を読む／閉場の 10 分前・59 分前に 1 巡回 | 巡回 60 秒、常駐と本体が組まれ、判断のサービスに市場カレンダーが渡る。巡回の間隔の範囲外は起動を止める。🔴 取引判断に有効化・分数の構成が残っていれば起動を止める（リスク管理へ移した）。5 分の設定では 10 分前は出さず、60 分の設定では 59 分前に出す。閉場の 60 分より前はサイジング文脈を照会しない・1 巡回に 1 回だけ照会する | 構成は必須・範囲外を黙って丸めない・移したキーを黙って読まない | 自動 |
+| **T-10-2934** | 既定値 | `TradingDefaults` を読む | 締め切り 60 分（JP・US）・手仕舞い 15 分・既定は無効 | 裁定の値で固定する（計画 §5 は反映待ち） | 自動 |
+| **T-10-2935** | 日報・週報の方針の改訂 | 改訂のプロンプトを組む | 日報にだけ締め切り（コードが強制）と 2 つの書式の行の案内がある。案内の例は共有カーネルで読める | 案内と読み取りの書式が食い違わない | 自動 |
+
+試験の置き場所: T-10-2919・T-10-2926 は共有カーネル（`MarketHoursSessionCloseTests`・`PolicyPreCloseLinesTests`）、T-10-2920 は共有契約（序数・分類）、
+T-10-2921・T-10-2922 は `PreCloseEntryCutoffEvaluationTests`、T-10-2923〜T-10-2925 は `PreCloseEntryCutoffScreeningTests`・`PreCloseEntryCutoffWiringTests`、T-10-2934 は `TradingDefaultsTests`（リスク管理）、
+T-10-2927〜T-10-2931・T-10-2933 は `PreCloseFlattenerTests`・`PreCloseFlattenWiringTests`、T-10-2932 は `MarketClockInPromptTests`（取引判断）、T-10-2935 は `PolicyRevisionPreCloseRuleTests`（報告書）。
+
+**変異で確かめたこと**（1 本ずつ当てて戻した）:
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| PC1 | 判定コアの締め切りを外す | T-10-2921・T-10-2922・T-10-2923・T-10-2925 |
+| PC2 | 審査のサービスが締め切りを供給しない | T-10-2923・T-10-2925 |
+| PC3 | 予約の組み直しで締め切りを見ない | T-10-2924 |
+| PC4 | 閉場の算出で半日取引日の前倒しを外す | T-10-2923 |
+| PC5 | 手仕舞いの有効化を常に無効にする／常に有効にする | T-10-2928〜T-10-2931／T-10-2927・T-10-2929 |
+| PC6 | 「持ち越し可」を見ない | T-10-2930 |
+| PC7 | 手仕舞いを指値にする | T-10-2928 |
+| PC8 | 手仕舞いの窓を外す（常に窓の中） | T-10-2931・T-10-2933 |
+| PC9 | 本判断のプロンプトから時刻の行を外す | T-10-2932 |
+| PC10 | 方針の有効化の行で値（「有効」）を見ない | T-10-2926 |
+| PC11 | 手仕舞いの DecisionId を巡回ごとに新しくする | T-10-2931 |
+
+🔴 **本節が固定していない残余リスク**:
+- 審査の暦は規則計算だけであり、構成で足した臨時の半日取引日は締め切りに効かない（通常の閉場で判定する）。
+- 判断の決済の指値が板に残って建玉を覆うと、閉場前の成行は処理中の決済のゲートで見送られる（指値は閉場で失効し、建玉は持ち越され得る）。
+- 締め切りの間も判断の LLM は呼ばれる（新規建ての結論は審査で拒否される）。
+
+## 閉場前の統制とテーマの上限のリスク設定画面からの設定（保存値と構成の値）
+
+締め切り N・手仕舞いの有効と M・テーマの定義を画面から保存する口と、効く値の解決（保存値があれば保存値・無ければ構成の値）、食い違いの検知、審査とサイジング文脈への反映。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2945** | 保存なし・構成で締め切り米国 45 分・手仕舞い有効と日本 10 分 | 閉場前の統制・テーマの定義を読む | 効く値は構成の値・保存値なし・食い違いなし・出どころは構成。N の上限は米国 390・日本 330、M の上限は 60。テーマは既定の 2 つ | 保存が無ければ構成が効く | 自動 |
+| **T-10-2946** | 保存値つきの設定行・キーの無い旧行・値域の外の永続値（0 分・61 分・上限 0） | 往復する | 往復する。旧行と値域の外は保存なし（構成の値）で読む | 外す値を効かせない・黙って丸めない | 自動 |
+| **T-10-2947** | 未認証・サービスロール | 保存する／読む | 401／403 | 利用者だけが変える | 自動 |
+| **T-10-2948** | N 0・米国 391・日本 331・M 0・61・理由なし・市場の欠け・重複・有効の欠け／テーマの名前が空・重複・銘柄なし・空の銘柄コード・上限 0・未知の市場・理由なし・一覧の欠け | 保存する | 400。保存値も履歴も変わらない | 値域の実効はサーバ | 自動 |
+| **T-10-2949** | 構成と違う値（N 90・手仕舞い有効）を保存 → 構成と同じ値を保存／テーマを空白・小文字・重複つきで保存 | 読む・履歴を読む | 保存値が効き食い違いを示す → 同じ値なら食い違いなし。テーマは名前の空白を落とし大文字・重複除去。履歴に前後値つきで残る（種別 11・12） | 効いている値と食い違いを示す | 自動 |
+| **T-10-2950** | 構成 60 分・閉場の 75 分前 | 保存前と 90 分を保存した後に審査 | 保存前は承認、保存後は `PreCloseEntryCutoff` で拒否 | 再起動なしで保存値が効く | 自動 |
+| **T-10-2951** | AAPL 保存中に MSFT・MARA 保有中に COIN | 既定の定義と保存した定義（大型テック＝AAPL・MSFT、上限 1）で審査 | 既定では MSFT 承認・COIN 拒否。保存後は MSFT 拒否・COIN 承認（既定を丸ごと置き換える） | 保存した定義で判定する | 自動 |
+| **T-10-2952** | リスク管理の構成で手仕舞い有効・米国 20 分 → 無効・30 分を保存／構成が範囲外 | 本番の配線でサイジング文脈を組む・REST で読む／起動する | 構成の値 → 保存値が載る（REST も同じ）／範囲外は起動を止める | 本番の配線で構成の値が渡る | 自動 |
+| **T-10-2953** | 送り手の型の手仕舞いの値（gRPC・REST）／旧応答・有効の欠け・市場の欠け・値域の外 | 受け手が読む | 同じ値で読む／旧応答・欠け・値域の外は未供給（既定＝無効・15 分）。市場の欠けた行は落としその市場は既定 | 未供給を「有効」に倒さない | 自動 |
+| **T-10-2955** | 起動直後（未受信）→ 有効・45 分を受信 → 照会の失敗（手仕舞いの値なし）・閉場の 30 分前 | 手仕舞いを 1 巡回ずつ | 未受信は既定（無効）で出さない。受信後は出す。照会の失敗の巡回も直近の値（有効・45 分）で出す。直近の値の記憶は本番の配線で singleton | 照会の一過性の失敗で無効・短い M へ倒さない | 自動 |
+
+| **T-10-2954** | BFF の 4 経路 | 読む／保存する（後段 200・400・403） | 経路が登録され認証必須。本文をそのまま転送し、後段の状態と本文を透過する | 統制は後段が実効する | 自動 |
+| **T-10-2956** | 構成の値が効いている（保存なし） | リスク設定画面を開く | N・M・有効を効いている値で表示し、2 つとも「構成の値が効いています」。食い違いは出ない。方針の行で有効になり得る旨を示す | 効いている値を表示する | 自動 |
+| **T-10-2957** | 保存値が構成と違う（米国 N 90・手仕舞い有効） | 同上 | 「画面で保存した値が効いています」と、食い違いと構成の値（日本 60 分 / 米国 60 分・無効）を示す | 食い違いを示す | 自動 |
+| **T-10-2958** | 米国 N 391 → 90・手仕舞いを有効・理由 | 保存する | 391 は値域の外と示し保存できない。90 は市場ごとの N・M と有効の本文で PUT する | 値域の外を送らない | 自動 |
+| **T-10-2959** | 保存値（N 90・有効）から N 30・無効へ／サーバが 400 | 保存する | 緩める変更を列挙し確認まで保存できない。400 の詳細を示し再試行しない | 緩める変更は確認 | 自動 |
+| **T-10-2960** | 閉場前の統制の取得に失敗／市場の集合が揃わない応答（N の上限に米国の行が無い） | リスク設定画面を開く | どちらも入力欄を出さず「取得できません」と示す | 分からない値・満たせない検証で保存させない | 自動 |
+| **T-10-2961** | 保存した定義（暗号資産のみ）が構成（2 テーマ）と違う | 開く／監視銘柄から NVDA を足して保存 | 出どころと食い違い・構成の定義を示す。照合の印（COIN・MARA はある、MSTR・HOOD は無い）。選択肢はテーマの市場の未登録の監視銘柄だけ。全置換で PUT | 誤記を見つけられる | 自動 |
+| **T-10-2962** | 手入力 `RI OT`・`riot`／上限 0・2／MSTR を外す | 追加・保存を試みる | 書式の誤りは足せない。監視銘柄に無い RIOT は確認の印まで足せない。上限 0 は保存できない。上限を上げる・銘柄を外すは確認を求める | 誤記の防止・緩める変更は確認 | 自動 |
+| **T-10-2963** | 応答の形・テーマの差分・下書き | 画面側の判定 | 別の応答の形と、締め切りの値・N の上限・手仕舞いの値の市場の集合が揃わない応答（欠け・重複・空）は拒む（区画は縮退）。緩める変更を列挙し締める変更は数えない。下書きの値域。並び順・大文字小文字を区別しない比較 | 想定外の形を既定値で埋めない | 自動 |
+| **T-10-2964** | 実ブラウザ・BFF のモック | リスク設定画面で N を 120 にして保存 | 食い違いを示し、`/bff/risk-controls/settings/pre-close` を全項目の本文で PUT する。テーマの定義と食い違いも示す | BFF の経路 | 自動（E2E） |
+
+試験の置き場所: T-10-2945〜T-10-2952 は `SessionAndThemeControlsTests`（リスク管理）、T-10-2953 は `GrpcRiskReadTests`・`HttpSizingContextProviderTests`（取引判断）、
+T-10-2955 は `PreCloseFlattenerTests`・`PreCloseFlattenWiringTests`（取引判断）。
+T-10-2954 は `BffPassThroughTests`、T-10-2956〜T-10-2962 は `RiskSettingsPage.sessionAndThemeControls.test.tsx`、T-10-2963 は `sessionAndThemeControls.test.ts`、T-10-2964 は E2E `sc02-risk-settings.spec.ts`。
+
+**変異で確かめたこと**（1 本ずつ当てて戻した）:
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| SC1 | 審査が保存値を見ない（構成の値だけ） | T-10-2950・T-10-2951 |
+| SC2 | 手仕舞いの効く値を常に構成の値にする | T-10-2949・T-10-2952 |
+| SC3 | 締め切りの食い違いを常に偽にする | T-10-2949 |
+| SC4 | 締め切りの値域の検査（1〜場中の長さ）を外す | T-10-2946・T-10-2948 |
+| SC5 | サイジング文脈に構成の値を渡さない（既定へ倒す） | T-10-2952 |
+| SC6 | 手仕舞いの常駐が窓の前に照会する | T-10-2933 |
+| SC7 | 照会の失敗の巡回で直近の値を使わない（既定へ倒す） | T-10-2955 |
+
+🔴 **本節が固定していない残余リスク**:
+- 保存値を消して構成の値へ戻す口は無い（構成と同じ値を保存すれば食い違いは消える）。
+- 取引判断が設定を照会できないときは直近に受け取った値で判定する。起動から一度も受け取っていなければ既定（無効・15 分）で判定し、構成や画面で有効にしていても手仕舞わない（警告をログに出す）。
+
+## テーマ（相関の高い銘柄の集まり）ごとの同時保有の上限
+
+集まりの定義は設定値（既定: 暗号資産＝COIN・MARA・MSTR・HOOD、AI・半導体＝NVDA・SMCI。上限はどちらも 1）。新規建ての銘柄が属する集まりで、保有中と未約定の新規建ての銘柄のうち
+新規建ての銘柄以外の数が上限以上なら審査で拒否する。判断のプロンプトには保有中の全銘柄を渡す。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2936** | 拒否理由の列挙 | 序数・分類を見る | `ThemeConcentrationExceeded` は序数 34・クラス A | 序数は不変・クラス C へ混ぜない | 自動 |
+| **T-10-2937** | MARA・COIN・SMCI・nvda（小文字）を保有／MARA を保有して MARA・NVDA・AAPL／手仕舞い・空売り／別市場の同じコード／上限 2／定義の供給なし | 判定コアで審査 | 同じ集まりの別の銘柄は拒否。同じ銘柄の買い増し・別の集まり・集まりの外・手仕舞い・別市場は通す。空売りも拒否。上限 2 は 3 銘柄目から拒否。既に上限を超えて持っていれば買い増しも拒否（安全側）。供給なしは評価しない | 銘柄の数で数える・手仕舞いは止めない | 自動 |
+| **T-10-2938** | MARA ロング・NVDA ショート・HOOD は手仕舞い済み・COIN は未約定 | 射影する | 保有中 ∪ 未約定は MARA・NVDA・COIN（HOOD は入らない） | 未約定を数える | 自動 |
+| **T-10-2939** | 本番の構成（`Program.cs`）・承認行が届く前（予約だけ） | MARA を承認 → COIN・MSTR・HOOD → NVDA・AAPL を続けて審査 | 定義は既定の 2 つ。COIN・MSTR・HOOD は拒否、NVDA・AAPL は承認 | 予約を数える・必須依存 | 自動 |
+| **T-10-2940** | 構成なし／置き換え／名前が空・上限 0・読めない上限・銘柄なし・未知の市場・数値の文字列の市場（"99"・"1"）・名前の重複 | 構成を読む | 既定の 2 つ／置き換えた定義（銘柄は大文字へ寄せる）／起動を止める | 誤った定義を黙って既定へ倒さない | 自動 |
+| **T-10-2941** | 既定値 | `TradingDefaults` を読む | 暗号資産（4 銘柄）と AI・半導体（2 銘柄）・上限 1・米国 | 裁定の値で固定する（計画 §5 は反映待ち） | 自動 |
+| **T-10-2942** | ロング・ショート・東証の保有／保有なし／不明／材料なし／15 銘柄 | 節を組む | 「MARA（米国）: ロング 150 株」等。なし・不明を書き分け、材料なしは節なし。10 銘柄までで残りは件数。最悪長は縮退の予約に収まる | 不明を保有なしと書かない | 自動 |
+| **T-10-2943** | MARA を保有して COIN を判断／照会が不明／応答の行の欠け／本番の構成 | 判断を 1 回／応答を解釈（送り手の本物の型の契約テストを含む）／DI から解決 | 一次と本判断の両方に MARA が載る。不明なら「不明」と書き判断は止めない。欠けた行があれば不明。判断のサービスに供給口が渡る | 判断を止めない | 自動 |
+| **T-10-2944** | 日報・週報・月報の方針の改訂 | 改訂のプロンプトを組む | 日報にだけ「コードが審査で強制する（この版から有効）・方針の文では変えられない」の注記。どの報告書でも判断へ渡る材料に保有中の全銘柄がある | 現状と食い違わない | 自動 |
+
+試験の置き場所: T-10-2936 は共有契約、T-10-2937・T-10-2938・T-10-2940 は `ThemeConcentrationTests`、T-10-2939 は `ThemeConcentrationWiringTests`、T-10-2941 は `TradingDefaultsTests`（リスク管理）、
+T-10-2942・T-10-2943 は `PortfolioInPromptTests`・`PortfolioHoldingsWiringTests`（取引判断）、T-10-2944 は `PolicyRevisionThemeConcentrationTests`（報告書）。
+
+**変異で確かめたこと**（1 本ずつ当てて戻した）:
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| TC1 | 判定コアの上限を外す | T-10-2937・T-10-2939 |
+| TC2 | 新規建ての銘柄自身も数える | T-10-2937 |
+| TC3 | 射影が未約定の新規建てを数えない | T-10-2938・T-10-2939 |
+| TC4 | 審査のサービスが定義を渡さない | T-10-2939 |
+| TC5 | プロンプトから保有中の全銘柄の節を外す | T-10-2943 |
+| TC6 | 市場の構成値で数値の文字列を通す | T-10-2940 |
+
+🔴 **本節が固定していない残余リスク**:
+- ［2026-10-21 解消 / #1407］定義は画面から保存できる（保存値が構成より優先して効く。再起動は要らない）。
+- 上限に当たる新規建ても判断の LLM は呼ばれる（結論は審査で拒否される）。
+- 取引台帳に無い保有（取り込み前のシステム外の売買）は数えない。
+
+## 新規建てを送る直前の停止状態の確認（kill switch・一時停止）
+
+発注執行は新規建てを証券会社へ送る直前（予約の後・送信の前）に、リスク管理へ kill switch と一時停止の状態を照会する。どちらかが成立中、または状態を確かめられない
+（照会の失敗・3 秒の待ちの超過・解釈できない応答・照会先の未構成）ときは送らずに見送る（予約は見送りとして記録する）。決済・損切りは照会しない＝どの停止でも止めない。
+照会の口は 2 値（`killSwitchEngaged`・`tradingPaused`）だけを返し、サービスの資格情報で読める。停止の操作と操作者つきの現況は所有者だけのまま。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2965** | kill switch が成立中（一時停止も成立中を含む） | 新規建ての承認を執行する | 送らない。見送りの理由は `KillSwitchActive`。予約は見送り・S1 の行と保護の文脈は閉じる。照会は送信の前 | 停止中は新規発注をしない | 自動 |
+| **T-10-2966** | 一時停止中／kill switch 成立中／状態が不明 | 新規建て／決済（指値・成行）を執行する | 新規建ては `TradingPaused` で送らない。決済は照会せずに送る | 手仕舞い・損切りは止めない | 自動 |
+| **T-10-2967** | 照会が非 2xx・例外・タイムアウト・取り消し・項目の欠落・型の不一致・照会先の未構成・照会元の例外 | 照会する／新規建てを執行する | いずれも不明。新規建ては `TradingHaltStateUnknown` で送らない | 不明は送らない側へ倒す・欠落を「停止していない」と読まない | 自動 |
+| **T-10-2968** | どちらも成立していない | 新規建てを執行する | 送る（保護逆指値も従来どおり） | 平常の発注を止めない | 自動 |
+| **T-10-2969** | 両方成立 | 新規建てを執行する | 理由は `KillSwitchActive` | 優先順位は kill switch が先 | 自動 |
+| **T-10-2970** | 送り手の本物の型の本文・本物の構成 | 受け手が読む／口へ要求する | 読める。口はサービスと所有者に開き、本文は 2 項目だけ。操作の口と現況はサービスに閉じたまま | 契約・最小限の露出 | 自動 |
+| **T-10-2971** | 本番の構成（`Program.cs`）・照会先なし／あり | 新規建てを執行する | なし: 送らない（不明）。あり: HTTP で照会し状態に従う | 照会の渡し忘れを検知する | 自動 |
+| **T-10-2972** | 見送り理由の列挙 | 序数・在庫解放の分類を見る | 3 値は序数 9〜11・確実に未発注 | 序数は不変 | 自動 |
+| **T-10-2973** | 配備の既定・SIMULATE・ローカルの 3 描画 | helm で描画する | 発注執行に照会先（リスク管理の Service の 8080）・s2s の資格情報（共有の機密の契約キー）・token エンドポイントが出る | 値の欠落で新規建てが全件止まらない | 自動 |
+
+試験の置き場所: T-10-2965〜T-10-2969 は `OrderExecutionServiceTradingHaltTests`、T-10-2967・T-10-2970 は `HttpTradingHaltSourceTests`（発注執行）と `TradingHaltEndpointTests`（リスク管理）、
+T-10-2971 は `TradingHaltWiringTests`、T-10-2973 は helm の描画検査、T-10-2972 は `StopLossMethodContractTests`・`OrderDispatchForgoneLifecycleTests`。
+
+**変異で確かめたこと**（1 本ずつ当てて戻した）:
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| TH1 | 判定を外す | T-10-2965・T-10-2966・T-10-2967・T-10-2971 |
+| TH2 | 決済も照会する | T-10-2966 |
+| TH3 | 不明を「送る」へ倒す | T-10-2967・T-10-2971 |
+| TH4 | kill switch と一時停止の順を入れ替える | T-10-2969 |
+| TH5 | 項目の欠落を「停止していない」と読む | T-10-2967 |
+| TH6 | 本番の構成で照会元を渡さない | T-10-2971 |
+| TH7 | 見送りで S1 の行・保護の文脈を閉じない | T-10-2965 |
+
+🔴 **本節が固定していない残余リスク**:
+- 照会の後・送信までのごく短いあいだに入った停止は見ない（審査と送る直前の 2 段で窓を狭めたが 0 ではない）。
+- 照会先と資格情報は配備の既定に入れた（T-10-2973）。値を外す・リスク管理へ届かない・資格情報が無効だと新規建ては全件見送られる（決済・損切りは動く）。
+- 日次損失のロックアウトは本確認の対象外（審査が止める）。
+
+## 保護逆指値が未受理のときのエントリー取消は、照会で終端を確かめてから取り消したと扱う
+
+保護逆指値（S0 のブローカー側逆指値・S3 の代替の注文種別）が未受理で、エントリーが未約定なら取り消す。取消を求めた後にも約定することがあるため、
+取消を送った後に注文を照会し、終端を確かめてから「取り消した」と扱う。確かめられなければ保護の文脈を**取消の確認待ち**で残し、
+約定の追跡がエントリーの終了を確かめたときに後始末する（約定 0 なら取消の確定、約定があれば約定数量の成行手仕舞い）。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2974** | 逆指値が未受理・エントリー未約定・取消の後の照会は約定 0 の取消済み（S0 / S3） | 新規建てを執行する | 取消 1 回・成行 0 本。保護喪失は `EntryCancelled`。保護の文脈は完了 | 取り消したと言うのは確かめた後だけ | 自動 |
+| **T-10-2975** | 同上・取消の後の照会は全量約定／一部約定の後の取消済み | 同上 | 約定数量を成行で手仕舞う（`PositionClosed`・決済意図は売り・数量は約定数）。保護の文脈は完了 | 取消の窓で約定した建玉を保護なしで残さない | 自動 |
+| **T-10-2976** | 同上・取消の後の照会が非終端／照会できない | 同上 | 保護喪失は `EntryCancelUnconfirmed`（決済意図なし）。成行 0 本。保護の文脈は**取消の確認待ち**（巡回の対象外・未完了には数える） | 確かめられないものを取り消したと言わない・非終端のまま約定数で手仕舞わない | 自動（否定形） |
+| **T-10-2977** | T-10-2976 の後、エントリーが全量約定して終端する | 約定の追跡を 2 巡回する | 1 巡回目: 約定の発行と、成行手仕舞い（`PositionClosed`）の保護喪失が 1 件。2 巡回目: 何も起きない。保護の文脈は完了 | 後始末は 1 回だけ | 自動 |
+| **T-10-2978** | T-10-2976 の後、エントリーが約定 0 で終端する | 約定の追跡を 1 巡回する | `EntryCancelled` が 1 件・成行 0 本・保護の文脈は完了 | 取消の確定は終了の観測で行う | 自動 |
+| **T-10-2979** | 確認待ち・同じ終端化を 2 回渡す／約定数が承認数量を超える／非終端の記録を渡す | 後始末の口を呼ぶ | 2 回目は何もしない（成行 1 本）。手仕舞いは承認数量まで。非終端なら何もせず確認待ちのまま | 二重決済・過大な決済をしない | 自動（否定形） |
+| **T-10-2980** | 逆指値が受理されたエントリーが終端する／後始末の口が例外を投げる | 約定の追跡を 1 巡回する | 前者: 後始末は起きない（取消・成行 0）。後者: 約定の追跡は止まらず、約定は発行される | 確認待ちでないものに触らない・1 件の失敗で巡回を止めない | 自動（否定形） |
+| **T-10-2981** | 本番の構成（`Program.cs`・moomoo）・確認待ちのエントリーが約定して終端する | 約定の追跡を 1 巡回する | 成行手仕舞いが 1 本出る・保護の文脈は完了 | 後始末の口の渡し忘れを検知する | 自動 |
+| **T-10-2983** | 確認待ち・エントリーが全量約定して終端・成行手仕舞いのレグの予約が例外で落ちる（記録の障害） | 約定の追跡を 2 巡回する | 1 巡回目: 保護喪失は `None`（解消にも失敗・Critical）が 1 件・約定は発行される・失敗 0。成行 0 本・保護の文脈は完了。同じ終端化をもう一度渡しても、2 巡回目も何もしない | 後始末の失敗を無音にしない・二重に手仕舞わない | 自動（否定形） |
+| **T-10-2984** | 確認待ち・エントリーが全量約定して終端・取消トークンが取り消し済み／成行の発注が `OperationCanceledException`（通信のタイムアウト） | 後始末の口を 2 回呼ぶ | 前者: 成行手仕舞いは最後まで行う（`PositionClosed`・成行 1 本）。後者: `None`（Critical）を返し成行の試行は 1 回。どちらも 2 回目は何もしない | 停止・タイムアウトで後始末を無音にしない・二重に手仕舞わない | 自動（否定形） |
+| **T-10-2982** | `EntryCancelUnconfirmed` の保護喪失 | 通知・監査の要約を作る | 通知は Critical で「取消を確認中」「逆指値なしで残り得ます」「もう 1 回通知」。「取り消しました」「建玉は生じていません」とは書かない。監査の要約は「取消を送ったが未確認」 | 事実と逆の通知をしない | 自動 |
+
+試験の置き場所: T-10-2974〜T-10-2980・T-10-2983・T-10-2984 は `UnconfirmedEntryCancelTests`（発注執行。取消の後の照会は既存の `OrderExecutionServiceProtectiveStopTests` の不変条件の試験でも振る）、
+T-10-2981 は `UnconfirmedEntryCancelCompositionTests`、T-10-2982 は `NotificationFormatterTests`・`AuditEntryFactoryTests`。
+
+**変異で確かめたこと**（1 本ずつ当てて戻した）:
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| EC1 | 取消の後の照会を外す（取消を送れたら即「取り消した」） | T-10-2975・T-10-2976・T-10-2977・T-10-2978・T-10-2979 |
+| EC2 | 本番の構成で約定の追跡へ後始末の口を渡さない | T-10-2981 |
+| EC3 | 後始末で「確認待ちか」の確認を外す | T-10-2979・T-10-2980 |
+| EC4 | 後始末の成行手仕舞いの例外を握らない（投げ返す） | T-10-2983 |
+| EC5 | Completed の後の成行手仕舞いへ取消トークンを渡す | T-10-2984 |
+| EC6 | 後始末で `OperationCanceledException` を握らない | T-10-2984 |
+
+🔴 **本節が固定していない残余リスク**:
+- 取消が**例外で失敗**した枝は従来どおり（照会で約定 0 なら人手対応、約定があれば約定数量を成行で手仕舞う）。非終端のまま約定数で手仕舞うと残りが後で約定し得る点は残る。
+- 送った時点で**既に一部約定**していたエントリーは、約定分を成行で手仕舞うが残りを取り消さない（従来どおり）。
+- 取消の後の照会から確認待ちの保存までのごく短い窓で約定の追跡が終端を先に観測すると、後始末は起きない（確認待ちの通知は出ている。結果の通知が来なければ人が確かめる）。
+- 後始末の成行手仕舞いが例外で落ちたときは自動で再試行しない（`None` の Critical 通知で人が手仕舞う。成行が送られた後の例外であり得て、再試行は二重決済の危険がある）。
+- 確認待ちが残ると、同じ銘柄・同じ方向の**別の手法**の新規建てを併存の関門が見送り続ける（自動では閉じない。解除は運用の Runbook の人の手順）。
+- 確認待ちのまま約定の追跡が打ち切られた（追跡上限を過ぎて非終端）ときは後始末が起きない（当日限りの注文は通常その前に終わる）。内蔵 paper は約定の追跡を持たないが、即時に約定するため確認待ちは生じない。
+
+
+## LLM を呼ぶ前の見送りの是正（閉場前の締め切り・テーマの上限を新規建ての可否の口へ／決済の約定の直後の建玉 0）
+
+新規建ての可否の口（判断が LLM を呼ぶ前に読む）は、閉場前の新規建ての締め切りとテーマの同時保有の上限も、審査と同じ関数・同じ構成の解決から返す。
+審査は変えない（両端で止める）。あわせて、判断由来の決済が約定した直後の巡回で、発注執行がブローカーの決済方向の建玉を 0 と観測したら、
+出口の判断の LLM を呼ばない（判断の保有の読み元＝台帳は、約定の射影が届くまで保有中のままである）。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2985** | 米国の取引日（閉場 16:00 ET）。既定の締め切り 60 分。時刻は閉場のちょうど 60 分前・30 分前・61 分前・土曜（休場日） | 口を読み、同じストアで審査する | 窓の中は両方向に `PreCloseEntryCutoff`、窓の外と休場日は空。口の答えは審査の拒否と一致する。全注文の拒否は空 | 口と審査は同じ解決・同じ組み立て | 自動 |
+| **T-10-2986** | 閉場の 90 分前。構成の値 30 分・画面の保存値 120 分 | 同上 | 構成だけなら空、保存値があれば `PreCloseEntryCutoff`（審査も同じ） | 効く値は保存値＞構成 | 自動 |
+| **T-10-2987** | 既定の暗号資産のテーマ（上限 1）。COIN を保有 | MARA・COIN・AAPL の口を読み、審査する。保存値で上限 2 にして MARA を読み直す | MARA は両方向に `ThemeConcentrationExceeded`（審査も同じ）。COIN（買い増し）・AAPL（集まりの外）は空。上限 2 では MARA も空 | 同じ銘柄は数えない・保存値が効く | 自動 |
+| **T-10-2988** | 窓の中／外 × テーマの他銘柄の保有の有無 × 方向 × kill switch × 建玉数の上限 | 述語（口）と判定コア（審査）を同じ入力で呼ぶ | 理由と並びが一致する。供給しなければ判定しない。閉場が無い（休場日）なら区間に入らない | 述語は 1 か所 | 自動 |
+| **T-10-2989** | 口が返し得る 10 理由 | 線上の値へ写し、受け手が読み、プロンプトの文言を作る | どの理由も名前で写る。プロンプトは日本語の理由を並べる | 未知の理由を黙って落とさない | 自動 |
+| **T-10-2990** | 保有 0・未約定なし。口が締め切り／テーマの上限を返す | 判断する | LLM を呼ばずに見送る（理由 `EntryBlockedByRiskControls`） | 判断側は結果を読むだけ | 自動 |
+| **T-10-2991** | 台帳はまだ 2339 株の保有中（LLM の後の読み直しは 0）。買い増しは当日の判断由来の決済で塞がる。発注執行は覆わない・ブローカーの決済方向の建玉 0 と答える | 判断する | LLM を 0 回で見送る（理由 `BrokerPositionClosed`）。照会は決済の方向で 1 回 | どの結論も発注にならない銘柄で LLM を呼ばない | 自動 |
+| **T-10-2992** | 同上で、ブローカーの建玉が正／不明。または買い増しが発注になり得る | 判断する | LLM を呼ぶ。買い増しが発注になり得るなら照会もしない | 決済の判断を止める向きへ倒さない | 自動（否定形） |
+| **T-10-2993** | 発注執行の応答（REST・gRPC）のブローカーの決済方向の建玉が 0・欠落・負 | 受け手が読む | 0 は 0、欠落と負は不明（null） | 欠落を 0 と読まない | 自動 |
+| **T-10-2994** | LLM を呼ぶ前の見送りの語彙 | 列挙・写像を確かめる | `BrokerPositionClosed` を台帳と観測の両方の末尾へ足し、名前が一致する（10 地点・22 値） | 値は末尾へ足す | 自動 |
+
+試験の置き場所: T-10-2985〜T-10-2987 は `EntryBlockersServiceTests`、T-10-2988 は `EntryStateBlockersTests`（リスク管理）。
+T-10-2989 は `EntryBlockersEndpointTests`（送り手の写像）・`EntryBlockersProviderTests`（受け手の写像）・`HeldAddOnBlockersTests`（文言）、
+T-10-2990 は `EntryBlockersBeforeLlmTests`、T-10-2991・T-10-2992 は `InFlightCloseBeforeLlmTests`、T-10-2993 は `InFlightCloseProviderTests`・`GrpcOrderExecutionReadTests`、
+T-10-2994 は `DecisionSkipReasonTests`・`LedgerGapEventsTests`・`DecisionHeldReportTests`（取引判断）。
+
+**変異で確かめたこと**（1 本ずつ当てて戻した）:
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| LP1 | 口へ締め切りの供給を渡さない | T-10-2985・T-10-2986 |
+| LP2 | 口へテーマの定義を渡さない | T-10-2987 |
+| LP3 | 口の締め切りを保存値で解決せず構成の値を直接使う | T-10-2986 |
+| LP4 | ブローカーの建玉 0 で見送る分岐を外す | T-10-2991 |
+| LP5 | 分岐の条件を「正でない（不明を含む）」へ広げる | T-10-2992・T-10-2644 |
+
+🔴 **本節が固定していない残余リスク**:
+- 臨時の半日取引日は、口も審査と同じく規則計算の暦で閉場を求める（取引判断のプロンプトの閉場とずれ得るのは従来どおり）。
+- ブローカーの建玉 0 の観測は、処理中の決済の候補（記録が非終端の決済）があるときだけ得られる。約定追跡が記録を終端にした後で台帳がまだ遅れていれば、従来どおり LLM を呼び、LLM の後の関所が止める。
+
+## 閉場中は保護逆指値ガードとソフトウェア逆指値が新しい注文を送らない
+
+保護レグは有効期限を載せない（当日限り）ため、引けで失効した逆指値を閉場中に見つけるのは毎日の平常である。是正前は、常駐ガードが時間帯を見ずに張り直し、
+拒否されれば成行で手仕舞った。場外の成行は翌寄りで約定し、損切りラインに達していない建玉を寄り値で手仕舞う。ソフトウェア逆指値の到達済み行の撃ち直しも閉場中に出た。
+是正後は、閉場中は新しい注文を送らず、保護記録を巡回に残して次の開場後の最初の巡回で張り直す。時計は注入し、場中の判定は本番と同じ規則計算の市場カレンダーを使う。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2995** | 引け（米東 16:00）の後・逆指値は失効・建玉 10 株・張り直しは拒否される設定 | 閉場中に巡回を 5 回まわす | 逆指値も成行も 1 本も出ない。閉場で待つ件数 1、不明・失敗 0、通知なし。記録は `Active` のまま失効した元の逆指値を指し、試行番号を進めない | 🔴 閉場中に再発注・成行手仕舞いを送らない | 自動（**否定形**） |
+| **T-10-2996** | 同上（張り直しは受理／拒否の 2 通り） | 寄り付きの 1 秒前と寄り付き（09:30 ET）に巡回する | 1 秒前はまだ待つ。寄り付きの巡回で張り直す（受理なら張り直し 1・試行 2、拒否なら場中に成行で手仕舞い） | 次の開場で張り直す | 自動 |
+| **T-10-2997** | 場中（15:59:59 ET）・逆指値は失効・張り直しは拒否 | 巡回する（市場カレンダーあり／なし） | どちらも張り直し 1・成行 1（従来どおり） | 場中の挙動を変えない | 自動 |
+| **T-10-2998** | 失効した逆指値 | 寄り付きの前後 1 秒・引けの前後 1 秒・土曜・感謝祭・感謝祭翌日（半日）の 12:59:59 と 13:00・クリスマスに巡回する | 場中（寄り付き・引けの 1 秒前・半日の 12:59:59）だけ張り直す。他は待つ。成行は出ない | 境界・休場日・半日取引日 | 自動 |
+| **T-10-2999** | ソフトウェア逆指値が引けの 10 分前に到達し、成行は確実に未発注で失敗 | 閉場中に巡回を 4 回、寄り付きに 1 回まわす | 閉場中は成行を撃ち直さない（閉場で待つ件数 1・不明 0）。到達の記録と連続失敗の数は変わらない。寄り付きの巡回で成行を送り、記録を完了する | 🔴 閉場中に S1 の成行を送らない・待つことを失敗に数えない | 自動（**否定形**） |
+| **T-10-3000** | 引けの 20 秒前に検知された到達が引けの 10 秒後に届く | 到達を処理し、寄り付きに巡回する | 成行も取消も出ない（据え置きに数える）。到達は記録され、寄り付きの巡回で成行を送る | 配送の遅れで場外の成行を送らない | 自動（**否定形**） |
+| **T-10-3002** | ソフトウェア逆指値が引けの 5 分前に到達し、決済は確実に未発注のまま続く | 閉場中に何度も巡回し、寄り付きの 14 分後・16 分後・30 分後に巡回する | 閉場中と寄り付きの 14 分後は「決済できていない」通知を出さない。16 分後に 1 回だけ出し、以後は出さない | 🔴 閉場をまたいで待つだけでは通知しない（猶予は開場から数え直す） | 自動（**否定形**） |
+| **T-10-3003** | 場中（10:00 ET）に到達し、決済は確実に未発注のまま続く | 14 分後・16 分後に巡回する | 14 分後は出さず、16 分後に「決済できていない」通知を 1 回出す | 場中に猶予を過ぎたら従来どおり通知する | 自動 |
+| **T-10-3001** | 本番の組み立て（moomoo 構成）・時計だけ差し替え | 閉場中にガードの巡回とソフトウェア逆指値の到達を処理し、寄り付きに巡回する | 場中の判定は規則計算の市場カレンダー。閉場中は逆指値も成行も出ず、寄り付きの巡回で張り直しと成行が 1 本ずつ出る | 市場カレンダーの配線が抜けない | 自動 |
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| MG1 | ガードの閉場の分岐を外す | T-10-2995・T-10-2996・T-10-2998 |
+| MG2 | ソフトウェア逆指値の閉場の分岐を外す | T-10-2999・T-10-3000 |
+| MG3 | 本番の組み立てでガードへ市場カレンダーを渡さない | T-10-3001 |
+| MG4 | 本番の組み立てでソフトウェア逆指値の実行器へ市場カレンダーを渡さない | T-10-3001 |
+| MG6 | 「決済できていない」の猶予の起点を到達の時刻のままにする | T-10-3002 |
+| MG7 | 閉場で待つ回も「決済できていない」の判定に入れる | T-10-3002・T-10-2999 |
+
+🔴 **本節が固定していない残余リスク**:
+- 寄り後の最初の巡回（最大 30 秒）までは逆指値が無い。有効期限（GTC）の判断は実弾の確認の結果で別に決める。
+- 臨時休場・臨時の半日は足さない（規則計算だけ）。規則計算が開場と読む臨時休場日は、従来どおり場外で送る。
+- 承認の受信の経路（エントリーと同時の保護逆指値・未受理時の成行）は対象外（承認は場中の判断から出る）。
+
+## 同じ建玉を売る決済の「読む → 送る → 記録する」の直列化
+
+判断の決済は送る前に処理中の決済を差し引き、ソフトウェア逆指値の決済は送る前に処理中の判断の決済を取り消す。どちらも相手の記録を読むが、記録は送った後に書かれる。
+是正前は、先発が証券会社へ送っている最中に後発が読むと先発を見ずに全量を送った（未約定の売りが売れる数量を押さえない証券会社では二重に売る）。
+承認の受信は 1 通ずつだが、ソフトウェア逆指値は別のキューと常駐の巡回から来るため、それだけでは直列にならない。
+是正後は、決済を送る 4 つの経路（承認の決済・ソフトウェア逆指値・保護喪失の成行手仕舞い・ガードの成行手仕舞い）が、建玉の照会から記録の保存までを
+(銘柄, 市場, 決済の方向) ごとに 1 本ずつ通す。本番は発注執行の専有 DB の advisory lock、単体の試験はプロセス内のセマフォである。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-3004** | 保有 1,428 株（ソフトウェア逆指値 713 株・715 株）。証券会社は未約定の売りを押さえない。先発の送信を後発が届くまで（最大 500 ミリ秒）止める | 判断の全量の決済とソフトウェア逆指値の到達を、どちらかを先にして並行に処理する | 板に残る売りの合計は 1,428 株以下。判断が先なら判断の決済は取り消されて 713 株だけが残り、ソフトウェア逆指値が先なら判断は 715 株だけを送る | 🔴 異なる判断 ID の決済が同じ建玉を二重に売らない（損切りも手仕舞いも止めない） | 自動 |
+| **T-10-3005** | 同上で、経路ごとに別々の直列化を渡す（＝是正前） | 同上 | 板に残る売りの合計は 2,141 株（後発が全量を送る） | T-10-3004 の窓が実際に開いていることの対照 | 自動（対照） |
+| **T-10-3006** | プロセス内の直列化（待ちの上限 200 ミリ秒） | 同じ鍵・違う鍵（方向・銘柄・市場）を取る。上限に 0・1 ミリ秒未満・負・無期限を渡す | 同じ鍵だけ待ち、上限で取れなければ例外。鍵の値は固定値と一致し、銘柄の大文字小文字を区別しない。1 ミリ秒未満の上限は両実装とも組み立てで拒否する（0 は PostgreSQL で無期限） | 鍵を変えない（入れ替えの間に直列化が割れない） | 自動 |
+| **T-10-3007** | 直列化を取れない | 判断の決済・ソフトウェア逆指値の到達・新規建てを処理する | 判断の決済は予約の前に例外で抜け、ソフトウェア逆指値は据え置く（到達の記録は残る）。決済は 1 本も送らない。新規建ては直列化を取りに行かない | 🔴 取れないときは送らない側へ倒す | 自動（**否定形**） |
+| **T-10-3008** | 本番の組み立て（moomoo 構成） | 承認の受け口・ソフトウェア逆指値の実行器・ガードを解決する | 3 つが同じ直列化を受け取る。関係 DB なら advisory lock、試験の InMemory ならホストで 1 つのセマフォを選び、別のホストとは共有しない | 直列化の配線が抜けない・並列の試験どうしが待ち合わない | 自動 |
+| **T-10-3009** | 失効した逆指値の張り直しが拒否され、成行で手仕舞う | ガードを巡回する（直列化を取れる／取れない） | 取れれば直列化を握ったまま成行を送り、記録の後に外す。取れなければ成行を送らず、人手対応を求めて記録は Active のまま | 🔴 ガードの成行も同じ建玉の決済と直列にする | 自動 |
+| **T-10-3011** | 巡回の先頭は建玉 10 株・逆指値は失効し張り直しは拒否。直列化を待つ間に他の決済が約定して 4 株／0 株になる、または照会できなくなる | ガードを巡回する | 4 株なら 4 株だけ送る。0 株なら送らず記録は Active のまま（保護喪失の通知なし）。照会できなければ送らず人手対応 | 🔴 照会し直した建玉を超えて売らない | 自動 |
+| **T-10-3010** | 実 PostgreSQL | 別の接続から同じ鍵・違う鍵を取る。待ちの上限を超える。DB に届かない。先発の書き込みの後に後発が読む | 同じ鍵は先発が外すまで待ち、違う鍵は待たない。上限・不達は取れない例外。後発は先発の書き込みを読める | 入れ替え中の新旧の Pod をまたいで直列にする | 自動（結合） |
+
+T-10-3004〜T-10-3007 は `ClosePositionSerializationTests`、T-10-3008 は `ClosePositionLockCompositionTests`、T-10-3009・T-10-3011 は `ProtectiveStopGuardTests`（発注執行）、
+T-10-3010 は `ClosePositionLockE2ETests`（結合試験・専用ワークフローで実走）。
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| CS1 | 承認の決済で直列化を取らない | T-10-3004 |
+| CS2 | ソフトウェア逆指値で経路ごとに別の直列化を取る | T-10-3004 |
+| CS3 | 本番の組み立てでガードへ直列化を渡さない | T-10-3008 |
+| CS4 | ガードが照会し直した数量を使わない | T-10-3011 |
+
+🔴 **本節が固定していない残余リスク**:
+- 送信の結果が不明な決済（予約が Reserved のまま・記録が無い）は後発に数えられない（直列化の前からの残余）。
+- 直列化を握る間、承認の受信（1 本のリスナ）と常駐の巡回は後ろで待つ（通常は数秒、上限 2 分）。待つ側も DB の接続を 1 本ずつ握る（接続プールの上限が前提）。
+- ~~ガードの成行の手仕舞いは、板に残る未約定の判断の決済を取り消しも差し引きもしない（照会し直しは約定済みの分だけを映す）。~~ 次節「ガードの成行の手仕舞いは板に残る判断の決済を取り消して確かめてから送る」で解消した。
+
+## ガードは残存逆指値の取消を照会で確かめてから保護記録を完了させる・決済の建玉ゲートは組み立てに依らず効く
+
+建玉が消えた後に残る逆指値は取り消す（決済済みの建玉に残る注文が発火すると反対建玉を生む）。是正前は、取消の要求が返った直後に保護記録を完了させていた。
+取消が効いていない（届いていない・取消待ち）逆指値を誰も見なくなり、取消の窓で約定した場合も約定として扱われなかった。保護記録の書き込みは無条件の上書きで、
+評価の間に並行に進んだ状態を古い写しで巻き戻し得た。決済の建玉ゲートは、建玉照会の口を明示しない組み立て（照会の能力を持つアダプタだけを渡す）で黙って外れていた。
+是正後は、取消の後に注文を照会し、終端（取消済み・失効・拒否・約定済み）を確かめてから完了させる。確かめられなければ記録を残して次の巡回で確かめ直す。
+保護記録は保存先の最新を読み直して当て直す。決済の建玉ゲートはアダプタそのものの建玉照会でも効く。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-3012** | 建玉 0・逆指値は滞留中（受付・一部約定）。取消を受け付けても照会では生きたまま、または照会不能 | ガードを巡回し、次に取消が効く状態で巡回する | 1 巡目は取消を送るが完了 0・不明 1 で記録は `Active`。2 巡目は取り消し直し、取消済みが見えて完了する。再発注・成行は出ない | 🔴 取消を確かめていない逆指値の記録を閉じない | 自動（**否定形**） |
+| **T-10-3013** | 同上。取消の窓で逆指値が約定し、取消は「約定済み」で失敗する | ガードを巡回する | 巡回の失敗 0・完了 1。逆指値のレグの記録の追跡の起点がこの巡回の時刻へ進む（約定追跡が台帳へ届ける） | 取消の窓の約定を約定として扱う | 自動 |
+| **T-10-3014** | (a) 取消を確かめる間に別の書き手がレグを置き換える (b) 失効した逆指値を張り直す間に別の書き手が他の列を書く | ガードを巡回する | (a) 記録は置き換わった新しいレグのまま `Active`（古い観測で閉じない） (b) 張り直した注文は記録され、並行に書かれた列は残る | 🔴 並行に進んだ保護記録を古い写しで上書きしない | 自動（**否定形**） |
+| **T-10-3016** | 失効した逆指値を張り直した直後から、保護記録の楽観並行の保存が衝突し続ける | ガードを巡回する | 当て直しを使い切った後、最新の行へ当てて保存する。張り直した注文 ID と試行 2 が記録に残る（巡回の失敗 0） | 🔴 証券会社に実在する注文を記録から落とさない | 自動（**否定形**） |
+| **T-10-3017** | 張り直しは拒否され成行で手仕舞う。成行を送る間に別の書き手がレグの注文 ID を書き換える | ガードを 2 回巡回する | 1 巡目は記録を閉じられず、手仕舞い済みの事実を出さない。2 巡目は成行を重ねずに同じ試行の記録から閉じ、事実を 1 回だけ出す | 同じ手仕舞いの事実を重ねて出さない | 自動（**否定形**） |
+| **T-10-3015** | 建玉照会の能力を持つアダプタだけを渡す組み立て（照会の口を明示しない）。ブローカーの建玉は 0 | 決済の承認を執行する | 建玉照会が 1 回走り、決済は送らず見送り（建玉が無い） | 🔴 組み立て次第で決済の建玉ゲートが外れない | 自動（**否定形**） |
+
+T-10-3012〜T-10-3014・T-10-3016・T-10-3017 は `ProtectiveStopGuardTests`、T-10-3015 は `OrderExecutionServiceCloseVsBrokerPositionTests`（いずれも発注執行）。
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| CC1 | 取消の後の照会の結果を見ずに完了させる | T-10-3012 |
+| CC2 | 取消の「約定済み」の失敗を照会に回さない | T-10-3013 |
+| CC3 | 完了の当て直しでレグの一致を確かめない | T-10-3014 (a) |
+| CC4 | 張り直しの記録を古い写しから作る | T-10-3014 (b) |
+| CC5 | 決済の建玉ゲートの有効判定をコンストラクタ引数に戻す | T-10-3015 |
+| CC6 | 当て直しの衝突が尽きたときに無条件の保存へ倒さない | T-10-3016 |
+| CC7 | 記録を閉じられなかった巡回でも手仕舞い済みの事実を出す | T-10-3017 |
+
+🔴 **本節が固定していない残余リスク**:
+- 取消を確かめられない状態が続くあいだ、巡回ごと（既定 30 秒）に取消を送り直し、警告のログを残す（通知はしない）。
+- 取消の窓の約定で反対方向の建玉が生じた場合の手当ては、帰属不明の建玉の検知（次の巡回）に委ねる（本節は約定として扱うところまで）。
+- 完了の衝突が 5 回続くと、その巡回では閉じない（巡回の 1 件の失敗。次の巡回で読み直す）。証券会社への操作の後の記録は、衝突が尽きると最新の行へ無条件に保存するため、並行に書かれた列を 1 回巻き戻し得る。
+
+## ガードの成行の手仕舞いは板に残る判断の決済を取り消して確かめてから送る
+
+失効した逆指値の張り直しが拒否された建玉では、ガードが成行で手仕舞う。是正前は、建玉の照会し直しで約定済みの分は差し引いたが、板に残る未約定の判断の決済（指値）は
+取り消しも差し引きもせず全量を送っていた。未約定の売りを押さえない証券会社では売りが重なり、両方が約定すると反対建玉になる。
+是正後は、ソフトウェア逆指値と同じ取消の段（同じ建玉を売る判断の決済を取り消し、照会で終端を確かめる）を、決済の直列化の内側・建玉の照会し直しの後に通す。
+確かめられなければ送らず人手対応を求め、取消の窓で約定が進んでいれば建玉を照会し直した数量で送る（0 なら送らない）。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-3018** | 建玉 10 株・逆指値は失効し張り直しは拒否。判断の決済（指値・10 株）が板に未約定で残る。偽の証券会社は未約定の売りを押さえない | ガードを巡回する | 判断の決済を取り消し、取消を照会で確かめてから成行 10 株を送る。板に残る売りと成行の合計は 10 株以下。取消を求めた印が残る | 🔴 決済の合計が建玉を超えない | 自動 |
+| **T-10-3019** | 同上。取消を受け付けても照会では生きたまま、または取消の後に照会できない | ガードを巡回する | 成行を送らず、人手対応（None）。記録は `Active` | 🔴 取消を確かめずに成行を重ねない | 自動（**否定形**） |
+| **T-10-3020** | 同上。取消の窓で判断の決済が 4 株／10 株約定し、建玉が 6 株／0 株になる | ガードを巡回する | 6 株なら 6 株だけ送る。0 株なら送らず記録は `Active`（保護喪失の通知なし） | 🔴 取消の窓の約定を差し引いて送る | 自動 |
+| **T-10-3021** | 判断の決済が無い／記録は非終端だが証券会社では既に終端（約定は進んでいない） | ガードを巡回する | 取消を送らず、従来どおり全量の 10 株を送る | 退行なし | 自動 |
+
+T-10-3018〜T-10-3021 は `ProtectiveStopGuardTests`（発注執行）。ソフトウェア逆指値の取消の段は共通の部品へ移したが挙動は変えておらず、既存の試験（判断の手仕舞いの取消）が無変更で通る。
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| GY1 | ガードが取消の段を呼ばない | T-10-3018・T-10-3019・T-10-3020 |
+| GY2 | 取消の後に建玉を照会し直さない | T-10-3020 |
+
+🔴 **本節が固定していない残余リスク**:
+- 取消の前に照会できない判断の決済は取り消さずに送る（ソフトウェア逆指値と同じ。照会が一時的に落ちた巡回では重なり得る）。
+- ~~猶予の内の利用者の手仕舞い・維持率割れの自動縮小は、ガードでは取り消さず差し引きもしない。~~ 次節「ガードの成行の手仕舞いは利用者の手仕舞い・自動縮小を取り消さずに差し引く」で解消した。
+- 保護喪失の成行手仕舞い（エントリー直後の保護の不成立）はこの段を通らない。
+
+## ガードの成行の手仕舞いは利用者の手仕舞い・自動縮小を取り消さずに差し引く
+
+前節の取消の段は、猶予の内の利用者の手仕舞い・維持率割れの自動縮小を取り消さない（利用者の意思を尊重する）。是正前のガードはその残りを差し引かず、
+建玉の照会値で全量を送っていた。未約定の売りを押さえない証券会社では、利用者の指値と成行の両方が約定すると反対建玉になる。
+是正後は、ソフトウェア逆指値と同じ差し引きの段（処理中の決済の残りを決済方向の建玉から引く）を、取消の段の後・成行の予約の前に通す。
+差し引いて 0 なら送らず、差し引くための建玉照会ができなければ送らず人手対応を求める。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-3022** | 建玉 10 株・逆指値は失効し張り直しは拒否。猶予の内の利用者の手仕舞い／維持率割れの自動縮小（指値・4 株）が板に未約定で残る。偽の証券会社は未約定の売りを押さえない | ガードを巡回する | 取り消さず、10 − 4 ＝ 6 株だけ送る。板に残る売りと成行の合計は 10 株以下。保護喪失の通知の数量も 6 株 | 🔴 決済の合計が建玉を超えない | 自動 |
+| **T-10-3023** | 同上。利用者の手仕舞い／自動縮小が 10 株（建玉をすべて覆う） | ガードを巡回する | 取り消さず、成行を送らない。記録は `Active`（保護喪失の通知なし） | 🔴 差し引いて 0 なら送らない | 自動（**否定形**） |
+| **T-10-3024** | 同上（4 株）。差し引くための建玉照会だけができない | ガードを巡回する | 成行を送らず、人手対応（None）。記録は `Active` | 🔴 不明を「持っている」へ倒さない | 自動（**否定形**） |
+
+T-10-3022〜T-10-3024 は `ProtectiveStopGuardTests`（発注執行）。ソフトウェア逆指値の差し引きの段は共通の部品へ移したが挙動は変えておらず、既存の試験が無変更で通る。
+前節の T-10-3021 から「板に残るのが猶予の内の利用者の手仕舞いだけ（全量を送る）」の場合を外した（本節の是正で期待が変わるため）。
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| ON1 | ガードが差し引きの結果を使わない | T-10-3022・T-10-3023 |
+| ON2 | 差し引いて 0 でも送る | T-10-3023 |
+| ON3 | 差し引くための建玉照会が不明でも送る | T-10-3024 |
+
+🔴 **本節が固定していない残余リスク**:
+- 確かめられない（照会できない）利用者の決済は数えない（ソフトウェア逆指値と同じ。損切りを止めない側）。
+- 差し引いて 0 で送らないあいだ、利用者の指値が約定しないまま猶予を過ぎるまでは、逆指値なしの建玉が残る（通知はしない）。
+
+## 窓開けで逆指値がエントリーより先に約定したときのガードと検知
+
+S0/S3 は承認数量の逆指値を、未約定のエントリー（指値の買い）と同時に板に置く。窓開けで逆指値が先に約定すると、建玉 0 からの売り＝売り建玉が生じる。
+以前のガードは逆指値の約定を「損切りが成立した」と読み、エントリーの状態を見ずに保護記録を完了させた。エントリーが約定しないまま終わると
+売り建玉が無通知で残った（T-10-3025・T-10-3026 はその挙動を固定していた。是正に合わせて期待を書き換えた）。
+
+是正後のガードは、記録を完了させる前にエントリーの状態を見る。エントリーが生きている（未約定・一部約定）なら記録を閉じずに据え置き、
+保護喪失の事実（逆指値がエントリーより先に約定・Critical）を約 1 時間ごとに出す。エントリーの状態が分からなくても、反対方向の建玉が見えていれば同じく据え置く。
+エントリーが終わっていれば従来どおり完了させる。帰属不明の建玉の検知は、建玉の方向と逆の方向をエントリーとする S0 の記録（有効・完了を問わない）がある銘柄では、
+S1 の足跡が無くても対象にする。**自動の買い戻し・エントリーの取消はしない**（どちらを採るかは別途の判断）。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-3025** | 逆指値（10 株）が約定済み・エントリー（指値の買い 10 株）は未約定で生きている・建玉は売り 10 株 | ガードを巡回する。その後エントリーが全量約定して建玉が 0 に戻り、もう一度巡回する | 1 回目: 記録は有効のまま。エントリーを照会する。取消・成行・張り直しを送らない。保護喪失の事実（逆指値が先に約定・原因も先に約定〔失効ではない〕・10 株・相関は逆指値レグ・決済意図なし）を 1 件出す。2 回目: 記録を完了する。事実は出さない | 生きているエントリーを見ずに記録を閉じない | 自動 |
+| **T-10-3026** | 同上 | エントリーが約定しないまま失効した後に巡回する。その 1 時間後に建玉観測の常駐の検知を回す | 1 回目の巡回で帰属不明の建玉（売り 10 株）も知らせる。失効の後は記録を完了し、事実を重ねない（通知済みの印は残る）。1 時間後の検知が売り建玉 10 株を改めて知らせる（代表は逆方向の S0 の記録）。取消・成行なし | 🔴 保護の無い売り建玉を無通知で残さない | 自動 |
+| **T-10-3027** | T-10-3025 の 1 回目の後 | 5 分後と 1 時間後に巡回する | 5 分後は事実を出さない（記録は有効のまま）。1 時間後に出し直す | 巡回ごとに重ねず、黙りもしない | 自動 |
+| **T-10-3028** | 逆指値が約定済み・エントリーの状態が分からない（照会が答えない）・建玉は売り 10 株 | ガードを巡回する | 記録は有効のまま（不明として数える）。保護喪失の事実を出す。取消・成行なし | 分からないを「終わった」と読まない | 自動 |
+| **T-10-3029** | 逆指値が約定済み・エントリーの状態が分からない・建玉 0 | ガードを巡回する | 従来どおり記録を完了する。事実を出さない | 反対建玉の証拠が無ければ通常の損切りの成立と同じ | 自動 |
+| **T-10-3030** | 逆指値が約定済み・エントリーの発注記録は終端（全量約定）・建玉 0 | ガードを巡回する | 従来どおり完了する。エントリーを証券会社へ照会しない。事実を出さない | 平常の損切りで照会を増やさない | 自動 |
+| **T-10-3031** | 完了した S0 の買いの記録・売り建玉 10 株（検知を直接呼ぶ） | 検知を 4 回回す（売り建玉あり → 10 分後も同じ → 20 分後に建玉 0 → 25 分後に再び売り建玉） | 1 回目に知らせ、印は S0 の行が持つ（状態は変えない）。2 回目は重ねない。3 回目で印を消す。4 回目は間隔を待たずに知らせる | 逆方向の群の印を逆方向の群で読み戻す | 自動 |
+| **T-10-3032** | 有効な S0 の買いの記録・買い建玉 25 株、または別の銘柄の売り建玉 | 検知を回す | どちらも知らせない | 同じ方向の S0 だけの群（T-10-488）と、システムが建てていない銘柄は従来どおり | 自動（**否定形**） |
+| **T-10-3033** | 保護喪失の事実（逆指値が先に約定） | 通知・監査の要約を作る。列挙の序数を見る | 通知は Critical。件名・本文は「成立せず」「解消」と言わず、反対方向の建玉の可能性・自動では買い戻さず取り消していないこと・証券会社の画面で確かめること・約 1 時間ごとを伝える。監査の要約も同旨で切れない。対処の序数は 9、原因の序数は 2（どちらも末尾）。往復しても原因・相関を保つ | 事実と逆に読ませない | 自動 |
+| **T-10-3034** | T-10-3025 の 1 回目の事実の発行に失敗した | 常駐が発行する | 通知済みの記憶を捨て、次の巡回で出し直す | 発行できなかった通知で 1 時間黙らない | 自動 |
+
+T-10-3025〜T-10-3032・T-10-3034 は `ProtectiveStopGuardEntryStateTests`（発注執行）。T-10-3033 は `NotificationFormatterTests`（通知）・
+`AuditEntryFactoryTests`（監査）・`ProtectiveStopEventPayloadTests`（契約）。
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| GO1 | 逆指値の約定の分岐でエントリーの状態を見ない（従来の完了へ戻す） | T-10-3025・T-10-3026・T-10-3027・T-10-3028 |
+| GO2 | 据え置きの通知の間隔を外す（巡回ごとに出す） | T-10-3027 |
+| GO3 | 検知の逆方向の足跡を外す（S0 だけの群をすべて飛ばす） | T-10-3026・T-10-3031 |
+| GO4 | 印の読み戻しの方向を S0 の行のエントリー方向に戻す | T-10-3026（同じ方向の群が印を毎回消し、売り建玉が残るあいだ巡回ごとに鳴り直す） |
+
+🔴 **本節が固定していない残余リスク**:
+- 売り建玉は自動では解消しない（買い戻し・エントリーの取消は別途の判断）。知らせるだけである。
+- 記録を据え置くあいだ、その記録は承認数量を主張し続ける（エントリーが未約定で据え置く既存の場合と同じ）。
+- 据え置きの事実と帰属不明の建玉の事実は別の通知として両方出る（どちらも 1 時間ごと）。
+- 逆方向の S0 の記録がある銘柄では、手動・他の実行機構の反対方向の建玉も帰属不明として知らせる（黙るより知らせる側）。
+- 現物口座では保有 0 からの売りの逆指値は拒否される見込みで、その場合は失効の分岐（エントリーが未約定なら記録を閉じない）へ進む。問題が現れるのは空売りを受け付ける口座。実弾での発火順は未確認。
+
+## 約定追跡の打ち切り後の照会し直しはエントリーを対象にしない（既存の試験で固定済み）
+
+追跡を打ち切った後に照会し直すのは、承認経路（出どころあり）の非終端の決済だけであり、新規建て（エントリー）は対象外である。
+これは「判断由来の決済の指値の有効期限と、約定しないまま残った決済」節の T-10-2656（新規建てを打ち切って印を書いても照会し直さない）と
+T-10-2659（データベース実装とインメモリ実装の両方で、打ち切った新規建てを返さない）が既に固定している。本節では試験を足さない。
+
+## 月次 LLM 費用上限の 100% 到達で、定時・価格変動の両方の判断を LLM の前で見送る（2026-10-24）
+
+計画の裁定: 月次 LLM 費用上限の対象の「取引判断サイクル」は定時と価格変動の両方を指す。100% に達したら両方の判断を LLM を呼ぶ前に見送る
+（新規建ても保有中の銘柄の出口の判断も）。80% は定時の間隔延長だけ。LLM を使わない保護（損切り・利用者の手仕舞い・閉場前の手仕舞い・
+維持率割れの自動縮小）は止めない。解除は費用統制の月替わり（JST の暦月。#1461 で UTC から改めた）で自動。費用統制の照会の失敗は「停止していない」へ倒す（判断を続ける）。
+
+| ID | 受け入れ基準 | テスト |
+| --- | --- | --- |
+| T-10-3049 | 停止中は定時・価格変動の両方で LLM を呼ばず（方針の照会もせず）見送り、理由 `LlmCostCapHalted` を見送りの記録と計数に残す | `LlmCostCapHaltBeforeLlmTests` |
+| T-10-3050 | （否定形）停止していない・未結線・引数の省略では従来どおり LLM を呼ぶ | 同上 |
+| T-10-3051 | 費用統制の応答の写し（境界の表）: `isHalted` が明示的に true のときだけ停止。非 2xx・欠落・真偽でない値・配列・例外は停止していない | 同上 |
+| T-10-3053 | 費用統制の応答を送り手の本物の型（`CostControlDecision`）と送り手の JSON 設定で直列化して読ませ、停止だけを停止と読む（サービス間の読み取りの契約テスト） | `CostControlHaltReadContractTests` |
+| T-10-3052 | 見送りの語彙に `LlmCostCapHalted` を末尾へ足した（判断前 11 地点・全 23 値。名前は台帳と観測で同じ） | `DecisionSkipReasonTests`・`LedgerGapEventsTests`・`DecisionHeldReportTests` |
+
+- 定時の側は従来どおり情報収集が停止中に収集をしない（判断自体が起きない）。本節は合流点の見送りを足しただけで、収集側の挙動は変えていない。
+- 閉場前の手仕舞いの常駐・損切り（S0〜S3）・利用者の手仕舞い・維持率割れの自動縮小は判断の合流点を通らないので、本見送りに巻き込まれない（経路が別であることを確かめた）。
+
+## 日報の無応答時の「停止」で取引判断の全体を見送り、継続・停止とも無応答を知らせる（2026-10-24）
+
+計画の裁定: 無応答時の設定が「停止」で、提示した日報が承認待ちのまま期限（翌営業日の開場）を過ぎたら、取引判断の全体（定時・価格変動・新規建て・出口の判断）を
+見送る。損切り・利用者の手仕舞い・閉場前の手仕舞いは止めない。日報が確定したら自動で再開する。継続・停止のどちらでも無応答を通知する。
+期限は日報の生成境界より後の最初の**米国市場**の開場で数える（日本株は無効）。方針の照会は直近の確定済み日報を返したまま、停止の印を別に載せる
+（null を返すと閉場前の手仕舞いが「方針を読めない」へ倒れて全建玉を手仕舞うため）。
+
+| ID | 受け入れ基準 | テスト |
+| --- | --- | --- |
+| T-10-3054 | （境界の両側）期限の 1 秒前は印なし・期限ちょうどから停止の印。方針は直近の確定済み日報のまま返す | `DailyReportNoResponseTests` |
+| T-10-3055 | （否定形）継続の設定・確定の後・効いている日報の再確定の下書きでは印を立てない。確定すれば印は消え、新しい方針になる。継続の設定では方針の照会が無応答の評価をしない（未確定の行を引かない） | 同上 |
+| T-10-3056 | 期限の暦（境界の表）: 同じ日の 09:30 ET・米国の休場日（振替）は週明け・土曜の日報は月曜・冬時間 | 同上 |
+| T-10-3057 | 無応答の通知は期間キーごとに 1 回（継続・停止とも）。期限の前は出さない。停止か継続か・効いている日報を載せる | 同上 |
+| T-10-3058 | 通知の文面（停止は Critical・継続は Warning）。止めているもの・止めていないもの・確定で戻ることを本文に含む | `NotificationTemplateGoldenTests` |
+| T-10-3059 | 監査の要約から期間キー・期限・停止か継続かが読める | `AuditEntryFactoryTests`・`AuditCycleCompletenessTests`（標本） |
+| T-10-3060 | 見送りの語彙に `DailyReportNoResponseHalted` を末尾へ足した（判断前 12 地点・全 24 値） | `DecisionSkipReasonTests`・`LedgerGapEventsTests`・`DecisionHeldReportTests` |
+| T-10-3061 | 印が立っていれば定時・価格変動の両方で LLM を呼ばずに見送る。日報未確定の通知は鳴らさない | `DailyReportNoResponseHaltTests` |
+| T-10-3062 | （否定形）印が無ければ従来どおり判断する | 同上 |
+| T-10-3063 | 送り手の本物の型（`ConfirmedDailyPolicy`）の直列化から印を読む（REST）・送り手の写しを受け手の写しで読み戻す（gRPC）・印の無い古い送り手は停止していない | 同上 |
+
+変異: 方針の照会の印を常に false にすると、`DailyReportNoResponseTests` の 3 件が赤になった。
+- 🔴 停止の間は、保有中の銘柄の AI 判断による決済も出ない（計画が受け入れたリスク）。閉場前の手仕舞いを有効にしていなければ、建玉は夜間に持ち越され得る。
+- 通知の重複抑止はメモリ内である（再起動を挟むと同じ期間キーで 2 通届き得る）。
+
+## 月次 LLM 費用上限の月を JST の暦月で数える（2026-10-24）
+
+計画の裁定: 月次 LLM 費用上限の「月」は JST の暦月である（毎月 1 日 0:00 JST に累計が 0 へ戻る）。費用統制の費用計上月を JST の年月で求め、
+既存の行は記録の時刻から JST の年月で引き直す。80%・100% の判定・`/costs/state`・取引判断の停止の解除・夜間の要約 §13 は同じ月で答える。
+
+| ID | 受け入れ基準 | テスト |
+| --- | --- | --- |
+| T-10-3064 | （境界の両側）2026-10-31T14:59:59Z の計上は 10 月・15:00:00Z（JST 11/1 0:00）からは 11 月。状態（`/costs/state`）・使用量も JST の月で答え、11 月に入ると延長・停止が解ける | `CostScopeAndUsageTests` |
+| T-10-3065 | （境界の表）月キーは JST の年月（月初の 9 時間・年越し・オフセット付きの入力） | 同上 |
+| T-10-3066 | （監査の相関）LLM 費用発生の監査記録の相関の月も JST の暦月（14:59:59Z は 10 月・15:00:00Z は 11 月） | `AuditEntryFactoryLlmGovernanceTests` |
+| T-10-2025（改め） | 夜間の要約 §13 の月は JST の暦月（月初の夜は新しい月・窓の終端がちょうど JST の月初 0:00 なら前の月） | `nightly-ledger-summary.pg.test.sh` |
+
+変異: 月キーを UTC の年月へ戻すと、費用統制の試験 5 件が赤になった。夜間の要約の月を UTC へ戻すと、§13 の月初の夜の試験が赤になった。監査の相関の月を UTC へ戻すと T-10-3066 が赤になった。
+- 既存の行の引き直し（移行）は、手元の PostgreSQL 16 で上げ（JST）・下げ（UTC）の両方を確かめた（試験としては置いていない）。
+

@@ -242,9 +242,13 @@ public class OrderExecutionServiceIndeterminateDispatchTests
             string clientOrderId, DateTimeOffset reservedAtUtc, CancellationToken ct = default) =>
             Task.FromResult<Infrastructure.ExternalServices.MoomooOrderSnapshot?>(null);
 
+        // #1449, IADR-0576 決定1: 実アダプタは建玉照会の能力を持つので、brokerPositions を渡さない組み立てでも決済の建玉ゲートが効く
+        // （是正前は引数を直接見ていたため外れていた）。決済（Buy＝ショートの買い戻し）が送信まで進むよう、決済方向の建玉を返す。
         public Task<IReadOnlyList<Infrastructure.ExternalServices.MoomooPositionSnapshot>> GetPositionsAsync(
             CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<Infrastructure.ExternalServices.MoomooPositionSnapshot>>([]);
+            Task.FromResult<IReadOnlyList<Infrastructure.ExternalServices.MoomooPositionSnapshot>>(
+                [new Infrastructure.ExternalServices.MoomooPositionSnapshot(
+                    "AAPL", Infrastructure.ExternalServices.MoomooMarket.UnitedStates, -10, 1_000m)]);
 
         public Task<Infrastructure.ExternalServices.MoomooAccountType?> GetAccountTypeAsync(
             CancellationToken ct = default) =>

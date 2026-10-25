@@ -7,6 +7,7 @@ using TradeDecisionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AiStockTrading.Shared.Infrastructure.Composable.Observability;
 using Microsoft.Extensions.Logging;
@@ -44,8 +45,28 @@ public sealed class TradeDecisionAppService(
     IEntryBlockersProvider? entryBlockers = null,
     IStopWidthFloorSource? stopWidthFloor = null,
     IDailyBarsProvider? dailyBars = null,
-    MinimumEntryNotionalOptions? minimumEntryNotional = null)
+    MinimumEntryNotionalOptions? minimumEntryNotional = null,
+    IInFlightCloseProvider? inFlightCloses = null,
+    IMarketCalendar? marketCalendar = null,
+    IHeldSymbolsProvider? holdings = null,
+    ILlmCostHaltGate? costHalt = null)
 {
+    // 🔴 NFR-13, UC-02, #1423 M-5, ADR-0074 決定1・2, IADR-0582: 月次 LLM 費用上限の 100% 到達（Halted）の照会口。
+    // 未指定＝NoOp（常に停止していない＝従来どおり）。本番は Program.cs が CostControl:BaseUrl のときだけ Http を渡す。
+    private readonly ILlmCostHaltGate _costHalt = costHalt ?? new NoOpLlmCostHaltGate();
+
+    // FR-04, FR-10, #1397, IADR-0562 決定 3: プロンプトの「保有中の全銘柄」の供給口。未指定＝節を出さない（従来のプロンプト）。
+    // 本番は DI が保有照会と同じ実装（IHeldSymbolsProvider）を渡す。照会できなければ節は「不明」と書く。
+    private readonly IHeldSymbolsProvider? _holdings = holdings;
+
+    // FR-04, FR-10, #1396, IADR-0561 決定 5: プロンプトの「閉場までの残り時間」の暦。未指定＝共有カーネルの規則計算だけ（構成の臨時休場・臨時の半日を足さない）。
+    // 本番は DI が IMarketCalendar（MarketCalendar）を渡す。
+    private readonly IMarketCalendar? _marketCalendar = marketCalendar;
+
+    // 🔴 FR-04, FR-10, #1338, IADR-0535 決定2・3: 処理中の決済が建玉を覆うかの照会口（発注執行が決済のゲートと同じ判定で答える）。
+    // 未指定＝NoOp（常に不明＝LLM を呼ぶ＝従来どおり）。本番は Program.cs が OrderExecution:BaseUrl のときだけ Http を明示的に渡す。
+    private readonly IInFlightCloseProvider _inFlightCloses = inFlightCloses ?? new NoOpInFlightCloseProvider();
+
     // 🔴 FR-10, #1176, IADR-0495 決定1・2: 新規建ての最小の名目額（equity 比）。未指定＝既定（1%）で**効く**（不在を「統制なし」に
     // しない。IADR-0163 決定2 の規律）。本番は Program.cs が Sizing:MinEntryNotionalRatio から読んで明示的に渡す（範囲外は起動を止める）。
     private readonly MinimumEntryNotionalOptions _minimumEntryNotional =
@@ -187,7 +208,8 @@ public sealed class TradeDecisionAppService(
     // （PR #1080 監査, IADR-0452 決定4）。判定は例外の型ではなく本判断のトークンで行う —— 発行先の内部の打ち切り
     // （無関係な TaskCanceledException 等）まで伝えると、見送りが「判断の失敗」へ化け、見送りの計上が欠ける。
     private async Task<TradeDecisionMade?> SkipJudgedAsync(
-        DecisionTrigger trigger, DecisionSkipReason reason, decimal? judgedPrice, CancellationToken cancellationToken)
+        DecisionTrigger trigger, DecisionSkipReason reason, decimal? judgedPrice, CancellationToken cancellationToken,
+        DecisionReferences? references = null, DailyPolicyReference? policyReference = null)
     {
         if (judgedPrice is { } price)
         {
@@ -196,7 +218,11 @@ public sealed class TradeDecisionAppService(
                 await _heldReporter.ReportAsync(
                     new TradeDecisionHeld(
                         Guid.NewGuid(), trigger.Symbol, trigger.Market, price, reason.ToString(), clock.UtcNow,
-                        trigger.MetricTrigger),
+                        trigger.MetricTrigger,
+                        // FR-06, FR-08, #1356, IADR-0541 決定 1: 見送った判断が見た参考情報（日報 §5 の供給元）。
+                        References: references,
+                        // FR-04, FR-11, ADR-0068 決定4, #1373, IADR-0548 決定5: 見送った判断が参照した方針の期間キーと版。
+                        Policy: policyReference),
                     cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -234,7 +260,7 @@ public sealed class TradeDecisionAppService(
         return Skip(trigger, ToSkipReason(reason));
     }
 
-    // #1092, IADR-0462 決定4: 台帳の語彙（7 値。#1113・#1176・#1174 で 1 値ずつ足した）→ 観測の語彙（DecisionSkipReason）。名前は同じ（試験が固定する）。
+    // #1092, IADR-0462 決定4: 台帳の語彙（#1113・#1176・#1174・#1286・#1338・#1434 で 1 値ずつ足した）→ 観測の語彙（DecisionSkipReason）。名前は同じ（試験が固定する）。
     internal static DecisionSkipReason ToSkipReason(DecisionForgoneBeforeLlmReason reason) => reason switch
     {
         DecisionForgoneBeforeLlmReason.DailyPolicyUnconfirmed => DecisionSkipReason.DailyPolicyUnconfirmed,
@@ -245,6 +271,10 @@ public sealed class TradeDecisionAppService(
         DecisionForgoneBeforeLlmReason.EntryCapacityBelowMinimumNotional => DecisionSkipReason.EntryCapacityBelowMinimumNotional,
         DecisionForgoneBeforeLlmReason.EntryCapacityBelowOneShare => DecisionSkipReason.EntryCapacityBelowOneShare,
         DecisionForgoneBeforeLlmReason.ExitOnlyWithoutHolding => DecisionSkipReason.ExitOnlyWithoutHolding,
+        DecisionForgoneBeforeLlmReason.InFlightCloseCoversPosition => DecisionSkipReason.InFlightCloseCoversPosition,
+        DecisionForgoneBeforeLlmReason.BrokerPositionClosed => DecisionSkipReason.BrokerPositionClosed,
+        DecisionForgoneBeforeLlmReason.LlmCostCapHalted => DecisionSkipReason.LlmCostCapHalted,
+        DecisionForgoneBeforeLlmReason.DailyReportNoResponseHalted => DecisionSkipReason.DailyReportNoResponseHalted,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "LLM を呼ぶ前の見送りの理由ではない"),
     };
 
@@ -286,6 +316,19 @@ public sealed class TradeDecisionAppService(
     {
         ArgumentNullException.ThrowIfNull(trigger);
 
+        // 🔴 NFR-13, FR-02, UC-01, UC-02, #1423 M-5, ADR-0074 決定1・2, IADR-0582: 月次 LLM 費用上限の 100% に達して停止中なら、
+        // **定時・価格変動の両方の判断を LLM の前で見送る**（新規建ても保有中の銘柄の出口の判断も）。合流点の先頭に置くのは、
+        // 以降の照会（方針・サイジング・現在値）も要らず、どの見送りよりも広い理由だからである。
+        // LLM を使わない保護（損切り・利用者の手仕舞い・閉場前の手仕舞い・維持率割れの自動縮小）は本経路を通らないので止まらない。
+        // 照会の失敗は「停止していない」へ倒す（判断を続ける。IADR-0031 と同じ判断）。解除は費用統制の月替わり（費用計上月＝JST の暦月。CostControlAppService.MonthKey・#1461 / IADR-0584）で自動。
+        if (await _costHalt.IsHaltedAsync(cancellationToken).ConfigureAwait(false))
+        {
+            logger.LogInformation("月次 LLM 費用上限の 100% に達して停止中のため、LLM を呼ぶ前に見送ります: {Symbol} trigger={Trigger}",
+                trigger.Symbol, trigger.MetricTrigger);
+            return await SkipBeforeLlmAsync(trigger, DecisionForgoneBeforeLlmReason.LlmCostCapHalted, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         // FR-07: 確定済み日報の方針が無ければ取引しない（確定前方針は不適用）。IADR-0028: 報告書サービスを同期照会（依存先障害は null）。
         var policy = await policyProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         if (policy is null)
@@ -295,6 +338,17 @@ public sealed class TradeDecisionAppService(
             // fail-safe: 通知は取引判断のクリティカルパス外。発行失敗・例外で見送り（null 返却）を壊さない。キャンセルは伝播。
             await NotifyDailyPolicyUnconfirmedSafeAsync(cancellationToken).ConfigureAwait(false);
             return await SkipBeforeLlmAsync(trigger, DecisionForgoneBeforeLlmReason.DailyPolicyUnconfirmed, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // 🔴 FR-07, UC-01, UC-02, UC-03, #1423 M-6, ADR-0075 決定1〜3, IADR-0583 決定3: 無応答時の設定が「停止」で、承認待ちの日報が期限
+        // （翌営業日の米国市場の開場）を過ぎている間は、**取引判断の全体を見送る**（定時・価格変動・新規建て・出口の判断。LLM を呼ばない）。
+        // 方針は直近の確定済み日報のまま届いている（閉場前の手仕舞いはこの印を読まない）。日報を確定すれば次の照会から印が消え、自動で再開する。
+        // 日報未確定の通知（確定済みの日報が無い）は鳴らさない —— 無応答の通知は報告書サービスが期間キーごとに 1 回出す。
+        if (policy.NoResponseHalted)
+        {
+            logger.LogInformation("日報の無応答（停止）のため取引判断を見送ります: {Symbol} trigger={Trigger}", trigger.Symbol, trigger.MetricTrigger);
+            return await SkipBeforeLlmAsync(trigger, DecisionForgoneBeforeLlmReason.DailyReportNoResponseHalted, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -396,24 +450,49 @@ public sealed class TradeDecisionAppService(
         // LLM の結論に依らず新規建ては必ず見送られる（下のサイジングの後の判定）。省くのは #1113 と同じ線引き（保有が既知で 0・未約定が既知で空。
         // この銘柄では LLM の結論は新規の買い〔必ず見送り〕・売り〔裸の新規売りとして必ず見送り〕・Hold しか無い）。資金・残枠が未供給（null）なら
         // 省かない（「分からない」を「届かない」と読まない。従来どおり LLM の後に数量 0 で見送る）。手元の値だけで決まるので照会より先に置く。
+        //
+        // 🔴 FR-10, ADR-0063 決定1〜5, #1291, IADR-0527 決定3・決定4: 1 注文上限は**サイジング・審査と同じ関数**（HighVolatilityOrderCap）で求める。
+        // 高ボラティリティ銘柄（明示指定、または ATR(14) ÷ 現在値 ≥ 4%）は equity の 5%（区分外の上限との小さい方）。ATR は「区分外の上限なら届くが
+        // 区分の上限では届かない」ときだけ、この場で 1 回読む（判断ごとに 1 回の規律は保つ。下のプロンプト・下限の適用は同じ値を使う）。現在値が無い
+        // （LLM の参照価格を使う構成）・ATR が得られない・無効なら自動判定は働かず、明示指定だけで判定する（見送らないだけで、サイジングが同じ上限を掛ける）。
+        StopWidthFloorContext? stopFloor = null;
+        var stopFloorRead = false;
+        var highVolatility = context.EffectiveHighVolatility;
         if (heldPosition is { SignedQuantity: 0 } && workingEntries is { Any: false }
-            && context is { Capital: { } entryEquity, StageCapitalRemaining: { } stageRemaining, DailyOrderRemaining: { } dailyRemaining }
-            && MinimumEntryNotional.CapacityCannotReach(
-                entryEquity,
-                context.Limits.MaxOrderAmountFor(entryEquity),
-                Math.Max(0m, Math.Min(stageRemaining, dailyRemaining)),
-                _minimumEntryNotional.Ratio))
+            && context is { Capital: { } entryEquity, StageCapitalRemaining: { } stageRemaining, DailyOrderRemaining: { } dailyRemaining })
         {
-            logger.LogInformation(
-                "新規建てに使える金額の上限が最小の名目額に届かないため LLM を呼ばずに見送り（保有 0・未約定なし・IADR-0495）: " +
-                "{Symbol} capacity={Capacity} minimum={Minimum} ratio={Ratio}",
-                trigger.Symbol,
-                Math.Min(context.Limits.MaxOrderAmountFor(entryEquity), Math.Max(0m, Math.Min(stageRemaining, dailyRemaining))),
-                MinimumEntryNotional.MinimumFor(entryEquity, _minimumEntryNotional.Ratio),
+            var entryAvailable = Math.Max(0m, Math.Min(stageRemaining, dailyRemaining));
+            bool CannotReach(bool isHighVolatility) => MinimumEntryNotional.CapacityCannotReach(
+                entryEquity,
+                HighVolatilityOrderCap.MaxOrderAmountFor(context.Limits, highVolatility, entryEquity, isHighVolatility),
+                entryAvailable,
                 _minimumEntryNotional.Ratio);
-            return await SkipBeforeLlmAsync(
-                    trigger, DecisionForgoneBeforeLlmReason.EntryCapacityBelowMinimumNotional, cancellationToken)
-                .ConfigureAwait(false);
+
+            var isHighVolatility = highVolatility.IsDesignated(trigger.Symbol, trigger.Market);
+            if (!isHighVolatility && !CannotReach(false) && CannotReach(true)
+                && _stopWidthFloor.IsEnabled && currentPrice is > 0m)
+            {
+                stopFloor = new StopWidthFloorContext(await GetStopWidthFloorSafeAsync(trigger, cancellationToken).ConfigureAwait(false));
+                stopFloorRead = true;
+                isHighVolatility = HighVolatilityOrderCap.IsAutoClassified(stopFloor.Atr14?.Atr, currentPrice.Value);
+            }
+
+            if (CannotReach(isHighVolatility))
+            {
+                logger.LogInformation(
+                    "新規建てに使える金額の上限が最小の名目額に届かないため LLM を呼ばずに見送り（保有 0・未約定なし・IADR-0495・IADR-0527）: " +
+                    "{Symbol} capacity={Capacity} minimum={Minimum} ratio={Ratio} highVolatility={HighVolatility}",
+                    trigger.Symbol,
+                    Math.Min(
+                        HighVolatilityOrderCap.MaxOrderAmountFor(context.Limits, highVolatility, entryEquity, isHighVolatility),
+                        entryAvailable),
+                    MinimumEntryNotional.MinimumFor(entryEquity, _minimumEntryNotional.Ratio),
+                    _minimumEntryNotional.Ratio,
+                    isHighVolatility);
+                return await SkipBeforeLlmAsync(
+                        trigger, DecisionForgoneBeforeLlmReason.EntryCapacityBelowMinimumNotional, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
         // 🔴 FR-10, #1174, IADR-0500 決定1・2: **段階残枠と日次残枠の小さい方が現在値 × 1 株（基準通貨）に満たない銘柄は、LLM を呼ぶ前に見送る。**
@@ -441,6 +520,7 @@ public sealed class TradeDecisionAppService(
         // 省けるのは「保有が既知で 0、かつ未約定の新規建てが既知で空」のときだけである —— この銘柄では LLM の結論は
         // 買いの新規建て（審査で必ず落ちる）か、売り（裸の新規ショートとして NakedShortOpen で必ず見送る）か、Hold しか無い。
         // 保有中・未約定あり・不明の銘柄では照会もしない（決済の判断は必ず残す。IADR-0358 決定 2 と同じ線引き）。
+        // ［#1338, IADR-0535］保有中の銘柄は、処理中の決済が建玉を覆い、どの結論も発注にならないときだけ下で省く（決済の判断を消すのではない）。
         // 可否はリスク管理が審査と同じ述語で答える（規則を判断側に持たない）。照会の失敗・未結線（不明）は LLM を呼ぶ側へ倒す。
         // 🔴 **審査は残す**（両端で止める）。ここで省くのは費用の最適化であって統制ではない。
         // ShortSide は見ない（保有 0 の売りは上のとおり必ず見送られる）。
@@ -465,11 +545,53 @@ public sealed class TradeDecisionAppService(
             : null;
         var addOnBlockers = heldEntryBlockers?.ForEntry(heldPosition!.IsLong ? TradeSide.Buy : TradeSide.Sell);
 
+        // 🔴 FR-04, FR-10, ADR-0050 決定1, #1338, IADR-0535 決定1〜3: **判断由来の決済が処理中のまま建玉を覆い、どの結論も発注にならない銘柄は、
+        // LLM（一次スクリーニングを含む）を呼ぶ前に見送る。** 保有中の銘柄の結論は Hold・決済・買い増し（売り増し）の 3 つしか無い。
+        //   - 決済: 発注執行が「処理中の決済が決済方向の建玉を覆う」と答えた（ゲートと同じ関数。送れば InFlightCloseCoversPosition で見送る）。
+        //   - 買い増し（処理中の決済と**逆方向**の判断）: LLM の後で必ず見送られると分かっているときだけ（AddOnKnownForgone）。分からなければ
+        //     LLM を呼ぶ（逆方向の判断を塞がない）。覆わない（部分。建玉を超える残りの決済が出せる）・不明・照会の失敗も LLM を呼ぶ。
+        // 照会はブローカーへの往復を伴い得るので、手元の値で決まる買い増しの判定を先に置く（成り立たなければ照会しない）。
+        // 🔴 **ゲートは残す**（両端で止める）。ここで省くのは費用の最適化であって統制ではない。
+        //
+        // 🔴 FR-04, FR-10, #1434, IADR-0572 決定2: **判断由来の決済が約定した直後**（発注執行がブローカーの決済方向の建玉を 0 と観測した）も同じ形で省く。
+        // 判断の保有（プロンプト・LLM の後の Sell の関所）の読み元はどちらも台帳（リスク管理の open-positions）であり、約定追跡（30 秒周期）が約定を
+        // 書いて射影が届くまで遅れる。この照会はその間にブローカーを直接見ている唯一の読み元である（HOOD 2026-10-21: 照会は建玉 0 を観測したのに
+        // NotCovered を「LLM を呼ぶ」と読み、一次・二次を呼んだ後に台帳が追いついて held=0 で見送った）。建玉 0 なら決済の結論は発注執行の決済のゲート
+        // （建玉なし）が見送る。不明（null・照会していない・旧い送り手）・建玉が正は従来どおり LLM を呼ぶ。
+        if (heldPosition is { SignedQuantity: not 0 } inFlightHeld
+            && AddOnKnownForgone(trigger, fxReading, workingEntries, addOnBlockers, context, currentPrice, rateToBase)
+            && await GetInFlightCloseSafeAsync(
+                    trigger, inFlightHeld.IsLong ? TradeSide.Sell : TradeSide.Buy, cancellationToken).ConfigureAwait(false)
+                is { } coverage)
+        {
+            if (coverage.Covered)
+            {
+                logger.LogInformation(
+                    "判断由来の決済が処理中のまま建玉を覆い、買い増しも必ず見送られるため LLM を呼ばずに見送り（ゲートは不変・IADR-0535）: " +
+                    "{Symbol} held={Held} inFlight={InFlight} orders={OrderIds}",
+                    trigger.Symbol, inFlightHeld.SignedQuantity, coverage.InFlightQuantity, string.Join(",", coverage.OrderIds));
+                return await SkipBeforeLlmAsync(
+                        trigger, DecisionForgoneBeforeLlmReason.InFlightCloseCoversPosition, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (coverage.BrokerClosableQuantity == 0)
+            {
+                logger.LogInformation(
+                    "ブローカーの決済方向の建玉が 0（決済の約定の直後で台帳が未反映）で、買い増しも必ず見送られるため LLM を呼ばずに見送り" +
+                    "（ゲートは不変・IADR-0572）: {Symbol} held={Held}",
+                    trigger.Symbol, inFlightHeld.SignedQuantity);
+                return await SkipBeforeLlmAsync(
+                        trigger, DecisionForgoneBeforeLlmReason.BrokerPositionClosed, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
         // FR-08, IADR-0072: 収集情報・判断根拠を KB から RAG 取得して判断文脈に加える（既定＝空＝文脈なし＝現行動作）。
         // fail-safe: 取得は判断のクリティカルパス外。例外・遅延で判断を止めないよう、失敗は「文脈なし」に縮退する
         //（#18 アダプタ自体も fail-safe だが、独自アダプタ差し替え時の保険として判断境界でも握る）。
         // FR-08, FR-11, #1283: 取得の状態（成功・失敗・未構成）も受け取り、失敗は Warning、状態は判断の記録（下の「LLM 判断」）へ残す。
-        var (retrieved, ragContext) = await RetrieveContextSafeAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
+        var (retrieved, ragContext, ragDegraded) = await RetrieveContextSafeAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
 
         // 🔴 FR-04, FR-02, #1034, IADR-0440 決定 2/6: 判断時点の監視銘柄（権威源＝市場監視から読めた一覧）。null＝不明
         // （プロンプトは「不明」と明示し、「ウォッチリストなし」「この銘柄は対象外」とは書かない）。**読めないことでは見送らない**
@@ -495,14 +617,26 @@ public sealed class TradeDecisionAppService(
         // 同じ値をプロンプト（ATR と下限の行）・下限の適用・発注意図の印・監査へ使う（プロンプトと適用で値が食い違わない）。
         // **無効（既定）なら読まない**（要求 0 回・プロンプトは従来のまま・下限は参照価格の 2%）。見送りの判定の後に読む（出来高と同じ位置。
         // 日足は出来高と同じ口・同じキャッシュ）。**得られないことで判断を止めない**（2% へ退避する）。
-        var stopFloor = _stopWidthFloor.IsEnabled
-            ? new StopWidthFloorContext(await GetStopWidthFloorSafeAsync(trigger, cancellationToken).ConfigureAwait(false))
-            : null;
+        // #1291, IADR-0527 決定4: LLM の前の見送りの判定で既に読んだときは読み直さない（判断ごとに 1 回）。
+        if (_stopWidthFloor.IsEnabled && !stopFloorRead)
+        {
+            stopFloor = new StopWidthFloorContext(await GetStopWidthFloorSafeAsync(trigger, cancellationToken).ConfigureAwait(false));
+        }
+
+        // 🔴 FR-04, FR-10, #1396, IADR-0561 決定 5: 市場の現地時刻と閉場までの残り時間（本判断・一次の両方へ同じ値）。閉場は市場カレンダー
+        // （未指定なら共有カーネルの規則計算）。時刻は判断の瞬間の 1 回だけ読む。
+        var marketClockNow = clock.UtcNow;
+        var marketClock = new MarketClockContext(
+            trigger.Market, marketClockNow,
+            _marketCalendar?.SessionClose(trigger.Market, marketClockNow) ?? MarketHours.SessionCloseOn(trigger.Market, marketClockNow));
+
+        // 🔴 FR-04, FR-10, #1397, IADR-0562 決定 3: 保有中の全銘柄（本判断・一次の両方へ同じ値）。照会の失敗は不明（判断は止めない）。
+        var portfolio = _holdings is null ? null : new PortfolioHoldingsContext(await GetHoldingsSafeAsync(cancellationToken).ConfigureAwait(false));
 
         var decisionPrompt = TradeDecisionPromptBuilder.Build(
             trigger, policy, context, retrieved, includeProfitability: _profitabilityOptions.Enabled,
             currentPrice: currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist, intraday: intraday,
-            news: news, volume: volume, addOnBlockers: addOnBlockers, stopFloor: stopFloor);
+            news: news, volume: volume, addOnBlockers: addOnBlockers, stopFloor: stopFloor, marketClock: marketClock, portfolio: portfolio);
 
         // #337, IADR-0247: 縮退制御が有効（スクリーニング有効かつ予算設定）なときだけ、スクリーニング入力
         // （方針・市況＝保護、RAG・ニュース＝削減可）へ縮退順序 ①分割→②RAG→③ニュース を適用する。
@@ -520,10 +654,10 @@ public sealed class TradeDecisionAppService(
             () => screening is null
                 ? TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist,
-                    intraday: intraday, news: news, volume: volume, addOnBlockers: addOnBlockers)
+                    intraday: intraday, news: news, volume: volume, addOnBlockers: addOnBlockers, marketClock: marketClock, portfolio: portfolio)
                 : TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, screening.RetainedReferences, heldPosition, workingEntries,
-                    watchlist, intraday, news, volume, addOnBlockers),
+                    watchlist, intraday, news, volume, addOnBlockers, marketClock, portfolio),
             decisionPrompt,
             // 🔴 FR-04, FR-10, #1187, IADR-0248: 二次本判断の解釈へ、プロンプトへ渡したのと同じ保有（null＝不明）を渡す。
             // 保有を決済する売買（ロング保有中の Sell・ショート保有中の Buy）では損切り幅を任意にする（決済は保有全量で損切り幅を
@@ -533,6 +667,11 @@ public sealed class TradeDecisionAppService(
             cancellationToken)
             .ConfigureAwait(false);
         var decision = orchestrated.Decision;
+
+        // FR-06, FR-08, FR-11, #1356, IADR-0541 決定 1: この判断のプロンプトが**実際に見た**参考情報を判断の記録（Made・Held）へ残す。
+        // 本判断が走ったなら注入した全件、一次で見送ったなら一次に渡した分（縮退制御が無ければ一次は参考情報を持たない＝空）。
+        var seenReferences = DecisionReferenceRecord.From(
+            ragContext, orchestrated.ScreenedOut ? screening?.RetainedReferences ?? [] : retrieved);
 
         // #337, IADR-0247: 縮退（分割・切り詰め・解消不能な超過）が発生したら記録する（planning#53 の裁定・
         // 月報の件数記載）。fail-safe: 記録は判断のクリティカルパス外。発行失敗で判断を壊さない。キャンセルは伝播。
@@ -544,6 +683,7 @@ public sealed class TradeDecisionAppService(
         // FR-11: プロンプト・LLM 出力・根拠・票数・スクリーニング可否を記録する（永続監査は #17 連携）。
         // #337（#290 吸収）, IADR-0248: 解析不能（unparseableVotes / screeningUnparseable）は見送りと区別して残す。
         // FR-08, FR-11, #1283, IADR-0072: 参考情報（RAG）の取得の状態と注入した件数も残す（取得の失敗と「本当に無い」を後から区別する）。
+        // FR-08, FR-11, #1311: 基盤の検索の縮退の印（ragDegraded）も残す（縮退した検索に基づく判断を見分ける）。
         // 🔴 FR-11, #1290, IADR-0525 決定 3: 一次の根拠文の文字化けの疑い（オーケストレータが受け取った地点で 1 回だけ検出した印）を残す。
         // 見送り（screenedOut=true）の rationale は一次の根拠文で、疑いがあれば目印が前置済み（ここで検出し直さない）。
         // #1290, IADR-0525 決定 4: 本判断の根拠文の疑い（decisionRationaleGarble）も同じく残す。本判断の根拠文は目印が前置済みのまま
@@ -551,12 +691,12 @@ public sealed class TradeDecisionAppService(
         logger.LogInformation(
             "LLM 判断: {Symbol} action={Action} rationale={Rationale} votes={Agreement}/{Total} screenedOut={ScreenedOut} "
                 + "unparseableVotes={UnparseableVotes} screeningUnparseable={ScreeningUnparseable} "
-                + "ragContext={RagContext} ragReferences={RagReferences} screeningRationaleGarble={ScreeningRationaleGarble} "
+                + "ragContext={RagContext} ragReferences={RagReferences} ragDegraded={RagDegraded} screeningRationaleGarble={ScreeningRationaleGarble} "
                 + "decisionRationaleGarble={DecisionRationaleGarble}",
             trigger.Symbol, decision.Action, decision.Rationale,
             orchestrated.AgreementVotes, orchestrated.TotalVotes, orchestrated.ScreenedOut,
             orchestrated.UnparseableVotes, orchestrated.ScreeningUnparseable,
-            ragContext, retrieved.Count, orchestrated.ScreeningRationaleGarbleSuspected,
+            ragContext, retrieved.Count, ragDegraded, orchestrated.ScreeningRationaleGarbleSuspected,
             orchestrated.DecisionRationaleGarbleSuspected);
 
         // 🔴 UC-02, FR-03, #1077, IADR-0452 決定1: ここから先の見送りは AI 判断の後である（基準点になる）。
@@ -564,7 +704,7 @@ public sealed class TradeDecisionAppService(
 
         if (decision.Action == TradeAction.Hold)
         {
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.LlmHold, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.LlmHold, judgedPrice, cancellationToken, seenReferences, policy.Reference)
                 .ConfigureAwait(false); // 見送り
         }
 
@@ -596,7 +736,7 @@ public sealed class TradeDecisionAppService(
                     "保有状況が不明なため新規建てを見送る（照会先は結線済み・手仕舞いは止めない・IADR-0358）: " +
                     "{Symbol} side={Side}",
                     trigger.Symbol, side);
-                return await SkipJudgedAsync(trigger, DecisionSkipReason.HoldingsUnknownOpen, judgedPrice, cancellationToken)
+                return await SkipJudgedAsync(trigger, DecisionSkipReason.HoldingsUnknownOpen, judgedPrice, cancellationToken, seenReferences, policy.Reference)
                     .ConfigureAwait(false);
             }
 
@@ -605,7 +745,7 @@ public sealed class TradeDecisionAppService(
             logger.LogInformation(
                 "保有建玉が無い、または不明な売り判断のため見送り（裸の新規売りを出さない・IADR-0119）: {Symbol} held={Held}",
                 trigger.Symbol, heldQuantity.HasValue ? heldQuantity.Value : "不明");
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.NakedShortOpen, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.NakedShortOpen, judgedPrice, cancellationToken, seenReferences, policy.Reference)
                 .ConfigureAwait(false);
         }
 
@@ -617,7 +757,7 @@ public sealed class TradeDecisionAppService(
             logger.LogInformation(
                 "監視銘柄の外の保有銘柄への新規建ては出さない（出口専用の判断・決済は対象外・IADR-0521）: {Symbol} side={Side} effect={Effect}",
                 trigger.Symbol, side, effect.Effect);
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.ExitOnlyOpenOutsideWatchlist, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.ExitOnlyOpenOutsideWatchlist, judgedPrice, cancellationToken, seenReferences, policy.Reference)
                 .ConfigureAwait(false);
         }
 
@@ -631,7 +771,7 @@ public sealed class TradeDecisionAppService(
                 "{Symbol} side={Side}",
                 trigger.Symbol, side);
             // 🔴 PR #940 監査, IADR-0374: 見送りは唯一の出口 Skip を通す（素の null は decision_skips にもアラートにも出ない）。
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.WorkingEntriesUnknownOpen, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.WorkingEntriesUnknownOpen, judgedPrice, cancellationToken, seenReferences, policy.Reference)
                 .ConfigureAwait(false);
         }
 
@@ -645,7 +785,7 @@ public sealed class TradeDecisionAppService(
                 "買い増し・売り増しが審査で必ず拒否されるため Hold に倒す（LLM の結論を発注しない・決済は対象外・審査は不変・IADR-0471）: " +
                 "{Symbol} side={Side} reasons={Reasons}",
                 trigger.Symbol, side, string.Join(",", addOnReasons));
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.AddOnBlockedByRiskControls, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.AddOnBlockedByRiskControls, judgedPrice, cancellationToken, seenReferences, policy.Reference)
                 .ConfigureAwait(false);
         }
 
@@ -658,7 +798,7 @@ public sealed class TradeDecisionAppService(
             logger.LogInformation(
                 "参照価格が不正のため見送り: {Symbol} referencePrice={ReferencePrice}",
                 trigger.Symbol, referencePrice);
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.ReferencePriceInvalid, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.ReferencePriceInvalid, judgedPrice, cancellationToken, seenReferences, policy.Reference)
                 .ConfigureAwait(false);
         }
 
@@ -677,7 +817,7 @@ public sealed class TradeDecisionAppService(
                 "換算レートが鮮度切れのため新規建てを見送る（手仕舞いは止めない・ADR-0022 決定5）: " +
                 "{Symbol} effect={Effect} asOf={AsOf}",
                 trigger.Symbol, effect.Effect, fxReading.Rate.AsOf);
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.FxRateStaleOpen, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.FxRateStaleOpen, judgedPrice, cancellationToken, seenReferences, policy.Reference)
                 .ConfigureAwait(false);
         }
 
@@ -711,7 +851,11 @@ public sealed class TradeDecisionAppService(
             // NFR-01, NFR-02, #689, IADR-0307: 取引サイクルの起点を下流（承認・発注・記録）へ運ぶ。
             return new TradeDecisionMade(
                 Guid.NewGuid(), closeIntent, ReconcileRationale(trigger, decision.Rationale, effect.CloseQuantity), clock.UtcNow,
-                trigger.MetricTrigger, trigger.CycleStartedAt);
+                trigger.MetricTrigger, trigger.CycleStartedAt,
+                // FR-06, FR-08, #1356, IADR-0541 決定 1: この判断が見た参考情報（日報 §5 の供給元）。
+                References: seenReferences,
+                // FR-04, FR-11, ADR-0068 決定4, #1373, IADR-0548 決定5: この判断が参照した方針の期間キーと版。
+                Policy: policy.Reference);
         }
 
         // 以降は新規建て（Open）の従来経路。IADR-0035 の不変量（損切り幅は参照価格より小さく正）を権威価格に対して
@@ -722,7 +866,7 @@ public sealed class TradeDecisionAppService(
             logger.LogInformation(
                 "損切り幅が不正、または現在値以上のため見送り: {Symbol} referencePrice={ReferencePrice} stopLossDistance={StopLossDistance}",
                 trigger.Symbol, referencePrice, decision.StopLossDistancePerShare);
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.StopLossDistanceInvalid, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.StopLossDistanceInvalid, judgedPrice, cancellationToken, seenReferences, policy.Reference)
                 .ConfigureAwait(false);
         }
 
@@ -740,7 +884,7 @@ public sealed class TradeDecisionAppService(
                 "損切り幅の下限が現在値以上のため見送り（下限を割って縮めない・IADR-0465）: {Symbol} referencePrice={ReferencePrice} "
                     + "stopWidthFloor={StopWidthFloor} floorSource={FloorSource}",
                 trigger.Symbol, referencePrice, stopWidth.FloorPerShare, stopWidth.FloorSource);
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.StopLossDistanceInvalid, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.StopLossDistanceInvalid, judgedPrice, cancellationToken, seenReferences, policy.Reference)
                 .ConfigureAwait(false);
         }
 
@@ -757,21 +901,28 @@ public sealed class TradeDecisionAppService(
         var capital = context.Capital ?? 0m;
         var availableCapital = Math.Max(
             0m, Math.Min(context.StageCapitalRemaining ?? 0m, context.DailyOrderRemaining ?? 0m));
+        // 🔴 FR-10, ADR-0063 決定1〜5, #1291, IADR-0527 決定1・決定3: 高ボラティリティ銘柄の区分（明示指定、または ATR(14) ÷ 参照価格 ≥ 4%）。
+        // ATR と参照価格はどちらもローカル通貨（比は通貨に依らない）。ATR はプロンプトの前に読んだ値（無効・得られないときは null＝明示指定だけ）。
+        // 同じ ATR を発注意図に載せ、審査が同じ関数で同じ区分・同じ上限を求める。
+        var atr14 = stopFloor?.Atr14?.Atr;
+        var isHighVolatilityEntry = HighVolatilityOrderCap.IsHighVolatility(
+            highVolatility, trigger.Symbol, trigger.Market, atr14, referencePrice);
         var quantity = PositionSizer.CalculateCappedQuantity(
             capital,
             context.Limits.PerTradeRiskRatio,
             stopLossDistanceBase,
             referencePriceBase,
             // FR-10, #329, IADR-0130 決定1: 1 注文金額上限は equity 比のため equity（context.Capital）から解決する。
-            // 「1 取引リスク 1%」と「1 注文 25%」のどちらが厳しいかは CalculateCappedQuantity が min で採る。
-            context.Limits.MaxOrderAmountFor(capital),
+            // 「1 取引リスク 1%」と「1 注文 25%（区分の銘柄は 5% との小さい方。#1291）」のどちらが厳しいかは CalculateCappedQuantity が min で採る。
+            HighVolatilityOrderCap.MaxOrderAmountFor(context.Limits, highVolatility, capital, isHighVolatilityEntry),
             availableCapital,
             sizeFactor);
 
         if (quantity <= 0)
         {
-            logger.LogInformation("サイジングで数量 0 のため見送り: {Symbol}", trigger.Symbol);
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.SizingZeroQuantity, judgedPrice, cancellationToken)
+            logger.LogInformation(
+                "サイジングで数量 0 のため見送り: {Symbol} highVolatility={HighVolatility}", trigger.Symbol, isHighVolatilityEntry);
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.SizingZeroQuantity, judgedPrice, cancellationToken, seenReferences, policy.Reference)
                 .ConfigureAwait(false);
         }
 
@@ -786,7 +937,7 @@ public sealed class TradeDecisionAppService(
                 "minimum={Minimum} ratio={Ratio}",
                 trigger.Symbol, quantity, notionalBase,
                 MinimumEntryNotional.MinimumFor(capital, _minimumEntryNotional.Ratio), _minimumEntryNotional.Ratio);
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.SizedBelowMinimumNotional, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.SizedBelowMinimumNotional, judgedPrice, cancellationToken, seenReferences, policy.Reference)
                 .ConfigureAwait(false);
         }
 
@@ -798,7 +949,7 @@ public sealed class TradeDecisionAppService(
             !await IsProfitableAsync(
                 trigger, decision, referencePriceBase, rateToBase, quantity, cancellationToken).ConfigureAwait(false))
         {
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.ProfitabilityNotViable, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.ProfitabilityNotViable, judgedPrice, cancellationToken, seenReferences, policy.Reference)
                 .ConfigureAwait(false); // 採算不成立・見積り不能（安全側で見送り）
         }
 
@@ -812,6 +963,18 @@ public sealed class TradeDecisionAppService(
         // FR-10, FR-04, #1104, IADR-0460 決定1〜3, #1120, IADR-0465 決定3: 損切り幅の観測（ログ。判断を変えない）。
         // AI の幅の傾向（比率・日中の値幅に対する倍率）と、下限・出所・適用した幅・広げたかを並べて出す。
         LogStopWidth(trigger, side, quantity, decision, referencePrice, intraday, stopWidth, stopLossPrice, stopFloor);
+
+        // FR-04, FR-10, FR-11, #1384, IADR-0558 決定 3: 建てた条件の記号と基準価格を検証して発注意図に載せる（台帳の承認行へ永続化され、
+        // 保有中の判断へ建玉ごとに渡る）。🔴 記録だけであり、通らない値は「不明」として記録する（見送りにしない）。
+        var entryBasis = EntryBasisValidator.Validate(
+            policy.Summary, decision.EntryConditionAnswer, decision.EntryReferencePriceAnswer, intraday, currentPrice, trigger);
+        if (entryBasis.Reason is { } entryBasisReason)
+        {
+            logger.LogInformation(
+                "建てた条件の記録の一部または全部を不明として記録（見送りにしない・IADR-0558）: {Symbol} reason={Reason} "
+                    + "entryCondition={EntryCondition} entryReferencePrice={EntryReferencePrice}",
+                trigger.Symbol, entryBasisReason, decision.EntryConditionAnswer, decision.EntryReferencePriceAnswer);
+        }
 
         // IADR-0004: 発注意図には PositionEffect を必ず設定する。ここへ到達するのは新規建て（Open）のみで、
         // 決済（Close）は上で確定済み（#292, IADR-0119）。
@@ -830,13 +993,21 @@ public sealed class TradeDecisionAppService(
             rateToBase,
             // 🔴 FR-10, ADR-0049 決定1, #1122, IADR-0486 決定5: このラインを下限を掛けてから引いた印（出所）。発注執行が発注結果の記録と
             // 予約の行に残し、既存の S1 への下限の遡及（IADR-0472）がこの行を広げない（ATR の下限は参照価格の 2% より狭いことがある）。
-            StopFloorSource: stopWidth.FloorSource);
+            StopFloorSource: stopWidth.FloorSource,
+            // 🔴 FR-10, ADR-0063 決定1, #1291, IADR-0527 決定3: 区分の自動判定に使った ATR(14)（ローカル通貨）。審査が同じ関数で同じ区分を求める。
+            // null＝ATR が得られない・無効（審査は明示指定だけで判定する）。
+            Atr14: atr14,
+            EntryBasis: entryBasis.Basis);
 
         // NFR-01, NFR-02, #689, IADR-0307: 取引サイクルの起点を下流（承認・発注・記録）へ運ぶ。
         // FR-10, FR-11, ADR-0049 決定3, #1120, IADR-0465 決定2: 下限を掛けた結果を監査台帳へ残す（判断の記録に載せる）。
         return new TradeDecisionMade(
             Guid.NewGuid(), intent, ReconcileRationale(trigger, decision.Rationale, quantity), clock.UtcNow,
-            trigger.MetricTrigger, trigger.CycleStartedAt, stopWidth);
+            trigger.MetricTrigger, trigger.CycleStartedAt, stopWidth,
+            // FR-06, FR-08, #1356, IADR-0541 決定 1: この判断が見た参考情報（日報 §5 の供給元）。
+            References: seenReferences,
+            // FR-04, FR-11, ADR-0068 決定4, #1373, IADR-0548 決定5: この判断が参照した方針の期間キーと版。
+            Policy: policy.Reference);
     }
 
     // FR-10, ADR-0049 決定2, #1120, IADR-0465 決定1, #1122, IADR-0486 決定2: 下限の供給口を読む（fail-safe）。例外（キャンセルを除く）は
@@ -976,6 +1147,69 @@ public sealed class TradeDecisionAppService(
         await ReportHoldingsQueryAsync(PositionQuerySource.TradeDecisionWorkingEntries, working is not null)
             .ConfigureAwait(false);
         return working;
+    }
+
+    // 🔴 FR-04, FR-10, #1338, IADR-0535 決定1: 保有中の銘柄の**買い増し・売り増し**（保有の方向の新規建て）が、LLM の後で**必ず**見送られると
+    // LLM の前に分かるか。どれも LLM の後の見送りと同じ条件・同じ関数であり、ここで新しい規則を作らない（成り立たなければ false＝LLM を呼ぶ）。
+    //   - 出口専用（ExitOnlyOpenOutsideWatchlist）／換算レートが新規建てに使えない（FxRateStaleOpen）／実結線で未約定の新規建てが不明
+    //     （WorkingEntriesUnknownOpen）／その方向の新規建てが審査で必ず拒否される（AddOnBlockedByRiskControls。IADR-0471）
+    //   - 段階残枠・日次残枠の小さい方が現在値 × 1 株に満たない（サイジングは必ず数量 0。IADR-0500 と同じ PositionSizer.CannotAffordOneShare）
+    //   - 新規建てに使える金額の上限が最小の名目額に届かない（IADR-0495 と同じ MinimumEntryNotional.CapacityCannotReach）。1 注文上限は
+    //     区分外（大きい方）で比べる——区分外でも届かなければ区分の銘柄でも届かない（IADR-0527。ATR を読まずに済む）。
+    private bool AddOnKnownForgone(
+        DecisionTrigger trigger, FxRateReading fxReading, WorkingEntryOrders? workingEntries,
+        IReadOnlyList<RejectionReason>? addOnBlockers, SizingContext context, decimal? currentPrice, decimal rateToBase)
+    {
+        if (trigger.ExitOnly || !fxReading.UsableForEntry
+            || (_heldPosition.IsEnabled && workingEntries is null)
+            || addOnBlockers is { Count: > 0 })
+        {
+            return true;
+        }
+
+        if (context is not { StageCapitalRemaining: { } stageRemaining, DailyOrderRemaining: { } dailyRemaining })
+            return false;
+
+        var available = Math.Max(0m, Math.Min(stageRemaining, dailyRemaining));
+        if (currentPrice is > 0m && PositionSizer.CannotAffordOneShare(available, currentPrice.Value * rateToBase))
+            return true;
+
+        return context.Capital is { } equity
+            && MinimumEntryNotional.CapacityCannotReach(
+                equity,
+                HighVolatilityOrderCap.MaxOrderAmountFor(context.Limits, context.EffectiveHighVolatility, equity, false),
+                available,
+                _minimumEntryNotional.Ratio);
+    }
+
+    // 🔴 FR-04, FR-10, #1338, IADR-0535 決定3: 処理中の決済の照会（fail-safe ラッパ）。例外・キャンセル以外の失敗は **null（不明）**に縮退する
+    // （＝LLM を呼ぶ。見送らない）。不明を「覆う」と読むと、照会が落ちている間すべての保有銘柄の決済（損切り）の判断を止める。キャンセルは伝える。
+    private async Task<InFlightCloseCoverage?> GetInFlightCloseSafeAsync(
+        DecisionTrigger trigger, TradeSide closeSide, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _inFlightCloses.GetAsync(trigger.Symbol, trigger.Market, closeSide, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "処理中の決済の照会に失敗しました（不明として扱い LLM を呼びます）: {Symbol}", trigger.Symbol);
+            return null;
+        }
+    }
+
+    // FR-04, FR-10, #1397, IADR-0562 決定 3: 保有中の全銘柄の照会（fail-safe）。例外（キャンセルを除く）は null（＝不明）。
+    private async Task<IReadOnlyList<HeldHolding>?> GetHoldingsSafeAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _holdings!.GetHoldingsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "保有中の全銘柄の照会で例外。プロンプトは「不明」と書きます。");
+            return null;
+        }
     }
 
     // 🔴 FR-10, FR-04, #1113, IADR-0463 決定 4: 新規建ての可否の照会（fail-safe ラッパ）。例外・キャンセル以外の失敗は
@@ -1213,7 +1447,11 @@ public sealed class TradeDecisionAppService(
     // FR-08, FR-11, #1283, IADR-0072 決定4: 縮退（失敗でも判断を止めず、取得できた分だけ／文脈なしで続ける）は変えない。
     // **失敗を黙って「文脈なし」に見せない**: 取得の失敗は 1 判断 1 行の Warning（銘柄・市場・起点・原因・失敗の本数。本文は出さない）、
     // 状態は判断の記録へ ragContext として返す（retrieved / empty / failed / not-configured）。空（検索は成功して 0 件）は Warning を出さない。
-    private async Task<(IReadOnlyList<RetrievedContext> Contexts, string RagContext)> RetrieveContextSafeAsync(
+    // FR-08, FR-11, #1311, IADR-0072（2026-10-15 追記）: 基盤の検索の縮退の印（MSP#1871）を判断の記録へ残す。成功で縮退なら
+    // ragContext を retrieved-degraded / empty-degraded にし、ragDegraded（unknown / none / 理由の符号）を添え、1 判断 1 行の Warning を出す。
+    // 🔴 empty-degraded（特に embed-failed の 0 件）は「該当なし」ではない可能性が高い（基盤は鍵が無い間 internal の報告書を索引しない。MSP#1908）。
+    // 失敗は縮退より優先する（failed の Warning が 1 行出るので、縮退の Warning は重ねない）。印の無い旧い基盤は従来の値＋ragDegraded=unknown。
+    private async Task<(IReadOnlyList<RetrievedContext> Contexts, string RagContext, string RagDegraded)> RetrieveContextSafeAsync(
         DecisionTrigger trigger, DailyPolicy policy, CancellationToken cancellationToken)
     {
         RetrievalResult result;
@@ -1226,23 +1464,45 @@ public sealed class TradeDecisionAppService(
             // 例外のメッセージは構造化の値へ載せない（原因は型名だけ）。スタックは従来どおり例外として添える。
             result = new RetrievalResult([], RetrievalStatus.Failed, $"exception:{ex.GetType().Name}");
             LogRetrievalFailure(trigger, result, ex);
-            return ([], RagContextFailed);
+            return ([], RagContextFailed, RagDegradedUnknown);
         }
 
         if (result.Status == RetrievalStatus.Failed)
             LogRetrievalFailure(trigger, result, exception: null);
 
         var contexts = FilterBySource(result.Contexts, trigger);
+        var degraded = result.Status == RetrievalStatus.Succeeded && result.Degraded == true;
         var ragContext = result.Status switch
         {
             RetrievalStatus.Failed => RagContextFailed,
             RetrievalStatus.NotConfigured => "not-configured",
-            _ => contexts.Count > 0 ? "retrieved" : "empty",
+            _ => (contexts.Count > 0 ? "retrieved" : "empty") + (degraded ? RagContextDegradedSuffix : string.Empty),
         };
-        return (contexts, ragContext);
+        var ragDegraded = RagDegradedOf(result);
+
+        if (degraded)
+        {
+            logger.LogWarning(
+                "RAG の参考情報の検索が縮退しました（劣化した検索結果で判断を継続。0 件は該当なしとは限らない）: "
+                    + "{Symbol} market={Market} trigger={Trigger} reasons={Reasons} retrieved={Retrieved}",
+                trigger.Symbol, trigger.Market, trigger.MetricTrigger, ragDegraded, contexts.Count);
+        }
+
+        return (contexts, ragContext, ragDegraded);
     }
 
     private const string RagContextFailed = "failed";
+    private const string RagContextDegradedSuffix = "-degraded";
+    private const string RagDegradedUnknown = "unknown";
+
+    // FR-08, FR-11, #1311: 判断の記録の ragDegraded。null＝unknown（印が無い・取得していない）、false＝none、true＝理由のカンマ区切り
+    // （理由が無ければ unspecified）。理由は検索アダプタで符号の形を確かめた語だけ（本文・例外メッセージを含まない）。
+    private static string RagDegradedOf(RetrievalResult result) => result.Degraded switch
+    {
+        null => RagDegradedUnknown,
+        false => "none",
+        true => result.DegradedReasons.Count > 0 ? string.Join(',', result.DegradedReasons) : "unspecified",
+    };
 
     private void LogRetrievalFailure(DecisionTrigger trigger, RetrievalResult result, Exception? exception) =>
         logger.LogWarning(

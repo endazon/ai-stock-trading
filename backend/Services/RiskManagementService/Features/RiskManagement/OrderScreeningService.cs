@@ -2,6 +2,8 @@ using RiskManagementService.Common.Abstractions;
 using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
+using Microsoft.Extensions.Logging;
 
 namespace RiskManagementService.Features.RiskManagement;
 
@@ -27,6 +29,22 @@ namespace RiskManagementService.Features.RiskManagement;
 // 安全側ではあるが、10% / 50% の上限が**一度も評価されない状態**（#967 の起点）へ黙って戻る——省略可能にしない。
 // 供給元（借株可否の照会）はネットワークを渡るため審査は非同期（ScreenAsync）であり、**同期の入口は持たない**
 // （供給元を通らない審査の経路を作らない）。
+//
+// 🔴 FR-10, FR-20, ADR-0016 決定9, #1319, IADR-0529: **新規建ての審査は直列化し、承認したら同じ臨界区間で予約を書く**
+// （entryReservations。必須依存——不在は「定時サイクルの同時到着で上限をすり抜ける」穴そのものであり、IADR-0163 決定2）。
+// 定時サイクルの判断 N 件は同時に届き、承認行は OrderApproved の往復の後にしか書かれないため、予約が無いと N 件すべてが
+// 同じ古い snapshot で保有建玉数・日次発注累計・段階資金を通る（PoC 2026-10-12 に 6 建玉の疑い）。
+// **手仕舞い（Close）は直列化しない・予約しない**（ADR-0009。新規建ての審査の待ちで手仕舞いを遅らせない）。
+//
+// 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: **閉場前の新規建ての締め切り（preCloseCutoff）も必須依存である。** 省略可能にすると、
+// Program.cs から外しても試験が緑のまま締め切りだけが静かに効かなくなる（IADR-0163 決定2）。閉場は共有カーネルの MarketHours（取引判断・
+// 市場監視と同じ暦。休場日・半日取引日の規則計算）から求める。
+//
+// 🔴 FR-10, FR-19, #1397, IADR-0562 決定 2: **テーマごとの同時保有の上限の定義（themes）も必須依存である**（同じ理由）。入力は snapshot の
+// 保有中 ∪ 未約定の新規建て（予約を含む）の銘柄であり、新規建ての審査は直列化されている（IADR-0529）ので、同時に届いた同じ集まりの判断も 1 件しか通らない。
+//
+// 🔴 SC-02, #1407, IADR-0564 決定 2: 上の 2 つは**構成の値**（configuredControls）として必須依存で受け、審査のたびに設定行の保存値と突き合わせて
+// 効く値を解決する（保存値があれば保存値。再起動なしで画面の変更が効く）。
 public sealed class OrderScreeningService(
     IRiskSettingsStore settingsStore,
     PortfolioSnapshotBuilder snapshotBuilder,
@@ -36,14 +54,30 @@ public sealed class OrderScreeningService(
     IBuyInInferenceStore buyInInferences,
     IPortfolioLedgerStore ledger,
     ShortSellContextSupplier shortSellContexts,
-    IManipulativeOrderPatternDetector? patternDetector = null)
+    IEntryReservationStore entryReservations,
+    ConfiguredSessionAndThemeControls configuredControls,
+    IManipulativeOrderPatternDetector? patternDetector = null,
+    ILogger<OrderScreeningService>? logger = null)
 {
-    public async Task<ScreeningOutcome> ScreenAsync(TradeDecisionMade decision, CancellationToken cancellationToken = default)
+    public Task<ScreeningOutcome> ScreenAsync(TradeDecisionMade decision, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(decision);
 
+        // FR-10, ADR-0009, #1319, IADR-0529 決定5: 手仕舞い（Close）は直列化の待ちに入れない（遅延も拒否もさせない）。
+        if (decision.Intent.PositionEffect != PositionEffect.Open)
+        {
+            return ScreenCoreAsync(decision, cancellationToken);
+        }
+
+        // 🔴 #1319, IADR-0529 決定1: 新規建ては「再配送の判定 → 読み取り → 判定 → 予約」を 1 つの臨界区間で行う。
+        // 再配送の判定も中に入れる——外に置くと、同じ判断の並行な 2 配送が両方とも予約なしと読み、2 本目が自分の予約で
+        // 自分を拒否する（IADR-0407 の反転が並行で戻る）。
+        return entryReservations.RunSerializedAsync(c => ScreenEntryAsync(decision, c), cancellationToken);
+    }
+
+    private async Task<ScreeningOutcome> ScreenEntryAsync(TradeDecisionMade decision, CancellationToken cancellationToken)
+    {
         var intent = decision.Intent;
-        var isEntry = intent.PositionEffect == PositionEffect.Open;
 
         // FR-10, #832, IADR-0407: **承認済みの新規建ての判断の再配送は再審査しない。**
         // 台帳の承認行は自分の OrderApproved の射影であり、行があれば同じ判断の承認を発行済みである。
@@ -52,11 +86,103 @@ public sealed class OrderScreeningService(
         // **新規建てに限る**——手仕舞い（Close）は再審査して承認を発行し直しても発注執行が DecisionId で止める一方、
         // 抑止すると最初の発行が届かなかった手仕舞いが出ない側へ倒れる（ADR-0009）。読み取りも新規建てだけにして、
         // 台帳の読み取りの失敗が手仕舞いの審査を新たに巻き込まないようにする（損切りの供給と同じ規律）。
-        if (isEntry && ledger.FindApprovedPositionEffect(decision.DecisionId) is not null)
+        if (ledger.FindApprovedPositionEffect(decision.DecisionId) is not null)
         {
             return ScreeningOutcome.ApprovedReplay(
                 new OrderScreeningObservation(decision.DecisionId, intent.Mode, []));
         }
+
+        // 🔴 FR-10, #1319, IADR-0529 決定4: **予約はあるが承認行がまだ無い**——最初の審査は承認して予約を書いたが、
+        // 承認の発行が失敗した（プロセスが落ちた）か、発行がまだ自分の射影へ届いていない。**再審査しない**（自分の予約で
+        // 自分を拒否する反転を作らない）。**承認を発行し直す**——最初の発行が失敗していれば、これを出さないと発注が永久に出ない。
+        // 承認は予約が持つ値（承認数量・承認時刻・損切りの実行機構）で組み直す＝最初の承認と同じ（現在の設定で埋めない）。
+        // 発行が届いていた場合の 2 本目は発注執行が DecisionId で止める（IADR-0057）。
+        if (entryReservations.Find(decision.DecisionId) is { } reserved)
+        {
+            return ResolveReservedRedelivery(decision, reserved);
+        }
+
+        var outcome = await ScreenCoreAsync(decision, cancellationToken).ConfigureAwait(false);
+
+        // 🔴 FR-10, #1319, IADR-0529 決定2: 承認したら**同じ臨界区間（トランザクション）の中で**予約を書く。次の審査は
+        // ロックを取った後にこの予約を注文源から読む（保有建玉数・日次発注累計・段階資金へ算入される）。
+        // 数量・価格・レートは承認行と同じ値（Intent）にする——承認行へ引き継がれたとき算入の額が変わらない。
+        if (outcome.IsApproved)
+        {
+            // 承認時刻は DB（PostgreSQL の timestamp はマイクロ秒）に保存できる精度へ切り詰める。切り詰めないと、
+            // 予約から組み直した承認（決定4）の承認時刻が最初の発行と 100ns 単位でずれる（実 DB で実測）。
+            var approved = outcome.Approved! with { ApprovedAt = TruncateToMicroseconds(outcome.Approved!.ApprovedAt) };
+            outcome = outcome with { Approved = approved };
+            entryReservations.Reserve(new EntryReservation(
+                approved.DecisionId, intent.Symbol, intent.Market, intent.Side, intent.Quantity, intent.Price,
+                intent.FxRateToBase, approved.ApprovedQuantity, approved.ApprovedAt, approved.StopLossMethod));
+        }
+
+        return outcome;
+    }
+
+    // 🔴 FR-10, ADR-0003, ADR-0009, #1319 の監査, IADR-0529 決定6: 予約から最初の承認を組み直す前に、**いま新規建てを出してよいか**を確かめる。
+    // 発注執行は kill switch・ロックアウト・一時停止を見ない。発行の失敗の後に緊急停止を起動し、そこへ再配送が来たときに
+    // 組み直して発行すると、**緊急停止の後に新規建てが出る**。止めるべきなら再発行せず拒否として返し、予約を無効にする
+    // （以後、注文源は数えず、再配送でも再発行しない＝止める側へ倒す）。承認時刻の取引日が過ぎた予約も再発行しない
+    // （前の取引日の判断を今日の新規建てにしない。拒否の理由に当たる状態は無いので、何も発行せずに予約を無効にする）。
+    private ScreeningOutcome ResolveReservedRedelivery(TradeDecisionMade decision, EntryReservation reserved)
+    {
+        var intent = decision.Intent;
+        var noReasons = new OrderScreeningObservation(decision.DecisionId, intent.Mode, []);
+
+        // 既に無効にした予約の再配送: 判断は同じ。最初に無効にしたときの結論を繰り返す（状態が戻っていても発行しない）。
+        if (reserved.IsVoided)
+        {
+            var voidReasons = reserved.VoidReasons ?? [];
+            return voidReasons.Count == 0
+                ? ScreeningOutcome.ReservationExpired(noReasons)
+                : ScreeningOutcome.Reject(
+                    new OrderRejected(decision.DecisionId, intent, voidReasons, clock.UtcNow),
+                    new OrderScreeningObservation(decision.DecisionId, intent.Mode, voidReasons));
+        }
+
+        var now = clock.UtcNow;
+        var tradingDay = TradingDay.Of(now, intent.Market);
+        var snapshot = snapshotBuilder.Build();
+
+        // 新規建てを状態だけで止める理由のうち、承認の後に立ち得る 3 つ（述語は審査と同じ EntryStateBlockers・ロックアウトの判定）。
+        // 並びは審査の到達順（kill switch → 一時停止 → 日次損失）。
+        var reasons = new List<RejectionReason>();
+        if (EntryStateBlockers.KillSwitch(snapshot))
+            reasons.Add(RejectionReason.KillSwitchActive);
+        if (EntryStateBlockers.Paused(snapshot))
+            reasons.Add(RejectionReason.TradingPaused);
+        if (IsLockedOut(tradingDay))
+            reasons.Add(RejectionReason.DailyLossLimitReached);
+        // 🔴 #1396, IADR-0561 決定 2: 締め切りの前に承認した予約を、締め切りの後に組み直して発行しない（閉場前に新規建てを出さない）。
+        var effectiveCutoff = SessionAndThemeControlResolution.EffectivePreCloseEntryCutoff(settingsStore.GetCurrent(), configuredControls);
+        if (PreCloseCutoffFor(effectiveCutoff, intent.Market, now).IsWithinCutoff)
+            reasons.Add(RejectionReason.PreCloseEntryCutoff);
+
+        if (reasons.Count > 0)
+        {
+            entryReservations.Void(decision.DecisionId, now, reasons);
+            return ScreeningOutcome.Reject(
+                new OrderRejected(decision.DecisionId, intent, reasons, now),
+                new OrderScreeningObservation(decision.DecisionId, intent.Mode, reasons));
+        }
+
+        if (TradingDay.Of(reserved.ApprovedAt, intent.Market) != tradingDay)
+        {
+            entryReservations.Void(decision.DecisionId, now, []);
+            return ScreeningOutcome.ReservationExpired(noReasons);
+        }
+
+        return ScreeningOutcome.ApprovedRepublish(
+            BuildApproved(decision, reserved.ApprovedQuantity, reserved.ApprovedAt, reserved.StopLossMethod),
+            noReasons);
+    }
+
+    private async Task<ScreeningOutcome> ScreenCoreAsync(TradeDecisionMade decision, CancellationToken cancellationToken)
+    {
+        var intent = decision.Intent;
+        var isEntry = intent.PositionEffect == PositionEffect.Open;
 
         // #337（#249 吸収）, IADR-0246: 日次損失ロックアウトの「当日」は**注文の市場の現地取引日**で解釈する。
         // JST 固定（clock.Today）では ET 10-11 時（セッション中）に日付が変わり、同一の米国セッションの
@@ -93,10 +219,27 @@ public sealed class OrderScreeningService(
         var decisionExits = closes is null ? null : DecisionExitProjection.Project(closes, intent.Market, clock.UtcNow);
 
         // 判定コア（決定的）を実行し、違反理由を集約する。
+        // 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: 閉場前の締め切りの供給（新規建てのときだけ。手仕舞いは判定しない）。
+        // 🔴 SC-02, #1407, IADR-0564 決定 2: 画面で保存した値があればそれが効く。無ければ構成の値（項目ごとに解決する）。
+        var preCloseCutoff = SessionAndThemeControlResolution.EffectivePreCloseEntryCutoff(settings, configuredControls);
+        var themes = SessionAndThemeControlResolution.EffectiveThemeConcentration(settings, configuredControls);
+        var preCloseCutoffSupply = isEntry ? PreCloseCutoffFor(preCloseCutoff, intent.Market, clock.UtcNow) : null;
         var result = RiskEvaluator.Evaluate(
             intent, settings, snapshot, patternDetector,
-            shortSellContext: shortSellContext, buyInBan: buyInBan, stopOuts: stopOuts, decisionExits: decisionExits);
+            shortSellContext: shortSellContext, buyInBan: buyInBan, stopOuts: stopOuts, decisionExits: decisionExits,
+            preCloseCutoff: preCloseCutoffSupply, themes: themes);
         var reasons = new List<RejectionReason>(result.Reasons);
+
+        // FR-10, #1397, IADR-0562 決定 2: 拒否の理由に加えて、どの集まりで上限に達したかをログへ残す（OrderRejected は理由の列挙だけを運ぶ）。
+        if (reasons.Contains(RejectionReason.ThemeConcentrationExceeded) && logger is not null)
+        {
+            var exceeded = themes.Exceeded(intent.Symbol, intent.Market, snapshot.HeldOrPendingSymbols);
+            logger.LogInformation(
+                "テーマの同時保有の上限で新規建てを拒否: {Symbol} themes={Themes} held={Held}",
+                intent.Symbol,
+                string.Join(",", exceeded.Select(t => $"{t.Name}(上限 {t.MaxPositions})")),
+                string.Join(",", snapshot.HeldOrPendingSymbols.Where(h => exceeded.Any(t => t.Contains(h.Symbol, h.Market))).Select(h => h.Symbol)));
+        }
 
         // 日次損失上限に「新規到達」したら当日ロックアウトを設定する（翌営業日まで）。
         // RiskEvaluator は実現+含み損の合算で当該時点の到達を判定する（IADR-0008）。
@@ -133,15 +276,28 @@ public sealed class OrderScreeningService(
         // 発注執行は承認が運ぶ値で保護レグを扱う（走行中の設定変更と承認の競合を避ける）。解釈（SIMULATE 限定・
         // 空売りの除外）は発注執行が行い、ここでは設定値をそのまま運ぶ——承認は「どの設定で承認したか」の記録でもある。
         return ScreeningOutcome.Approve(
-            new OrderApproved(
-                decision.DecisionId, intent, result.ApprovedQuantity, clock.UtcNow,
-                decision.CycleTrigger, decision.CycleStartedAt, settings.StopLossMethod,
-                // FR-10, #1176, IADR-0495 決定4: 審査が取引判断を承認した印（台帳が判断由来の承認行として書く）。
-                FromTradeDecision: true,
-                // FR-10, ADR-0050 決定1, #1222, IADR-0515 決定1: 出どころ＝判断（決済なら S1 の決済の前に取り消される判断の手仕舞い）。
-                Origin: OrderApprovalOrigin.TradeDecision),
+            BuildApproved(decision, result.ApprovedQuantity, clock.UtcNow, settings.StopLossMethod),
             observation);
     }
+
+    // FR-10, FR-19, #1396, IADR-0561 決定 2: その市場の当日の閉場（MarketHours。休場日は null＝締め切りに入らない）と効いている分数（#1407 で保存値を加えた）。
+    // #1433, IADR-0572 決定1: 組み立ては新規建ての可否の口と同じ関数（PreCloseEntryCutoffSupply.For）。
+    private static PreCloseEntryCutoffSupply PreCloseCutoffFor(PreCloseEntryCutoffSettings preCloseCutoff, Market market, DateTimeOffset now) =>
+        PreCloseEntryCutoffSupply.For(preCloseCutoff, market, now);
+
+    private static DateTimeOffset TruncateToMicroseconds(DateTimeOffset value) =>
+        value.AddTicks(-(value.Ticks % TimeSpan.TicksPerMicrosecond));
+
+    // 判断の承認（OrderApproved）を組む。審査の承認と、予約からの組み直し（#1319, IADR-0529 決定4）が同じ形を使う。
+    private static OrderApproved BuildApproved(
+        TradeDecisionMade decision, int approvedQuantity, DateTimeOffset approvedAt, StopLossExecutionMethod stopLossMethod) =>
+        new(
+            decision.DecisionId, decision.Intent, approvedQuantity, approvedAt,
+            decision.CycleTrigger, decision.CycleStartedAt, stopLossMethod,
+            // FR-10, #1176, IADR-0495 決定4: 審査が取引判断を承認した印（台帳が判断由来の承認行として書く）。
+            FromTradeDecision: true,
+            // FR-10, ADR-0050 決定1, #1222, IADR-0515 決定1: 出どころ＝判断（決済なら S1 の決済の前に取り消される判断の手仕舞い）。
+            Origin: OrderApprovalOrigin.TradeDecision);
 
     // #249 / IADR-0246: 当日（tradingDay）は呼び出し側が注文の市場の現地取引日で解決して渡す。
     private bool IsLockedOut(DateOnly tradingDay)

@@ -113,7 +113,12 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
                 // #611, IADR-0286 決定1: 認識時レート（1 USD あたりの円）。未記録は null のまま（既定へ倒さない）。
                 approval.FxRateBaseToDisplay,
                 // #936, IADR-0393（2026-09-25 追記）: 射影がロットを発注の順に並べる鍵（EfPortfolioLedgerStore と同一の意味論）。
-                EntryOrderedAt: approval.ApprovedAt));
+                EntryOrderedAt: approval.ApprovedAt,
+                // FR-06, #1357, IADR-0540 決定 1: 承認行の由来（EfPortfolioLedgerStore と同一の意味論。null＝記録されていない）。
+                ApprovalSource: approval.Source,
+                // FR-04, FR-10, #1384, IADR-0558 決定 4: 建てた条件の記号と基準価格（EfPortfolioLedgerStore と同一の意味論。null＝記録なし）。
+                EntryCondition: intent.EntryBasis?.Condition,
+                EntryReferencePrice: intent.EntryBasis?.ReferencePrice));
         }
 
         // #849, IADR-0350 決定 2: 乖離の取り込み行を合流させる（EfPortfolioLedgerStore と同一の意味論）。

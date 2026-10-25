@@ -209,18 +209,21 @@ public class ReconcilerAmbiguousStateNoBrokerWriteTests
     [Fact]
     public async Task 門を開けた解放でもリコンサイラ自身はエントリーを送り直さない()
     {
-        // 🔴 T-10-1554: 解放は「再発注の許可」であって発注そのものではない。送り直すのは OrderApproved の再配送
-        //（_error からの人手の再投入）か保護逆指値ガードの次の巡回であり、リコンサイラはブローカーへ何も書かない。
+        // 🔴 T-10-1554: 解放は発注そのものではない。リコンサイラはブローカーへ何も書かない。
         // （門を開ける判断は #856 に残る。本試験は開けたときの挙動の境界を固定するだけで、配備の門は閉じたまま。）
+        // 🔴 #1343, IADR-0551: 送る前に保護の記録を残した新規建ては、削除ではなく見送り（Forgone）として閉じ、AwaitingEntry も閉じる
+        // （閉じるのは記録だけで、保護レグを張る口〔ProtectAsync〕は呼ばない）。
         var h = NewHarness(_ => ReservationProbeResult.NotPlaced, Enabled(releaseOnNotPlaced: true));
         var entry = SeedAwaitingEntry(h);
 
         var result = await h.Reconciler.ReconcileAsync(Cutoff, 50, h.Sink);
 
         result.Released.Should().Be(1);
-        h.Reservations.Find(entry).Should().BeNull("前提: 予約は解放（削除）された");
+        h.Reservations.Find(entry)!.State.Should().Be(OrderDispatchState.Forgone, "前提: 新規建ての予約は見送りとして閉じた");
         BrokerWrites(h.Broker).Should().Be(0, "リコンサイラ自身は発注しない");
-        h.Stops.Find(entry)!.State.Should().Be(ProtectiveStopState.AwaitingEntry, "保護の口は呼ばれていない");
+        h.Stops.Find(entry)!.State.Should().Be(ProtectiveStopState.Completed, "送る前に残した文脈を閉じた（逆指値は張らない）");
+        h.Reservations.Find(ProtectiveStopIds.StopDecisionId(entry, 1)).Should().BeNull("逆指値のレグの予約も取られていない");
+        result.Protections.Should().BeEmpty("保護レグを張る口は呼ばれていない");
         h.Sink.Terminalizations.Should().Be(0);
     }
 

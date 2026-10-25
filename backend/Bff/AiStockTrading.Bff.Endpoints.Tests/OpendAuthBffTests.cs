@@ -361,10 +361,50 @@ public class OpendAuthBffTests
         host.Upstream.Requests.Single(r => r.Path.Contains("resend", StringComparison.Ordinal))
             .Body.Should().BeNullOrEmpty();
 
-        // レート制限は上流が課す（暫定 60 秒に 1 回・実測待ち）。BFF はその 409 を透過する。
+        // 上流の 409（いま再送できない状態）は透過する。レート制限（上流の 429）は下の試験で押さえる。
         host.Upstream.ResendStatus = HttpStatusCode.Conflict;
         var limited = await host.SendAsync("POST", "/bff/opend-auth/resend", roles: OpendAuthTestHost.OwnerRole);
         limited.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    // #1456, SC-04, IADR-0579: レート制限は上流（サイドカー）が課し、429 と Retry-After で返す。
+    // BFF は画面が残り秒数を示せる形（409・rate_limited・retryAfterSeconds）へ写す。
+    // 以前は 429 が「その他」として 503（供給が無い）へ倒れ、画面は「到達できない」と述べていた。
+    [Theory]
+    [InlineData("/bff/opend-auth/resend")]
+    [InlineData("/bff/opend-auth/code")]
+    public async Task 上流のレート制限は残り秒数つきの409へ写す(string path)
+    {
+        await using var host = await OpendAuthTestHost.StartAsync();
+        host.Upstream.State = Waiting("phone");
+        host.Upstream.ResendStatus = HttpStatusCode.TooManyRequests;
+        host.Upstream.VerifyStatus = HttpStatusCode.TooManyRequests;
+        host.Upstream.RetryAfter = TimeSpan.FromSeconds(42);
+
+        var resp = await host.SendAsync("POST", path, roles: OpendAuthTestHost.OwnerRole,
+            body: path.EndsWith("/code", StringComparison.Ordinal) ? """{"code":"123456"}""" : null);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        resp.Headers.RetryAfter!.Delta.Should().Be(TimeSpan.FromSeconds(42));
+        var body = JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement;
+        body.GetProperty("reason").GetString().Should().Be("rate_limited");
+        body.GetProperty("retryAfterSeconds").GetInt32().Should().Be(42);
+    }
+
+    [Fact]
+    public async Task 上流がRetryAfterを返さなければ残り秒数を推測で埋めない()
+    {
+        await using var host = await OpendAuthTestHost.StartAsync();
+        host.Upstream.ResendStatus = HttpStatusCode.TooManyRequests;
+        host.Upstream.RetryAfter = null;
+
+        var resp = await host.SendAsync("POST", "/bff/opend-auth/resend", roles: OpendAuthTestHost.OwnerRole);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        resp.Headers.RetryAfter.Should().BeNull();
+        var body = JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement;
+        body.GetProperty("reason").GetString().Should().Be("rate_limited");
+        body.GetProperty("retryAfterSeconds").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     // ---- 否定形: 禁止コマンドの経路が BFF に存在しない ----
@@ -392,6 +432,83 @@ public class OpendAuthBffTests
         host.Upstream.Requests.Should().BeEmpty();
     }
 
+    // ---- NFR, IADR-0566: 呼び出し元の共有シークレット ----
+
+    [Fact]
+    public async Task 上流への全要求に呼び出し元のシークレットを載せる()
+    {
+        await using var host = await OpendAuthTestHost.StartAsync();
+        host.Upstream.State = Waiting("phone");
+
+        (await host.SendAsync("GET", "/bff/opend-auth/state", roles: OpendAuthTestHost.OwnerRole)).EnsureSuccessStatusCode();
+        (await host.SendAsync("GET", "/bff/opend-auth/captcha", roles: OpendAuthTestHost.OwnerRole)).EnsureSuccessStatusCode();
+        (await host.SendAsync(
+            "POST", "/bff/opend-auth/code", roles: OpendAuthTestHost.OwnerRole, body: """{"code":"123456"}""")).EnsureSuccessStatusCode();
+        (await host.SendAsync("POST", "/bff/opend-auth/resend", roles: OpendAuthTestHost.OwnerRole)).EnsureSuccessStatusCode();
+
+        // state・captcha・（code の前の）state・verify・resend の 5 本。どれも同じ値を 1 つだけ載せる。
+        host.Upstream.Requests.Should().HaveCount(5)
+            .And.OnlyContain(r => r.CallerSecret == OpendAuthTestHost.CallerSecret);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task シークレットが未構成なら上流を呼ばずに供給が無いと宣言する(string? secret)
+    {
+        await using var host = await OpendAuthTestHost.StartAsync(callerSecret: secret);
+        host.Upstream.State = Waiting("phone");
+
+        var state = await host.SendAsync("GET", "/bff/opend-auth/state", roles: OpendAuthTestHost.OwnerRole);
+        var captcha = await host.SendAsync("GET", "/bff/opend-auth/captcha", roles: OpendAuthTestHost.OwnerRole);
+        var code = await host.SendAsync(
+            "POST", "/bff/opend-auth/code", roles: OpendAuthTestHost.OwnerRole, body: """{"code":"123456"}""");
+        var resend = await host.SendAsync("POST", "/bff/opend-auth/resend", roles: OpendAuthTestHost.OwnerRole);
+
+        state.StatusCode.Should().Be(HttpStatusCode.OK);
+        var view = await ReadStateAsync(state);
+        view.GetProperty("promptAvailability").GetInt32().Should().Be(1);
+        view.GetProperty("detail").GetString().Should().Contain("接続資格");
+        captcha.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        code.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        resend.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        host.Upstream.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task シークレットの値をログにも応答にも出さない()
+    {
+        await using var host = await OpendAuthTestHost.StartAsync();
+        host.Upstream.State = Waiting("phone");
+        host.Upstream.VerifyStatus = HttpStatusCode.Unauthorized;
+
+        var state = await host.SendAsync("GET", "/bff/opend-auth/state", roles: OpendAuthTestHost.OwnerRole);
+        var code = await host.SendAsync(
+            "POST", "/bff/opend-auth/code", roles: OpendAuthTestHost.OwnerRole, body: """{"code":"123456"}""");
+
+        // 上流が 401 を返したときは「到達できない」側へ倒す（上流の本文は透過しない）。
+        code.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        (await state.Content.ReadAsStringAsync()).Should().NotContain(OpendAuthTestHost.CallerSecret);
+        (await code.Content.ReadAsStringAsync()).Should().NotContain(OpendAuthTestHost.CallerSecret);
+        host.Logs.Should().NotContain(l => l.Contains(OpendAuthTestHost.CallerSecret, StringComparison.Ordinal));
+        // 上流の 401 は配備の順序の誤りの手掛かりなので、警告を 1 行残す（値は出さない）。
+        host.Logs.Should().Contain(l => l.Contains("Warning", StringComparison.Ordinal) && l.Contains("401", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task 前後の空白と改行を落として載せる()
+    {
+        // サイドカー（CallerSecretFilter.ReadSecret）と同じ正規化。片側だけ落とすと一致しなくなる。
+        await using var host = await OpendAuthTestHost.StartAsync(callerSecret: " " + OpendAuthTestHost.CallerSecret + "\r\n");
+        host.Upstream.State = Waiting("phone");
+
+        (await host.SendAsync("GET", "/bff/opend-auth/state", roles: OpendAuthTestHost.OwnerRole)).EnsureSuccessStatusCode();
+
+        host.Upstream.Requests.Should().ContainSingle()
+            .Which.CallerSecret.Should().Be(OpendAuthTestHost.CallerSecret);
+    }
+
     private static string Waiting(string prompt) =>
         $$"""{"status":"waiting","prompt":"{{prompt}}","captchaAvailable":true,"lastLoginAt":"2026-09-09T21:02:00Z","detail":null}""";
 
@@ -414,10 +531,14 @@ internal sealed class OpendAuthTestHost : IAsyncDisposable
     /// <summary>収集したログ行（本文・引数を文字列化したもの）。</summary>
     public IReadOnlyCollection<string> Logs => LogSink.Lines;
 
+    /// <summary>IADR-0566: 試験用の呼び出し元シークレット（既定で構成する）。</summary>
+    internal const string CallerSecret = "bff-test-caller-secret-0123456789abcdef";
+
     public static async Task<OpendAuthTestHost> StartAsync(
         string? baseUrl = "http://opend-auth.test",
         string? deviceTrust = null,
-        string? egressStable = null)
+        string? egressStable = null,
+        string? callerSecret = CallerSecret)
     {
         var upstream = new OpendAuthStubHandler();
         var logSink = new CapturingLoggerProvider();
@@ -426,6 +547,7 @@ internal sealed class OpendAuthTestHost : IAsyncDisposable
         builder.WebHost.UseTestServer();
 
         var settings = new Dictionary<string, string?> { ["OpendAuth:BaseUrl"] = baseUrl };
+        if (callerSecret is not null) settings["OpendAuth:CallerSecret"] = callerSecret;
         if (deviceTrust is not null) settings["OpendAuth:DeviceTrustPersisted"] = deviceTrust;
         if (egressStable is not null) settings["OpendAuth:EgressStable"] = egressStable;
         builder.Configuration.AddInMemoryCollection(settings);
@@ -480,7 +602,7 @@ internal sealed class OpendAuthTestHost : IAsyncDisposable
 // 上流サイドカーのスタブ。パスごとに応答を出し分け、届いた要求（パス・本文）を捕捉する。
 internal sealed class OpendAuthStubHandler : HttpMessageHandler
 {
-    public sealed record Captured(string Path, string? Body);
+    public sealed record Captured(string Path, string? Body, string? CallerSecret);
 
     public ConcurrentQueue<Captured> Captures { get; } = new();
     public IReadOnlyCollection<Captured> Requests => Captures.ToArray();
@@ -490,6 +612,8 @@ internal sealed class OpendAuthStubHandler : HttpMessageHandler
     public HttpStatusCode VerifyStatus { get; set; } = HttpStatusCode.NoContent;
     public string? VerifyBody { get; set; }
     public HttpStatusCode ResendStatus { get; set; } = HttpStatusCode.NoContent;
+    /// <summary>#1456: 429 のときに載せる <c>Retry-After</c>（null なら載せない）。</summary>
+    public TimeSpan? RetryAfter { get; set; } = TimeSpan.FromSeconds(60);
     public byte[]? CaptchaBytes { get; set; } = [0x89, 0x50, 0x4E, 0x47];
     public bool Throw { get; set; }
 
@@ -499,7 +623,10 @@ internal sealed class OpendAuthStubHandler : HttpMessageHandler
         var path = request.RequestUri!.AbsolutePath;
         string? body = null;
         if (request.Content is not null) body = await request.Content.ReadAsStringAsync(cancellationToken);
-        Captures.Enqueue(new Captured(path, body));
+        var callerSecret = request.Headers.TryGetValues("X-Opend-Auth-Caller-Secret", out var values)
+            ? string.Join(",", values)
+            : null;
+        Captures.Enqueue(new Captured(path, body, callerSecret));
 
         if (Throw) throw new HttpRequestException("upstream unreachable");
 
@@ -519,16 +646,23 @@ internal sealed class OpendAuthStubHandler : HttpMessageHandler
         }
         if (path.EndsWith("/verify", StringComparison.Ordinal))
         {
-            var resp = new HttpResponseMessage(VerifyStatus);
+            var resp = WithRetryAfter(new HttpResponseMessage(VerifyStatus));
             if (VerifyBody is not null)
                 resp.Content = new StringContent(VerifyBody, Encoding.UTF8, "application/json");
             return resp;
         }
         if (path.EndsWith("/resend", StringComparison.Ordinal))
         {
-            return new HttpResponseMessage(ResendStatus);
+            return WithRetryAfter(new HttpResponseMessage(ResendStatus));
         }
         return new HttpResponseMessage(HttpStatusCode.NotFound);
+    }
+
+    private HttpResponseMessage WithRetryAfter(HttpResponseMessage resp)
+    {
+        if (resp.StatusCode == HttpStatusCode.TooManyRequests && RetryAfter is { } wait)
+            resp.Headers.RetryAfter = new RetryConditionHeaderValue(wait);
+        return resp;
     }
 }
 

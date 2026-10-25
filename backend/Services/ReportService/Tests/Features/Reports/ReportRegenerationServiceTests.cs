@@ -114,6 +114,10 @@ public class ReportRegenerationServiceTests
         public ConfirmResult? Confirm(string periodKey, int expectedVersion, DateTimeOffset confirmedAt) =>
             inner.Confirm(periodKey, expectedVersion, confirmedAt);
         public VersionedReport? GetLatestConfirmed(ReportKind kind) => inner.GetLatestConfirmed(kind);
+        public VersionedReport? GetLatestConfirmedAsOf(ReportKind kind, DateTimeOffset at) => inner.GetLatestConfirmedAsOf(kind, at);
+        public int StartRevisionDraft(TradingReport draft, int expectedVersion) => inner.StartRevisionDraft(draft, expectedVersion);
+        public VersionedReport? GetLatestConfirmedVersion(string periodKey) => inner.GetLatestConfirmedVersion(periodKey);
+        public IReadOnlyList<VersionedReport> ListLatestConfirmedVersions() => inner.ListLatestConfirmedVersions();
         public ReportReview? GetReview(string periodKey) => inner.GetReview(periodKey);
         public ReviewDecision? ApplyReview(string periodKey, ReviewCommand command) =>
             command.Action == ReviewAction.Present
@@ -202,6 +206,37 @@ public class ReportRegenerationServiceTests
         h.Drafter.Contexts.Should().BeEmpty();
         h.Ledger.Attempts.Should().BeEmpty();
         h.Audit.Events.Should().BeEmpty();
+    }
+
+    // T-10-2696, FR-07, 計画 ADR-0068 決定1, #1373, IADR-0549 決定1: 確定済みの日報に版を足したドラフト（版 n+1）は、効いている間は作り直せる
+    // （作り直しの枠に数える）。効いている日報が移った後は断り、入力も LLM も呼ばず、台帳も書かない（ドラフトは残す）。
+    [Fact]
+    public async Task 版nプラス1のドラフトは効いている間だけ作り直せる()
+    {
+        var h = new Harness();
+        var confirmed = h.SeedDegradedDraft(PastDaily, new DateOnly(2026, 10, 2), confirmed: true);
+        var reopened = h.Store.StartRevisionDraft(h.Store.Get(PastDaily)!.Report with { PolicySummary = "版 n+1 の方針" }, confirmed);
+
+        (await h.Service().RegenerateAsync(PastDaily, "owner")).Status.Should().Be(ReportRegenerationStatus.Regenerated, "効いている間は作り直せる");
+        h.Ledger.Attempts.Should().ContainSingle("作り直しの枠に数える（ADR-0052 決定 1）");
+
+        h.Store.UpsertDraft(new TradingReport
+        {
+            PeriodKey = CurrentDaily,
+            Kind = ReportKind.Daily,
+            PeriodStart = new DateOnly(2026, 10, 5),
+            PolicySummary = "月曜",
+        }, 0);
+        h.Store.Confirm(CurrentDaily, 1, TueMorning.AddMinutes(1));
+        var drafterCalls = h.Drafter.Contexts.Count;
+
+        var refused = await h.Service().RegenerateAsync(PastDaily, "owner");
+
+        refused.Status.Should().Be(ReportRegenerationStatus.NoLongerEffective);
+        refused.Message.Should().Contain($"いま効いているのは {CurrentDaily}");
+        h.Drafter.Contexts.Should().HaveCount(drafterCalls, "LLM を呼ばない");
+        h.Ledger.Attempts.Should().ContainSingle("断った作り直しは枠を使わない");
+        h.Store.Get(PastDaily)!.Version.Should().BeGreaterThan(reopened, "ドラフトは残る（効いている間の作り直しで版が進んだまま）");
     }
 
     // T-10-2261, FR-06, 計画 ADR-0052 決定 2: 無い報告書・形式の不正な会話キーは作り直さない（新しく作らない）。
@@ -559,6 +594,22 @@ public class ReportRegenerationServiceTests
         var summary = h.Notifier.Notices.Should().ContainSingle().Which.Summary;
         summary.Should().Contain(PolicyTakeProfitCheck.HeldSymbolsWarning(["NVDA"]))
             .And.NotContain(PolicyTakeProfitCheck.Warning);
+    }
+
+    // FR-04, FR-07, #1365, IADR-0544 決定 2・3（受け入れ基準 A5）: 保った日報の方針が他の報告書を参照で済ませていれば、
+    // 作り直しの再提示の要約でも警告する。利確の警告と並べる（片方に絞らない）。
+    [Fact]
+    public async Task 作り直しの再提示は保った方針が他の報告書を参照していれば利確の警告と並べて警告する()
+    {
+        var h = new Harness();
+        h.SeedDegradedDraft(CurrentDaily, new DateOnly(2026, 10, 5), policy: "週次方針 weekly-2026-W40 のしきい値に従う。");
+
+        var result = await h.Service().RegenerateAsync(CurrentDaily, "owner");
+
+        result.Status.Should().Be(ReportRegenerationStatus.Regenerated);
+        h.Notifier.Notices.Should().ContainSingle().Which.Summary
+            .Should().Contain(PolicySelfContainedCheck.Warning)
+            .And.Contain(PolicyTakeProfitCheck.Warning);
     }
 
     // T-10-2279, FR-06, FR-09, 計画 ADR-0052 決定 3・5, #1182, IADR-0491 決定 5（2026-10-06 追記）: 作り直して承認待ちにした版は、

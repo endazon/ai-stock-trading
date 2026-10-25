@@ -3,13 +3,13 @@ title: 費用台帳（cost_entries）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-09-30
+updated: 2026-10-24
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-09, FR-16, FR-17, NFR-13, NFR-15]
-adrs: [ADR-0001]
-iadrs: [IADR-0021, IADR-0027, IADR-0463]
+adrs: [ADR-0057, ADR-0001]
+iadrs: [IADR-0584, IADR-0021, IADR-0027, IADR-0463]
 specs: [20260710_cost-control, 20260930_1113_entry-blockers-before-llm]
 issues: [#9, #14, #19, #21, #22, #23, #1113]
 -->
@@ -36,7 +36,7 @@ issues: [#9, #14, #19, #21, #22, #23, #1113]
 | 属性 | 型 | 説明 |
 | --- | --- | --- |
 | Id | Guid (PK) | 計上レコード ID |
-| Month | string(7) (index) | 計上月 "yyyy-MM"（UTC。月をまたぐと累計がリセットされる） |
+| Month | string(7) (index) | 計上月 "yyyy-MM"（JST の年月。月をまたぐと累計がリセットされる。以前の UTC 由来の行は移行で記録の時刻から引き直した） |
 | Category | 列挙（Llm/Infrastructure/Data） | 費用カテゴリ |
 | Amount | decimal | 費用（円） |
 | RecordedAt | DateTimeOffset | 計上日時 |

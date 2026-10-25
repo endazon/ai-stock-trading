@@ -3,15 +3,15 @@ title: ログ・可観測性仕様書（AST）
 type: observability-spec
 status: draft
 created: 2026-07-19
-updated: 2026-10-10
+updated: 2026-10-24
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [NFR-01, NFR-02, NFR-03, NFR-07, NFR-09, FR-04, FR-09, FR-10, FR-02, FR-14, FR-06, FR-11]
-adrs: [ADR-0006, ADR-0045, ADR-0003]
-iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441, IADR-0444, IADR-0463, IADR-0471, IADR-0495, IADR-0500, IADR-0521, IADR-0104, IADR-0522, IADR-0525]
-specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260930_1113_entry-blockers-before-llm, 20261001_1130_held-add-on-before-llm, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261010_1290_screening-rationale-garble]
-issues: [#24, #287, #689, #751, #891, #942, #856, #1051, #1113, #1130, #1176, #1174, #1286, #243, #1290]
+ids: [NFR-01, NFR-02, NFR-03, NFR-07, NFR-09, FR-04, FR-09, FR-10, FR-02, FR-14, FR-06, FR-11, FR-08]
+adrs: [ADR-0075, ADR-0074, ADR-0006, ADR-0045, ADR-0003, ADR-0064]
+iadrs: [IADR-0583, IADR-0582, IADR-0573, IADR-0572, IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441, IADR-0444, IADR-0463, IADR-0471, IADR-0495, IADR-0500, IADR-0521, IADR-0104, IADR-0522, IADR-0525, IADR-0072, IADR-0555]
+specs: [20261023_1442_order-executed-republish, 20261023_1433_1434_llm-precheck-cutoff-theme-and-closed-position, 20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260930_1113_entry-blockers-before-llm, 20261001_1130_held-add-on-before-llm, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261010_1290_screening-rationale-garble, 20261015_1311_rag-search-degraded-mark, 20261017_1383_policy-revision-thinking-max-tokens]
+issues: [#1442, #1434, #1311, #24, #287, #689, #751, #891, #942, #856, #1051, #1113, #1130, #1176, #1174, #1286, #243, #1290, #1383]
 -->
 
 
@@ -63,7 +63,7 @@ AST 10 Worker  --OTLP(gRPC :4317)-->  otel-collector  --export-->  Prometheus (m
 | --- | --- | --- | --- |
 | 取引サイクル | `ast_information_items_collected_total` | — | 収集件数。**空巡回も 0 として出す**（「回って 0 件」と「止まっている」を区別するため） |
 | 取引サイクル | `ast_trade_cycle_decisions_total` | `action` / `trigger` | 判断回数と buy / sell / 見送りの内訳 |
-| 取引サイクル | `ast_trade_cycle_decision_skips_total` | `reason` / `trigger` | 🔴 **見送りの理由**の内訳（方針なし・Hold・鮮度切れ・数量 0・裸の新規売り・保有不明・新規建てが審査で必ず拒否される〔`EntryBlockedByRiskControls`。LLM を呼ぶ前〕・保有中の買い増しが審査で必ず拒否される〔`AddOnBlockedByRiskControls`。LLM の後〕・新規建てに使える金額の上限が最小の名目額に届かない〔`EntryCapacityBelowMinimumNotional`。LLM の前〕・サイジングの名目額が最小に満たない〔`SizedBelowMinimumNotional`。LLM の後〕・残枠が現在値の 1 株に届かない〔`EntryCapacityBelowOneShare`。LLM の前。従来の数量 0 から移った分〕・監視銘柄の外の保有銘柄の出口専用の判断で新規建てが返った〔`ExitOnlyOpenOutsideWatchlist`。LLM の後〕・出口専用の判断で保有が 0 または不明〔`ExitOnlyWithoutHolding`。LLM の前〕ほか 20 種）。上の `action=no-trade` は「何回見送ったか」しか語らず、**平常（Hold）と異常（保有照会が壊れて新規建てだけが静かに止まっている）が同じ 1 値に落ちる**。**置き換えではなく並置**であり、1 回の見送りで両方が 1 ずつ増える |
+| 取引サイクル | `ast_trade_cycle_decision_skips_total` | `reason` / `trigger` | 🔴 **見送りの理由**の内訳（方針なし・Hold・鮮度切れ・数量 0・裸の新規売り・保有不明・新規建てが審査で必ず拒否される〔`EntryBlockedByRiskControls`。LLM を呼ぶ前〕・保有中の買い増しが審査で必ず拒否される〔`AddOnBlockedByRiskControls`。LLM の後〕・新規建てに使える金額の上限が最小の名目額に届かない〔`EntryCapacityBelowMinimumNotional`。LLM の前〕・サイジングの名目額が最小に満たない〔`SizedBelowMinimumNotional`。LLM の後〕・残枠が現在値の 1 株に届かない〔`EntryCapacityBelowOneShare`。LLM の前。従来の数量 0 から移った分〕・監視銘柄の外の保有銘柄の出口専用の判断で新規建てが返った〔`ExitOnlyOpenOutsideWatchlist`。LLM の後〕・出口専用の判断で保有が 0 または不明〔`ExitOnlyWithoutHolding`。LLM の前〕・処理中の決済が建玉を覆いどの結論も発注にならない〔`InFlightCloseCoversPosition`。LLM の前〕・判断由来の決済の約定の直後でブローカーの建玉が 0〔`BrokerPositionClosed`。LLM の前。従来の裸の新規売りの見送りから移った分〕・月次 LLM 費用上限の 100% 到達で停止中〔`LlmCostCapHalted`。LLM の前。定時・価格変動の両方〕・日報の無応答時の停止〔`DailyReportNoResponseHalted`。LLM の前〕ほか 24 種）。上の `action=no-trade` は「何回見送ったか」しか語らず、**平常（Hold）と異常（保有照会が壊れて新規建てだけが静かに止まっている）が同じ 1 値に落ちる**。**置き換えではなく並置**であり、1 回の見送りで両方が 1 ずつ増える |
 | 取引サイクル | `ast_trade_cycle_decision_duration_ms_*` | `trigger` | 判断レイテンシ（ヒストグラム）。**1 サービス内の判断 1 回**であり、端点間ではない |
 | 取引サイクル | `ast_trade_cycle_order_completion_latency_ms_*` | `trigger` | **起点イベント → 発注完了**の端点間所要（ヒストグラム）。価格変動検知起点は `trigger=price-movement` の系列で読む（目標 5 分＝300,000 ms） |
 | 取引サイクル | `ast_trade_cycle_record_completion_latency_ms_*` | `trigger` | **起点イベント → 記録完了**（監査台帳へ記録した時点）の端点間所要。定時サイクルは `trigger=scheduled` の系列で読む（目標 10 分＝600,000 ms） |
@@ -73,6 +73,7 @@ AST 10 Worker  --OTLP(gRPC :4317)-->  otel-collector  --export-->  Prometheus (m
 | 発注 | `ast_order_executions_total` | `status` / `provider` | 発注結果と発注先 |
 | 発注 | `ast_order_dispatch_forgone_total` | `reason` | 発注に**届いていない**見送り。ブローカーの拒否（`status=Rejected`）と混ぜない |
 | 発注 | `ast_order_drift_adoption_followup_abandoned_total` | `reason` | 🔴 乖離の取り込みの追随を、建玉照会の**不明**（`positions-unknown`）・**失敗**（`positions-query-failed`）のまま再試行を使い切って打ち切った件数。**空の一覧（0 株）は数えない**（確かめた結果であり追随は進む）。途中の配送も数えない。発注執行の起動完了時に 0 で作られる |
+| 発注 | `ast_order_executed_publish_pending` | — | 🔴 約定追跡の巡回の末尾で数えた、**発行し終えていない約定**（発行待ちの印が立った記録）の件数（ゲージ・直近の値）。発行の後に印を倒すので**平常は 0**。0 でない値が巡回をまたいで続くなら、その約定はリスク管理の台帳へ届いていない（警報 `AstOrderExecutedPublishPending`） |
 | 発注 | `ast_order_reservation_reconciliations_total` | `outcome`, `provider` | 発注予約の自動リコンサイルの**判定の内訳**（`probe-placed` / `self-healed` / `held-not-placed` / `released` / `indeterminate` / `failed`）。🔴 `held-not-placed` は解放の門が閉じているため据え置いた「未発注」判定で、同じ予約が巡回ごとに数え直される。**実際には証券会社に存在する注文に対してこれが出ていたら、門を開けてはならない**。`provider` は**予約の取引環境**（`MoomooSimulate` / `MoomooReal` / `InternalPaper`、不明は `Unknown`）。解放の門は取引環境ごとに分かれており、**門の判断は同じ `provider` の系列だけで行う**。リコンサイルが有効な構成でだけ起動時に 0 で作られる（判定 6 × 取引環境 4） |
 | 費用 | `ast_llm_cost_jpy_total` | `category` | LLM 費用（上限対象 `Llm` / 対象外 `LlmUncapped`） |
 | 費用 | `ast_llm_cost_limit_ratio_percent` | — | 月次上限に対する比率。80 で間隔延長・100 で停止 |
@@ -109,10 +110,18 @@ exporter 構成が決める**。dev の既定は `debug`（標準出力のみ・
   対象は取引判断（一次スクリーニング・本判断）・報告書の散文・方針の改訂の 3 つで、方針の改訂の行は上限（`maxTokens`）と出力トークン（`outputTokens`）を運ぶ。
   Loki では `stopReason=max_tokens` で引く（3 つとも警告の本文にこの形で載る）。🔴「出力上限に到達」の文言では漏れる——取引判断と報告書の散文は、
   本文が空のまま打ち切られると「応答本文が空です（stopReason=max_tokens）」の行だけを出し、「出力上限に到達」の行を出さない。
-  逆に `stopReason=max_tokens` では 1 回の打ち切りが複数行に当たることがある（方針の改訂の形式違反の警告・全量ログ〔既定オフ〕にも同じ形で載る）。出力上限は方針の改訂だけ 8192、他は 4096 である（稼働 PoC の実測で、方針の改訂の出力の最大が 4096 の 93% に達したため）。
-  方針の改訂の上限時間は既定 95 秒で、基盤のゲートウェイが上流の LLM を待つ 100 秒（固定）が実効の天井になる。出力の速さを毎秒 50〜80 トークンとすると
-  約 4,700〜7,600 トークンで時間切れ（案なし・警告「方針の改訂 LLM がタイムアウトしました」）になり、8192 の全量には届かない。
+  逆に `stopReason=max_tokens` では 1 回の打ち切りが複数行に当たることがある（方針の改訂の形式違反の警告・全量ログ〔既定オフ〕にも同じ形で載る）。出力上限は方針の改訂だけ 16384、他は 4096 である（5.5 系のモデルは思考を無効にできず、方針の改訂が 8192 のうち本文 1,609 文字で切れたため）。
+  報告書の散文の行も上限（`maxTokens`）・出力トークン（`outputTokens`）・モデルを運ぶ。方針の改訂の上限で切れた案は、利用者へ「上限で途中で切れた（再試行で通ることがある）」と返る。
+  方針の改訂の上限時間は既定 95 秒で、基盤のゲートウェイが上流の LLM を待つ 100 秒（既定）が実効の天井になる。稼働 PoC では 95 秒以内に 8,192 トークンが返っており、
+  出力の速さは毎秒 86 トークン以上である。毎秒 172 トークン未満なら 16384 に届く前に時間切れ（案なし・警告「方針の改訂 LLM がタイムアウトしました」）になる。
+- **方針の改訂の所要時間**: 応答を受け取るたびに情報ログ「方針の改訂 LLM の応答を受け取りました」を 1 行出し、`elapsedMs`・`outputTokens`・`maxTokens`・`textLength`・`stopReason`・`model` を運ぶ（本文は載せない）。
+  出力の速さは `outputTokens ÷ elapsedMs`、思考の分は `outputTokens` から本文の長さ（`textLength`）の分を引いて見積もる。
   🔴 打ち切りの頻度の閾値やアラートは置いていない（実測してから決める。下の注記と同じ理由）。
+- **判断の参考情報（RAG）の取得の状態と検索の縮退**: 判断の記録（「LLM 判断:」の行）に `ragContext` と `ragDegraded` が載る。
+  `ragContext` は `retrieved` / `empty` / `failed` / `not-configured`、基盤の検索が縮退して返ったときは `retrieved-degraded` / `empty-degraded`。
+  `ragDegraded` は縮退の理由の符号（`embed-failed` / `fused-embed-failed` / `graph-expand-failed` / `rerank-failed` のカンマ区切り）、縮退なしは `none`、
+  縮退の印を返さない旧い基盤・取得していないときは `unknown`。縮退のときは警告ログ「RAG の参考情報の検索が縮退しました」が 1 判断 1 行出る（取得の失敗の判断では出さず、失敗の警告 1 行だけ）。
+  Loki では `|= "ragContext=empty-degraded"`（縮退した 0 件。該当なしとは限らない）・`|= "-degraded"`（縮退した判断）で引く。`ragDegraded` は取得の失敗（`ragContext=failed`）の行にも成功した検索の理由が載るため、`ragDegraded=` だけで引くと失敗の判断も混ざる（縮退だけを数えるなら `-degraded` で引く）。🔴 頻度の閾値・アラートは置いていない。
 - **判断理由（根拠文）の文字化けの疑い**: 取引判断の LLM の根拠文に化けの疑い（置換文字 U+FFFD、漢字・かなに接するキリル文字、漢字に挟まれた小文字を含む英字列）が
   あると、根拠文を受け取った地点で 1 回だけ判定し、警告ログを 1 行出す。🔴 判断（action・数量）は変えない。疑いのある根拠文は、先頭に目印
   「⚠ 判断理由に文字化けの疑い: 」を付けて転記する（原文は残す）。Loki での引き方:

@@ -3,13 +3,13 @@ title: リスク管理ドメインの集約（設定・スナップショット�
 type: data-spec
 status: draft
 created: 2026-07-09
-updated: 2026-10-08
+updated: 2026-10-16
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-06, FR-10, FR-11, FR-12, FR-16, FR-17, FR-19, FR-20]
 adrs: [ADR-0001, ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0018, ADR-0026, ADR-0027, ADR-0049]
-iadrs: [IADR-0001, IADR-0002, IADR-0003, IADR-0004, IADR-0005, IADR-0006, IADR-0007, IADR-0008, IADR-0016, IADR-0018, IADR-0130, IADR-0132, IADR-0149, IADR-0150, IADR-0183, IADR-0260, IADR-0271, IADR-0286, IADR-0346, IADR-0460, IADR-0465, IADR-0472, IADR-0506]
+iadrs: [IADR-0001, IADR-0002, IADR-0003, IADR-0004, IADR-0005, IADR-0006, IADR-0007, IADR-0008, IADR-0016, IADR-0018, IADR-0130, IADR-0132, IADR-0149, IADR-0150, IADR-0183, IADR-0260, IADR-0271, IADR-0286, IADR-0346, IADR-0460, IADR-0465, IADR-0472, IADR-0506, IADR-0529, IADR-0540]
 specs: [20260930_1104_stop-width-observability, 20260930_1120_stop-width-floor, 20261001_1136_retro-stop-floor, 20261008_1186_ledger-period-read-sql-pushdown]
 issues: [#12, #13, #17, #19, #25, #26, #27, #30, #31, #302, #329, #332, #333, #340, #346, #465, #569, #611, #829, #832, #1104, #1120, #1136, #1186, planning#703]
 -->
@@ -148,6 +148,28 @@ Accepted / PartiallyFilled / Filled / Expired / Cancelled / **Rejected**（証�
 | StopLossPrice | decimal? | 新規建ての損切りライン（ローカル通貨）。null＝記録なし（決済・旧い行）。🔴 **追記専用の例外**: ソフトウェア逆指値のラインを損切り幅の下限まで遡及して広げた事実（`SoftwareStopLineWidened`）を受けて、**広げる向きのときだけ**書き換える（狭めない・null を埋めない・決済の行は触らない） |
 | FxRateBaseToDisplay | decimal? | 承認時点の**認識時レート**＝基準通貨（USD）1 単位あたりの表示通貨（JPY）額（1 USD あたりの円）。報告書の為替差損益（認識時レートと期末レートの差）の根。`FxRateToBase`（ローカル通貨→USD）とは軸が違い、米国株では後者が 1 で円の情報を持たない。リスク管理サービスが承認記録時に為替レート源（判断サービスと同じ `Fx:*`）から解決して固定する。🔴 **`null` ＝本列の追加前の行、または承認時に為替レート源が解決できなかった行（未記録）であり、推定で埋めない。** 未記録の約定を含む期間の為替差損益は報告書が未供給とし、件数を明記する |
 | ApprovedAt | DateTimeOffset | 承認時刻 |
+| Source | 列挙? | 承認行の**由来**（判断を経ない承認・保護逆指値 S0 の決済レグ・ソフトウェア逆指値 S1 の決済・保護が成立しないときの手仕舞い・判断由来の承認）。決済が損切りだったかを後から見分ける。**期間約定の照会（REST・gRPC）にも約定ごとに載せ**、報告書が決済の種別を散文の入力へ渡す。🔴 **`null` ＝本列の追加前の行（由来が記録されていない）であり、「損切りではない」とも読まない。** 報告書は「種別未供給」と渡す |
+
+`entry_reservations`（新規建ての予約。主キー `DecisionId`）:
+
+審査が承認した新規建てを、**審査と同じトランザクションの中で**記録する（新規建ての審査は DB の advisory lock で 1 本ずつ行う）。
+承認行（`approved_orders`）は承認のイベントがメッセージ基盤を往復した後にしか書かれないため、その間も統制
+（保有建玉数・日次発注累計・段階資金）へ算入する目的で持つ。**承認行とは別の表である**——承認行は「承認を発行済み」の印として
+再配送の判定に使うため、発行の前には書けない。
+
+| 属性 | 型 | 説明 |
+| --- | --- | --- |
+| DecisionId | Guid (PK) | 判断 ID（冪等） |
+| Symbol / Market / Side | 文字列・列挙 | 承認した Intent の写し |
+| Quantity / Price / FxRateToBase | int / decimal / decimal | 算入に使う数量・価格・基準通貨への換算レート（承認行と同じ値） |
+| ApprovedQuantity | int | 承認数量（再配送で同じ承認を組み直すため） |
+| ApprovedAt | DateTimeOffset (index) | 承認時刻（マイクロ秒に切り詰めた値。承認と同じ）。当日の判定に使う |
+| StopLossMethod | 列挙 | 承認時点の損切りの実行機構（再配送で同じ承認を組み直すため。現在の設定で埋めない） |
+| VoidedAt | DateTimeOffset? | 無効にした時刻（null＝有効）。承認行が無いまま再配送された判断を、新規建てを止める状態（kill switch・一時停止・ロックアウト）か取引日の経過のために再発行しなかった印。立ったら数えず、再配送でも再発行しない。単調 |
+| VoidReasons | string? | 無効にしたときの拒否の理由（列挙名のカンマ区切り。取引日の経過だけなら空文字） |
+
+算入するのは**承認行がまだ無い**予約のうち、注文アクティビティが終端でなく、無効でもないものだけである（承認行が来たら承認行だけで数える）。
+古い行は消さない（統制の状態として自動パージの対象外・切替でも保全する）。古い行は当日の判定で算入されない。
 
 `trade_fills`（約定。主キー `OrderId`）:
 

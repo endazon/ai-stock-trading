@@ -39,6 +39,6 @@ public sealed class KillSwitchService(
         // 監査性（FR-11・ADR-0003）: アクターと理由のない変更は受け付けない。
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         // NFR-06, IADR-0509, #1230: 利用者（Discord・画面）が入力する欄の空欄検査。文言を 400 / INVALID_ARGUMENT へ載せる印を付ける。
-        ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason);
+        ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason, "理由");
     }
 }

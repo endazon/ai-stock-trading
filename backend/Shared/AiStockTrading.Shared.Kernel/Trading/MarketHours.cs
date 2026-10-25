@@ -83,6 +83,30 @@ public static class MarketHours
         return null;
     }
 
+    /// <summary>
+    /// FR-10, FR-19, #1396, IADR-0561 決定 1: その瞬間の<b>市場ローカルの日付</b>の最後の閉場時刻（大引け。半日取引日は前倒し）。
+    /// 週末・休場日（規則計算 ＋ <paramref name="extraHolidays"/>）・未知の市場は <c>null</c>（その日に閉場は無い）。
+    /// 閉場前の新規建ての締め切り（リスク管理）・閉場前の手仕舞い（取引判断）・判断のプロンプトの「閉場までの残り時間」が同じ答えを見る。
+    /// </summary>
+    public static DateTimeOffset? SessionCloseOn(
+        Market market,
+        DateTimeOffset instant,
+        IReadOnlySet<DateOnly>? extraHolidays = null,
+        IReadOnlySet<DateOnly>? extraHalfDays = null)
+    {
+        var zone = ZoneOf(market);
+        var local = TimeZoneInfo.ConvertTime(instant, zone);
+        var date = DateOnly.FromDateTime(local.DateTime);
+        if (!IsTradingDay(market, date, extraHolidays))
+            return null;
+
+        if (MarketSessions.FinalClose(market, IsHalfDay(market, date, extraHalfDays)) is not { } close)
+            return null;
+
+        var naive = date.ToDateTime(close);
+        return new DateTimeOffset(naive, zone.GetUtcOffset(naive));
+    }
+
     private static bool IsTradingDay(Market market, DateOnly date, IReadOnlySet<DateOnly>? extraHolidays) =>
         date.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)
         && !MarketHolidays.IsHoliday(market, date)

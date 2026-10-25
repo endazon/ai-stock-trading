@@ -154,6 +154,28 @@ message OpenPositionRow {
   optional string entry_price = 5;
   // 保有中のエントリーのうち最も保護的な損切りライン（10 進文字列）。
   optional string stop_loss_price = 6;
+  // FR-04, FR-10, #1384, IADR-0558 決定 6: 保有中のエントリー（ロット。古い順）。
+  // 🔴 未設定（本項目の追加前の送り手）は「ロットが無い」ではなく「記録の供給なし（不明）」。存在を区別するため包む。
+  OpenPositionEntries entries = 7;
+}
+
+// FR-04, FR-10, #1384, IADR-0558 決定 6: 保有中のエントリー（ロット）の列。
+message OpenPositionEntries {
+  repeated OpenPositionEntryRow rows = 1;
+}
+
+// FR-04, FR-10, #1384, IADR-0558 決定 6: 保有中のエントリー（ロット）1 件（REST の OpenPositionEntryView と同じ項目）。
+message OpenPositionEntryRow {
+  // 建てた判断の DecisionId（UUID の文字列。相関できない行は 00000000-0000-0000-0000-000000000000）。
+  optional string decision_id = 1;
+  // 残数量。
+  optional int32 quantity = 2;
+  // 承認時刻（ISO 8601 の往復書式）。
+  optional string ordered_at = 3;
+  // 建てた条件の記号（未設定＝記録なし）。
+  optional string entry_condition = 4;
+  // 建てた条件の基準価格（ローカル通貨・10 進文字列。未設定＝不明）。
+  optional string entry_reference_price = 5;
 }
 
 message GetOpenPositionsResponse {
@@ -198,6 +220,32 @@ message RiskLimits {
   optional string losing_streak_size_factor = 8;
 }
 
+// FR-10, ADR-0063, #1291 / IADR-0527: REST の HighVolatilitySymbol と同じ形（利用者の明示指定）。
+message HighVolatilitySymbolRow {
+  optional string symbol = 1;
+  Market market = 2;
+}
+
+// FR-10, ADR-0063, #1291 / IADR-0527: REST の HighVolatilitySettings と同じ形（区分の上限〔比率は 10 進文字列〕・明示指定）。
+// 🔴 メッセージ自体の欠落は「送り手が本項目を知らない」であり、受け手は既定（上限 5%・明示指定なし）で読む（区分の上限を外さない）。
+message HighVolatilityControls {
+  optional string max_order_amount_ratio = 1;
+  repeated HighVolatilitySymbolRow designated_symbols = 2;
+}
+
+// FR-10, SC-02, ADR-0070, #1407 / IADR-0564: 市場ごとの分（閉場前の手仕舞いの M）。
+message MarketMinutesRow {
+  Market market = 1;
+  optional int32 minutes = 2;
+}
+
+// FR-10, SC-02, ADR-0070 決定 2・5, #1407 / IADR-0564: REST の PreCloseFlattenSettings と同じ形（閉場前の手仕舞いの効いている値）。
+// 🔴 メッセージ自体の欠落は「送り手が本項目を知らない」であり、受け手は既定（無効・15 分）で読む。
+message PreCloseFlattenControls {
+  optional bool enabled = 1;
+  repeated MarketMinutesRow minutes = 2;
+}
+
 // REST の SizingContextView と同じ形。
 message GetSizingContextResponse {
   // 🔴 欠落は「口座を照会できていない」（残枠も解決できない）。0 ではない。
@@ -209,6 +257,8 @@ message GetSizingContextResponse {
   BrokerProvider mode = 6;
   RiskLimits limits = 7;
   StopLossExecutionMethod stop_loss_method = 8;
+  HighVolatilityControls high_volatility = 9;
+  PreCloseFlattenControls pre_close_flatten = 10;
 }
 
 // ---- 新規建ての可否（#1113 / IADR-0463） ----
@@ -234,6 +284,9 @@ enum EntryBlocker {
   // #1286 / IADR-0521 決定 4: 全注文の拒否（any_order にだけ現れる。送り手の `OrderStateBlockers`）。
   ENTRY_BLOCKER_MARKET_DISABLED = 9;
   ENTRY_BLOCKER_BANNED_SYMBOL = 10;
+  // #1433 / IADR-0572 決定1: 閉場前の新規建ての締め切り（ADR-0070）・テーマの同時保有の上限（ADR-0071）。long_side / short_side に現れる。
+  ENTRY_BLOCKER_PRE_CLOSE_ENTRY_CUTOFF = 11;
+  ENTRY_BLOCKER_THEME_CONCENTRATION_EXCEEDED = 12;
 }
 
 // 1 方向の理由の一覧。🔴 入れ物の欠落は「不明」、空の入れ物は「確定する拒否は無い」。
@@ -345,6 +398,19 @@ message PeriodFill {
   BrokerProvider provider = 10;
   // 承認時点の認識時レート（1 USD あたりの円・10 進文字列）。欠落は「未記録」（REST の null）。
   optional string fx_rate_base_to_display = 11;
+  // FR-06, #1357, IADR-0540 決定 1: 約定が属する承認行の由来。未指定は「記録されていない」（REST の null）。
+  FillApprovalSource approval_source = 12;
+}
+
+// FR-06, #1357, IADR-0540 決定 1: 承認行の由来（送り手の ApprovalSource。型名は冒頭の 🔴 のとおり変えてある）。
+// C# の序数とは 1 ずれる（0 は未指定）。両端で名前で写す。
+enum FillApprovalSource {
+  FILL_APPROVAL_SOURCE_UNSPECIFIED = 0;
+  FILL_APPROVAL_SOURCE_ORDER_APPROVED = 1;
+  FILL_APPROVAL_SOURCE_PROTECTIVE_STOP_S0 = 2;
+  FILL_APPROVAL_SOURCE_SOFTWARE_STOP_S1 = 3;
+  FILL_APPROVAL_SOURCE_PROTECTION_LOST_CLOSE = 4;
+  FILL_APPROVAL_SOURCE_TRADE_DECISION = 5;
 }
 
 message GetFillsResponse {

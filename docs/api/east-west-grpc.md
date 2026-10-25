@@ -3,15 +3,15 @@ title: east-west gRPC（サービス間の同期呼び出し）通信仕様書
 type: api-spec
 status: draft
 created: 2026-09-11
-updated: 2026-10-10
+updated: 2026-10-17
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16, FR-01, FR-02, FR-07, FR-13, FR-15, FR-14, NFR-06]
 adrs: [ADR-0001, ADR-0047, ADR-0052, MSP:ADR-0029, MSP:ADR-0075]
-iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491, IADR-0493, IADR-0521, IADR-0522]
-specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate, 20261006_1181_report-opening-inventory, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens]
-issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181, #243]
+iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491, IADR-0493, IADR-0521, IADR-0522, IADR-0556, IADR-0557, IADR-0559, IADR-0425, IADR-0467, IADR-0528, IADR-0535]
+specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate, 20261006_1181_report-opening-inventory, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261017_1388_grpc-late-routes-held-symbols-asof-policy, 20261017_1391_grpc-order-execution-read-surface]
+issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181, #243, #1388, #1391]
 -->
 
 # 通信仕様書: east-west gRPC（サービス間の同期呼び出し）
@@ -26,7 +26,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181,
 - **プロトコル**: gRPC（HTTP/2）+ Protobuf 3。メッシュ内は **h2c（TLS 無し HTTP/2）** で、mTLS はサイドカーが終端する。
 - **対象**: メッシュ内のサービスどうしの**同期**呼び出し。外部 SaaS・IdP・非同期イベントは対象外。
 - **状態**: 本書が書くのは**全体前提条件の照会**（本リポジトリが契約を所有する最初の面・§5）と
-  **リスク管理の読み取り**（§6）・**監査台帳の読み取り**（§7）・**日報の方針・監視銘柄・費用統制の判定の読み取り**（§8）・**Discord ボットの読み取りと書き込み**（§9）である。基盤が所有する契約を消費する面（テキスト生成）は別の実装記録が持つ。
+  **リスク管理の読み取り**（§6）・**監査台帳の読み取り**（§7）・**日報の方針・監視銘柄・費用統制の判定の読み取り**（§8）・**Discord ボットの読み取りと書き込み**（§9）・**発注執行の読み取り**（§10）である。基盤が所有する契約を消費する面（テキスト生成）は別の実装記録が持つ。
   **並走中の正は REST** であり、gRPC は構成で opt-in する。残りの経路の移行は段ごとに別 issue で展開する。
 - **既定は REST**: 呼び出し元の構成 `Configuration:Grpc` が無ければ 1 バイトも変わらない。
   提供側も `Grpc:Port` が無ければ h2c リスナを立てない。**切り戻しは構成を外すだけ**（コードを変えない）。
@@ -157,7 +157,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181,
 
 ## 6. 面: リスク管理の読み取り（`aistocktrading.riskmanagement.v1.RiskControlsRead`）
 
-- 概要: 報告書・取引判断・市場監視の 3 サービスが、構成 `RiskManagement:Grpc`（例 `http://risk-management-service:8081`）が
+- 概要: 報告書・取引判断・市場監視・情報収集の 4 サービスが、構成 `RiskManagement:Grpc`（例 `http://risk-management-service:8081`）が
   あるときだけ gRPC で照会し、無ければ REST `GET /risk-controls/*` で照会する。**並走中の正は REST。**
 - 認証・認可: 読み取りの面と同じ（サービス、または呼び出し元がボットの利用者のロール。§4）。REST の読み取り群の判定に呼び出し元の確認を足したポリシーを service のクラス属性で持つ。
 - 評価器: REST と**同じ**サービス・純関数を呼ぶ（評価器を 2 つにしない）。
@@ -165,7 +165,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181,
 
 | rpc | 対応する REST | 呼び出し元 | 取得できないときの呼び出し元の扱い |
 | --- | --- | --- | --- |
-| `GetOpenPositions` | `GET /risk-controls/open-positions` | 取引判断・市場監視・報告書 | 不明／空列（損切り検知対象なし）／未供給 |
+| `GetOpenPositions` | `GET /risk-controls/open-positions` | 取引判断・市場監視・報告書・情報収集 | 不明／空列（損切り検知対象なし）／未供給／不明（その巡回は監視銘柄だけから収集の対象を決める） |
 | `GetWorkingEntryOrders` | `GET /risk-controls/working-entry-orders` | 取引判断 | 不明 |
 | `GetEntryBlockers` | `GET /risk-controls/entry-blockers?symbol&market`（銘柄単位の新規建ての可否。審査と同じ述語で、状態から確定する拒否理由を方向別に返す。あわせて新規建て・決済を問わず全注文を拒否する理由〔市場の無効・禁止銘柄〕を `any_order` で返す） | 取引判断 | 不明（LLM を呼ぶ。審査は変わらない） |
 | `GetSizingContext` | `GET /risk-controls/sizing-context` | 取引判断 | 残枠 0 の安全既定 |
@@ -205,7 +205,7 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 | 構成キー | 既定 | 意味 |
 | --- | --- | --- |
 | `RiskManagement:Grpc` | 未設定（＝REST） | gRPC の宛先。**宣言してあるのに使えない値は起動時に落とす**。宣言があれば `RiskManagement:BaseUrl` より優先 |
-| `RiskManagement:GrpcTimeoutSeconds` | 報告書 10・取引判断 5・市場監視 5 | **試行ごとの** deadline。各サービスの REST の `HttpClient.Timeout` と同値 |
+| `RiskManagement:GrpcTimeoutSeconds` | 報告書 10・取引判断 5・市場監視 5・情報収集 5 | **試行ごとの** deadline。各サービスの REST の `HttpClient.Timeout` と同値 |
 | `RiskManagement:GrpcMaxAttempts` | 1 | 試行回数。**既定は再試行しない** |
 
 - チャネルは呼び出し元の輸送が所有する（同じサービスの別の面が引く型と衝突させない）。
@@ -272,18 +272,20 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 | service / rpc | 対応する REST | 呼び出し元 | 取得できないときの呼び出し元の扱い |
 | --- | --- | --- | --- |
 | `aistocktrading.report.v1.DailyPolicyRead/GetConfirmedDailyPolicy` | `GET /reports/daily-policy` | 取引判断 | 取引しない |
+| `aistocktrading.report.v1.DailyPolicyRead/GetConfirmedDailyPolicyAsOf` | `GET /reports/daily-policy/as-of?at=` | 取引判断（Stage 0 の記録） | 撃ち直してから記録を止める（無かったときは方針なしで記録する） |
 | `aistocktrading.marketmonitor.v1.WatchlistRead/GetWatchlist` | `GET /monitor/watchlist` | 取引判断（定時サイクル・判断のプロンプト）・情報収集 | 定時サイクルは構成の監視銘柄、プロンプトは不明、情報収集は不明（直前に読めた対象を使い続ける） |
 | `aistocktrading.marketmonitor.v1.WatchlistRead/GetWatchlistAsOf` | `GET /monitor/watchlist/as-of?at=` | 取引判断（Stage 0 の記録） | 再構成できない（理由つき・その記録は合否から外れる） |
 | `aistocktrading.costcontrol.v1.CostStateRead/GetCostState` | `GET /costs/state` | 情報収集 | 通常（停止せず・1 倍） |
 
 エラーは §6 と同じ（`UNAUTHENTICATED` / `PERMISSION_DENIED` は再試行しない、`UNAVAILABLE` / `DEADLINE_EXCEEDED` は再試行の対象）。
-当時の監視銘柄の時刻の欠落・オフセットの欠落・書式違いは `INVALID_ARGUMENT`（REST の 400 と同じ）。
+当時の監視銘柄と当時の方針の時刻の欠落・オフセットの欠落・書式違いは `INVALID_ARGUMENT`（REST の 400 と同じ）。
 
 ### 🔴 線上の写し
 
 | 契約 | 線上 | 写し |
 | --- | --- | --- |
 | 日報の方針の未確定 | **`policy` の無い応答**（`NOT_FOUND` にしない） | REST の 404 と同じく警告なしで「取引しない」。未確定は毎朝の平常の状態であり、失敗として記録しない |
+| 当時の方針の確定の時刻 | 応答の `optional string`（往復書式・オフセットごと） | 欠落・読めない書式は「取れなかった」（撃ち直す）。照会の時刻より後の確定は送り手の契約違反として撃ち直さずに記録を止める（REST と同じ） |
 | 方針の日付・要約 | `optional string` | 欠落・読めない日付は既定値で作らず「取引しない」 |
 | 監視銘柄の市場 | `MARKET_UNSPECIFIED = 0` を持つ列挙 | **名前で**写す。未指定・未知は不明（C# の 0 ＝日本は線上で 1） |
 | 当時の一覧 | 可否は `optional bool`、一覧は存在を持つ入れ物 | 入れ物が無ければ「一覧が無い」（空の一覧とは違う） |
@@ -295,7 +297,7 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 
 | 構成キー | 呼び出し元 | 既定 | 意味 |
 | --- | --- | --- | --- |
-| `Reports:Grpc` | 取引判断 | 未設定（＝REST） | 日報の方針の gRPC の宛先 |
+| `Reports:Grpc` | 取引判断 | 未設定（＝REST） | 日報の方針の gRPC の宛先（Stage 0 の記録の当時の方針も。宣言があれば `Reports:BaseUrl` が無くても記録の入力を組む） |
 | `MarketMonitor:Grpc` | 取引判断・情報収集 | 未設定（＝REST） | 監視銘柄の gRPC の宛先（取引判断は当時の一覧も） |
 | `CostControl:Grpc` | 情報収集 | 未設定（＝REST） | 費用統制の判定の gRPC の宛先 |
 | `<上記>:GrpcTimeoutSeconds` | 〃 | 5 | **試行ごとの** deadline。REST の `HttpClient.Timeout` と同値 |
@@ -379,6 +381,7 @@ Discord ボット（通知サービス）の**読み取り 6 本と書き込み 
 | `Reports:Grpc` | 未設定（＝REST） | レビュー局面・会話キーの一覧・入れ替え案・確定・差し戻し・方針の改訂・適用の内訳の記録の gRPC の宛先 |
 | `MarketMonitor:Grpc` | 未設定（＝REST） | 監視銘柄・入れ替え案の適用の gRPC の宛先 |
 | `<上記>:GrpcTimeoutSeconds` | 5 / 5 / 10 | **試行ごとの** deadline。REST の `HttpClient.Timeout` と同値（入れ替え案の照会は台帳の読み取りなのでレビューと同じ 5 秒） |
+| `Reports:GrpcConfirmTimeoutSeconds` | 30 | 報告書の確定の deadline（REST の確定専用の 30 秒のクライアントと同値）。確定は KB の後処理を含むので、照会・差し戻しの 5 秒と分ける。**報告書サービスの KB の後処理の時間予算（`Reports:Confirm:KnowledgeBudgetSeconds`・既定 20 秒）＋余白より長く置く**（片方だけを変えない）。時間切れのときはレビュー局面の最新の確定版の版番号を照会して、押した版で確定されたかを返す |
 | `Reports:GrpcPolicyRevisionTimeoutSeconds` | 120 | 方針の改訂と適用の内訳の記録の deadline（REST で 2 つが共用する 120 秒のクライアントと同値。LLM を待つ。報告書サービスの方針の改訂の上限〔既定 95 秒〕＋建玉の照会〔10 秒〕より長く置く） |
 | `Reports:GrpcRegenerationTimeoutSeconds` | 300 | 報告書の作り直しの deadline（REST の 300 秒のクライアントと同値。期間の入力の取得と散文の LLM を待つ） |
 | `<上記>:GrpcMaxAttempts` | 1 | 試行回数。**読み取りだけに効く**（書き込みは再試行しない）。既定は再試行しない |
@@ -386,6 +389,46 @@ Discord ボット（通知サービス）の**読み取り 6 本と書き込み 
 - メタデータのトークンは REST と同じ `Notifications:Discord:OwnerAuth:*`（ボットの機密クライアント）から取る。3 つの宛先で 1 つの取得器を共有する。資格情報が未構成ならメタデータを付けない（→ `UNAUTHENTICATED` → 失敗）。
 - 宣言してあるのに使えない値は起動時に落とす。宣言があれば同じ提供側の `*:BaseUrl` より優先する（読み取りも書き込みも。失敗しても `*:BaseUrl` の REST へ落とさない）。
 - helm・compose: 既定では置かない（既定の描画は変わらない）。有効化の手順は values.yaml の notification のコメントにある。
+
+## 10. 面: 発注執行の読み取り（`aistocktrading.orderexecution.v1.OrderExecutionRead`）
+
+- 概要: リスク管理・取引判断・バックテストの 3 サービスが、構成 `OrderExecution:Grpc`（例 `http://order-execution-service:8081`）が
+  あるときだけ gRPC で照会し、無ければ REST `GET /order-execution/*` で照会する。**並走中の正は REST。**
+- 認証・認可: §6 と同じ（サービス、または呼び出し元がボットの利用者のロール。§4）。門は service のクラス属性で持ち、資格情報の無い呼び出しは通さない。
+- 照会: REST と**同じ**照会サービスと**同じ入力の検証**を呼ぶ（ブローカーの枠・自制の予算・キャッシュの規則を 2 つにしない）。
+- 提供側の h2c リスナは §3 と同じく `Grpc:Port` があるときだけ立つ。helm の `grpcPort` も既定では宣言しない。
+
+| rpc | 対応する REST | 呼び出し元 | 取得できないときの呼び出し元の扱い |
+| --- | --- | --- | --- |
+| `GetShortPermit` | `GET /order-execution/short-permit?symbol&market` | リスク管理（新規の売り建ての審査） | 借株可否は「分からない」（空売り文脈を組まず拒否。許可へ倒さない） |
+| `GetDailyBars` | `GET /order-execution/daily-bars?symbol&market&from&to` | 取引判断（出来高・ATR(14)・Stage 0 の当時の価格）・バックテスト（過去データ源 `order-execution`） | 取引判断は未提供（判断は止めない）。バックテストは送り手が答えた失敗をその銘柄の欠測にし、届かない・待ちきれない失敗は送出する（REST の通信例外と同じ） |
+| `GetInFlightCloses` | `GET /order-execution/in-flight-closes?symbol&market&closeSide` | 取引判断（保有中の銘柄で LLM を呼ぶ前） | 不明（LLM を呼ぶ。見送らない） |
+
+エラーは §6 と同じ（`UNAUTHENTICATED` / `PERMISSION_DENIED` は再試行しない、`UNAVAILABLE` / `DEADLINE_EXCEEDED` は再試行の対象）。
+必須の引数の欠落・値域外（銘柄の長さ・未指定の市場や方向・読めない日付・逆順・400 暦日を超える期間）は `INVALID_ARGUMENT`（REST の 400 と同じ）。
+
+### 🔴 線上の写し
+
+| 契約 | 線上 | 写し |
+| --- | --- | --- |
+| 状態（借株可否・日足・処理中の決済） | `*_UNSPECIFIED = 0` を持つ列挙。送り手の「分からない」「取れない」は `*_UNKNOWN` / `*_UNAVAILABLE` | **名前で**写す。UNSPECIFIED・未知は「状態の欠落」（REST の本文で状態が無いのと同じく契約の食い違い）であり、送り手が答えた「分からない」とは別 |
+| 市場・決済の方向 | `MARKET_UNSPECIFIED` / `TRADE_SIDE_UNSPECIFIED = 0` を持つ列挙 | 名前で写す。未指定・未知は欠落（要求の写しが問いと一致しなければ「分からない」） |
+| 日足の価格 | `optional string`（不変文化の 10 進） | 欠落・読めない値は欄の欠け。1 本でも欠ければ応答ごと読まない（REST と同じ） |
+| 日足の日付 | `optional string`（`yyyy-MM-dd`） | 同上 |
+| 運ばない項目 | 借株可否の観測時刻・日足の期間・処理中の決済の決済方向の建玉と判断 ID | 受け手が判定に使わない（足すのはフィールド追加＝非破壊） |
+
+受け手は線上の応答を REST と同じ全項目 nullable の受け皿へ写し、REST と**同じ 1 つ**の解釈を通す。
+
+### 呼び出し元の設定
+
+| 構成キー | 呼び出し元 | 既定 | 意味 |
+| --- | --- | --- | --- |
+| `OrderExecution:Grpc` | リスク管理・取引判断・バックテスト | 未設定（＝REST） | gRPC の宛先。**宣言してあるのに使えない値は起動時に落とす**。宣言があれば `OrderExecution:BaseUrl`（バックテストは `Backtest:BarData:OrderExecution:BaseUrl`）より優先し、BaseUrl が空でも読む。バックテストは過去データ源の明示（`Backtest:BarData:Provider=order-execution`）が今までどおり要る |
+| `OrderExecution:GrpcTimeoutSeconds` | 〃 | リスク管理 5・取引判断 8・バックテスト 30 | **試行ごとの** deadline。各サービスの REST の `HttpClient.Timeout` と同値 |
+| `OrderExecution:GrpcMaxAttempts` | 〃 | 1 | 試行回数。**既定は再試行しない** |
+
+- メタデータのトークンは REST と同じサービス間トークン（`ServiceAuth:*`）から取る。
+- helm・compose: 既定では置かない（既定の描画は変わらない）。有効化の手順は values.yaml の order-execution と各呼び出し元のコメントにある。
 
 ## シーケンス
 

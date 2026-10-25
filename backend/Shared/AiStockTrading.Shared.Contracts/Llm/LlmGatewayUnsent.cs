@@ -181,18 +181,23 @@ public static class LlmGatewayUnsent
 
     private const int RedactionInputMaxLength = 2000;
 
-    private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(100);
+    // 🔴 NFR, #1437, IADR-0571（IADR-0419 と同じ判断）: 照合は **NonBacktracking**（入力長に線形。.NET が保証する）で行い、
+    // **壁時計の予算を持たない**。旧形は 100 ms のマッチタイムアウトを持ち、CPU が混むと数十文字の入力でも打ち切られて
+    // RegexMatchTimeoutException が From（ゲートウェイの Sent=false の原因の記録）を突き抜けた（#1437 の実測: CI の並列試験下）。
+    // 入力は先に RedactionInputMaxLength で切るので、線形性と合わせて照合の量は上から抑えられる。
+    // 既定（未指定）にすると、プロセスに REGEX_DEFAULT_MATCH_TIMEOUT が設定されたとき壁時計の予算が戻るため、無期限を明示する。
+    private const RegexOptions RedactionOptions = RegexOptions.CultureInvariant | RegexOptions.NonBacktracking;
 
     private static readonly Regex BearerPattern = new(
-        @"(?i)(bearer\s+)[A-Za-z0-9._~+/=\-]+", RegexOptions.CultureInvariant, RegexTimeout);
+        @"(?i)(bearer\s+)[A-Za-z0-9._~+/=\-]+", RedactionOptions, Regex.InfiniteMatchTimeout);
 
     private static readonly Regex SecretKeyPattern = new(
-        @"\b(?:sk|pk|rk)-[A-Za-z0-9_\-]{6,}", RegexOptions.CultureInvariant, RegexTimeout);
+        @"\b(?:sk|pk|rk)-[A-Za-z0-9_\-]{6,}", RedactionOptions, Regex.InfiniteMatchTimeout);
 
     private static readonly Regex KeyValuePattern = new(
         @"(?i)\b(api[_\-]?key|access[_\-]?token|token|secret|password|authorization)\s*[:=]\s*[^\s,;)」）]+",
-        RegexOptions.CultureInvariant, RegexTimeout);
+        RedactionOptions, Regex.InfiniteMatchTimeout);
 
     private static readonly Regex LongTokenPattern = new(
-        @"[A-Za-z0-9_\-+/=]{32,}", RegexOptions.CultureInvariant, RegexTimeout);
+        @"[A-Za-z0-9_\-+/=]{32,}", RedactionOptions, Regex.InfiniteMatchTimeout);
 }

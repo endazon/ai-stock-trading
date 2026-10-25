@@ -54,6 +54,8 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     .AddPortFromBaseUrl("sizing-context", builder.Configuration["RiskManagement:BaseUrl"], "http", "placeholder")
     .AddPortFromBaseUrl("knowledge-base-search", builder.Configuration["KnowledgeBase:Search:BaseUrl"], "http", "noop")
     .AddPortFromBaseUrl("assumptions", builder.Configuration["Configuration:BaseUrl"], "http", "placeholder")
+    // NFR-13, #1423 M-5, IADR-0582: 月次 LLM 費用上限の停止の照会口（CostControl:BaseUrl 設定時=http、未設定=noop）。
+    .AddPortFromBaseUrl("cost-halt", builder.Configuration["CostControl:BaseUrl"], "http", "noop")
     // FR-02, IADR-0095/0078 決定4: 監視銘柄（watchlist）供給の選択中実装を自己申告する。MarketMonitor:BaseUrl 設定時=http
     // （権威源 GET /monitor/watchlist へ s2s 照会）、未設定/不正=configuration（未結線の構成ベース）。introspection から結線状態を判別可能にする。
     .AddPortFromBaseUrl("watchlist", builder.Configuration["MarketMonitor:BaseUrl"], "http", "configuration")
@@ -193,7 +195,7 @@ static TimeSpan ParseTimeout(string? value) =>
         : TimeSpan.FromSeconds(30);
 
 // #303, IADR-0122 決定2: モデル別単価表を構成から組み立てる。単価の解析（InvariantCulture）と fail-safe
-//（未知モデル＝表の最大単価 / 表が空＝従来キー / 何も無ければ 0）は LlmPriceTable に閉じている。
+//（未知モデル＝未知モデルの計上単価〔#1305〕 / 表が空＝従来キー / 何も無ければ 0）は LlmPriceTable に閉じている。
 static LlmPriceTable BuildLlmPriceTable(IConfiguration cfg) =>
     LlmPriceTable.FromRows(
         cfg.GetSection("LlmPricing:PerModel").GetChildren()
@@ -202,7 +204,10 @@ static LlmPriceTable BuildLlmPriceTable(IConfiguration cfg) =>
                 m.Key, m["InputPer1kTokens"], m["OutputPer1kTokens"],
                 m["LongContextThresholdTokens"], m["LongContextInputPer1kTokens"], m["LongContextOutputPer1kTokens"])),
         cfg["LlmPricing:InputPer1kTokens"],
-        cfg["LlmPricing:OutputPer1kTokens"]);
+        cfg["LlmPricing:OutputPer1kTokens"],
+        // NFR-13, ADR-0064 決定9, #1305, IADR-0553: 表に無いモデルの計上単価（単価表の行ではない。未設定は既定 $10 / $50）。
+        cfg["LlmPricing:UnknownModel:InputPer1kTokens"],
+        cfg["LlmPricing:UnknownModel:OutputPer1kTokens"]);
 
 // FR-08, IADR-0072 決定5: RAG 取得件数（TopK）。未設定・不正・非正値は既定 5（fail-safe）。
 static int ParseTopK(string? value) =>
@@ -314,6 +319,11 @@ builder.Services.AddScoped<IEntryBlockersProvider>(sp =>
 // ［2026-10-01 追記 / #1118］監査 🟡-4: 照会の上限は HttpDailyBarsSource.RequestTimeout（8 秒）。超えたら「未提供」で判断を続ける。
 builder.Services.AddHttpClient("order-execution", c => c.Timeout = HttpDailyBarsSource.RequestTimeout)
     .AddAiStockTradingServiceToken(builder.Configuration);
+// NFR, MSP:ADR-0029, IADR-0284 決定 5（段 5 の追補 2）, IADR-0559 決定 3, #1391 (#753): east-west gRPC（`OrderExecutionRead`）。
+// **`OrderExecution:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば下の日足の口（出来高・ATR(14)）・
+// 処理中の決済の照会口・Stage 0 の当時の価格（Stage0AsOfComposition）が gRPC 実装を選ぶ（`OrderExecution:BaseUrl` より優先し、BaseUrl が空でも読む）。
+// 不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingOrderExecutionGrpc(builder.Configuration);
 // 🔴 FR-10, ADR-0049 決定2, #1122, IADR-0486 決定1: 日足の口は**出来高と損切り幅の下限（ATR(14)）で 1 つの singleton を共有する**
 // （キャッシュを共有＝同じ銘柄の同じ取引日の取得は 1 回。取得枠を増やさない）。どちらかの設定が有効で OrderExecution:BaseUrl が
 // 絶対 URL のときだけ Cached（Http）を作り、どちらも無効なら NoOp（要求 0 回）。各機能はそれぞれの設定が有効なときだけこの口を使う
@@ -327,22 +337,38 @@ builder.Services.AddKeyedSingleton<IDailyBarsProvider>(DailyBarsComposition.Shar
     if (!volumeEnabled && !atrEnabled)
         return new NoOpDailyBarsProvider();
 
-    var baseUrl = configuration["OrderExecution:BaseUrl"];
-    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+    // NFR, IADR-0559 決定 3, #1391: 日足の取得元は gRPC の輸送があれば gRPC、無ければ REST（接続先が無ければ NoOp）。キャッシュは同じ 1 つ。
+    var source = DailyBarsComposition.Source(sp, configuration);
+    if (source is null)
     {
         sp.GetRequiredService<ILoggerFactory>().CreateLogger("DecisionVolume").LogWarning(
-            "DecisionVolume:Enabled={VolumeEnabled} / StopWidthFloor:Atr14:Enabled={AtrEnabled} だが OrderExecution:BaseUrl が無い・不正のため、"
+            "DecisionVolume:Enabled={VolumeEnabled} / StopWidthFloor:Atr14:Enabled={AtrEnabled} だが OrderExecution:BaseUrl（または OrderExecution:Grpc）が無い・不正のため、"
                 + "日足を要求しません（出来高は未提供のまま・損切り幅の下限は参照価格の 2%）。",
             volumeEnabled, atrEnabled);
         return new NoOpDailyBarsProvider();
     }
 
-    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("order-execution");
-    http.BaseAddress = uri;
     return new CachedDailyBarsProvider(
-        new HttpDailyBarsSource(http, sp.GetRequiredService<ILogger<HttpDailyBarsSource>>()),
+        source,
         sp.GetRequiredService<TimeProvider>(),
         sp.GetRequiredService<ILogger<CachedDailyBarsProvider>>());
+});
+// 🔴 FR-04, FR-10, #1338, IADR-0535 決定2・3: 処理中の決済が建玉を覆うかの照会口（発注執行の GET /order-execution/in-flight-closes。
+// 決済のゲートと同じ判定）。OrderExecution:BaseUrl が絶対 URL のときだけ Http（名前付きクライアント "order-execution"・s2s トークン・8 秒）、
+// 無ければ NoOp（常に不明＝LLM を呼ぶ＝従来どおり）。照会の失敗・不明も LLM を呼ぶ（決済の判断を止めない）。明示的に登録する（IADR-0397）。
+// ［2026-10-17 追記 / #1391・IADR-0559 決定 3］`OrderExecution:Grpc` の宣言があれば gRPC（GrpcInFlightCloseProvider）を BaseUrl より優先する。
+builder.Services.AddScoped<IInFlightCloseProvider>(sp =>
+{
+    if (sp.GetService<OrderExecutionGrpcTransport>() is { } orderExecutionGrpc)
+        return new GrpcInFlightCloseProvider(orderExecutionGrpc, sp.GetRequiredService<ILogger<GrpcInFlightCloseProvider>>());
+
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["OrderExecution:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new NoOpInFlightCloseProvider();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("order-execution");
+    http.BaseAddress = uri;
+    return new HttpInFlightCloseProvider(http, sp.GetRequiredService<ILogger<HttpInFlightCloseProvider>>());
 });
 // FR-04, #1118, IADR-0467 決定 6: 判断の出来高の口（判断サービス・Stage 0 の出来高のデコレータが読む）。出来高が無効なら NoOp
 // （ATR だけが有効でも出来高は従来の「未提供」の行のまま）。有効なら共有の口（Cached または接続先が無ければ NoOp）。
@@ -564,17 +590,40 @@ builder.Services.AddScoped<IFxRateProvider>(sp => new MarketFxRateProvider(
 // **構築時に読む**ので、読めない値・範囲外（0 未満・0.25 超）はここで例外になり起動が止まる（fail-fast）。0 は統制を外す明示の値。
 builder.Services.AddSingleton(MinimumEntryNotionalOptionsLoader.FromConfiguration(builder.Configuration));
 
+// 🔴 NFR-13, FR-02, UC-02, #1423 M-5, ADR-0074 決定1・2, IADR-0582: 月次 LLM 費用上限の 100% 到達（Halted）の照会口。
+// 情報収集と同じ GET /costs/state（OwnerOrService・trading-service の s2s）。CostControl:BaseUrl 未設定/不正 URI は NoOp
+// （常に停止していない＝従来どおり）。判断のたびに 1 回照会する（短いタイムアウト。失敗は停止していない側へ倒す）。
+builder.Services.AddHttpClient("cost", c => c.Timeout = TimeSpan.FromSeconds(3))
+    .AddAiStockTradingServiceToken(builder.Configuration);
+builder.Services.AddSingleton<NoOpLlmCostHaltGate>();
+builder.Services.AddScoped<ILlmCostHaltGate>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["CostControl:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return sp.GetRequiredService<NoOpLlmCostHaltGate>();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("cost");
+    http.BaseAddress = uri;
+    return new HttpLlmCostHaltGate(http, sp.GetRequiredService<ILogger<HttpLlmCostHaltGate>>());
+});
 builder.Services.AddScoped<TradeDecisionAppService>();
 
 // FR-04, FR-15, NFR（費用）, ADR-0033 決定2/決定4/決定5, #632, IADR-0318: Stage 0 の記録（AI 判断の記録・再生）。
 //
 // 🔴 **既定では走らない**（Stage0Recording:Enabled 既定 false ＋ 承認値が見積りと一致しない限り実行しない）。
 // as-of 入力の供給は既定「入力なし」であり、実供給を構成するまで記録は 1 件も作られない（LLM も呼ばれない）。
+// ［2026-10-13 追記 / #1308・IADR-0528 決定7］基底の供給を足した。`Reports:BaseUrl` と `OrderExecution:BaseUrl` がそろうと、
+// 連鎖の最も内側が基底の供給になる（Stage0AsOfComposition）。そろわなければ従来どおり「入力なし」。記録を走らせるかは Stage0Recording が決める。
+// ［2026-10-17 追記 / #1388・IADR-0557 決定 2］報告書の口は `Reports:Grpc`（上の AddAiStockTradingReportsGrpc）でも満たし、宣言があれば当時の方針も gRPC で読む。
+// ［2026-10-17 追記 / #1391・IADR-0559 決定 3］日足の口も同じく `OrderExecution:Grpc`（上の AddAiStockTradingOrderExecutionGrpc）で満たし、宣言があれば gRPC で読む。
+builder.Services.AddHttpClient(Stage0AsOfComposition.ExternalHttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.Configure<Stage0RecordingOptions>(
     builder.Configuration.GetSection(Stage0RecordingOptions.SectionName));
 // FR-04, FR-15, ADR-0044 決定 3, ADR-0046 決定 1, #1049, IADR-0442 決定 4: 当時の監視銘柄（as-of の (e)）は市場監視の
 // GET /monitor/watchlist/as-of から読み、供給をデコレータで包んで埋める。MarketMonitor:BaseUrl が空・不正なら常に「再構成できない」
 // （その記録は合否から外れる）。記録の対象銘柄（Stage0Recording:Symbols）では代えない。as-of の他の入力の実供給は無いまま。
+// ［2026-10-13 追記 / #1308・IADR-0528］↑の「他の入力の実供給は無いまま」は古い。価格・方針・参考情報・為替・サイジングは
+// 連鎖の最も内側の基底の供給（Stage0AsOfComposition.CreateBase）が組む。
 builder.Services.AddScoped<IAsOfWatchlistSource>(sp =>
 {
     if (sp.GetService<MarketMonitorGrpcTransport>() is { } monitorGrpc)
@@ -595,7 +644,8 @@ builder.Services.AddScoped<IAsOfWatchlistSource>(sp =>
 builder.Services.AddScoped<IAsOfDecisionInputProvider>(sp => new WatchlistAsOfDecisionInputProvider(
     new StopWidthFloorAsOfDecisionInputProvider(
         new DailyVolumeAsOfDecisionInputProvider(
-            new NoAsOfDecisionInputProvider(),
+            // FR-15, #1308, IADR-0528 決定7: 基底の供給（口がそろわなければ NoAsOfDecisionInputProvider）。
+            Stage0AsOfComposition.CreateBase(sp),
             sp.GetRequiredService<IDailyBarsProvider>(),
             sp.GetRequiredService<ILogger<DailyVolumeAsOfDecisionInputProvider>>()),
         sp.GetRequiredService<IStopWidthFloorSource>(),
@@ -609,12 +659,26 @@ builder.Services.AddScoped<IStage0DecisionRecordSink>(sp =>
         : new FileStage0DecisionRecordSink(
             outputPath, sp.GetRequiredService<ILogger<FileStage0DecisionRecordSink>>());
 });
+// FR-15, ADR-0033 決定5, #1342, IADR-0537: 実行の状態（完了の印・チェックポイント・費用の累計・ロック）の置き場。
+// 🔴 Stage0Recording:StateDirectory（永続ボリューム）が無ければ「読めない・書けない」と答える既定（記録は走らない）。
+// 台帳は同じ置き場の別のファイル・別の鍵（両方の実装が 2 つのポートを持つ）。
+builder.Services.AddSingleton<IStage0RecordingStateStore>(sp =>
+{
+    var stateDirectory = sp.GetRequiredService<IConfiguration>()[$"{Stage0RecordingOptions.SectionName}:StateDirectory"];
+    return string.IsNullOrWhiteSpace(stateDirectory)
+        ? new NoStage0RecordingStateStore()
+        : new FileStage0RecordingStateStore(
+            stateDirectory, sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<FileStage0RecordingStateStore>>());
+});
+builder.Services.AddSingleton(sp => (IStage0RecordingCostLedger)sp.GetRequiredService<IStage0RecordingStateStore>());
 builder.Services.AddScoped(sp => new Stage0DecisionRecorder(
     sp.GetRequiredService<ILlmCompletionClient>(),
     // FR-15, ADR-0054 決定3, #1196, IADR-0498: 本番の二段の構成（一次プロンプトの形を本番に合わせる。二段は記録側で必ず有効にする）。
     sp.GetRequiredService<DecisionOrchestrationOptions>(),
     sp.GetRequiredService<IAsOfDecisionInputProvider>(),
     sp.GetRequiredService<IStage0DecisionRecordSink>(),
+    sp.GetRequiredService<IStage0RecordingStateStore>(),
+    sp.GetRequiredService<IStage0RecordingCostLedger>(),
     sp.GetRequiredService<Stage0RecordingUsageCollector>(),
     BuildLlmPriceTable(sp.GetRequiredService<IConfiguration>()),
     sp.GetRequiredService<TimeProvider>(),
@@ -622,6 +686,15 @@ builder.Services.AddScoped(sp => new Stage0DecisionRecorder(
     // FR-10, #1209, IADR-0507: 最小の名目額のしきい値は本番の判断と同じ単一の値（Sizing:MinEntryNotionalRatio）。
     sp.GetRequiredService<MinimumEntryNotionalOptions>()));
 builder.Services.AddHostedService<Stage0RecordingService>();
+
+// 🔴 FR-10, FR-19, #1396, IADR-0561 決定 3・4: 閉場前の手仕舞い（既定は無効。設定か方針の「閉場前の手仕舞い: 有効」の行で有効）。
+// #1407, IADR-0564 決定 1: 有効・無効と M はリスク管理の設定（SC-02 の保存値か構成）からサイジング文脈で受け取る。ここで読むのは巡回の間隔だけ
+// （PreCloseFlatten:Enabled / Minutes が取引判断の構成に残っていれば起動を止める）。構成は構築時に読む（範囲外・読めない値は起動を止める）。常駐は常に登録する（方針の行で有効になるため。窓の外では照会もしない）。
+builder.Services.AddSingleton(PreCloseFlattenOptionsLoader.FromConfiguration(builder.Configuration));
+// #1407（PR #1408 のレビュー）: 直近に受け取った手仕舞いの設定（照会の失敗で既定へ倒さない）。巡回をまたいで保つため singleton。
+builder.Services.AddSingleton<TradeDecisionService.Features.TradeDecision.FlattenBeforeClose.PreCloseFlattenLastKnown>();
+builder.Services.AddScoped<TradeDecisionService.Features.TradeDecision.FlattenBeforeClose.PreCloseFlattener>();
+builder.Services.AddHostedService<PreCloseFlattenService>();
 
 // ADR-0003, IADR-0011, IADR-0023: 価格変動（イベント駆動）と収集完了（定時）の両系統を購読し、
 // 取引判断で合流して TradeDecisionMade を発行する。
@@ -652,8 +725,8 @@ app.UseAiStockTradingExceptionHandler();
 // 配備でない環境（docker-compose の Development・試験の Testing）は従来どおり警告。計上時の解決は変えない（IADR-0055）。
 var llmGatewayConfigured = llmGrpcAddress is not null
     || Uri.TryCreate(app.Configuration["LlmGateway:BaseUrl"], UriKind.Absolute, out _);
-switch (LlmPricingStartupGuard.Evaluate(
-    BuildLlmPriceTable(app.Configuration), llmGatewayConfigured, app.Environment.IsProduction()))
+var startupPriceTable = BuildLlmPriceTable(app.Configuration);
+switch (LlmPricingStartupGuard.Evaluate(startupPriceTable, llmGatewayConfigured, app.Environment.IsProduction()))
 {
     case LlmPricingStartupVerdict.Refuse:
         throw new InvalidOperationException(LlmPricingStartupGuard.RefusalMessage);
@@ -661,6 +734,15 @@ switch (LlmPricingStartupGuard.Evaluate(
         app.Logger.LogWarning(LlmPricingStartupGuard.WarningMessage);
         break;
 }
+// NFR-13, ADR-0064 決定9, #1305, IADR-0553: 未知モデルの計上単価が書かれているのに解析できない・0 以下なら知らせる
+// （計上は既定値で続く＝0 円にも表の最大にも黙って倒さない。起動は止めない）。
+if (startupPriceTable.UnknownModelSettingRejected)
+    app.Logger.LogWarning(LlmPricingStartupGuard.UnknownModelSettingWarningMessage);
+
+// 🔴 FR-10, ADR-0066 決定1, #1291, IADR-0527 決定2（2026-10-13 追記）: Sizing:MinEntryNotionalRatio を既定（1%）から変えた構成では、
+// 高ボラティリティ銘柄の区分の上限の下端（1% の固定値。構成値に連動しない）とのずれを起動時に知らせる（統制は緩まないので起動は止めない）。
+if (HighVolatilityFloorStartupNotice.WarningFor(app.Services.GetRequiredService<MinimumEntryNotionalOptions>()) is { } hvFloorWarning)
+    app.Logger.LogWarning("{HighVolatilityFloorWarning}", hvFloorWarning);
 
 // FR-02, #1169, IADR-0490: 導いた上限を起動時に 1 行出す（運用者が監視銘柄数・LLM の timeout と突き合わせられるように）。
 var cycleBudget = app.Services.GetRequiredService<ScheduledCycleBudget>();

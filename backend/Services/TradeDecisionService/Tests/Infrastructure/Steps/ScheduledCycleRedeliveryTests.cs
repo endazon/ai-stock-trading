@@ -440,8 +440,65 @@ public class ScheduledCycleRedeliveryTests
             .Subject.Message;
         warning.Should().Contain("判断対象 3 件（監視銘柄 1 件 ＋ 監視銘柄の外の保有銘柄 2 件）");
         warning.Should().Contain("consumer_timeout").And.NotContain("TradeCycle__MaxWatchedSymbols を見直して");
+        // ［2026-10-16 追記 / #1367・IADR-0546 決定 3］打ち切りで落ちるのは末尾の保有していない監視銘柄（保有中の銘柄は先頭）。文言は並びに合わせる。
+        warning.Should().Contain("末尾の保有していない監視銘柄から").And.NotContain("末尾の保有のみの銘柄から");
 
         await host.StopAsync();
+    }
+
+    // 🔴 T-10-2684（最重要・否定形）, FR-02, FR-04, #1367, IADR-0546 決定 1・3: サイクルが実行時間の上限で打ち切られても、
+    // 保有中の銘柄（監視銘柄の外の MSFT・監視銘柄に在る TSLA）の出口判断は打ち切りの前に済んでおり、打ち切られるのは末尾の
+    // 保有していない監視銘柄（AAPL）である。旧い並び（監視銘柄が先・保有のみが末尾）では AAPL で止まり、保有の判断に届かない。
+    [Fact]
+    public async Task T_10_2684_上限で打ち切られても保有中の銘柄の判断は打ち切りの前に済む()
+    {
+        var llm = new HangOnSymbolLlm("AAPL");
+        var failures = new RecordingTradeDecisionFailureReporter();
+        var held = new HeldBySymbol(new Dictionary<string, int> { ["MSFT"] = 10, ["TSLA"] = 10 });
+        using var host = await BuildAsync(
+            llm, ProductionLikeBudget(), failures, cycleTimeoutSeconds: 2, held: held, retryChain: RetryChainOf(1),
+            heldSymbols: new FixedHeldSymbols(Msft, Tsla), watchlist: [Aapl, Tsla]);
+        var message = new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow);
+
+        var session = await host.TrackActivityForTest()
+            .DoNotAssertOnExceptionsDetected()
+            .PublishMessageAndWaitAsync(message);
+
+        llm.CancelledHangs.Should().Be(1, "前提: サイクルは AAPL の判断の途中で上限により打ち切られた");
+        llm.Targets.Distinct().Should().Equal(
+            ["MSFT", "TSLA", "AAPL"], "保有中の銘柄（保有の応答の順）が先、保有していない監視銘柄が末尾");
+        session.MovedToErrorQueue.MessagesOf<InformationCollected>().Should().ContainSingle("前提: 打ち切られた配信は再試行しない");
+
+        await host.StopAsync();
+    }
+
+    // 指定した銘柄では毎回応答せず（token の取り消しまで待つ）、他は売り（保有の決済）を即答し、判断対象の銘柄を呼ばれた順に記録する LLM。
+    private sealed class HangOnSymbolLlm(string hangSymbol) : ILlmCompletionClient
+    {
+        public ConcurrentQueue<string> Targets { get; } = new();
+
+        public int CancelledHangs;
+
+        public async Task<string> CompleteAsync(
+            string prompt, string? model = null, string? purpose = null, CancellationToken ct = default)
+        {
+            var target = new[] { "AAPL", "MSFT", "TSLA" }.FirstOrDefault(s => IsTarget(prompt, s)) ?? "?";
+            Targets.Enqueue(target);
+            if (target != hangSymbol)
+                return SellJson;
+
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                Interlocked.Increment(ref CancelledHangs);
+                throw;
+            }
+
+            return SellJson;
+        }
     }
 
     // #1286, IADR-0521: 保有中の銘柄を固定で返す供給口。

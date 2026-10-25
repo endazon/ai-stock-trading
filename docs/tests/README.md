@@ -3,15 +3,15 @@ title: テスト戦略 — 受け入れ基準の写像規約と統制系の網�
 type: test
 status: approved
 created: 2026-08-03
-updated: 2026-10-08
+updated: 2026-10-21
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-10, FR-12, FR-15, FR-19, FR-20]
+ids: [FR-10, FR-12, FR-15, FR-19, FR-20, NFR, SC-01, SC-02, SC-03, SC-04]
 adrs: [ADR-0008, ADR-0016, ADR-0018]
-iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259, IADR-0280, IADR-0307, IADR-0335, IADR-0376, IADR-0497, IADR-0510]
-specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260923_887_test-id-duplicate-numbering, 20260925_923_775_test-id-baseline-ratchet-and-git-census, 20261007_1200_integration-skip-gate, 20261008_1235_test-trace-declared-ranges, 20261008_1240_t17-test-id-collision]
-issues: [#204, #211, #331, #335, #337, #340, #342, #343, #344, #689, #690, #752, #887, #923, #1200, #1235, #1240, MSP#446, planning#575]
+iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259, IADR-0280, IADR-0307, IADR-0335, IADR-0376, IADR-0497, IADR-0510, IADR-0087, IADR-0565, MSP:IADR-0569]
+specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260923_887_test-id-duplicate-numbering, 20260925_923_775_test-id-baseline-ratchet-and-git-census, 20261007_1200_integration-skip-gate, 20261008_1235_test-trace-declared-ranges, 20261008_1240_t17-test-id-collision, 20261021_1411_e2e-standards-reference-and-live-guardrails]
+issues: [#204, #211, #331, #335, #337, #340, #342, #343, #344, #689, #690, #752, #887, #923, #1200, #1235, #1240, #1410, #1411, MSP#446, MSP#2013, MSP#2014, planning#575]
 -->
 
 
@@ -173,13 +173,37 @@ public void 空売りは株価5ドル未満を拒否する(decimal price, bool a
 | --- | --- | --- |
 | フェイクブローカー / フェイク LLM によるサイクル 1 周のシナリオテスト | #331 / #335 / #337 | 対象の実体が無い段階では書けない |
 | moomoo `SIMULATE` 結合テスト | #342 | PoC（2026-08-31 期限）の完了が前提 |
-| フロント Playwright E2E | #340 | 基盤側の新スタック追随後 |
+| フロント Playwright E2E（基準は確定・live の配線は未整備） | #340（L1）／#1410（網羅表と live 層の実装の親） | 下記「Playwright E2E の基準」 |
 | 性能ゲート（取引サイクル 10 分 / 変動→発注 5 分） | #337（計器は #689 で新設済み。実測は #690 を接続） | 取引サイクルの実体が必要 |
+
+### Playwright E2E の基準
+
+**正本は基盤リポジトリ（microservices-platform）の E2E テスト基準 `docs/tests/E2E_STANDARDS.md` である。本書へ複写しない。**
+実行の層（L1 CI スタブ／L2 live 読み取り／L3 live 書き込み／L3-T 取引影響／L3-L LLM 費用）、タグ、Playwright の project 名、
+live の opt-in（`E2E_LIVE` / `E2E_LAYER`）、ロケータ・待機・試験アカウント・試験データの規約は同書と、同書が写す基盤の実装判断に従う。
+本リポジトリで名前を変えたり別の綴りを足したりしない。ここには本リポジトリ固有の点だけを置く。
+
+- **テスト ID**: E2E のテストにも §1 の `T-<機能要求番号>-<連番>` を振り、テスト直前のコメントに起点 ID と並べて書く。
+  採番空間は xUnit のテストと共有する（機能要求ごと・ファイル横断）。
+- **L1 は harness で動く**: 本ユニットは単独の実行アプリを持たないため、L1 はビルド済み SPA の preview ではなく、
+  E2E ハーネス（`frontend/e2e/harness/`。合成点と同じくシェルの下へルート factory を載せる test-only の vite）と
+  `installBff`（`frontend/e2e/fixtures.ts`。バックエンドの契約フィクスチャを土台にした `page.route` のモック）で動く。
+- **L3-L は持たない**: 画面操作で LLM を直接呼ぶものが無い。`@llm` の spec を置かない。
+- **禁止行**: 網羅表の **A-049**（live での発注先の変更 `PUT broker-provider`。どの値へも）と **A-067**（live での
+  OpenD 認証のコード送信・再送 `POST /opend-auth/{code,resend}`）は、テストとして存在させない。戻しても作用
+  （段階の算入・オーナー端末への SMS・OpenD の状態）が戻らないためである。これらの経路は L1 のモックだけで検証する。取引影響層でもこの 2 つは送らない（損切り機構の変更も同層では現在値と同じ値の書き込みに限る）。
+- **取引影響層（L3-T）**: 取引に影響する書き込み（設定画面とリスク設定画面の各設定・監視銘柄）は閉場後だけ行う。
+  閉場判定は `trading` project の globalSetup に置き、開場中か in-flight（約定待ち・手仕舞い中）があれば
+  exit 2（前提未整備）で何も実行しない。事前スナップショットを取り、各テストの後に変更前の値で復元し、
+  終了時の突合で差分が残れば赤にする。
+- **現状**: L1（設定・リスク設定・統制状態参照の各画面と発注先の変更）は在る。live 用 config・`e2e/live/`・閉場判定・復元・禁止行の機械検査は未整備で、
+  網羅表の親 issue（#1410）の子で足す。
 
 ## 変更履歴
 
 | 日付 | 内容 |
 | --- | --- |
+| 2026-10-21 | 「フロント Playwright E2E」行を更新し、基盤リポジトリの E2E テスト基準を正本として参照する節を足した（#1411）。本リポジトリ固有の点（テスト ID・harness・L3-L なし・禁止行 A-049/A-067・取引影響層の閉場後限定と復元）だけを書き、基準の本文は複写しない。 |
 | 2026-10-08 | テストコードが使うテスト ID の採番を検査 5 として追加し、参照の無い側に限る改番の例外を定めた（[#1240](https://github.com/endazon/ai-stock-trading/issues/1240)）。`T-17-…` の帯で、採算の見積りの試験と既定値の試験が同じ番号を使い、採算側の後続番号が表に無かったため。採算の見積りのテスト仕様書を起こし、既定値の 4 件を改番した。 |
 | 2026-09-25 | 既知の重複の baseline に「増える側」のラチェットを追加（[#923](https://github.com/endazon/ai-stock-trading/issues/923)）。entry をマージベースより増やすと赤になり、足すときはコミット本文での ID ごとの宣言と PR での説明を要する。 |
 | 2026-09-23 | テスト ID の採番規約を新設（[#887](https://github.com/endazon/ai-stock-trading/issues/887)）。採番行・枝番・参照行の区別、機能要求ごと・ファイル横断の採番空間、再利用と改番の禁止、並行レーンでの帯の確保、既知の重複のラチェット（`scripts/test-id-duplicate-baseline.json`）。検査は `scripts/check-test-traceability.js` の検査 4 |

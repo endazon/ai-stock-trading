@@ -52,6 +52,9 @@ public sealed class StopLegScriptedBroker
     public int AlternativeStopCount { get; private set; }
     public int MarketCloseCount { get; private set; }
     public int CancelCount { get; private set; }
+
+    /// <summary>#1449, IADR-0576 決定2: 逆指値の取消を受け付けても照会では生きたまま（取消待ち・届いていない）に見せる。</summary>
+    public bool CancelLeavesStopsWorking { get; set; }
     public List<Guid> StopDecisionIds { get; } = [];
     public OrderIntent? LastStopIntent { get; private set; }
 
@@ -127,6 +130,14 @@ public sealed class StopLegScriptedBroker
     public Task CancelOrderAsync(string orderId, CancellationToken ct = default)
     {
         CancelCount++;
+        // #1422, IADR-0569: エントリーの取消は、照会で終端（約定 0 の Cancelled）を確かめられる（既定）。
+        // 取消の窓で約定した・非終端のままの場面は、試験が Orders へ先に入れて表す（TryAdd なので上書きしない）。
+        if (orderId.StartsWith("entry", StringComparison.Ordinal))
+            Orders.TryAdd(orderId, new BrokerOrder(orderId, CloseIntent(EntryFilled), OrderStatus.Cancelled, 0, 0m, Now, Now));
+        // #1449, IADR-0576 決定2: 逆指値の取消も照会で終端（Cancelled）に見える。取消が効かない場面は CancelLeavesStopsWorking で表す。
+        else if (!CancelLeavesStopsWorking
+            && Orders.TryGetValue(orderId, out var working) && working is { Status: OrderStatus.Accepted or OrderStatus.PartiallyFilled })
+            Orders[orderId] = working with { Status = OrderStatus.Cancelled, CompletedAt = Now };
         return Task.CompletedTask;
     }
 

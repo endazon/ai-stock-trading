@@ -53,6 +53,9 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     // FR-01, FR-13, #1015, IADR-0435: Finnhub の対象銘柄の出所。MarketMonitor:BaseUrl 設定時=http（監視銘柄に追随）、
     // 未設定/不正=configuration（構成の固定リスト）。取引判断の同名ポート（IADR-0095）と同じ語彙。
     .AddPortFromBaseUrl("watchlist", builder.Configuration["MarketMonitor:BaseUrl"], "http", "configuration")
+    // FR-01, FR-02, #1363, IADR-0547 決定 1: 収集の対象へ足す保有銘柄の出所。RiskManagement:BaseUrl 設定時=http
+    // （リスク管理の open-positions）、未設定/不正=none（保有を足さない。従来の挙動）。
+    .AddPortFromBaseUrl("held-symbols", builder.Configuration["RiskManagement:BaseUrl"], "http", "none")
     // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub 日次要求見積り（回/日）の自己申告（現在の実現手段が
     // 無かった「日次総量の可視化」を、外部から /internal/introspection 経由で読めるようにする）。
     // FR-01, ADR-0043（計画）決定 3, #1030, IADR-0437: 監視銘柄に追随する構成（MarketMonitor:BaseUrl）では構成の固定リストは対象ではない。
@@ -95,6 +98,15 @@ builder.Services.AddHttpClient("monitor", c => c.Timeout = TimeSpan.FromSeconds(
 // **`MarketMonitor:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば監視銘柄の読み手が
 // gRPC 実装を選ぶ（BaseUrl より優先）。不正な宛先は起動時に落とす。
 builder.Services.AddAiStockTradingMarketMonitorGrpc(builder.Configuration);
+// 🔴 FR-01, FR-02, #1363, IADR-0547 決定 1: 保有銘柄（リスク管理の GET /risk-controls/open-positions・OwnerOrService）も収集の対象へ
+// 合流させる（取引判断は監視銘柄 ∪ 保有銘柄を判断する。IADR-0521 決定 1）。取引判断と同じ口・同じ s2s（trading-service のトークン）・
+// 短いタイムアウト。RiskManagement:BaseUrl 未設定/不正 URI は保有を足さない（従来どおり）。読めない巡回は監視銘柄だけから決める。
+builder.Services.AddHttpClient("risk", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .AddAiStockTradingServiceToken(builder.Configuration);
+// NFR, MSP:ADR-0029, IADR-0284 決定 5, IADR-0557 決定 2, #1388 (#753): east-west gRPC（`RiskControlsRead/GetOpenPositions`）。
+// **`RiskManagement:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば保有銘柄の読み手が
+// gRPC 実装を選ぶ（BaseUrl より優先）。不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingRiskManagementGrpc(builder.Configuration);
 builder.Services.AddSingleton(sp =>
 {
     var sourceOptions =
@@ -117,6 +129,21 @@ builder.Services.AddSingleton(sp =>
         reader = new HttpMarketMonitorWatchlistReader(http, sp.GetRequiredService<ILogger<HttpMarketMonitorWatchlistReader>>());
     }
 
+    IHeldSymbolsProvider? held = null;
+    var riskBaseUrl = builder.Configuration["RiskManagement:BaseUrl"];
+    if (sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc)
+    {
+        held = new GrpcRiskManagementHeldSymbolsProvider(
+            riskGrpc, sp.GetRequiredService<ILogger<GrpcRiskManagementHeldSymbolsProvider>>());
+    }
+    else if (!string.IsNullOrWhiteSpace(riskBaseUrl) && Uri.TryCreate(riskBaseUrl, UriKind.Absolute, out var riskUri))
+    {
+        var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk");
+        http.BaseAddress = riskUri;
+        held = new HttpRiskManagementHeldSymbolsProvider(
+            http, sp.GetRequiredService<ILogger<HttpRiskManagementHeldSymbolsProvider>>());
+    }
+
     return new FinnhubSymbolSelector(
         reader,
         sourceOptions.Finnhub.Symbols,
@@ -125,7 +152,8 @@ builder.Services.AddSingleton(sp =>
             pollIntervalSeconds,
             Math.Max(1, InformationSourceFactory.FinnhubRequestsPerSymbol(sourceOptions))),
         sp.GetRequiredService<BusinessMetrics>(),
-        sp.GetRequiredService<ILogger<FinnhubSymbolSelector>>());
+        sp.GetRequiredService<ILogger<FinnhubSymbolSelector>>(),
+        held);
 });
 
 // #336, ADR-0020 決定3: 取得は**ソース単位の成否**を返す ISourceFetcher へ委ねる（どの区分が落ちたかを
@@ -147,7 +175,9 @@ builder.Services.AddSingleton<ISourceFetcher>(sp =>
         sp.GetRequiredService<IClock>(),
         sp.GetRequiredService<TimeProvider>(),
         sp.GetRequiredService<ILoggerFactory>(),
-        hasSymbolSource ? finnhubSymbols : null);
+        hasSymbolSource ? finnhubSymbols : null,
+        // #1363, IADR-0547 決定 2: 監視銘柄に追随するなら、SEC EDGAR の CIK も収集の対象の銘柄（保有が先）から導く。
+        finnhubSymbols.FollowsWatchlist ? finnhubSymbols : null);
 
     // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 情報収集ぶんの Finnhub 日次要求量の見積り
     // （銘柄未設定・Finnhub 系ソース未有効なら挙動中立）。巡回間隔は本サービス自身の CollectionOptions を使う。
@@ -169,14 +199,18 @@ builder.Services.AddSingleton<ISourceFetcher>(sp =>
     ISourceFetcher runner = new SourceFetchRunner(sources, sp.GetRequiredService<ILogger<SourceFetchRunner>>());
 
     // #1015, IADR-0435: 監視銘柄に追随し、かつ Finnhub 系のソースが有効なら、取得の前に 1 回だけ対象銘柄を決め直す。
+    // #1363, IADR-0547 決定 2: SEC EDGAR も同じ対象から CIK を導くため、SEC EDGAR だけが有効でも決め直す。
+    var hasFinnhub = sources.Any(s => s.Name is InformationSourceFactory.Finnhub or InformationSourceFactory.FinnhubNews);
     var followsWatchlist = finnhubSymbols.FollowsWatchlist
-        && sources.Any(s => s.Name is InformationSourceFactory.Finnhub or InformationSourceFactory.FinnhubNews);
+        && (hasFinnhub || sources.Any(s => s.Name is InformationSourceFactory.SecEdgar));
     var metrics = sp.GetRequiredService<BusinessMetrics>();
     return followsWatchlist
         ? new WatchlistFollowingSourceFetcher(
             runner,
             finnhubSymbols,
-            count => InformationSourceFactory.RecordCycleDailyVolumeEstimate(sourceOptions, pollIntervalSeconds, count, metrics))
+            hasFinnhub
+                ? count => InformationSourceFactory.RecordCycleDailyVolumeEstimate(sourceOptions, pollIntervalSeconds, count, metrics)
+                : null)
         : runner;
 });
 

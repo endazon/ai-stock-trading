@@ -441,6 +441,394 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
   });
 }
 
+// --- check-review-verdict: 検証の下限（#1315 / IADR-0190 決定 7） ---
+// #1318 でプロンプトへ【検証の下限】を置いたが、マージ後の抜き取りで 2 本の違反が出た
+// （#1324: helm と .github の差分で helm lint / helm template / scripts.test.js を未実行、
+//  #1336: 32 ファイル中 18 ファイルしか読まず「下限は満たしていません」と自己申告）。
+// 規約「同型 2 回で検査器」に従い、判定の本文から下限を読む。実文の固定は scripts/fixtures/review-floor/。
+{
+  const fsRf = require('fs');
+  const pathRf = require('path');
+  const osRf = require('os');
+  const {
+    findFloorViolations,
+    parseReadDeclaration,
+    findFloorAdmissions,
+    findNotReadAdmissions,
+    selectReviewBody,
+    parseChangedFiles,
+    confirmedSections,
+  } = require('./check-review-verdict.js');
+  const fixture = (name) => fsRf.readFileSync(pathRf.join(__dirname, 'fixtures', 'review-floor', name), 'utf8');
+  const PR1336 = fixture('pr1336-review.txt');
+  const PR1333 = fixture('pr1333-review.txt');
+  const PR1333_FILES = [
+    '.ai-context/adr/IADR-0531_unparseable-llm-output-raw-excerpt-and-shape.md',
+    '.ai-context/adr/README.md',
+    '.ai-context/specs/20261013_1332_screening-unparseable-raw-excerpt.md',
+    'backend/Services/TradeDecisionService/Domain/TradeDecisionParser.cs',
+    'backend/Services/TradeDecisionService/Domain/UnparseableOutputShape.cs',
+    'backend/Services/TradeDecisionService/Features/TradeDecision/DecideTrade/DecisionOrchestrator.cs',
+    'backend/Services/TradeDecisionService/Tests/Domain/UnparseableOutputShapeTests.cs',
+    'backend/Services/TradeDecisionService/Tests/Features/TradeDecision/DecideTrade/DecisionOrchestratorTests.cs',
+    'backend/Services/TradeDecisionService/Tests/Features/TradeDecision/DecideTrade/DecisionOrchestratorUnparseableRawTests.cs',
+  ];
+  const review = (head, tail = '') =>
+    `## AI コードレビュー結果\n\n${head}\n\n### 🔴 重大\n- なし\n\n### 🟡 推奨\n- なし\n\n### 🟢 軽微\n- なし\n${tail}`;
+
+  ok('下限[#1315]: #1333 の実文（変更 9 ファイル中 9・backend 差分のみ）は緑', () => {
+    assert.deepStrictEqual(findFloorViolations(PR1333, PR1333_FILES), []);
+  });
+
+  ok('下限[#1315]: #1336 の実文（32 中 18・「下限は満たしていません」）は赤で、違反を 2 行に分けて示す', () => {
+    const v = findFloorViolations(PR1336, ['backend/Services/OrderExecutionService/Domain/X.cs']);
+    assert.strictEqual(v.length, 2, v.join('\n'));
+    assert.match(v[0], /変更 32 ファイル中 18 ファイルしか読んでいない/);
+    assert.match(v[1], /下限の自己申告/);
+  });
+
+  // 母集合: #1318〜#1336 のレビューコメントに実在した書式（作業仕様書 20261013_1315_review-floor-check の表）
+  ok('下限[#1315]: 実在した申告の書式から N / M を読む（陽性）', () => {
+    const cases = [
+      ['変更 9 ファイル中 9 ファイルを読んだ(生成物の除外なし)。', 9, 9],
+      ['変更 9 ファイル中 9 ファイルを読んだ（生成物の除外なし）。', 9, 9],
+      ['変更 14 ファイル中 14 ファイルの差分を読んだ（生成物の除外なし）。', 14, 14],
+      ['変更 15 ファイル中 15 ファイルの差分を確認した（生成物の除外なし）。', 15, 15],
+      ['変更 32 ファイル中、生成物の除外なし。**全文または差分を読んだのは 18 ファイル**です。', 32, 18],
+      ['変更 38 ファイル中、実装 15 ファイル（`Features/` `Infrastructure/` `Program.cs` とマイグレーション）の差分を読みました。', 38, 15],
+      ['変更 38 ファイル中、実装 15 ファイルは差分を読みました（`Features/` `Steps/`）。', 38, 15],
+      ['変更 １２ ファイル中 １２ ファイルを読んだ。', 12, 12], // 全角数字
+      ['変更 3 件中 3 件を読んだ。', 3, 3],
+    ];
+    for (const [text, n, m] of cases) {
+      const d = parseReadDeclaration(text);
+      assert.ok(d, text);
+      assert.strictEqual(d.n, n, text);
+      assert.strictEqual(d.m, m, text);
+    }
+  });
+
+  ok('下限[#1315]: 読んだ件数が数字で無い申告は「申告なし」（陰性。#1325 / #1329 の実文）', () => {
+    for (const text of [
+      '変更 38 ファイルのうち、実装ファイル（`Features/`）の差分を読んだ。',
+      '変更 30 ファイル中、実装・テスト・仕様の主要ファイルは全文または差分で読んだ。',
+      '変更 21 ファイル中、生成物の `messages.ts` / `messages.po` を除く 19 ファイルを対象にした。',
+    ]) {
+      const v = findFloorViolations(review(text), []);
+      assert.strictEqual(v.length, 1, text);
+      assert.match(v[0], /申告が無い/, text);
+    }
+    assert.match(findFloorViolations(review('差分を読んだ。'), [])[0], /申告が無い$/);
+  });
+
+  ok('下限[#1315]: 生成物の除外数 K を足して M + K ≥ N なら緑、足りなければ赤', () => {
+    assert.deepStrictEqual(
+      findFloorViolations(review('変更 21 ファイル中 19 ファイルを読んだ（生成物 2 ファイルを除外: `messages.ts` / `messages.po`）。'), []),
+      []
+    );
+    assert.deepStrictEqual(findFloorViolations(review('変更 5 ファイル中 4 ファイルを読んだ（生成物 1 ファイル（CHANGELOG.md）を除外）。'), []), []);
+    const v = findFloorViolations(review('変更 21 ファイル中 18 ファイルを読んだ（生成物 2 ファイルを除外）。'), []);
+    assert.strictEqual(v.length, 1);
+    assert.match(v[0], /21 ファイル中 18/);
+  });
+
+  ok('下限[#1315]: 「下限…満たして(い)ない／満たさない／満たしていません」は赤、否定の否定・引用・別の行は緑', () => {
+    for (const line of [
+      '下限は満たしていない。',
+      '下限は満たしてない。',
+      '下限を満たさない。',
+      '下限（全ファイルを読む）は満たしていません。',
+      '下限を満たせていません。',
+    ]) {
+      assert.strictEqual(findFloorAdmissions(line).length, 1, line);
+    }
+    for (const line of [
+      '下限はすべて満たした。',
+      '下限を満たしていない項目は無い。',
+      '検査器は「下限…満たしていない」と書いた本文を落とす。', // 引用（この PR 自身のレビューで自己発火しない）
+      '`下限は満たしていない` を検出する正規表現を足した。',
+      '下限: すべて実行した。\n他の条件は満たしていない。', // 別の行
+    ]) {
+      assert.deepStrictEqual(findFloorAdmissions(line), [], line);
+    }
+  });
+
+  // 「実行した」は節で読む（#1337 の AI レビュー 🟡）。行内の否定語には頼らない。
+  const confirmed = (...lines) => `\n### ✅ 確認できたこと（このセッションで実行）\n${lines.map((l) => `- ${l}`).join('\n')}\n`;
+  const notRun = (...lines) => `\n### 🔍 実行できなかったこと\n${lines.map((l) => `- ${l}`).join('\n')}\n`;
+
+  ok('下限[#1315]: deploy/helm の差分では helm lint と helm template の両方が「確認できたこと」に要る', () => {
+    const body = review('変更 2 ファイル中 2 ファイルを読んだ。');
+    const helm = ['deploy/helm/ai-stock-trading/values-local.yaml'];
+    assert.strictEqual(findFloorViolations(body, helm).length, 2);
+    assert.strictEqual(findFloorViolations(body + confirmed('`helm lint deploy/helm/ai-stock-trading`: 0 failed'), helm).length, 1);
+    assert.deepStrictEqual(findFloorViolations(body + confirmed('`helm lint`: 0 failed', '`helm template`: 成功'), helm), []);
+    // #1324 の実文の形: 🔍 の節に「実行していない」と在るだけ
+    assert.strictEqual(findFloorViolations(body + notRun('`helm lint` / `helm template`: 実行していない。'), helm).length, 2);
+    // helm の差分が無ければ要らない
+    assert.deepStrictEqual(findFloorViolations(body, ['backend/A.cs', 'docs/a.md']), []);
+  });
+
+  ok('下限[#1315]: scripts/ か .github/ の差分では scripts.test.js が「確認できたこと」に要る', () => {
+    const body = review('変更 1 ファイル中 1 ファイルを読んだ。');
+    for (const f of ['scripts/check-x.js', '.github/workflows/helm.yml']) {
+      const v = findFloorViolations(body, [f]);
+      assert.strictEqual(v.length, 1, f);
+      assert.match(v[0], /scripts\.test\.js/);
+      assert.deepStrictEqual(findFloorViolations(body + confirmed('`scripts.test.js`（REQUIRE_REPO_TESTS=1）: 529 件 passed'), [f]), [], f);
+      assert.strictEqual(findFloorViolations(body + notRun('`scripts.test.js`: 実行していない（未検証）。'), [f]).length, 1, f);
+    }
+  });
+
+  // #1337 の AI レビュー 🟡 が挙げた偽陽性の 2 例。行内に「拒否」「省略」があっても、確認できたことの節なら実行した。
+  ok('下限[#1315]: 確認できたことの節の「（権限拒否なし）」「出力を省略」は実行した記載として緑（偽陽性の是正）', () => {
+    const body = review('変更 2 ファイル中 2 ファイルを読んだ。');
+    const files = ['deploy/helm/ai-stock-trading/values.yaml', 'scripts/check-x.js'];
+    const ok1 = confirmed(
+      '`scripts.test.js` 全件成功（権限拒否なし）',
+      '`helm lint` OK、`helm template` は出力を省略して結果のみ記載'
+    );
+    assert.deepStrictEqual(findFloorViolations(body + ok1, files), []);
+  });
+
+  ok('下限[#1315]: 🔍 の節に「helm lint は未実行」とあり確認できたことの節に無ければ赤', () => {
+    const body = review('変更 2 ファイル中 2 ファイルを読んだ。');
+    const helm = ['deploy/helm/ai-stock-trading/values.yaml'];
+    const v = findFloorViolations(body + confirmed('`helm template`: 成功') + notRun('`helm lint` は未実行'), helm);
+    assert.strictEqual(v.length, 1, v.join('\n'));
+    assert.match(v[0], /helm lint/);
+  });
+
+  // 見出しの母集合（#1318〜#1336 の 32 本）の揺れをすべて「確認できたこと」と読む。
+  ok('下限[#1315]: 確認できたことの見出しの表記揺れを読み、🔍 実行できなかったことは読まない', () => {
+    for (const h of [
+      '### 確認できたこと',
+      '### ✅ 確認できたこと（このセッションで実行）',
+      '### ✅ 確認できたこと(このセッションで実行)',
+      '### 確認できたこと（このセッションで実行して出力を見たもの）',
+      '### ✅ 確認できたこと（このセッションで実行し、出力を見た）',
+      '### 確認できたこと（実行した）',
+      '### ✅ 確認できたこと（このセッションで実走）',
+    ]) {
+      assert.match(confirmedSections(`${h}\n- scripts.test.js: ok\n### 🔍 実行できなかったこと\n- helm lint\n`), /scripts\.test\.js/, h);
+      assert.doesNotMatch(confirmedSections(`${h}\n- x\n### 🔍 実行できなかったこと\n- helm lint\n`), /helm lint/, h);
+    }
+  });
+
+  // #1337 の再レビュー 🟡: 節の中の小見出し（より深い見出し）で節を閉じない。同じ深さ以浅では閉じる。
+  ok('下限[#1315]: 確認できたことの節の中の #### 小見出しでは閉じず、同じ深さ以浅の見出しで閉じる', () => {
+    assert.match(confirmedSections('### 確認できたこと\n#### 検査器\n- scripts.test.js: ok\n'), /scripts\.test\.js: ok/);
+    const t =
+      '### 確認できたこと\n#### 検査器\n- scripts.test.js: ok\n#### Helm\n- helm template: ok\n' +
+      '### 🔍 実行できなかったこと\n- helm lint は未実行\n## 付記\n- helm lint\n';
+    const c = confirmedSections(t);
+    assert.match(c, /scripts\.test\.js/);
+    assert.match(c, /helm template/);
+    assert.doesNotMatch(c, /helm lint/);
+    // 同じ深さの別の見出しで閉じる
+    assert.doesNotMatch(confirmedSections('### 確認できたこと\n- a\n### 🟢 軽微\n- helm lint\n'), /helm lint/);
+    // 浅い見出しでも閉じる
+    assert.doesNotMatch(confirmedSections('### 確認できたこと\n- a\n## 次\n- helm lint\n'), /helm lint/);
+    // 実行形の判定でも緑になる
+    const body = review('変更 1 ファイル中 1 ファイルを読んだ。') + '\n### 確認できたこと\n#### 検査器\n- scripts.test.js: ok\n';
+    assert.deepStrictEqual(findFloorViolations(body, ['scripts/a.js']), []);
+  });
+
+  ok('下限[#1315]: #1337 の実文（本 PR 自身の AI レビュー。scripts/・.github/ の差分）は緑', () => {
+    const PR1337 = fixture('pr1337-review.txt');
+    assert.deepStrictEqual(findFloorViolations(PR1337, ['scripts/check-review-verdict.js', '.github/workflows/claude-code-review.yml']), []);
+  });
+
+  // --- #1315 の追加の是正: N/N を申告しつつ、本文で精読していないと認める形（#1340 / #1344 の同型 2 回） ---
+  // 母集合と期待の表は作業仕様書 20261014_1315_review-floor-not-read-declaration。判定は冒頭と「確認できたこと」の節で行う。
+  const notRead = (v) => v.filter((x) => /精読していないと書いている/.test(x));
+
+  ok('下限[#1315]: #1340 の 3 回目の実文（37/37 だが「行単位では読んでいない」）は赤', () => {
+    const v = findFloorViolations(fixture('pr1340-review3.txt'), ['backend/A.cs', 'deploy/helm/ai-stock-trading/values-local.yaml']);
+    assert.strictEqual(v.length, 1, v.join('\n'));
+    assert.match(v[0], /37 ファイルを読んだと申告したが/);
+    assert.match(v[0], /行単位では読んでいない/);
+  });
+
+  ok('下限[#1315]: #1344 の最終の実文（31/31 だが「名前を一覧し」「全行は読んでいない」）は赤', () => {
+    const v = findFloorViolations(fixture('pr1344-review2.txt'), [
+      'backend/A.cs',
+      'deploy/helm/ai-stock-trading/values.yaml',
+      '.github/workflows/helm.yml',
+    ]);
+    assert.strictEqual(notRead(v).length, 2, v.join('\n'));
+    assert.strictEqual(v.length, 2, v.join('\n')); // helm / scripts.test.js の記載は満たしている
+    assert.ok(v.some((x) => /全行は読んでいない/.test(x)), v.join('\n'));
+  });
+
+  ok('下限[#1315]: #1336 の 2 回目の実文（32/32 だが「本文を精読せず」「要点だけを確認」）は赤、K の申告なしの生成物には案内を添える', () => {
+    const v = findFloorViolations(fixture('pr1336-review2.txt'), ['backend/A.cs']);
+    assert.strictEqual(notRead(v).length, 2, v.join('\n'));
+    assert.match(v.join('\n'), /本文を精読せず/);
+    assert.match(v.join('\n'), /生成物 K ファイルを除外/); // Designer.cs の文は K を申告していないので赤＋案内
+  });
+
+  ok('下限[#1315]: #1333・#1337 の実文と、生成物 2 ファイルを申告して除外したレビュー（合成）は緑のまま', () => {
+    assert.deepStrictEqual(notRead(findFloorViolations(PR1333, PR1333_FILES)), []);
+    assert.deepStrictEqual(findFloorViolations(fixture('pr1337-review.txt'), ['scripts/a.js']), []);
+    const gen = fixture('synthetic-generated-excluded-review.txt');
+    assert.deepStrictEqual(findFloorViolations(gen, ['backend/A.cs']), []);
+    // 対照: 同じ本文で K の申告を外す（M=N にそろえる）と赤になる —— 申告と整合しない生成物の除外は数える
+    const noK = gen.replace(/36 ファイルを読んだ（生成物 2 ファイルを除外: [^）]*）/, '38 ファイルを読んだ（生成物の除外なし）');
+    assert.notStrictEqual(noK, gen);
+    assert.ok(notRead(findFloorViolations(noK, ['backend/A.cs'])).length >= 1);
+  });
+
+  ok('下限[#1315]: 実在した「精読していない」の表記揺れを冒頭で読む（陽性）', () => {
+    const head = '変更 3 ファイル中 3 ファイルを読んだ（生成物の除外なし）。';
+    for (const line of [
+      'テストは名前と範囲の確認にとどまり、行単位では読んでいない。', // #1340
+      'テスト 2 本は、テストの名前を一覧し、本体と照らして読んだ。', // #1344
+      '全行は読んでいない。', // #1344
+      'docs の差分は先頭部分を中心に確認し、全行は精読していない。', // #1328
+      '`docs/` と `.ai-context/` の各文書は、本文を精読せず存在と検査器の結果で確認した。', // #1336
+      'テスト 2 本は差分の存在を確認しただけで、中身は精読していない。', // #1326
+      'テストは差分の存在と PR 本文の記述の確認までである。', // #1326
+      '`docs/` 3 ファイルは差分の精読までは行っていない（未検証）。', // #1324
+      '- **要点だけ確認**: IADR-0534 は残余リスク節のみ。', // #1336
+      '- **要点または検査器の結果だけで確認したもの**: テスト 6 ファイル', // #1336
+      '索引行は出力が切り詰められたため、先頭部分しか目視していない。', // #1318
+      '追記した 2 行の全文は読めていない。', // #1318
+      'テスト 3 本は流し読みした。',
+      'テストは名前だけを確認した。', // AST#1400 の是正で「名前だけ」を読み方の文脈に限った（陽性は残る）
+      'テスト 4 本は名前だけで照らし合わせた。',
+    ]) {
+      const v = findFloorViolations(review(`${head}${line}`), []);
+      assert.strictEqual(notRead(v).length, 1, line);
+    }
+  });
+
+  ok('下限[#1315]: 差分を読んだ・否定の否定・引用・計画書・節の外は数えない（陰性）', () => {
+    const head = '変更 3 ファイル中 3 ファイルを読んだ（生成物の除外なし）。';
+    for (const line of [
+      '全文ではなく差分を読んだ。', // #1340 の 1 回目（差分を読むのは定義どおり）
+      '長い列挙は、末尾に足した値だけを確認した。', // #1341（差分そのもの）
+      '`.cs` は全文か差分、docs・helm・workflow は差分で読んだ。', // #1344 の 1 回目
+      '残りは差分を 1 ファイルずつ行単位で読んだ。',
+      '未読のファイルは無い。',
+      '精読していないファイルはない。',
+      '検査器は「行単位では読んでいない」と書いた本文を落とす。', // 引用（この PR 自身のレビューで自己発火しない）
+      '`全行は読んでいない` を検出する正規表現を足した。',
+      '計画書（FR-10）は読んでいない（計画リポ参照不可）。', // 計画書は読む対象のファイルではない
+      '計画 ADR の本文は精読していない。',
+      '`ThemeConcentrationLoader` が市場の名前だけを受け付けることを確かめた。', // AST#1400: コードの挙動の説明（読み方の自認ではない）
+      '市場は名前だけを受け付け、`"99"` のような数値の文字列は拒む。',
+      '構成値は名前だけ許し、数値を通さない。',
+    ]) {
+      assert.deepStrictEqual(notRead(findFloorViolations(review(`${head}${line}`), [])), [], line);
+    }
+    // 計画書とテストを並べた文は数える（#1346 の AI レビュー 🟢。計画書の除外でテストの自認ごと素通りさせない）
+    assert.strictEqual(notRead(findFloorViolations(review(`${head}計画書とテスト 2 本は精読していない。`), [])).length, 1);
+    // 🔍 実行できなかったこと・指摘の節に在るだけなら数えない（#1340 の 3 回目の 🔍 は「本体以外の差分の行単位の精読」）
+    const tail =
+      '\n### 🔍 実行できなかったこと\n- 計画書との照合は未検証（計画リポ参照不可）。\n- テストは全行を読んでいない。\n- 本体以外の差分の行単位の精読は行っていない。\n';
+    assert.deepStrictEqual(findFloorViolations(review(head) + tail, []), []);
+    assert.deepStrictEqual(
+      findFloorViolations(review(head).replace('### 🟢 軽微\n- なし', '### 🟢 軽微\n- テストの一部は精読していないが問題ない'), []),
+      []
+    );
+  });
+
+  ok('下限[#1315]: 「確認できたこと」の節の自認は数え、M < N のときは (a) と重ねない', () => {
+    const head = '変更 3 ファイル中 3 ファイルを読んだ（生成物の除外なし）。';
+    assert.strictEqual(notRead(findFloorViolations(review(head) + confirmed('テスト 2 本は要点だけ確認した'), [])).length, 1);
+    // M < N なら (a) の 1 行だけ（#1336 の初回・#1340 の 2 回目の「未読」を 2 度数えない）
+    const v = findFloorViolations(review('変更 3 ファイル中 2 ファイルを読んだ。テスト 1 本は未読。'), []);
+    assert.strictEqual(v.length, 1, v.join('\n'));
+    assert.match(v[0], /3 ファイル中 2/);
+  });
+
+  ok('下限[#1315]: 生成物だけの文は K>0 を申告していれば数えず、生成物以外も並べた文は数える', () => {
+    const k2 = '変更 5 ファイル中 3 ファイルを読んだ（生成物 2 ファイルを除外: `X.Designer.cs` / `ModelSnapshot.cs`）。';
+    assert.deepStrictEqual(findFloorViolations(review(`${k2}\`Designer.cs\` と ModelSnapshot は自動生成物のため、要点だけ確認した。`), []), []);
+    assert.strictEqual(
+      notRead(findFloorViolations(review(`${k2}要点または検査器の結果だけで確認したもの: Designer・ModelSnapshot（自動生成）、テスト 6 ファイル`), [])).length,
+      1
+    );
+    assert.deepStrictEqual(findNotReadAdmissions('前文。', null), []);
+  });
+
+  // #1337 の AI レビュー 🟢: 申告は冒頭（最初の判定の見出しより前）だけから読む。
+  ok('下限[#1315]: 申告は冒頭だけから読み、指摘の本文の「変更 N 件」を拾わない', () => {
+    const body = review('変更 3 ファイル中 3 ファイルを読んだ。').replace('### 🟢 軽微\n- なし', '### 🟢 軽微\n- 変更 1 件中 0 件を読んだ旨の記述は無い');
+    assert.deepStrictEqual(parseReadDeclaration(body), { n: 3, m: 3, k: 0 });
+    // 冒頭に申告が無ければ、指摘の本文に在っても申告なし
+    const late = review('差分を読んだ。').replace('### 🟢 軽微\n- なし', '### 🟢 軽微\n- 変更 3 ファイル中 3 ファイルを読んだ');
+    assert.match(findFloorViolations(late, [])[0], /申告が無い/);
+    // 「変更 N ファイル中」を「変更 N 件」より優先する
+    assert.deepStrictEqual(parseReadDeclaration('変更 1 件の追従あり。変更 5 ファイル中 5 ファイルを読んだ。'), { n: 5, m: 5, k: 0 });
+  });
+
+  ok('下限[#1315]: 変更ファイルが不明（null）なら差分の種類に応じた判定だけを行わない', () => {
+    assert.deepStrictEqual(findFloorViolations(review('変更 1 ファイル中 1 ファイルを読んだ。'), null), []);
+    assert.deepStrictEqual(parseChangedFiles(''), []);
+    assert.deepStrictEqual(parseChangedFiles('a\n\n b \n'), ['a', 'b']);
+  });
+
+  ok('下限[#1315]: 本文は判定の見出しを含む最後の候補を選ぶ（途中の独り言・進行中の投稿で赤くしない）', () => {
+    const events = [
+      { type: 'assistant', message: { content: [{ type: 'text', text: '下限を満たしていないので、残りのファイルを読む。' }] } },
+      {
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', id: 'a', name: 'mcp__github_comment__update_claude_comment', input: { body: 'レビュー中…' } }] },
+      },
+      {
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', id: 'b', name: 'mcp__github_comment__update_claude_comment', input: { body: PR1333 } }] },
+      },
+      { type: 'result', result: 'レビューを投稿しました。' },
+    ];
+    assert.strictEqual(selectReviewBody(events), PR1333);
+    assert.deepStrictEqual(findFloorViolations(selectReviewBody(events), PR1333_FILES), []);
+  });
+
+  // 実行形（ワークフローの「Check review verdict」と同じ呼び方）。::error が違反ごとに 1 行出ること。
+  ok('下限[#1315]: 実行形 —— #1336 は exit 1 で ::error を違反ごとに出し、#1333 は exit 0', () => {
+    const { spawnSync } = require('child_process');
+    const bin = pathRf.join(__dirname, 'check-review-verdict.js');
+    const dir = fsRf.mkdtempSync(pathRf.join(osRf.tmpdir(), 'ast-1315-'));
+    try {
+      const run = (body, files) => {
+        const f = pathRf.join(dir, 'exec.json');
+        const events = [
+          { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'x', name: 'mcp__github_comment__update_claude_comment', input: { body } }] } },
+        ];
+        fsRf.writeFileSync(f, JSON.stringify(events));
+        const env = Object.assign({}, process.env, { GITHUB_ACTIONS: 'true', CHANGED_FILES: files.join('\n') });
+        delete env.ALLOW_MISSING_VERDICT;
+        return spawnSync(process.execPath, [bin, f], { env, encoding: 'utf8' });
+      };
+      const bad = run(PR1336, ['backend/A.cs']);
+      assert.strictEqual(bad.status, 1, bad.stdout + bad.stderr);
+      const errors = bad.stdout.split('\n').filter((l) => l.startsWith('::error::'));
+      assert.strictEqual(errors.length, 3, bad.stdout); // 違反 2 行 + 総括 1 行
+      assert.match(errors[0], /32 ファイル中 18/);
+      assert.match(errors[1], /自己申告/);
+      // #1340 の 3 回目（37/37 だが「行単位では読んでいない」）も exit 1 で ::error を出す
+      const notReadRun = run(fixture('pr1340-review3.txt'), ['backend/A.cs']);
+      assert.strictEqual(notReadRun.status, 1, notReadRun.stdout + notReadRun.stderr);
+      assert.match(notReadRun.stdout, /::error::.*精読していないと書いている/);
+      const good = run(PR1333, PR1333_FILES);
+      assert.strictEqual(good.status, 0, good.stdout + good.stderr);
+      assert.ok(!/::error::/.test(good.stdout), good.stdout);
+      // 判定が揃っていても、helm の差分に helm lint が無ければ赤
+      const helm = run(PR1333, ['deploy/helm/ai-stock-trading/values.yaml']);
+      assert.strictEqual(helm.status, 1, helm.stdout);
+      // CHANGED_FILES が空なら差分の種類の判定だけ skip を警告で明示する（#1333 は緑のまま）
+      const unknown = run(PR1333, []);
+      assert.strictEqual(unknown.status, 0, unknown.stdout);
+      assert.match(unknown.stdout, /::warning::.*CHANGED_FILES/);
+    } finally {
+      fsRf.rmSync(dir, { recursive: true, force: true }); // 本試験が作った一時ディレクトリだけを消す
+    }
+  });
+}
+
 // --- check-action-versions: 配布テンプレートの Actions が巻き戻らないようにする（issue planning#148） ---
 //
 // Dependabot は github-actions エコシステムではリポジトリ直下の .github/workflows/ しか

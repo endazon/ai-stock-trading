@@ -16,6 +16,13 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // そのためであり、運ばなければ記録側で区間を閉じられない。
 // 約定追跡（OrderFillPoller）が後追いで発行する遷移は OrderApproved を持たないため null になる
 // （発注完了より後の状態遷移であり、NFR-01/02 の終点ではない）。
+//
+// 🔴 FR-10, FR-09, UC-06, #1395, IADR-0560: CancelledBySoftwareStop は**終端が取消（Cancelled）で、その取消を求めたのが
+// ソフトウェア逆指値（S1）自身**（損切りの成行の前に同じ建玉を売る判断の手仕舞いを取り消した）であることを表す。
+// 立てるのは約定追跡だけ（S1 が取消を送る前に記録へ書いた印を読む）。末尾の省略可能な欄で、旧い発行元・旧いメッセージは false
+// （＝従来どおり「手仕舞いが約定せず終了」を出す側）。リスク管理はこれが true の取消を「手仕舞いが流れた」と通知しない
+// （建玉は S1 の成行が決済しており、通知は手仕舞い直し＝二重の売りを促す）。在庫の判定には使わない。
+// #1448, IADR-0577: 保護逆指値ガードの成行手仕舞いが同じ段で取り消した場合も true（名前は S1 のまま。値・型は変えない）。
 public record OrderExecuted(
     Guid DecisionId,
     string OrderId,
@@ -25,4 +32,5 @@ public record OrderExecuted(
     DateTimeOffset ExecutedAt,
     BrokerProvider Provider,
     string? CycleTrigger = null,
-    DateTimeOffset? CycleStartedAt = null);
+    DateTimeOffset? CycleStartedAt = null,
+    bool CancelledBySoftwareStop = false);

@@ -95,6 +95,24 @@ public class Stage0MinimumEntryNotionalTests
             productionSkipsBelowMinimum.Should().BeTrue("比べる場面は本番がサイジングまで進むものに限る");
     }
 
+    // T-10-2567, FR-10, ADR-0063 決定1・決定2, #1291, IADR-0527 決定1: 記録器のサイジングも高ボラティリティ銘柄の 1 注文上限を本番と同じ関数で掛ける。
+    // 明示指定の AAPL は equity 100,000 の 5%（5,000 ÷ 100 = 50 株）で切られ、指定が無ければ区分外の 25%（250 株）。残枠は上限より大きい。
+    [Theory]
+    [InlineData(true, 50)]
+    [InlineData(false, 250)]
+    public async Task T_10_2567_記録器は明示指定の銘柄の数量を5パーセントの上限で切る(bool designated, int expected)
+    {
+        var highVolatility = TradingDefaults.CreateHighVolatilitySettings() with
+        {
+            DesignatedSymbols = designated ? [new HighVolatilitySymbol("AAPL", Market.UnitedStates)] : [],
+        };
+        var sizing = Sizing(100_000m, 1_000_000m) with { HighVolatility = highVolatility };
+
+        var record = await RecordAsync(sizing, "100", DecisionJson("Buy", "100", "0.5"));
+
+        record.SignedQuantity.Should().Be(expected);
+    }
+
     // ------------------------------------------------------------------------------------------------
 
     private static decimal D(string text) => decimal.Parse(text, CultureInfo.InvariantCulture);
@@ -106,8 +124,11 @@ public class Stage0MinimumEntryNotionalTests
         var sink = new CapturingSink();
         var input = new AsOfDecisionInput(AsOf, new DailyPolicy(AsOf, "当日の方針"), sizing, new DatedPrice(AsOf, D(price)));
         var recorder = new Stage0DecisionRecorder(
-            new RecorderLlm(collector, decisionJson), DecisionOrchestrationOptions.Default, new FixedInputs(input), sink, collector,
-            LlmPriceTable.From([(TestModel, "1", "1")], "1", "1"),
+            new RecorderLlm(collector, decisionJson), DecisionOrchestrationOptions.Default, new FixedInputs(input), sink,
+            new InMemoryStage0RecordingState(), new InMemoryStage0RecordingState(), collector,
+
+            // #1305, IADR-0553: 表に無いモデル（この表に無い層）も同じ 1/1 で引く（未知モデルの計上単価を明示する。既定は $10 / $50）。
+            LlmPriceTable.From([(TestModel, "1", "1")], "1", "1", unknownModelInputPer1kTokens: "1", unknownModelOutputPer1kTokens: "1"),
             new ManualTimeProvider(Now), NullLogger<Stage0DecisionRecorder>.Instance, options);
 
         var outcome = await recorder.RunAsync(Options(), TestContext.Current.CancellationToken);
@@ -132,6 +153,7 @@ public class Stage0MinimumEntryNotionalTests
         ApprovedVoteCount = 1,
         ApprovedEstimateJpy = 4m,
         OutputPath = "records.json",
+        StateDirectory = "state",
         Model = TestModel,
     };
 

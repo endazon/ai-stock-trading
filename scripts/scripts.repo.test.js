@@ -3207,6 +3207,9 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       const yml = fsIs.readFileSync(pathIs.join(REPO_ROOT_IS, '.github', 'workflows', 'integration.yml'), 'utf8');
       // 🔴 TRX が出ていなければ検査は何も読めない（そのときは赤になるが、配線の欠落は先にここで止める）。
       assert.match(yml, /--logger trx --results-directory "\$PWD\/integration-results"/, 'TRX の出力先が integration.yml に無い');
+      // 🔴 NFR / MSP#2060: ハングを timeout-minutes まで無出力で待たせない（ジョブごと cancelled になり、どの試験かも残らない）。
+      assert.match(yml, /--logger trx --results-directory "\$PWD\/integration-results"\n\s+--blame-hang-timeout \d+m --blame-hang-dump-type mini\n/, 'テスト実行に --blame-hang-timeout が無い（ハングでジョブが cancelled になる）');
+      assert.match(yml, /integration-results\/\*\*\/\*\.dmp/, 'ハングのダンプを成果物に残していない');
       assert.match(yml, /check-integration-skips\.js --self-test/, '検査器の自己試験が integration.yml に無い');
       assert.match(yml, /check-integration-skips\.js integration-results/, '本検査が integration.yml に無い');
       // テストが赤くても評価する（skip と失敗は独立した観測）。`if:` が `success()` 既定へ戻ると赤の run で検査が消える。
@@ -5041,6 +5044,112 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.match(helmBlockProblems1248(noTemplate).join('\n'), /helm template:\*\) が --allowedTools に無い/);
       const oldPlace = wf1248.replaceAll('【計画書の場所】', '【計画書の場所】1. `planning/projects/<name>/` — **CI ではこちら**。');
       assert.match(helmBlockProblems1248(oldPlace).join('\n'), /旧【計画書の場所】/);
+    });
+  }
+  // --- NFR, #1315, IADR-0208 決定 1 / IADR-0190 決定 4: AI レビューの prompt の【検証の下限】節を固定する ---
+  // 5.5 系への切替後、レビューが下限の検証（scripts.test.js 全件・文書系の検査器・全ファイルの読了）を
+  // 自分で省くようになった（#1315 の点検）。節が黙って消える・要の語が抜ける・案内するコマンドが
+  // 許可から外れる・旧文言（下限を省く口実になった語）が戻る、の 4 つを止める（文言の全文は固定しない）。
+  {
+    const fs1315 = require('fs');
+    const path1315 = require('path');
+    const wf1315 = fs1315.readFileSync(path1315.resolve(__dirname, '../.github/workflows/claude-code-review.yml'), 'utf8');
+    const floorProblems1315 = (text) => {
+      const start = text.indexOf('          prompt: |\n');
+      const end = text.indexOf('- name: Check permission denials', start);
+      assert.ok(start >= 0 && end > start, 'claude-code-review.yml から prompt: | の範囲を切り出せない（書式が変わったら本試験を直す）');
+      const prompt = text.slice(start, end);
+      const m = text.match(/^ +--allowedTools "([^"]+)"/m); // 行頭のもの（YAML コメント内の記法例を拾わない）
+      assert.ok(m, 'claude-code-review.yml に --allowedTools "…" が無い');
+      const tools = m[1].split(',');
+      const i = prompt.indexOf('【検証の下限・最重要】');
+      if (i < 0) return ['prompt に【検証の下限・最重要】節が無い'];
+      const j = prompt.indexOf('\n\n', i); // 節は次の空行で終わる
+      const block = prompt.slice(i, j < 0 ? undefined : j);
+      const problems = [];
+      for (const word of ['全部読む', 'scripts.test.js', "REQUIRE_REPO_TESTS:'1'", 'dotnet test', 'dotnet format', '--verify-no-changes',
+        'check-trace-blocks', 'helm lint', 'helm template', '時間配分', '差分が大きい', '/tmp/', 'ワークスペースへ書き込まない']) {
+        if (!block.includes(word)) problems.push(`【検証の下限】節に「${word}」が無い`);
+      }
+      for (const t of ['Bash(helm lint:*)', 'Bash(helm template:*)', 'Bash(node:*)', 'Bash(dotnet test:*)', 'Bash(dotnet format:*)', 'Bash(git fetch:*)']) {
+        if (!tools.includes(t)) problems.push(`【検証の下限】節が案内する ${t} が --allowedTools に無い`);
+      }
+      // 旧文言は下限を省く口実になった（#1315）
+      for (const old of ['時間が足りなければ', '全スイートは最後の手段']) {
+        if (prompt.includes(old)) problems.push(`prompt に旧文言「${old}」が戻っている`);
+      }
+      return problems;
+    };
+    ok('claude-code-review.yml[#1315]: prompt に【検証の下限】節があり、案内するコマンドが許可にある', () => {
+      assert.deepStrictEqual(floorProblems1315(wf1315), []);
+    });
+    ok('claude-code-review.yml[#1315]: 陰性対照（節を消す・helm lint の許可を外す・語を抜く・旧文言を戻す）はそれぞれ赤になる', () => {
+      assert.match(floorProblems1315(wf1315.replaceAll('【検証の下限・最重要】', '【削除】')).join('\n'), /節が無い/);
+      assert.match(floorProblems1315(wf1315.replace('Bash(helm lint:*),', '')).join('\n'), /helm lint:\*\) が --allowedTools に無い/);
+      assert.match(floorProblems1315(wf1315.replace('「時間配分」', '「」')).join('\n'), /時間配分/);
+      assert.match(floorProblems1315(wf1315.replace('【実行制約・最重要】', '【実行制約・最重要】全スイートは最後の手段')).join('\n'), /旧文言/);
+    });
+  }
+
+  // --- NFR / #1478 / IADR-0590: setup-dotnet の SDK は厳密な版で、全ワークフローで同じ値にする ---------------
+  //
+  //   "10.0.x" は install script を --channel で呼び、aka.ms 経由で dotnetorigin.blob.core.windows.net を引く。
+  //   そこが 409 を返して全 CI が止まった（2026-10-26。MSP#2266 と同じ原因）。厳密な版は別の配布元を引くので通る。
+  //   値は workflow をまたいで 1 か所に置けない（env は workflow ごと・global.json は 10.0.100 + rollForward で版を固定しない）。
+  //   そこで各所に同じ値を書き、揃っていることと厳密であることをここで見る。
+  {
+    const fs = require('fs');
+    const path = require('path');
+    const WF = path.join(__dirname, '..', '.github/workflows');
+
+    // files: { name: content }。setup-dotnet の step ごとに dotnet-version を読み、違反の文を返す。
+    const dotnetVersionViolations = (files) => {
+      const out = [];
+      const values = [];
+      for (const [name, content] of Object.entries(files)) {
+        const lines = content.replace(/\r\n/g, '\n').split('\n');
+        lines.forEach((line, i) => {
+          if (!/^\s*-?\s*uses:\s*actions\/setup-dotnet@/.test(line)) return;
+          const keyIndent = line.indexOf('uses:'); // step のキーの桁（`- uses:` でも `- name:` の次の行でも同じ）
+          let version = null;
+          for (let j = i + 1; j < lines.length; j++) {
+            const l = lines[j];
+            if (l.trim() === '' || /^\s*#/.test(l)) continue;
+            if (l.search(/\S/) < keyIndent || /^\s*-\s/.test(l)) break; // 次の step・step の外
+            const m = /^\s*dotnet-version:\s*"?([^"\s#]+)"?/.exec(l);
+            if (m) version = m[1];
+            if (/^\s*global-json-file:/.test(l)) out.push(`${name}:${i + 1}: global-json-file を使っている（global.json は 10.0.100 + rollForward で版を固定しない で版を決めない）`);
+          }
+          if (version === null) { out.push(`${name}:${i + 1}: dotnet-version が無い`); return; }
+          if (!/^\d+\.\d+\.\d+$/.test(version)) out.push(`${name}:${i + 1}: dotnet-version が厳密な版でない（${version}）`);
+          values.push(version);
+        });
+      }
+      if (new Set(values).size > 1) out.push(`dotnet-version が揃っていない: ${[...new Set(values)].join(' / ')}`);
+      return { out, count: values.length };
+    };
+
+    const readAll = () => Object.fromEntries(
+      fs.readdirSync(WF).filter((f) => /\.ya?ml$/.test(f)).map((f) => [f, fs.readFileSync(path.join(WF, f), 'utf8')]),
+    );
+
+    ok('NFR / #1478: setup-dotnet の dotnet-version は全ワークフローで同じ厳密な版である', () => {
+      const { out, count } = dotnetVersionViolations(readAll());
+      assert.deepStrictEqual(out, []);
+      assert.ok(count >= 7, `setup-dotnet を読めていない（検査が空振りする）: ${count}`);
+    });
+
+    ok('NFR / #1478: 変異試験 —— x 指定・値の不一致・版の欠落・global-json-file を検出する', () => {
+      const base = { 'a.yml': 'jobs:\n  j:\n    steps:\n      - uses: actions/setup-dotnet@abc # v6\n        with:\n          dotnet-version: "10.0.403"\n      - run: dotnet build\n' };
+      assert.deepStrictEqual(dotnetVersionViolations(base).out, []);
+      const wild = { 'a.yml': base['a.yml'].replace('10.0.403', '10.0.x') };
+      assert.ok(dotnetVersionViolations(wild).out.some((e) => e.includes('厳密な版でない')));
+      const split = { ...base, 'b.yml': base['a.yml'].replace('10.0.403', '10.0.404') };
+      assert.ok(dotnetVersionViolations(split).out.some((e) => e.includes('揃っていない')));
+      const missing = { 'a.yml': base['a.yml'].replace(/\n\s*dotnet-version:[^\n]*/, '') };
+      assert.ok(dotnetVersionViolations(missing).out.some((e) => e.includes('dotnet-version が無い')));
+      const gj = { 'a.yml': base['a.yml'].replace(/dotnet-version:[^\n]*/, 'global-json-file: global.json') };
+      assert.ok(dotnetVersionViolations(gj).out.some((e) => e.includes('global-json-file')));
     });
   }
 };

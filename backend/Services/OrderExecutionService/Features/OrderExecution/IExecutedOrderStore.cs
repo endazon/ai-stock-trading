@@ -59,6 +59,35 @@ public interface IExecutedOrderStore
             .ToList();
 
     /// <summary>
+    /// 🔴 FR-10, #1330, IADR-0534 決定2: <b>承認経路の決済</b>（<see cref="PositionEffect.Close"/> かつ
+    /// <see cref="ExecutionRecord.ApprovalOrigin"/> が null でない）のうち、銘柄・市場・決済の方向が一致し、
+    /// <b>まだ保護記録の縮小へ帰属させていない約定</b>（<c>FilledQuantity &gt; ProtectionReleasedQuantity</c>）を持つものを
+    /// 古い順に最大 <paramref name="limit"/> 件返す。状態は問わない（部分約定のまま生きている決済の約定も含む）。
+    /// <para>
+    /// 用途は保護の突き合わせ（<c>ProtectiveStopNetting</c>）が確定した減少を「承認済みの決済で説明できる分」と
+    /// 「外部要因」に分けることだけである。保護の機構の決済レグ（S0 / S3 の逆指値・S1 の決済・成行手仕舞い）は出どころを持たないので入らない。
+    /// 既定の実装（試験用の包み型のためのもの）は全件を読んでから絞る。本番のストア（EF・インメモリ）は条件つきの問い合わせで上書きする。
+    /// </para>
+    /// </summary>
+    IReadOnlyList<ExecutionRecord> FindApprovedClosesWithUnreleasedFills(
+        string symbol, Market market, TradeSide closeSide, int limit) =>
+        GetAll()
+            .Where(r => r.PositionEffect == PositionEffect.Close && r.ApprovalOrigin is not null
+                && r.FilledQuantity > r.ProtectionReleasedQuantity
+                && r.Symbol == symbol && r.Market == market && r.Side == closeSide)
+            .OrderBy(r => r.ExecutedAt)
+            .Take(limit)
+            .ToList();
+
+    /// <summary>
+    /// 🔴 FR-10, #1330, IADR-0534 決定2: 記録の「保護の縮小へ帰属させた株数」を <paramref name="releasedQuantity"/> へ進める
+    /// （<b>その 1 列だけ</b>を書く。単調——今の値以下なら書かない——で、約定数量を上限に切り詰める）。書いたら true。
+    /// 記録が無い・進まないなら何もせず false。既定の実装（試験用の包み型のためのもの）は何もしない
+    /// （帰属の印が残らないだけで、保護の数量には影響しない）。
+    /// </summary>
+    bool MarkProtectionReleased(string orderId, int releasedQuantity) => false;
+
+    /// <summary>
     /// FR-10, #958, IADR-0406 決定3: 非終端の記録の<b>追跡の起点</b>（<see cref="ExecutionRecord.ExecutedAt"/>）を
     /// <paramref name="trackedFrom"/> へ進める（約定追跡の窓へ戻す）。<b>時刻の列だけ</b>を書き、状態・数量・価格には触れない
     /// （並行に約定追跡が記録を終端にしていても、古い状態で上書きしない）。記録が無い・終端・起点が既に同じか新しいなら
@@ -91,13 +120,123 @@ public interface IExecutedOrderStore
     /// </summary>
     bool MarkTrackingAbandoned(string orderId, DateTimeOffset trackedFrom) => false;
 
+    /// <summary>
+    /// 🔴 FR-10, FR-05, #1339, IADR-0536 決定2: <b>追跡を打ち切った</b>（今の追跡の起点で打ち切りの印がある）非終端の
+    /// <b>承認経路の決済</b>（<see cref="PositionEffect.Close"/> かつ <see cref="ExecutionRecord.ApprovalOrigin"/> が null でない）を
+    /// 古い順に最大 <paramref name="batchSize"/> 件返す（ブローカーの終端を確かめて解放するための照会し直しの対象）。
+    /// 保護の機構の決済レグ（S0 / S3 の逆指値・S1 の決済・成行手仕舞い）は出どころを持たないので入らない。
+    /// 既定の実装（試験用の包み型のためのもの）は何も返さない。本番のストア（EF・インメモリ）は印つきの問い合わせで上書きする。
+    /// </summary>
+    IReadOnlyList<ExecutionRecord> FindAbandonedApprovedCloses(int batchSize) => [];
+
+    /// <summary>
+    /// FR-10, FR-11, #1339, IADR-0536 決定4: 発注（<see cref="ExecutionRecord.ExecutedAt"/>。非終端では発注時刻のまま）が
+    /// <paramref name="placedBefore"/> より古い、非終端の<b>承認経路の決済</b>を古い順に最大 <paramref name="limit"/> 件返す
+    /// （未約定の決済の定期ログの対象。窓の両端＝発注から一定時間 かつ まだ非終端）。
+    /// 既定の実装（試験用の包み型のためのもの）は全件を読んでから絞る。本番のストア（EF・インメモリ）は条件つきの問い合わせで上書きする。
+    /// </summary>
+    IReadOnlyList<ExecutionRecord> FindStaleApprovedCloses(DateTimeOffset placedBefore, int limit) =>
+        GetAll()
+            .Where(r => r.PositionEffect == PositionEffect.Close && r.ApprovalOrigin is not null
+                && OrderStatusLifecycle.IsPending(r.Status) && r.ExecutedAt < placedBefore)
+            .OrderBy(r => r.ExecutedAt)
+            .Take(limit)
+            .ToList();
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0067 決定1・4, #1339, IADR-0539: 発注（<see cref="ExecutionRecord.ExecutedAt"/>。非終端では発注時刻のまま）が
+    /// <paramref name="placedAtOrBefore"/> 以前で、まだ非終端の<b>判断由来の決済</b>（<see cref="PositionEffect.Close"/> かつ
+    /// <see cref="ExecutionRecord.ApprovalOrigin"/> が <see cref="OrderApprovalOrigin.TradeDecision"/>）のうち、系がまだ取消を求めていない
+    /// （<see cref="ExecutionRecord.UnfilledCancelRequestedAt"/> が null）ものを古い順に最大 <paramref name="limit"/> 件返す（N 分未約定の取消の対象）。
+    /// 利用者の手仕舞い・維持率割れの自動縮小・出どころ不明（<see cref="OrderApprovalOrigin.Unknown"/>）・出どころなしは入らない。
+    /// <paramref name="placedOnOrAfter"/> より前に発注した記録は除く（当日の一覧に無い古い非終端の記録＝IADR-0536 残余 1 が、
+    /// 取消を送れないまま回数の枠と件数の上限を占めないように。呼び出し側が市場の現地取引日の始まりから作る）。
+    /// <paramref name="excludedOrderIds"/> の注文（回数の上限で取り消さないと決めたもの）は件数の上限の前に除く
+    /// （古い側に溜まっても上限を占めず、後から来た対象を締め出さない）。
+    /// 既定の実装（試験用の包み型のためのもの）は全件を読んでから絞る。本番のストア（EF・インメモリ）は条件つきの問い合わせで上書きする。
+    /// </summary>
+    IReadOnlyList<ExecutionRecord> FindUnfilledDecisionCloses(
+        DateTimeOffset placedAtOrBefore, int limit, IReadOnlyCollection<string>? excludedOrderIds = null,
+        DateTimeOffset? placedOnOrAfter = null) =>
+        GetAll()
+            .Where(r => r.PositionEffect == PositionEffect.Close && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
+                && OrderStatusLifecycle.IsPending(r.Status) && r.UnfilledCancelRequestedAt is null
+                && r.ExecutedAt <= placedAtOrBefore && (placedOnOrAfter == null || r.ExecutedAt >= placedOnOrAfter)
+                && (excludedOrderIds == null || !excludedOrderIds.Contains(r.OrderId)))
+            .OrderBy(r => r.ExecutedAt)
+            .Take(limit)
+            .ToList();
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0067 決定2, #1339, IADR-0539: 同じ建玉（銘柄・市場・決済の方向）の判断由来の決済のうち、系が取消を求めた時刻
+    /// （<see cref="ExecutionRecord.UnfilledCancelRequestedAt"/>）が [<paramref name="fromInclusive"/>, <paramref name="toExclusive"/>) にある件数
+    /// （1 建玉 1 日の回数の上限の数え。範囲は呼び出し側が<b>市場の現地取引日</b>から作る）。状態は問わない（取り消した後に終端した記録も数える）。
+    /// 既定の実装（試験用の包み型のためのもの）は全件を読んでから数える。
+    /// </summary>
+    int CountUnfilledCancelRequests(
+        string symbol, Market market, TradeSide closeSide, DateTimeOffset fromInclusive, DateTimeOffset toExclusive) =>
+        GetAll().Count(r => r.PositionEffect == PositionEffect.Close && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
+            && r.Symbol == symbol && r.Market == market && r.Side == closeSide
+            && r.UnfilledCancelRequestedAt is { } at && at >= fromInclusive && at < toExclusive);
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0067 決定1, #1339, IADR-0539: 記録に「系が取消を求めた」印（<paramref name="requestedAt"/>）を書く（<b>その 1 列だけ</b>）。
+    /// <b>取消を送る前に呼ぶ</b>——送った後に落ちても、同じ注文を二度取り消さず、回数にも数えられる（少ない側へ倒す）。
+    /// 記録が無い・既に印がある・終端なら何もせず false。既定の実装（試験用の包み型のためのもの）は何もしない（＝取り消さない側）。
+    /// </summary>
+    bool MarkUnfilledCancelRequested(string orderId, DateTimeOffset requestedAt) => false;
+
+    /// <summary>
+    /// 🔴 FR-10, FR-09, UC-06, #1395, IADR-0560: 記録に「S1 が損切りの前に取消を求めた」印（<paramref name="requestedAt"/>）を書く（<b>その 1 列だけ</b>）。
+    /// <b>取消を送る前に呼ぶ</b>——約定追跡がどの時点で取消を観測しても、その終端が S1 の取消だと分かるように。
+    /// 記録が無い・終端なら何もせず false。既に印があれば上書きせず true（同じ注文を巡回ごとに取り消し直すため）。
+    /// 既定の実装（試験用の包み型のためのもの）は何もしない（＝印なし＝従来どおり通知が出る側）。
+    /// </summary>
+    bool MarkSoftwareStopCancelRequested(string orderId, DateTimeOffset requestedAt) => false;
+
+    /// <summary>
+    /// 🔴 #1395, IADR-0560: 注文の「S1 が取消を求めた」印を<b>保存先から</b>読む（無い・記録が無ければ null）。
+    /// 約定追跡が終端の取消を観測したときに読み直す（巡回の頭で読んだ写しは印より古いことがある）。本番のストア（EF）は追跡しない問い合わせで上書きする。
+    /// </summary>
+    /// <summary>
+    /// 🔴 #1395, IADR-0560: 「S1 が取消を求めた」印を戻す（null にする。<b>その 1 列だけ</b>）。S1 の取消が失敗し、注文がまだ終わっていないときに呼ぶ
+    /// （残すと、後の利用者の取消まで S1 の取消として扱われる）。記録が無い・終端なら何もせず false。既定の実装は何もしない。
+    /// </summary>
+    bool ClearSoftwareStopCancelRequested(string orderId) => false;
+
+    DateTimeOffset? FindSoftwareStopCancelRequestedAt(string orderId) =>
+        GetAll().FirstOrDefault(r => r.OrderId == orderId)?.SoftwareStopCancelRequestedAt;
+
     // #820 の 4 巡目監査, IADR-0344 追記(4): FindClosesSince（建玉照会がまだ映していない決済の走査）は撤去した。
     // 持ち分を毎巡回引き直す方式そのものをやめ、保護記録が残保護数量を状態として持つ形へ作り直したため、
     // 決済レグの記録を持ち分の計算に使わない（完了済み S0 行の取消済みレグで持ち分が食われる事故も構造的に消える）。
 
     /// <summary>
+    /// 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: 約定追跡が記録を更新した（<see cref="UpdateOutcome"/>）のに、その状態の
+    /// <c>OrderExecuted</c> をまだ発行し終えていない記録（発行待ちの印が立っているもの）を古い順に最大 <paramref name="batchSize"/> 件返す
+    /// （次の巡回で再発行する対象）。状態は問わない（終端した記録も入る＝終端化の発行を失うと台帳の在庫が返らない）。
+    /// 既定の実装（試験用の包み型のためのもの）は何も返さない。本番のストア（EF・インメモリ）は印つきの問い合わせで上書きする。
+    /// </summary>
+    IReadOnlyList<ExecutionRecord> FindOrderExecutedPublishPending(int batchSize) => [];
+
+    /// <summary>
+    /// 🔴 NFR, FR-10, #1442, IADR-0573 決定3: 発行待ちの印が立った記録の件数（滞留の計器。平常は巡回の末尾で 0）。
+    /// 既定の実装（試験用の包み型のためのもの）は 0 を返す。
+    /// </summary>
+    int CountOrderExecutedPublishPending() => 0;
+
+    /// <summary>
+    /// 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定2: 発行待ちの印を倒す（<b>その 1 列だけ</b>）。記録の今の状態・約定数が
+    /// 発行した <paramref name="status"/>・<paramref name="filledQuantity"/> と同じときだけ倒す——発行の後に記録がさらに進んでいれば
+    /// 印を残し、進んだ状態を次の巡回で発行する。<b>発行の後に呼ぶ</b>（先に倒すと、発行に失敗した約定が二度と発行されない）。
+    /// 記録が無い・印が無い・状態が違うなら何もせず false。既定の実装（試験用の包み型のためのもの）は何もしない。
+    /// </summary>
+    bool MarkOrderExecutedPublished(string orderId, OrderStatus status, int filledQuantity) => false;
+
+    /// <summary>
     /// #270, IADR-0113: 追跡で観測した最新のブローカ状態を既存記録へ反映する（<paramref name="orderId"/> で特定）。
     /// 記録が無ければ何もせず false を返す（新規に作らない＝DecisionId 1:1 の不変を壊さない）。
+    /// 🔴 #1442, IADR-0573 決定2: <b>同じ書き込みで発行待ちの印を立てる</b>（記録の更新と印が分かれると、間で落ちた約定が再発行されない）。
     /// </summary>
     bool UpdateOutcome(
         string orderId,

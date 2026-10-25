@@ -12,6 +12,7 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 // fail-safe: IKnowledgeBaseSearch は非 2xx・例外・タイムアウトを空へ倒す（IADR-0069）。判断側でも例外を握るため二重に安全。
 // FR-08, FR-11, #1283: 各検索の状態（SearchWithOutcomeAsync）を集め、1 本でも失敗なら Failed（最初の原因・失敗の本数）で返す。
 // 取得できた分はそのまま運ぶ（縮退は不変）。全部が未構成なら NotConfigured。判断側は状態で「失敗」と「本当に無い」を区別して記録する。
+// FR-08, FR-11, #1311: 基盤の検索の縮退の印（MSP#1871 の degraded / degradedReasons）も畳んで運ぶ（StatusOf・DegradationOf）。
 //
 // FR-08, #1083, IADR-0454（IADR-0072 決定5 の「Scope は送らない」を置き換える）:
 //   - Scope（project = ai-stock-trading）はアダプタ（HttpKnowledgeBaseSearch）が全検索に載せる（決定1）。
@@ -30,6 +31,10 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 //     🔴 PublishedAt を持たない文書（確定報告書〔tag report〕など）は**通す**。報告書は publishedAt を書かない
 //     （ReportKnowledgeMapper）ため、落とすと UC-01 手順 3「過去の判断（RAG）」が構造的に届かなくなる。
 //     null のまま下流へ運び、ScreeningContextPlanner・AsOfDecisionInput の「発行時刻不明＝最古扱い」に委ねる。
+//
+// FR-01, FR-08, #1366, IADR-0545 決定 1・3: 相場スナップショット（タグ Quote＝InformationKind.Quote）は参考情報に入れない。
+//   5 分ごとに書かれた古い現在値が ① の上位を占め、LLM が入力の現在値（ICurrentPriceProvider）との「矛盾」として見送っていた。
+//   収集側は保存をやめた（KnowledgeBaseWriterSink）。ここは足切りの内側に残る旧文書への防御で、3 本の検索の結果すべてに掛ける。
 public sealed class KnowledgeBaseRetrievalContextProvider(
     IKnowledgeBaseSearch search,
     int topK,
@@ -95,8 +100,11 @@ public sealed class KnowledgeBaseRetrievalContextProvider(
         // ③ はフィルタなしで引くため、表題の目印で防御として落とす（基盤の露出の門が働かない構成〔MSP#1886 より前〕への保険）。
         static bool IsNotReportDraft(KnowledgeHit h) => !KnowledgeReportDraftCopy.IsDraftTitle(h.DocumentTitle);
 
-        var symbolHits = (await SearchTrackedAsync(symbolQuery).ConfigureAwait(false)).Where(IsNotReportDraft).ToList();
-        var marketHits = (await SearchTrackedAsync(marketQuery).ConfigureAwait(false)).Where(IsNotReportDraft).ToList();
+        // #1366, IADR-0545 決定 3: 相場スナップショットは落とす（ドラフトと同じく取り出した直後に）。
+        static bool IsReference(KnowledgeHit h) => IsNotReportDraft(h) && !IsQuoteSnapshot(h);
+
+        var symbolHits = (await SearchTrackedAsync(symbolQuery).ConfigureAwait(false)).Where(IsReference).ToList();
+        var marketHits = (await SearchTrackedAsync(marketQuery).ConfigureAwait(false)).Where(IsReference).ToList();
 
         var cutoff = timeProvider.GetUtcNow() - maxAge;
         bool IsFresh(KnowledgeHit h) => h.PublishedAt is not { } publishedAt || publishedAt >= cutoff;
@@ -119,7 +127,7 @@ public sealed class KnowledgeBaseRetrievalContextProvider(
 
             // 重複の鍵はチャンク（文書 ID ＋ 本文）。同じ文書の別のチャンクは従来どおり別に数える。
             var seen = market.Select(ChunkKey).ToHashSet();
-            market.AddRange(fallbackHits.Where(h => IsNotReportDraft(h) && HasNoSymbol(h) && IsFresh(h) && seen.Add(ChunkKey(h))));
+            market.AddRange(fallbackHits.Where(h => IsReference(h) && HasNoSymbol(h) && IsFresh(h) && seen.Add(ChunkKey(h))));
         }
 
         var hits = symbolHits
@@ -149,16 +157,43 @@ public sealed class KnowledgeBaseRetrievalContextProvider(
     }
 
     // FR-08, FR-11, #1283: 検索の状態を 1 つに畳む（1 本でも失敗なら Failed・全部が未構成なら NotConfigured・他は Succeeded）。
+    // FR-08, FR-11, #1311: 基盤の縮退の印も畳んで添える（DegradationOf）。
     private static RetrievalResult StatusOf(IReadOnlyList<KnowledgeSearchResult> outcomes)
     {
+        var (degraded, reasons) = DegradationOf(outcomes);
         var failed = outcomes.Where(o => o.Outcome == KnowledgeSearchOutcome.Failed).ToList();
         if (failed.Count > 0)
-            return new RetrievalResult([], RetrievalStatus.Failed, failed[0].FailureCause, failed.Count);
+            return new RetrievalResult([], RetrievalStatus.Failed, failed[0].FailureCause, failed.Count, degraded, reasons);
 
         return outcomes.All(o => o.Outcome == KnowledgeSearchOutcome.NotConfigured)
             ? new RetrievalResult([], RetrievalStatus.NotConfigured)
-            : new RetrievalResult([], RetrievalStatus.Succeeded);
+            : new RetrievalResult([], RetrievalStatus.Succeeded, Degraded: degraded, DegradedReasons: reasons);
     }
+
+    // FR-08, FR-11, #1311: 成功した検索の縮退の印を畳む。1 本でも縮退なら true（理由は和集合・語彙の順）、
+    // 縮退が無く印の無い応答（旧い基盤）が 1 本でもあれば null（不明）、全部が印つきで縮退なしなら false、成功した検索が無ければ null。
+    // 🔴 印の無い応答を false に数えない（旧い基盤で「縮退なし」と記録すると、縮退していても見分けられない）。
+    private static (bool? Degraded, IReadOnlyList<string> Reasons) DegradationOf(IReadOnlyList<KnowledgeSearchResult> outcomes)
+    {
+        var succeeded = outcomes.Where(o => o.Outcome == KnowledgeSearchOutcome.Succeeded).ToList();
+        if (succeeded.Any(o => o.Degraded == true))
+        {
+            return (true, KnowledgeSearchDegradedReasons.Normalize(
+                succeeded.Where(o => o.Degraded == true).SelectMany(o => o.DegradedReasons)));
+        }
+
+        return succeeded.Count > 0 && succeeded.All(o => o.Degraded == false)
+            ? (false, [])
+            : (null, []);
+    }
+
+    // FR-01, FR-08, #1366, IADR-0545 決定 3: 相場スナップショットの種別タグ（KnowledgeBaseWriterSink が Tags へ載せる
+    // InformationKind.Quote の名前。KnowledgeTagVocabulary.CollectionKinds の語）。判断サービスは収集サービスの型を参照しない。
+    internal const string QuoteKindTag = "Quote";
+
+    // 大小は無視する（RetrievalSourcePolicy・ScreeningContextAssembler のタグの比較と同じ）。
+    internal static bool IsQuoteSnapshot(KnowledgeHit h) =>
+        h.Tags.Any(t => string.Equals(t, QuoteKindTag, StringComparison.OrdinalIgnoreCase));
 
     // FR-08, #1138, IADR-0474 決定3: 補充の検索の件数の倍率（基盤が関連度の候補を取る倍率 4×TopK と同じ値）。
     internal const int FallbackWidening = 4;

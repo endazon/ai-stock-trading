@@ -2,16 +2,20 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Page, Route } from '@playwright/test';
 import type {
+  PreCloseControlsView,
   RiskManagementSettings,
   RiskStatusView,
   SettingsChangeEntry,
   ShortSellingStatusView,
   StageGateStatus,
+  ThemeConcentrationControlView,
 } from '../src/lib/risk/contracts';
 import type {
   MarketMonitorSettings,
   MonitorSettingsChangeEntry,
 } from '../src/lib/monitor/contracts';
+import type { OpendAuthStateView } from '../src/features/sc04-opend-auth/types';
+import type { BadRequestBody } from '../src/lib/validationReasons';
 
 // SC-01/02/03, IADR-0087: E2E の BFF モック定義（test-only）。
 // 画面が叩く BFF パス/メソッドを Playwright の page.route で横取りし、決定的な応答を返す（実 API に依存しない）。
@@ -109,6 +113,19 @@ export const RISK_STATUS: RiskStatusView = {
 };
 
 // SC-02 監視銘柄（watchlist）セクション（#196・別サービス MarketMonitor）。market は数値 enum（0=日本/1=米国）。
+// FR-10, SC-02, ADR-0070・ADR-0071 決定 5, #1407, IADR-0564: 閉場前の統制とテーマの定義（契約フィクスチャ＝保存後・構成と食い違う形）。
+export const PRE_CLOSE_CONTROLS = loadContract<PreCloseControlsView>('risk-controls.settings-pre-close.json');
+export const THEME_CONCENTRATION = loadContract<ThemeConcentrationControlView>('risk-controls.settings-theme-concentration.json');
+
+// SC-02, FR-10, #1465, IADR-0585: 損切りの実行機構の 400 の**実応答**（`{ error, details }`。実弾の間に S1 を選ぶ拒否）。
+// 本ユニットのサービスの 400 は RFC 7807 ではない。E2E のモックも本番の形で組み、サーバの理由が画面に出ることを確かめる。
+export const STOP_LOSS_METHOD_400 = loadContract<BadRequestBody>('risk-controls.settings-stop-loss-method.400.json');
+// SC-01, SC-02, FR-03, FR-17, #1470, IADR-0585: MarketMonitorService・ConfigurationService の 400 の**実応答**（いずれも `{ error }`）。
+export const WATCHLIST_POST_400 = loadContract<BadRequestBody>('monitor.watchlist-post.400.json');
+export const MOVEMENT_THRESHOLD_400 = loadContract<BadRequestBody>('monitor.settings-movement-threshold.400.json');
+export const COOLDOWN_400 = loadContract<BadRequestBody>('monitor.settings-cooldown.400.json');
+export const ASSUMPTIONS_400 = loadContract<BadRequestBody>('assumptions.400.json');
+
 export const WATCHLIST = [
   { symbol: '7203', market: 0 },
   { symbol: 'AAPL', market: 1 },
@@ -132,6 +149,12 @@ export const STAGE_GATE: StageGateStatus = {
 export const RISK_SETTINGS_PAPER = { ...RISK_SETTINGS, brokerProvider: 0 };
 export const RISK_STATUS_PAPER = { ...RISK_STATUS, brokerProvider: 0 };
 
+// SC-04, FR-09, FR-11, UC-06, ADR-0024, #1412, #1413, IADR-0146: OpenD ゲートウェイの状態（SMS 検証コード待ち）。
+// **BFF の実応答（契約フィクスチャ）**である。バックエンドの `OpendAuthContractFixtureTests` が生成・突合し、
+// 型としての突合は `src/features/sc04-opend-auth/types/contract.test.ts` がコンパイル時に行う。
+// 「待機していない」「供給が無い」の描き分けは SC-04 の spec が spread で上書きする。
+export const OPEND_AUTH_STATE_WAITING: OpendAuthStateView = loadContract<OpendAuthStateView>('opend-auth.state.json');
+
 // 既定の全ハンドラ（各画面の正常系）。個々のテストは spread で必要なキーだけ上書きする。
 export function defaultBff(): BffConfig {
   return {
@@ -143,6 +166,13 @@ export function defaultBff(): BffConfig {
     'PUT /risk-controls/settings/limits': { status: 200, body: RISK_SETTINGS },
     // FR-20, #334: 発注先の変更（SC-02 のみが持つ操作）。
     'PUT /risk-controls/settings/broker-provider': { status: 200, body: { settings: RISK_SETTINGS } },
+    // FR-10, SC-02, ADR-0066 決定2, #1291: 高ボラティリティ銘柄の統制値（区分の上限・明示指定）の変更（全置換）。
+    'PUT /risk-controls/settings/high-volatility': { status: 200, body: RISK_SETTINGS },
+    // FR-10, SC-02, #1407: 閉場前の統制とテーマの定義（効いている値・構成の値・保存値・食い違い）。
+    'GET /risk-controls/settings/pre-close': { status: 200, body: PRE_CLOSE_CONTROLS },
+    'PUT /risk-controls/settings/pre-close': { status: 200, body: PRE_CLOSE_CONTROLS },
+    'GET /risk-controls/settings/theme-concentration': { status: 200, body: THEME_CONCENTRATION },
+    'PUT /risk-controls/settings/theme-concentration': { status: 200, body: THEME_CONCENTRATION },
     'GET /risk-controls/status': { status: 200, body: RISK_STATUS },
     'GET /risk-controls/stage-gate': { status: 200, body: STAGE_GATE },
     // FR-10, SC-03, #340: 空売りの現況（維持率・空売り比率・建玉方向・借株料累計）。
@@ -161,6 +191,14 @@ export function defaultBff(): BffConfig {
     'PUT /monitor/settings/cooldown': { status: 200, body: MONITOR_SETTINGS },
     // FR-20, SC-02, #423: Stage 1 の最小取引件数（既定 100・値域 1〜1000）。
     'PUT /risk-controls/settings/stage1-minimum-trade-count': { status: 200, body: RISK_SETTINGS },
+    // FR-19, SC-02, IADR-0086, #1412: 取引ガードの変更（全置換）。サーバは変更後の設定を返す。
+    'PUT /risk-controls/settings/guard': { status: 200, body: RISK_SETTINGS },
+    // FR-10, SC-02, ADR-0040 決定1, IADR-0422, #1412: 損切りの実行機構（S0〜S3）の変更。サーバは変更後の設定を返す。
+    'PUT /risk-controls/settings/stop-loss-method': { status: 200, body: RISK_SETTINGS },
+    // SC-04, FR-09, FR-11, IADR-0321, #1412: OpenD 認証操作。投入・再送は本文を返さない（204）。
+    'GET /opend-auth/state': { status: 200, body: OPEND_AUTH_STATE_WAITING },
+    'POST /opend-auth/code': { status: 204 },
+    'POST /opend-auth/resend': { status: 204 },
   };
 }
 

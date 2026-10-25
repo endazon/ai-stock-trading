@@ -77,7 +77,14 @@ public sealed record FillPnlAttribution(
     /// </para>
     /// <para>既定 <c>false</c>＝全量を算定できた（既存の呼び出しは非破壊で通る）。</para>
     /// </summary>
-    bool Unvalued = false);
+    bool Unvalued = false,
+
+    /// <summary>
+    /// FR-06, FR-16, #1357, IADR-0540 決定 2: 決済の種別（<see cref="SettlementKinds.Of"/>）。<c>null</c>＝<b>種別未供給</b>
+    /// （承認行の由来が記録されていない・判断の記録が未供給で分けられない）、または決済でない約定。<b>推定で埋めない。</b>
+    /// #1362, IADR-0552 決定 1: <see cref="Unvalued"/> の約定（<see cref="Realizing"/> が false でも決済側）にも付ける。
+    /// </summary>
+    SettlementKind? Kind = null);
 
 // 04_report-templates 週報 §2「日別推移」の 1 行。**約定が 1 件も無い日は行そのものが存在しない**
 //（休場日と「実現損益 0 の営業日」を区別できる記録源が無いため。IADR-0301 決定2）。
@@ -189,7 +196,11 @@ public static class FillPnlAttributionBuilder
                 applied.Reduced ? applied.RealizedPnl : 0m,
                 applied.Reduced,
                 Rationale(rationales, fill.DecisionId),
-                applied.Unvalued));
+                applied.Unvalued,
+                // #1357, IADR-0540 決定 2: 決済の行だけに種別を付ける（新規建ては種別を持たない）。
+                // #1362, IADR-0552 決定 1: 損益を算定できなかった決済（期間より前に建てた建玉の決済。Reduced=false でもあり得る）も
+                // 決済であり種別を持つ（損切りが執行された事実は損益の算定と別。本文 §5「損切り執行」が数える）。
+                applied.Reduced || applied.Unvalued ? SettlementKinds.Of(fill.ApprovalSource, HasDecisionRecord(rationales, fill.DecisionId)) : null));
         }
 
         return entries;
@@ -263,6 +274,15 @@ public static class FillPnlAttributionBuilder
             var byMarket = a.Market.CompareTo(b.Market);
             return byMarket != 0 ? byMarket : a.Sequence.CompareTo(b.Sequence);
         });
+
+    // #1357, IADR-0540 決定 2: 判断の記録（TradeDecisionMade）があるか。null＝判断の記録そのものが未供給（分けられない）。
+    // 相関キーが無い約定は「記録が無い」とは言えないので null（種別の判定に使わない）。
+    private static bool? HasDecisionRecord(IReadOnlyDictionary<Guid, string>? rationales, Guid decisionId)
+    {
+        if (rationales is null || decisionId == Guid.Empty)
+            return null;
+        return rationales.ContainsKey(decisionId);
+    }
 
     // 相関できない約定（DecisionId が空・辞書に無い）と、空の根拠は未供給にする。**近い記録で代替しない。**
     private static string? Rationale(IReadOnlyDictionary<Guid, string>? rationales, Guid decisionId)

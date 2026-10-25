@@ -60,7 +60,10 @@ public sealed class ReportAutoGenerator(
     // 本番は必ず注入する（所在が未構成なら UnsuppliedOpeningInventorySource ＝常に未供給）。
     IOpeningInventorySource? openingInventorySource = null,
     // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 2: 承認待ちにした版の写し（ドラフト）を KB に持つ。未注入は持たない＝従来の挙動。
-    IReportDraftKnowledgeCopy? draftKnowledgeCopy = null)
+    IReportDraftKnowledgeCopy? draftKnowledgeCopy = null,
+    // FR-06, FR-08, #1356, IADR-0541 決定 2: 日報 §5 の判断が参照したニュース・開示。未注入（単体テスト・旧構成）は取りに行かない＝§5 は「照会していません」。
+    // 本番は必ず注入する（所在が未構成なら UnsuppliedDecisionReferenceSource ＝常に未供給）。
+    IDecisionReferenceSource? decisionReferenceSource = null)
 {
     // 観測点が未注入（単体テスト・旧構成）なら誰も記録しない観測になり、見送りは起きない＝従来挙動。
     private readonly ReportDependencyProbe _probe = dependencyProbe ?? new ReportDependencyProbe();
@@ -230,9 +233,13 @@ public sealed class ReportAutoGenerator(
         // ADR-0051 フォローアップ 1, #1223, IADR-0470（2026-10-08 追記）: 本文の §3 と同じ建玉で、行の掛からない保有中の銘柄を名指しする。
         // 建玉が未供給なら方針全体の判定へ戻る（未供給は要約の「建玉」の警告で見える）。
         // 計画 ADR-0059 決定 2, #1218, IADR-0519 決定 2: 週報の初稿（直近の確定済み週報の方針の継続）に書式どおりの「数値目標:」行が無ければ、
-        // 同じ経路で確定の前に警告する（確定は止めない）。2 つの検査は種別が重ならない（利確は日報・数値目標は週報）。
-        var policyWarning = PolicyTakeProfitCheck.WarningFor(due.Kind, policy, inputs.Positions)
-            ?? WeeklyGoalLineCheck.WarningFor(due.Kind, policy);
+        // 同じ経路で確定の前に警告する（確定は止めない）。利確と数値目標は種別が重ならない（利確は日報・数値目標は週報）。
+        // FR-04, FR-07, #1365, IADR-0544 決定 2・3: 日報の初稿（継続）が他の報告書を参照で済ませていれば同じ経路で警告する。
+        // 日報では利確の警告と重なり得るため、`??` で片方に絞らず行を並べる。
+        var policyWarning = PolicyDraftWarnings.Join(
+            PolicyTakeProfitCheck.WarningFor(due.Kind, policy, inputs.Positions),
+            WeeklyGoalLineCheck.WarningFor(due.Kind, policy),
+            PolicySelfContainedCheck.WarningFor(due.Kind, policy));
 
         var summary = ReportSummary.Build(
             due.Kind, ReportPeriod.Label(due.Kind, due.PeriodStart), draft.Pnl, draft.Narrative, unsuppliedInputs,
@@ -318,6 +325,16 @@ public sealed class ReportAutoGenerator(
         if (rationales is null)
             unsupplied.Add(ReportInput.TradeRationales);
 
+        // FR-06, FR-08, #1356, IADR-0541 決定 2: 日報 §5 の判断が参照したニュース・開示（判断の記録。期間の時点の値なので作り直しでも引ける）。
+        DecisionReferenceFeed? decisionReferences = null;
+        if (decisionReferenceSource is not null && due.Kind == ReportKind.Daily)
+        {
+            observation.Enter(ReportInput.DecisionReferences);
+            decisionReferences = await SafeDecisionReferencesAsync(due, cancellationToken).ConfigureAwait(false);
+            if (decisionReferences is null)
+                unsupplied.Add(ReportInput.DecisionReferences);
+        }
+
         // FR-06, 計画 ADR-0052 決定 2, IADR-0491 決定 4: 建玉は「今の台帳」しか引けない。期間の時点に復元できないなら取りに行かない
         // （今の建玉を「当日終了時点」と書く誤りを作らない）。
         IReadOnlyList<ReportPosition>? positions = null;
@@ -397,6 +414,7 @@ public sealed class ReportAutoGenerator(
             LlmUsage = llmUsage,
             BorrowFees = borrowFees,
             TradeRationales = rationales,
+            DecisionReferences = decisionReferences,
             Positions = positions,
             Uptime = uptime,
             StopLossMethods = stopLossMethods,
@@ -449,6 +467,8 @@ public sealed class ReportAutoGenerator(
                 Stage0RecordingApprovedEstimateJpy: SafeStage0RecordingEstimate(),
                 BorrowFees: inputs.BorrowFees,
                 TradeRationales: inputs.TradeRationales,
+                // FR-06, FR-08, #1356, IADR-0541 決定 2・3: 日報 §5 の出典（コードで描く）と散文の入力。
+                DecisionReferences: inputs.DecisionReferences,
                 Positions: inputs.Positions,
                 Uptime: inputs.Uptime,
                 CurrentStage: inputs.CurrentStage,
@@ -867,6 +887,33 @@ public sealed class ReportAutoGenerator(
         return (from, to);
     }
 
+    // FR-06, FR-08, #1356, IADR-0541 決定 2: 判断の記録を JST の暦日で引き、**判断の時刻で窓に絞ってから**畳む（前の日報の窓の判断を数えない）。
+    // 例外・不達は null（未供給）。キャンセルは伝える。
+    // 🔴 本クラスは ILogger を持たない（兄弟の Safe* と同じ）。照会の失敗の警告ログ（例外つき）は供給元
+    // （Http/GrpcDecisionReferenceSource・AuditGrpcTransport）が出し、ここへ届く例外はそれらが握らない想定外のものだけである。
+    // その場合も未供給として報告書の UnsuppliedInputs に残り、常駐（ReportAutoGenerationService）が縮退として警告ログに出す。
+    private async Task<DecisionReferenceFeed?> SafeDecisionReferencesAsync(DueReport due, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var (window, from, to) = LedgerScope(due);
+            var decisions = await decisionReferenceSource!
+                .GetDecisionsAsync(from, to, cancellationToken)
+                .ConfigureAwait(false);
+            return decisions is null
+                ? null
+                : DecisionReferenceFeedBuilder.Build([.. decisions.Where(d => window.Contains(d.DecidedAt))]);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     // FR-06, UC-03〜05, 計画 ADR-0053 決定 2, #1224, IADR-0516 決定 3: 監査台帳ほか JST の暦日で引く供給元へ渡す照会の範囲と、
     // 受け取った記録を絞る窓（自動生成と作り直しが同じ DueReport から引く）。
     private (ReportSessionWindow Window, DateOnly From, DateOnly To) LedgerScope(DueReport due)
@@ -1228,6 +1275,9 @@ public sealed record ReportInputSnapshot
     public BorrowFeeRecord? BorrowFees { get; init; }
 
     public IReadOnlyDictionary<Guid, string>? TradeRationales { get; init; }
+
+    /// <summary>FR-06, FR-08, #1356, IADR-0541 決定 2: 日報 §5 の判断が参照したニュース・開示（窓で絞って畳んだもの。<c>null</c>＝照会していない・できていない）。</summary>
+    public DecisionReferenceFeed? DecisionReferences { get; init; }
 
     public IReadOnlyList<ReportPosition>? Positions { get; init; }
 

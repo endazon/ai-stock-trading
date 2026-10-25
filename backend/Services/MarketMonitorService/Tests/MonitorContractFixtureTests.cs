@@ -73,6 +73,61 @@ public class MonitorContractFixtureTests
         await AssertMatchesFixtureAsync("monitor.settings-history.json", res);
     }
 
+    // ---- 🔴 SC-02, FR-03, FR-13, #1470, IADR-0585: 400 の本文も契約である ----
+    // 画面はサーバの理由（`details`・無ければ `error`）を出す（`frontend/src/lib/validationReasons.ts`）。本文の形が変わると理由が黙って消え、
+    // 一般文言だけが残る（#1465 の事故）。画面が叩く 4 つの書き込み（監視銘柄の追加・削除、変動閾値、クールダウン）の 400 を実端点から採る。
+    // 4 つとも `ArgumentException`（利用者へ見せる印つき）または端点の明示の拒否で `{ error }` になる。
+
+    // 監視銘柄の追加: 市場の省略（端点の明示の拒否。`market` を 0＝日本へ暗黙束縛しない）。
+    [Fact]
+    public async Task 監視銘柄の追加の400応答がフロントの契約フィクスチャと一致する()
+    {
+        using var factory = new MonitorWorkerWebApplicationFactory();
+        var res = await OwnerClient(factory).PostAsJsonAsync("/monitor/watchlist", new { Symbol = "7203", Reason = "市場を送らずに追加する" });
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertMatchesFixtureAsync("monitor.watchlist-post.400.json", res);
+    }
+
+    // 監視銘柄の削除: 監視対象に無い銘柄。
+    [Fact]
+    public async Task 監視銘柄の削除の400応答がフロントの契約フィクスチャと一致する()
+    {
+        using var factory = new MonitorWorkerWebApplicationFactory();
+        var req = new HttpRequestMessage(HttpMethod.Delete, "/monitor/watchlist")
+        {
+            Content = JsonContent.Create(new { Symbol = "NOTWATCHED", Market = Market.UnitedStates, Reason = "監視していない銘柄を外す" }),
+        };
+        var res = await OwnerClient(factory).SendAsync(req);
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertMatchesFixtureAsync("monitor.watchlist-delete.400.json", res);
+    }
+
+    // 変動閾値: 値域外（0.50 を超える）。
+    [Fact]
+    public async Task 変動閾値の400応答がフロントの契約フィクスチャと一致する()
+    {
+        using var factory = new MonitorWorkerWebApplicationFactory();
+        var res = await OwnerClient(factory).PutAsJsonAsync("/monitor/settings/movement-threshold",
+            new { movementThresholdRatio = 0.9m, reason = "値域外の閾値を送る" });
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertMatchesFixtureAsync("monitor.settings-movement-threshold.400.json", res);
+    }
+
+    // クールダウン: 値域外（24 時間を超える）。
+    [Fact]
+    public async Task クールダウンの400応答がフロントの契約フィクスチャと一致する()
+    {
+        using var factory = new MonitorWorkerWebApplicationFactory();
+        var res = await OwnerClient(factory).PutAsJsonAsync("/monitor/settings/cooldown",
+            new { cooldown = "1.01:00:00", reason = "値域外のクールダウンを送る" });
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertMatchesFixtureAsync("monitor.settings-cooldown.400.json", res);
+    }
+
     private static async Task AssertMatchesFixtureAsync(string fileName, HttpResponseMessage response)
     {
         var actual = ContractFixtureComparer.Normalize(await response.Content.ReadAsStringAsync());

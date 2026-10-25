@@ -59,6 +59,9 @@ public class BrokerStopLegFillTrackingTests
         public Task CancelOrderAsync(string orderId, CancellationToken ct = default)
         {
             Cancelled.Add(orderId);
+            // #1449, IADR-0576 決定2: 本物の証券会社と同じく、取消した注文は照会で終端（Cancelled）に見える（ガードは照会で確かめてから完了する）。
+            if (Orders.TryGetValue(orderId, out var working) && working is { Status: OrderStatus.Accepted or OrderStatus.PartiallyFilled })
+                Orders[orderId] = working with { Status = OrderStatus.Cancelled, CompletedAt = working.PlacedAt };
             return Task.CompletedTask;
         }
 
@@ -111,7 +114,7 @@ public class BrokerStopLegFillTrackingTests
         var stops = new InMemoryProtectiveStopOrderStore();
         var poller = new OrderFillPoller(
             broker, store, clock, reArmer: null, logger: null, protectiveStops: withProtectiveStops ? stops : null);
-        var guard = new ProtectiveStopGuard(broker, broker, stops, store, new InMemoryOrderReservationStore(), clock);
+        var guard = new ProtectiveStopGuard(broker, broker, stops, store, new InMemoryOrderReservationStore(), clock, AlwaysOpenSessionGate.Instance);
         return new Fixture(clock, broker, store, stops, poller, guard);
     }
 
@@ -234,6 +237,13 @@ public class BrokerStopLegFillTrackingTests
     }
 
     // 注文 ID 指定の抽出だけが失敗する発注結果ストア（足す側の読み取りの失敗を再現する）。
+    // #1442, IADR-0573 決定2: 発行は Worker（OrderFillPollingService）が行い、発行の後に発行待ちの印を倒す。ポーラーだけを回す試験はそれを真似る。
+    private static void MarkPublished(InMemoryExecutedOrderStore store, OrderFillPollResult result)
+    {
+        foreach (var e in result.Executed)
+            store.MarkOrderExecutedPublished(e.OrderId, e.Status, e.FilledQuantity);
+    }
+
     private sealed class FailingStopLegLookupStore(InMemoryExecutedOrderStore inner) : IExecutedOrderStore
     {
         public void Save(ExecutionRecord record) => inner.Save(record);
@@ -369,6 +379,7 @@ public class BrokerStopLegFillTrackingTests
 
         f.Clock.UtcNow = FilledAt.AddSeconds(30);
         var first = await f.Poller.PollOnceAsync(MaxTracking, batchSize: 100);
+        MarkPublished(f.Store, first); // #1442, IADR-0573 決定2: Worker と同じく発行の後に印を倒す。
         f.Clock.UtcNow = FilledAt.AddSeconds(60);
         var second = await f.Poller.PollOnceAsync(MaxTracking, batchSize: 100);
 
@@ -389,6 +400,7 @@ public class BrokerStopLegFillTrackingTests
         f.Broker.Positions = [];
 
         var first = await f.Poller.PollOnceAsync(MaxTracking, batchSize: 100);
+        MarkPublished(f.Store, first); // #1442, IADR-0573 決定2: Worker と同じく発行の後に印を倒す。
         f.Clock.UtcNow = FilledAt.AddSeconds(30);
         await f.Guard.RunOnceAsync(10);
         f.Clock.UtcNow = FilledAt.AddSeconds(60);

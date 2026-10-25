@@ -308,7 +308,7 @@ public class MoomooPlaceOrderRetTypeClassificationTests
         stops.Save(stop);
         var store = new InMemoryExecutedOrderStore();
         var reservations = new InMemoryOrderReservationStore();
-        var guard = new ProtectiveStopGuard(adapter, adapter, stops, store, reservations, new FakeClock());
+        var guard = new ProtectiveStopGuard(adapter, adapter, stops, store, reservations, new FakeClock(), AlwaysOpenSessionGate.Instance);
 
         var first = await guard.RunOnceAsync(10);
         await guard.RunOnceAsync(10);

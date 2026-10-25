@@ -57,6 +57,9 @@ public class ProtectiveStopGuardSoftwareStopTests
         public Task CancelOrderAsync(string orderId, CancellationToken ct = default)
         {
             Cancelled.Add(orderId);
+            // #1449, IADR-0576 決定2: 本物の証券会社と同じく、取消した注文は照会で終端（Cancelled）に見える（ガードは照会で確かめてから完了する）。
+            if (Orders.TryGetValue(orderId, out var working) && working is { Status: OrderStatus.Accepted or OrderStatus.PartiallyFilled })
+                Orders[orderId] = working with { Status = OrderStatus.Cancelled, CompletedAt = working.PlacedAt };
             return Task.CompletedTask;
         }
 
@@ -75,9 +78,9 @@ public class ProtectiveStopGuardSoftwareStopTests
         var store = new InMemoryExecutedOrderStore();
         var reservations = new InMemoryOrderReservationStore();
         var clock = new FakeClock();
-        var executor = new SoftwareStopExecutor(broker, broker, stops, store, reservations, clock);
+        var executor = new SoftwareStopExecutor(broker, broker, stops, store, reservations, clock, AlwaysOpenSessionGate.Instance);
         return new Fixture(
-            new ProtectiveStopGuard(broker, broker, stops, store, reservations, clock, softwareStops: executor), executor, broker, stops, store);
+            new ProtectiveStopGuard(broker, broker, stops, store, reservations, clock, AlwaysOpenSessionGate.Instance, softwareStops: executor), executor, broker, stops, store);
     }
 
     private static BrokerPositionSnapshot Long(int qty) => new("AAPL", Market.UnitedStates, qty, 1_000m);

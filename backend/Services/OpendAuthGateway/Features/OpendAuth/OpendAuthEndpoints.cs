@@ -20,9 +20,9 @@ namespace OpendAuthGateway.Features.OpendAuth;
 ///   <item><c>POST /opend-auth/resend</c>  … SMS の再送要求（本文なし）</item>
 /// </list>
 /// <para>
-/// ⚠️ <b>本サービス自身は認証を持たない。</b> Ingress を持たず Pod 網にしか bind せず、
-/// 呼び出し元はクラスタ内の BFF だけである（利用者認証は BFF の手前で済んでいる）。
-/// 入力面の安全は認証ではなく <see cref="OpendConsoleCommand"/> の allowlist が担う。
+/// Ingress を持たず Pod 網にしか bind せず、呼び出し元はクラスタ内の BFF だけである（利用者認証は BFF の手前で済んでいる）。
+/// 呼び出し元は 2 段で絞る —— 共有シークレット（<see cref="CallerSecretFilter"/>・IADR-0566）と NetworkPolicy（chart）。
+/// 入力面の安全は別に <see cref="OpendConsoleCommand"/> の allowlist が担う。
 /// </para>
 /// </summary>
 public static class OpendAuthEndpoints
@@ -35,7 +35,8 @@ public static class OpendAuthEndpoints
     /// <summary>4 本のエンドポイントを登録する。</summary>
     public static IEndpointRouteBuilder MapOpendAuthEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/opend-auth");
+        // IADR-0566: 呼び出し元の検証はグループのフィルタ 1 つで 4 本すべてに掛ける（本文を読む前に判定する）。
+        var group = app.MapGroup("/opend-auth").AddEndpointFilter<CallerSecretFilter>();
         group.MapGet("/state", GetState);
         group.MapGet("/captcha", GetCaptcha);
         group.MapPost("/verify", PostVerifyAsync);
@@ -171,8 +172,7 @@ public static class OpendAuthEndpoints
         {
             logger.LogWarning("opend-auth: 流量制限により棄却した（{Max} 件 / {Window} 秒）。",
                 limiter.MaxSubmissions, limiter.Window.TotalSeconds);
-            context.Response.Headers.RetryAfter =
-                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+            context.Response.Headers.RetryAfter = RetryAfterSeconds(retryAfter).ToString(CultureInfo.InvariantCulture);
             return Results.Json(new OpendAuthError("rate_limited"), statusCode: StatusCodes.Status429TooManyRequests);
         }
 
@@ -200,12 +200,17 @@ public static class OpendAuthEndpoints
     /// 🔴 <b>流量制限は投入と同じ枠を使う。</b> 別枠にすると、再送だけを連打して
     /// moomoo 側の SMS 送信枠を使い切れてしまう。
     /// </para>
+    /// <para>
+    /// #1456, IADR-0579: そのうえで<b>再送だけの間隔</b>（② 既定 60 秒に 1 回）を内側に重ねる
+    /// （<see cref="ResendIntervalLimiter"/>）。拒否の形は ① と同じ（429・<c>Retry-After</c>）で、符号だけを分ける
+    /// （② は <c>resend_interval</c>、① は <c>rate_limited</c>）。<c>Retry-After</c> は ① と ② の両方が空くまでの秒数である。
+    /// </para>
     /// </summary>
     private static IResult PostResend(
         HttpContext context,
         IOptions<OpendAuthOptions> options,
         IOpendStdinWriter writer,
-        SubmissionRateLimiter limiter,
+        ResendIntervalLimiter limiter,
         ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger(LoggerCategory);
@@ -224,13 +229,24 @@ public static class OpendAuthEndpoints
             return Results.Json(new OpendAuthError(ToErrorCode(rejection)), statusCode: StatusCodes.Status400BadRequest);
         }
 
-        if (!limiter.TryAcquire(out var retryAfter))
+        var admission = limiter.TryAcquire(out var retryAfter);
+        if (admission != ResendAdmission.Accepted)
         {
-            logger.LogWarning("opend-auth: 流量制限により再送を棄却した（{Max} 件 / {Window} 秒）。",
-                limiter.MaxSubmissions, limiter.Window.TotalSeconds);
-            context.Response.Headers.RetryAfter =
-                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
-            return Results.Json(new OpendAuthError("rate_limited"), statusCode: StatusCodes.Status429TooManyRequests);
+            var retryAfterSeconds = RetryAfterSeconds(retryAfter);
+            if (admission == ResendAdmission.IntervalNotElapsed)
+            {
+                logger.LogWarning("opend-auth: 再送だけの間隔（{Interval} 秒に 1 回）により再送を棄却した（Retry-After={RetryAfter} 秒）。",
+                    limiter.Interval.TotalSeconds, retryAfterSeconds);
+            }
+            else
+            {
+                logger.LogWarning("opend-auth: 流量制限により再送を棄却した（Retry-After={RetryAfter} 秒）。", retryAfterSeconds);
+            }
+
+            context.Response.Headers.RetryAfter = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+            return Results.Json(
+                new OpendAuthError(admission == ResendAdmission.IntervalNotElapsed ? "resend_interval" : "rate_limited"),
+                statusCode: StatusCodes.Status429TooManyRequests);
         }
 
         var outcome = writer.WriteLine(line);
@@ -241,9 +257,14 @@ public static class OpendAuthEndpoints
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
-        logger.LogInformation("opend-auth: 再送を受理した。");
+        logger.LogInformation("opend-auth: 再送を受理した（次の再送は {Interval} 秒後から）。", limiter.Interval.TotalSeconds);
         return Results.Ok(new VerifyAccepted("accepted", "resend"));
     }
+
+    /// <summary>
+    /// <c>Retry-After</c> の秒数（切り上げ）。端数を切り捨てると、示した時刻に再試行してもまだ窓の内で拒否される。
+    /// </summary>
+    private static int RetryAfterSeconds(TimeSpan retryAfter) => (int)Math.Ceiling(retryAfter.TotalSeconds);
 
     /// <summary>棄却理由 → 応答に載せる符号。<b>入力そのものは決して含めない。</b></summary>
     private static string ToErrorCode(VerifyRejection rejection) => rejection switch

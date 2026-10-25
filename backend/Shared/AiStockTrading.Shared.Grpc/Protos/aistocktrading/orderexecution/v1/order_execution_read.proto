@@ -1,0 +1,148 @@
+// NFR, FR-04, FR-10, FR-15, UC-06, MSP:ADR-0029, MSP:ADR-0075, IADR-0284 決定 5（段 5 の追補 2）, IADR-0328 決定 4,
+// IADR-0331 決定 7, IADR-0427, IADR-0559, #1391 (#753):
+// 発注執行の**読み取り**（OwnerOrService）の同期照会の gRPC 契約。REST の `GET /order-execution/…` と同じ意味論であり、
+// 提供側は REST と同じ照会サービス・同じ入力の検証を呼ぶ（照会の規則を 2 つにしない）。
+//
+// ■ 置き場と所有（IADR-0328 決定 4 / IADR-0331 決定 7）
+//   所有者は呼び出される側（OrderExecutionService）。置き場は共有プロジェクト `AiStockTrading.Shared.Grpc`。
+//
+// ■ 🔴 原則 A（不明・無し・有りを取り違えない。IADR-0427 決定 3）
+//   - スカラーは**すべて `optional`**（存在を持つ）。欠落は「不明」であり、0・空として読まない。
+//   - 列挙は**すべて `*_UNSPECIFIED = 0`** を持つ。C# の列挙とは番号がずれる（C# の 0 は `Japan` / `Buy` / 状態の `Unknown` 等の実在値）ため、
+//     両端で**名前で明示的に**写す。状態の UNSPECIFIED は「送り手が状態を書かなかった」（契約の食い違い）であり、
+//     状態の UNKNOWN / UNAVAILABLE（送り手が「分からない」「取れない」と答えた）とは別である（REST の受け手の「状態の欠落」と同じ）。
+//   - 金額は**不変文化の 10 進文字列**（IADR-0331 決定 2）。空・欠落は不明。日付は `yyyy-MM-dd`。
+//
+// ■ 運ぶ項目（IADR-0427 決定 4）
+//   **移した呼び出し元が読む項目だけ**を運ぶ（借株可否の `observedAt`、日足の `from` / `to`、処理中の決済の `decisionIds` は運ばない）。
+//   ［2026-10-23 / #1434・IADR-0572 決定2］処理中の決済の `closableQuantity` は取引判断が読むようになったので運ぶ（`closable_quantity`）。
+//   足すのはフィールド追加＝非破壊である。
+//
+// ■ 🔴 message 名を送り手（OrderExecutionService）の C# の型名と同じにしない（`ShortPermitView` ではなく `GetShortPermitResponse`、
+//   `DailyBarView` ではなく `DailyBarRow`、状態の列挙も `ShortPermitStatus` ではなく `ShortPermitState`）。送り手の型による契約テストの判定
+//   （IADR-0420 決定 3 の ⑤「送り手が宣言し、受け手の本番コードが宣言も参照もしない型」）を効かせるため（実測: 当初 `InFlightClosesStatus` と
+//   名付けて取引判断の処理中の決済の契約テストが「無い」と判定された）。
+//
+// ■ s2s（IADR-0328 決定 2）
+//   `authorization` メタデータには呼び出し側サービス自身の client credentials JWT を載せる。本 service の rpc は利用者の文脈を取らない。
+syntax = "proto3";
+
+package aistocktrading.orderexecution.v1;
+
+option csharp_namespace = "AiStockTrading.Shared.Grpc.OrderExecution.V1";
+
+// 発注執行の読み取り。REST の照会の口（`/order-execution/*`・OwnerOrService）と同じ照会サービス・同じ入力の検証を通る。
+// - 呼び出し側サービスの資格情報が無い → UNAUTHENTICATED、ロールが無い → PERMISSION_DENIED
+//   （門は GrpcOwnerOrService。所有者はボットの機密クライアントだけ。IADR-0448）
+// - 必須引数の欠落・値域外（REST の 400）→ INVALID_ARGUMENT
+// - 提供側が不調・不達 → UNAVAILABLE、deadline 超過 → DEADLINE_EXCEEDED（呼び出し元は REST と同じ安全側既定へ倒す）
+service OrderExecutionRead {
+  // GET /order-execution/short-permit?symbol&market（借株可否。#967 / IADR-0425）。
+  rpc GetShortPermit(GetShortPermitRequest) returns (GetShortPermitResponse);
+  // GET /order-execution/daily-bars?symbol&market&from&to（前復権の日足。#1118 / IADR-0467・#1308 / IADR-0528）。
+  rpc GetDailyBars(GetDailyBarsRequest) returns (GetDailyBarsResponse);
+  // GET /order-execution/in-flight-closes?symbol&market&closeSide（処理中の決済が建玉を覆うか。#1338 / IADR-0535）。
+  rpc GetInFlightCloses(GetInFlightClosesRequest) returns (GetInFlightClosesResponse);
+}
+
+// ---- 列挙（C# の列挙とは名前で写す。未指定・未知は「不明」） ----
+
+enum Market {
+  MARKET_UNSPECIFIED = 0;
+  MARKET_JAPAN = 1;
+  MARKET_UNITED_STATES = 2;
+}
+
+enum TradeSide {
+  TRADE_SIDE_UNSPECIFIED = 0;
+  TRADE_SIDE_BUY = 1;
+  TRADE_SIDE_SELL = 2;
+}
+
+// C# `ShortPermitStatus`（Unknown = 0 / Permitted = 1 / NotPermitted = 2）。
+enum ShortPermitState {
+  SHORT_PERMIT_STATE_UNSPECIFIED = 0;
+  SHORT_PERMIT_STATE_UNKNOWN = 1;
+  SHORT_PERMIT_STATE_PERMITTED = 2;
+  SHORT_PERMIT_STATE_NOT_PERMITTED = 3;
+}
+
+// C# `DailyBarsStatus`（Unavailable = 0 / Available = 1）。
+enum DailyBarsState {
+  DAILY_BARS_STATE_UNSPECIFIED = 0;
+  DAILY_BARS_STATE_UNAVAILABLE = 1;
+  DAILY_BARS_STATE_AVAILABLE = 2;
+}
+
+// C# `InFlightClosesStatus`（Unknown = 0 / Covered = 1 / NotCovered = 2）。
+enum InFlightClosesState {
+  IN_FLIGHT_CLOSES_STATE_UNSPECIFIED = 0;
+  IN_FLIGHT_CLOSES_STATE_UNKNOWN = 1;
+  IN_FLIGHT_CLOSES_STATE_COVERED = 2;
+  IN_FLIGHT_CLOSES_STATE_NOT_COVERED = 3;
+}
+
+// ---- 借株可否 ----
+
+message GetShortPermitRequest {
+  optional string symbol = 1;
+  Market market = 2;
+}
+
+// symbol・market は要求の写し（受け手が別の銘柄の答えを読んでいないことを確かめる）。unknown_reason は Unknown のときの理由（判定に使わない）。
+message GetShortPermitResponse {
+  optional string symbol = 1;
+  Market market = 2;
+  ShortPermitState status = 3;
+  optional string unknown_reason = 4;
+}
+
+// ---- 日足 ----
+
+// from・to は `yyyy-MM-dd`（両端を含む。from ≦ to・400 暦日まで）。
+message GetDailyBarsRequest {
+  optional string symbol = 1;
+  Market market = 2;
+  optional string from = 3;
+  optional string to = 4;
+}
+
+// 日足 1 本（前復権の OHLCV）。価格は不変文化の 10 進文字列、日付は `yyyy-MM-dd`。1 項目でも欠ければ受け手はその応答を読まない。
+message DailyBarRow {
+  optional string date = 1;
+  optional string open = 2;
+  optional string high = 3;
+  optional string low = 4;
+  optional string close = 5;
+  optional int64 volume = 6;
+}
+
+// bars は日付の昇順（送り手は要求された期間をそのまま返す）。
+message GetDailyBarsResponse {
+  optional string symbol = 1;
+  Market market = 2;
+  DailyBarsState status = 3;
+  optional string unavailable_reason = 4;
+  repeated DailyBarRow bars = 5;
+}
+
+// ---- 処理中の決済 ----
+
+message GetInFlightClosesRequest {
+  optional string symbol = 1;
+  Market market = 2;
+  TradeSide close_side = 3;
+}
+
+// symbol・market・close_side は要求の写し。in_flight_quantity は処理中の決済の残り株数、order_ids は数えた処理中の決済の注文 ID。
+message GetInFlightClosesResponse {
+  optional string symbol = 1;
+  Market market = 2;
+  TradeSide close_side = 3;
+  InFlightClosesState status = 4;
+  optional string unknown_reason = 5;
+  optional int32 in_flight_quantity = 6;
+  repeated string order_ids = 7;
+  // #1434 / IADR-0572 決定2: ブローカーの決済方向の建玉（照会したときだけ。照会していなければ欠落＝不明）。
+  optional int32 closable_quantity = 8;
+}

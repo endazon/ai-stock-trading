@@ -60,6 +60,13 @@ public record RiskManagementSettings(
     public ShortSellSettings ShortSell { get; init; } = TradingDefaults.CreateShortSellSettings();
 
     /// <summary>
+    /// 🔴 FR-10, UC-06, ADR-0063 決定1・決定2, #1291, IADR-0527 決定2: 高ボラティリティ銘柄の統制値（区分の上限 equity の 5%・利用者の明示指定）。
+    /// 位置指定の引数にせず本体のプロパティに置くのは <see cref="ShortSell"/> と同じ理由である——既定が計画の確定値（5%）に固定され、
+    /// 明示しない呼び出しや本項目を持たない旧い永続行でも区分の上限が<b>効く</b>（不在を「統制なし」にしない）。
+    /// </summary>
+    public HighVolatilitySettings HighVolatility { get; init; } = TradingDefaults.CreateHighVolatilitySettings();
+
+    /// <summary>
     /// FR-10, FR-12, ADR-0040 決定1・決定3, #819, IADR-0342 決定2: <b>損切りの実行機構</b>（S0〜S3）。既定は
     /// <b>S0（ブローカー側逆指値）</b>。
     /// <para>
@@ -74,4 +81,29 @@ public record RiskManagementSettings(
     /// </para>
     /// </summary>
     public StopLossExecutionMethod StopLossMethod { get; init; } = StopLossExecutionMethod.BrokerStopOrder;
+
+    /// <summary>
+    /// 🔴 FR-10, FR-19, SC-02, ADR-0070 決定 1・5, #1407, IADR-0564 決定 1・2: 画面（SC-02）で<b>保存した</b>閉場前の新規建ての締め切り N（市場ごと）。
+    /// <b>null＝保存していない</b>（構成 <c>PreCloseEntryCutoff:Minutes:&lt;Market&gt;</c> の値が効く）。効く値の解決は
+    /// <see cref="SessionAndThemeControlResolution.EffectivePreCloseEntryCutoff"/>。
+    /// </summary>
+    // PR #1408 のレビュー: `GET /risk-controls/settings` の応答には載せない（画面は専用の口 `/settings/pre-close`・`/theme-concentration` で読む。永続化は DTO を通す）。
+    [System.Text.Json.Serialization.JsonIgnore]
+    public PreCloseEntryCutoffSettings? PreCloseEntryCutoff { get; init; }
+
+    /// <summary>
+    /// 🔴 FR-10, FR-19, SC-02, ADR-0070 決定 2・5, #1407, IADR-0564 決定 1・2: 画面で保存した閉場前の手仕舞い（有効・無効と M）。
+    /// <b>null＝保存していない</b>（構成 <c>PreCloseFlatten:Enabled</c>・<c>PreCloseFlatten:Minutes:&lt;Market&gt;</c> の値が効く）。
+    /// </summary>
+    // PR #1408 のレビュー: `GET /risk-controls/settings` の応答には載せない（画面は専用の口 `/settings/pre-close`・`/theme-concentration` で読む。永続化は DTO を通す）。
+    [System.Text.Json.Serialization.JsonIgnore]
+    public PreCloseFlattenSettings? PreCloseFlatten { get; init; }
+
+    /// <summary>
+    /// 🔴 FR-10, FR-19, SC-02, ADR-0071 決定 1・2・5, #1407, IADR-0564 決定 1・2: 画面で保存したテーマの定義と上限（定義の全体。既定を丸ごと置き換える）。
+    /// <b>null＝保存していない</b>（構成 <c>ThemeConcentration:Themes</c>〔無ければ既定の 2 テーマ〕が効く）。
+    /// </summary>
+    // PR #1408 のレビュー: `GET /risk-controls/settings` の応答には載せない（画面は専用の口 `/settings/pre-close`・`/theme-concentration` で読む。永続化は DTO を通す）。
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ThemeConcentrationSettings? ThemeConcentration { get; init; }
 }

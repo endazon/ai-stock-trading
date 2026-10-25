@@ -52,6 +52,10 @@ public class RejectionReasonOrdinalStabilityTests
         { RejectionReason.StopOutStatusUnknown, 31 },
         // T-10-2322, FR-10, #1176, IADR-0495: 判断由来の決済（利確）の後の同日・同方向の新規建て。**末尾へ追加**している。
         { RejectionReason.DecisionExitSameDay, 32 },
+        // T-10-2920, FR-10, FR-19, #1396, IADR-0561: 閉場前の新規建ての締め切り。**末尾へ追加**している。
+        { RejectionReason.PreCloseEntryCutoff, 33 },
+        // T-10-2936, FR-10, FR-19, #1397, IADR-0562: テーマごとの同時保有の上限。**末尾へ追加**している。
+        { RejectionReason.ThemeConcentrationExceeded, 34 },
     };
 
     [Theory]

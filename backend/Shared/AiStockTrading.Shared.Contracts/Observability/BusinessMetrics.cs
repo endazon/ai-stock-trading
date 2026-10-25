@@ -148,6 +148,7 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Counter<long> _finnhubSymbolSetResolutions;
     private readonly Gauge<long> _finnhubSymbolsDeferred;
     private readonly Counter<long> _klineDailyRequests;
+    private readonly Gauge<long> _orderExecutedPublishPending;
     private readonly Gauge<long> _klineQuotaUsed;
     private readonly Gauge<long> _klineQuotaRemaining;
 
@@ -296,6 +297,10 @@ public sealed class BusinessMetrics : IDisposable
         _klineDailyRequests = _meter.CreateCounter<long>(
             BusinessMetricNames.KLineDailyRequests,
             description: "発注執行が OpenD へ撃った日足 K 線の要求の件数（outcome 別。判断へ渡す出来高の取得。FR-04/FR-15）");
+        // 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定3: 発行し終えていない約定の件数（約定追跡の巡回の末尾。平常は 0）。
+        _orderExecutedPublishPending = _meter.CreateGauge<long>(
+            BusinessMetricNames.OrderExecutedPublishPending,
+            description: "約定追跡の巡回の末尾で、発行し終えていない約定（発行待ちの印が立った記録）の件数（平常は 0。続くなら約定が台帳へ届いていない。NFR/FR-10）");
         _klineQuotaUsed = _meter.CreateGauge<long>(
             BusinessMetricNames.KLineQuotaUsed,
             description: "日足 K 線の取得の直後に照会した取得枠の使用数（usedQuota。銘柄単位で減る。FR-04/FR-15）");
@@ -555,9 +560,9 @@ public sealed class BusinessMetrics : IDisposable
     /// <summary>
     /// FR-10, #889, IADR-0372: 基準資金を読んだ 1 回を帰結つきで計上する。
     /// <para>
-    /// 🔴 <b>「供給できた」の中を割るためにある。</b> 残高 0 を観測した日は行が書かれず、読み出しは
-    /// 前取引日の値を返し続ける ——<b>値が返っている以上、統制は平常どおり動いて見える</b>。
-    /// <see cref="CapitalBaselineReadOutcome.SuppliedWithGap"/> はその状態を数える唯一の手段である。
+    /// 🔴 <b>未供給の理由を割るためにある。</b> 残高 0 を観測した日は行が書かれず、翌暦日の読み出しは
+    /// <see cref="CapitalBaselineReadOutcome.UnavailableMissingPreviousDay"/> で未供給になる（#1423 M-3・ADR-0073）。
+    /// 初回の配備（行なし）・長い停止（鮮度切れ）・人手の 0 と分けて数える。
     /// </para>
     /// </summary>
     public void RecordCapitalBaselineRead(CapitalBaselineReadOutcome outcome) =>
@@ -628,6 +633,12 @@ public sealed class BusinessMetrics : IDisposable
         if (remaining is { } r)
             _klineQuotaRemaining.Record(r);
     }
+
+    /// <summary>
+    /// 🔴 NFR, FR-05, FR-10, #1442, IADR-0573 決定3: 約定追跡の巡回の末尾で、発行し終えていない約定の件数を記録する（数えられなかった巡回は記録しない）。
+    /// </summary>
+    public void RecordOrderExecutedPublishPending(long count) =>
+        _orderExecutedPublishPending.Record(count);
 
     public void Dispose() => _meter.Dispose();
 }

@@ -1,5 +1,6 @@
 using OrderExecutionService.Common.Abstractions;
 using AiStockTrading.Shared.Contracts.Trading;
+using Microsoft.Extensions.Logging;
 
 namespace OrderExecutionService.Features.OrderExecution.ObserveBrokerPositions;
 
@@ -19,7 +20,8 @@ public sealed class UnattributedPositionDetector(
     IProtectiveStopOrderStore stops,
     IExecutedOrderStore store,
     IClock clock,
-    int batchSize)
+    int batchSize,
+    ILogger? logger = null)
 {
     /// <summary>
     /// 照会<b>できた</b>スナップショット（null ではない＝建玉なしの空列を含む）で検知し、発行すべきイベントを返す。
@@ -31,7 +33,7 @@ public sealed class UnattributedPositionDetector(
 
         var events = new List<object>();
         ProtectiveStopNetting.DetectUnattributedPositions(
-            snapshot, stops.FindActive(batchSize), stops, store, clock.UtcNow, events);
+            snapshot, stops.FindActive(batchSize), stops, store, clock.UtcNow, events, logger);
         return events;
     }
 }

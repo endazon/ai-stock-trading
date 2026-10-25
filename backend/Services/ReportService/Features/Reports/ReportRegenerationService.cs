@@ -68,6 +68,13 @@ public sealed partial class ReportRegenerationService(
                 ReportRegenerationStatus.AlreadyConfirmed,
                 $"報告書 {key} は確定済みのため作り直せません（確定済みの版は変えられません）。", key);
 
+        // FR-07, ADR-0068 決定1, #1373, IADR-0549 決定1: 確定済みの日報に版を足したドラフト（版 n+1）は、効いている日報が移った後は作り直さない
+        // （確定できないものに作り直しの回数を使わせない）。効いている間は従来どおり作り直せる（作り直しの枠に数える。ADR-0052 決定 1）。
+        if (EffectiveDailyReport.IsStaleRevisionDraft(store, existing))
+            return ReportRegenerationResult.Rejected(
+                ReportRegenerationStatus.NoLongerEffective,
+                Common.Exceptions.ReportNoLongerEffectiveException.MessageFor(key, EffectiveDailyReport.EffectivePeriodKey(store)), key);
+
         var period = ReportSchedule.PeriodOf(existing.Report.Kind, existing.Report.PeriodStart, settings.Schedule);
         if (!string.Equals(period.PeriodKey, key, StringComparison.Ordinal))
             return ReportRegenerationResult.Rejected(
@@ -200,9 +207,12 @@ public sealed partial class ReportRegenerationService(
             var summary = ReportSummary.Build(
                 kind, label, draft.Pnl, draft.Narrative, unsuppliedInputs,
                 // ADR-0051 フォローアップ 1, #1223: 引けた建玉（期間の時点に復元できれば）で保有中の銘柄ごとにも見る。引けなければ方針全体の判定。
-                PolicyTakeProfitCheck.WarningFor(kind, existing.Report.PolicySummary, inputs.Positions)
+                PolicyDraftWarnings.Join(
+                    PolicyTakeProfitCheck.WarningFor(kind, existing.Report.PolicySummary, inputs.Positions),
                     // 計画 ADR-0059 決定 2, #1218, IADR-0519 決定 2: 保った週報の方針に書式どおりの「数値目標:」行が無ければ同じく警告する。
-                    ?? WeeklyGoalLineCheck.WarningFor(kind, existing.Report.PolicySummary));
+                    WeeklyGoalLineCheck.WarningFor(kind, existing.Report.PolicySummary),
+                    // #1365, IADR-0544 決定 2・3: 保った日報の方針が他の報告書を参照で済ませていれば同じく警告する（利確の警告と並べる）。
+                    PolicySelfContainedCheck.WarningFor(kind, existing.Report.PolicySummary)));
             notified = await NotifyPresentedBestEffortAsync(new PresentedReportNotice(key, kind, label, summary, version))
                 .ConfigureAwait(false)
                 ? PresentedNotice.Sent
@@ -457,6 +467,9 @@ public enum ReportRegenerationStatus
 
     /// <summary>計画 ADR-0052 決定 4: 中核の入力の取得に失敗した（作り直さない・回数は消費しない）。</summary>
     CoreInputsUnsupplied,
+
+    /// <summary>FR-07, 計画 ADR-0068 決定1, #1373, IADR-0549 決定1: 版 n+1 のドラフトで、効いている日報が移った（作り直さない。409）。</summary>
+    NoLongerEffective,
 }
 
 // FR-06, FR-14, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 3: `/report regenerate` の 1 日（JST）の回数上限。構成 `Reports:Regeneration:DailyLimit`。

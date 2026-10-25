@@ -28,6 +28,7 @@ public class Stage0GateServiceTests
 
     // 較正後の下限（Stage0GateCriteria.Default.MinTrials=20・#208/IADR-0110）を満たす台帳。
     // IS Sharpe は 2.8〜3.0 付近に散らし、補正項 SR0 が 0 にならない（分散を持つ）ようにする。
+    // 単位は **1 期間（日次）**（#1381・IADR-0554）。RisingMetrics の日次 Sharpe（≈3.0）と同じ桁である。
     private static TrialLedger CalibratedTrials()
     {
         var ledger = new TrialLedger();
@@ -220,6 +221,77 @@ public class Stage0GateServiceTests
         decision.Gate.FailedChecks.Should().Contain(Stage0GateCheck.TrialCount);
         decision.Gate.Passed.Should().BeFalse();
         decision.Promotion.Recommended.Should().BeFalse();
+    }
+
+    // ---- FR-15, ADR-0039 決定1, #1381, IADR-0554: 観測値と SR0 の単位（日次）を揃える ----
+
+    // 日次 Sharpe の異なる 2 本の走行（探索がある形）。
+    private static BacktestMetrics AlternatingMetrics(decimal up, decimal down)
+    {
+        var equity = new List<decimal> { 100m };
+        for (var i = 1; i <= 252; i++)
+            equity.Add(equity[^1] * (1m + (i % 2 == 0 ? up : down)));
+        return BacktestMetricsCalculator.Compute(equity, [1m]);
+    }
+
+    private static readonly BacktestMetrics[] TwoRuns =
+        [AlternatingMetrics(0.004m, -0.002m), AlternatingMetrics(0.003m, -0.002m)];
+
+    // 陽性: 試行 2 本の台帳を記録点（FromMetrics）で組むと、SR0 は**日次** Sharpe の分散から求まり、
+    // 判定器の DSR はその SR0 で観測値（日次）を補正した値になる。
+    [Fact]
+    public void 試行2本の台帳のSR0は日次Sharpeの分散から求まる()
+    {
+        var ledger = new TrialLedger();
+        for (var i = 0; i < TwoRuns.Length; i++)
+            ledger.Record(BacktestTrial.FromMetrics($"trial-{i}", TwoRuns[i], 0.05));
+
+        var daily = TwoRuns.Select(m => SampleMomentsCalculator.Compute(m.DailyReturns).SharpePerPeriod).ToArray();
+        var mean = daily.Average();
+        var dailyVariance = daily.Sum(x => (x - mean) * (x - mean)) / (daily.Length - 1);
+        ledger.InSampleSharpeVariance().Should().BeApproximately(dailyVariance, 1e-15);
+
+        var context = ContextWith(ledger) with { BaselineMetrics = TwoRuns[0] };
+        var decision = new Stage0GateService().Evaluate(context);
+
+        var moments = SampleMomentsCalculator.Compute(TwoRuns[0].DailyReturns);
+        var sr0 = DeflatedSharpeRatio.ExpectedMaxSharpe(dailyVariance, 2);
+        sr0.Should().BeGreaterThan(0d);
+        // SR0 は観測値と同じ桁（日次）であり、観測値を越えて膨らまない。
+        sr0.Should().BeLessThan(moments.SharpePerPeriod);
+        decision.DeflatedSharpe.Should().Be(DeflatedSharpeRatio.Compute(
+            moments.SharpePerPeriod, moments.Count, moments.Skewness, moments.Kurtosis, sr0));
+    }
+
+    // 🔴 対照（単位の食い違いの再現）: 年率（BacktestMetrics.SharpeRatio）で記録した台帳では、
+    // 分散が 252 倍・SR0 が √252 倍に膨らみ、日次の観測値を大きく越える —— DSR は事実上必ず不合格になる。
+    // #1381 の是正前の本番の記録点はこの形だった。
+    [Fact]
+    public void 年率で記録した台帳ではSR0がルート252倍に膨らむ_単位の食い違いの対照()
+    {
+        var perPeriod = new TrialLedger();
+        var annualized = new TrialLedger();
+        for (var i = 0; i < TwoRuns.Length; i++)
+        {
+            perPeriod.Record(BacktestTrial.FromMetrics($"trial-{i}", TwoRuns[i], 0.05));
+            annualized.Record(new BacktestTrial($"trial-{i}", TwoRuns[i].SharpeRatio, 0.05));
+        }
+
+        var sr0Daily = DeflatedSharpeRatio.ExpectedMaxSharpe(perPeriod.InSampleSharpeVariance(), perPeriod.Count);
+        var sr0Annual = DeflatedSharpeRatio.ExpectedMaxSharpe(annualized.InSampleSharpeVariance(), annualized.Count);
+
+        annualized.InSampleSharpeVariance().Should().BeApproximately(
+            perPeriod.InSampleSharpeVariance() * BacktestMetricsCalculator.TradingDaysPerYear, 1e-9);
+        (sr0Annual / sr0Daily).Should().BeApproximately(Math.Sqrt(BacktestMetricsCalculator.TradingDaysPerYear), 1e-9);
+
+        var observed = SampleMomentsCalculator.Compute(TwoRuns[0].DailyReturns).SharpePerPeriod;
+        sr0Annual.Should().BeGreaterThan(observed);
+
+        var service = new Stage0GateService();
+        var withAnnual = service.Evaluate(ContextWith(annualized) with { BaselineMetrics = TwoRuns[0] });
+        var withDaily = service.Evaluate(ContextWith(perPeriod) with { BaselineMetrics = TwoRuns[0] });
+        withAnnual.DeflatedSharpe.Should().BeLessThan(withDaily.DeflatedSharpe);
+        withAnnual.DeflatedSharpe.Should().BeLessThan(0.01);
     }
 
     private sealed class NoOrderStrategy : IBacktestStrategy

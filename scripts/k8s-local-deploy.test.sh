@@ -28,6 +28,13 @@
 #   - 明示的な空指定で前回の非空値を消す場合は中断し、--force-empty-values でのみ強制できる
 #   - helm upgrade の後、OpenD を除く Deployment へ rollout restart が呼ばれる
 #
+# 検証する不変条件（NFR, IADR-0570。Refs GHSA-j4qv-2w99-xg5p）:
+#   - AST_MESH_INJECTION=1|0 を明示すれば mesh.sidecarInjection.enabled をその値で渡す（有効なら excludeOpend=true も）
+#   - 未指定の再実行は現行のリリースの値を引き継ぎ、新規・未宣言では helm へ何も足さない（従来どおり）
+#   - 有効なら名前空間へ注入ラベルを貼り、明示の 0 なら剥がし、それ以外は触らない
+#   - 注入の状態が変わった回は絞り込みがあっても OpenD を除く全件を restart する
+#   - 不正な値・読めない前回値・ラベルの読み書きの失敗は止まる
+#
 # 検証する不変条件（Issue #1094 の受け入れ基準。images 側は scripts/k8s-local-images.test.sh）:
 #   - 絞り込み（SERVICES / --changed-since）が無ければ restart は従来どおり全件（上の #673 の検査を無改修で維持）
 #   - 絞り込みがあれば、作り直したサービスの Deployment だけを restart する（OpenD は除外のまま）
@@ -58,6 +65,14 @@ case "${1:-} ${2:-}" in
     [ -f "$f" ] || { echo "Error from server (NotFound): secrets \"$name\" not found" >&2; exit 1; }
     for a in "$@"; do
       case "$a" in
+        # GHSA-pcf9: 1 キーの値（base64 のまま）。実の kubectl と同じく、キーが無いとき
+        # `{{index .data "k"}}` は `<no value>` を出し、`{{with index .data "k"}}…{{end}}` は空を出す。
+        go-template={{*index\ .data*)
+          k="${a#*\"}"; k="${k%%\"*}"
+          if [ -f "$S/data-$k" ]; then cat "$S/data-$k"
+          else case "$a" in *"{{with index"*) ;; *) printf '<no value>' ;; esac
+          fi
+          exit 0 ;;
         go-template=*) cat "$S/nonempty_keys"; exit 0 ;;
         jsonpath=*ownerReferences*) [ -f "$S/owner-$name" ] && cat "$S/owner-$name"; exit 0 ;;
       esac
@@ -88,7 +103,45 @@ case "${1:-} ${2:-}" in
     exit 0
     ;;
   "get deployment")
+    # #1351: 名前つき（get deployment <name> ...）は稼働中の strategy を "<type>|<rollingUpdate>" で返す。
+    # $S/strategy-<name> が無ければ未作成（--ignore-not-found の空出力）、$S/get-deploy-fail があれば失敗する。
+    case "${3:-}" in
+      ""|-*) ;;
+      *)
+        [ -f "$S/get-deploy-fail" ] && { echo 'Error from server (Forbidden): deployments.apps is forbidden' >&2; exit 1; }
+        [ -f "$S/strategy-$3" ] && cat "$S/strategy-$3"
+        exit 0
+        ;;
+    esac
     [ -f "$S/deployments" ] && cat "$S/deployments"
+    exit 0
+    ;;
+  "patch deployment")
+    # #1351: 適用した Deployment 名とパッチ（-p の値）を記録する。$S/patch-deploy-fail があれば失敗する。
+    [ -f "$S/patch-deploy-fail" ] && { echo 'Error from server: patch failed' >&2; exit 1; }
+    prev="" body=""
+    for a in "$@"; do
+      [ "$prev" = "-p" ] && body="$a"
+      prev="$a"
+    done
+    printf '%s %s\n' "${3:-}" "$body" >> "$S/patched-deploy.log"
+    exit 0
+    ;;
+  "get namespace")
+    # NFR, IADR-0570: 名前空間の istio-injection ラベル（$S/ns-label の中身。無ければ空）。$S/get-ns-fail があれば失敗する。
+    [ -f "$S/get-ns-fail" ] && { echo 'Error from server (Forbidden): namespaces is forbidden' >&2; exit 1; }
+    [ -f "$S/ns-label" ] && cat "$S/ns-label"
+    exit 0
+    ;;
+  "label namespace")
+    # NFR, IADR-0570: 貼る（istio-injection=enabled）・剥がす（istio-injection-）を記録し、状態へ反映する。
+    [ -f "$S/label-ns-fail" ] && { echo 'Error from server: label failed' >&2; exit 1; }
+    for a in "$@"; do
+      case "$a" in
+        istio-injection=*) printf '%s\n' "$a" >> "$S/ns-label.log"; printf '%s' "${a#istio-injection=}" > "$S/ns-label" ;;
+        istio-injection-) printf '%s\n' "$a" >> "$S/ns-label.log"; rm -f "$S/ns-label" ;;
+      esac
+    done
     exit 0
     ;;
   "rollout restart")
@@ -116,6 +169,12 @@ case "${1:-} ${2:-}" in
   "get values")
     [ -f "$S/prev-values.yaml" ] || { echo 'Error: release: not found' >&2; exit 1; }
     cat "$S/prev-values.yaml"
+    exit 0
+    ;;
+  "template "*)
+    # #1351: 描画（ast_migrate_recreate_strategy が使う）。$S/rendered.yaml を返し、無ければ失敗する。
+    [ -f "$S/rendered.yaml" ] || { echo 'Error: render failed' >&2; exit 1; }
+    cat "$S/rendered.yaml"
     exit 0
     ;;
 esac
@@ -164,6 +223,7 @@ given_secret() {
   unset BROKER_TIER OPEND_ENABLED
   for v in $VALUE_ENV_VARS; do unset "$v"; done
   unset AST_ESO AST_ESO_MODE AST_PROFILE_VALUES
+  unset AST_MESH_INJECTION AST_MESH_INJECTION_EFFECTIVE AST_MESH_INJECTION_SOURCE AST_MESH_INJECTION_PREV AST_MESH_INJECTION_CHANGED
   FORCE_EMPTY=0
   FORCE_EMPTY_VALUES=0
   ADOPT_EXISTING=0
@@ -930,6 +990,7 @@ assert_contains 'T-795-09 ESO: 使わない旨を警告する' "$ERR" 'discord.b
 # T-795-10: AST_ESO=0 → 従来どおり ast-secrets を同期し、discord.bot.* を引き継ぐ
 given_secret "absent"
 AST_ESO=0; export AST_ESO
+: > "$STATE/exists-ast-rabbitmq-users"   # IADR-0568: 従来経路ではブローカの資格情報の Secret を先に作っておく前提
 run_prepare
 assert_eq   'T-795-10 非 ESO: 正常終了する' "$RC" "0"
 [ -f "$STATE/created" ] && ok 'T-795-10 非 ESO: Secret を作成する' || ng 'T-795-10 非 ESO: Secret を作成する' 'create secret が呼ばれていない'
@@ -939,6 +1000,467 @@ given_release_values 'discord:
     guildId: "111111111111111111"'
 run_resolve_with_mode
 assert_contains 'T-795-10 非 ESO: discord.bot.guildId を引き継ぐ' "$OVERRIDES" 'discord.bot.guildId=111111111111111111'
+
+# T-pvmh-01（IADR-0568・Refs GHSA-pvmh-cvmf-pvcp）: 従来経路でブローカの資格情報の Secret が無ければ、ast-secrets に触れる前に止まる
+given_secret "absent"
+AST_ESO=0; export AST_ESO
+run_prepare
+assert_eq       'T-pvmh-01 非 ESO・ブローカの Secret なし: 非 0' "$RC" "1"
+assert_contains 'T-pvmh-01 非 ESO・ブローカの Secret なし: 名指す' "$ERR" 'ast-rabbitmq-users'
+[ -f "$STATE/created" ] && ng 'T-pvmh-01 非 ESO: ast-secrets を作らない' '止まる前に create secret が呼ばれた' || ok 'T-pvmh-01 非 ESO: ast-secrets を作らない'
+# T-pvmh-02: ESO 所有では、管理外の同名 Secret を名指して止める（ESO が所有しにいく対象に入っている）
+assert_contains 'T-pvmh-02 ESO 所有の対象に入る' "${AST_ESO_TARGET_SECRETS[*]}" 'ast-rabbitmq-users'
+unset AST_ESO
+
+# ---- #1351: Recreate へ移る Deployment に残る rollingUpdate を upgrade の前に外す ----------
+printf '\nk8s-local-deploy.sh: Recreate への移行（#1351）\n'
+
+# 描画の疑似。trade-decision と opend が Recreate、audit は既定（strategy 無し）。
+RENDERED_RECREATE='---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-service
+  namespace: ai-stock-trading
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trade-decision-service
+  namespace: ai-stock-trading
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: trade-decision-service
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opend-svc
+spec:
+  type: Recreate
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opend
+  labels:
+    app: opend
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: { app: opend }'
+ROLLING='RollingUpdate|{"maxSurge":"25%","maxUnavailable":"25%"}'
+
+# $1 = 描画（"absent" で helm template を失敗させる）。続く引数は "<name>=<type|rollingUpdate>"（稼働中の strategy）
+given_strategy() {
+  local kv
+  rm -f "$STATE"/strategy-* "$STATE/patched-deploy.log" "$STATE/get-deploy-fail" "$STATE/patch-deploy-fail" "$STATE/rendered.yaml"
+  [ "$1" != "absent" ] && printf '%s\n' "$1" > "$STATE/rendered.yaml"
+  shift
+  for kv in "$@"; do printf '%s' "${kv#*=}" > "$STATE/strategy-${kv%%=*}"; done
+  return 0
+}
+run_migrate() {
+  ( ast_migrate_recreate_strategy --set namespace.create=false -f values-local.yaml ) > "$STATE/out" 2> "$STATE/err"
+  RC=$?
+  OUT="$(cat "$STATE/out")"
+  ERR="$(cat "$STATE/err")"
+  PATCHED="$(cat "$STATE/patched-deploy.log" 2>/dev/null || true)"
+}
+
+# T-1351-01: 描画が Recreate で、稼働中が RollingUpdate＋rollingUpdate → その Deployment だけを Recreate へ置き換える
+given_secret ""
+given_strategy "$RENDERED_RECREATE" "trade-decision-service=$ROLLING" "opend=Recreate|" "audit-service=$ROLLING"
+run_migrate
+assert_eq   'T-1351-01 要る: 正常終了する' "$RC" "0"
+assert_eq   'T-1351-01 要る: trade-decision だけを /spec/strategy ごと Recreate へ置き換える' "$PATCHED" \
+  'trade-decision-service [{"op":"replace","path":"/spec/strategy","value":{"type":"Recreate"}}]'
+assert_contains 'T-1351-01 要る: 操作を 1 行出す' "$OUT" 'deploy/trade-decision-service RollingUpdate → Recreate'
+assert_contains 'T-1351-01 要る: Pod が作り直されることを出す' "$OUT" 'Pod は全数を止めてから作り直される'
+assert_eq   'T-1351-01 要る: 操作の行は 1 件' "$(printf '%s\n' "$OUT" | grep -c 'strategy 移行' || true)" "1"
+
+# T-1351-02: すでに Recreate・未作成・描画が Recreate でない → 何もしない（冪等）
+given_strategy "$RENDERED_RECREATE" "trade-decision-service=Recreate|" "audit-service=$ROLLING"
+run_migrate
+assert_eq   'T-1351-02 不要: 正常終了する' "$RC" "0"
+assert_eq   'T-1351-02 不要: patch しない' "$PATCHED" ''
+assert_contains 'T-1351-02 不要: 対象なしと出す' "$OUT" '対象なし'
+
+# T-1351-03: 描画に Recreate が無い（本番既定）→ 稼働中が RollingUpdate でも何もしない
+given_strategy '---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trade-decision-service
+spec:
+  replicas: 1' "trade-decision-service=$ROLLING"
+run_migrate
+assert_eq   'T-1351-03 描画が既定: patch しない' "$PATCHED" ''
+
+# T-1351-04: 🔴 稼働中の取得に失敗 → 止まる（fail-closed）
+given_strategy "$RENDERED_RECREATE" "trade-decision-service=$ROLLING"
+: > "$STATE/get-deploy-fail"
+run_migrate
+assert_eq   'T-1351-04 取得失敗: 非 0 で止まる' "$RC" "1"
+assert_contains 'T-1351-04 取得失敗: 理由を出す' "$ERR" 'deploy/trade-decision-service の取得に失敗'
+assert_eq   'T-1351-04 取得失敗: patch しない' "$PATCHED" ''
+
+# T-1351-05: 🔴 patch に失敗 → 止まる（fail-closed）
+given_strategy "$RENDERED_RECREATE" "trade-decision-service=$ROLLING"
+: > "$STATE/patch-deploy-fail"
+run_migrate
+assert_eq   'T-1351-05 patch 失敗: 非 0 で止まる' "$RC" "1"
+assert_contains 'T-1351-05 patch 失敗: 理由を出す' "$ERR" 'deploy/trade-decision-service の patch に失敗'
+
+# T-1351-06: 🔴 描画に失敗 → 止まる（対象を判定できないまま upgrade へ進まない）
+given_strategy absent "trade-decision-service=$ROLLING"
+run_migrate
+assert_eq   'T-1351-06 描画失敗: 非 0 で止まる' "$RC" "1"
+assert_contains 'T-1351-06 描画失敗: 理由を出す' "$ERR" 'helm template が失敗'
+
+# T-1351-07: 起動器の本体は upgrade と同じ値で移行の段を呼び、その後に helm upgrade する（順序の固定）
+main_body="$(sed -n '/^AST_HELM_VALUE_ARGS=(/,/^helm upgrade --install/p' "$ROOT_DIR/scripts/k8s-local-deploy.sh")"
+assert_contains 'T-1351-07 順序: 移行の段を upgrade と同じ値で呼ぶ' "$main_body" 'ast_migrate_recreate_strategy "${AST_HELM_VALUE_ARGS[@]}"'
+assert_contains 'T-1351-07 順序: その後に upgrade する' "$main_body" 'helm upgrade --install "$RELEASE" deploy/helm/ai-stock-trading -n "$NS" "${AST_HELM_VALUE_ARGS[@]}"'
+
+# ---- NFR, IADR-0098（2026-10-22 追記・Refs GHSA-pcf9-8mh4-8wgh）: 機密クライアントの secret の fail-closed ----
+printf '\nk8s-local-deploy.sh: 機密クライアントの secret が開発用の値なら止める（IADR-0098 追記）\n'
+
+GUARDED_KEYS="service-auth-client-secret discord-owner-auth-client-secret kb-auth-client-secret kb-reader-auth-client-secret llm-auth-client-secret"
+# 開発用の値は宣言から導く（試験にも値を複写しない）。
+dev_of() {
+  local spec
+  for spec in "${AST_DEV_GUARDED_CLIENT_SECRETS[@]}"; do
+    [ "${spec%%|*}" = "$1" ] && { ast_dev_client_secret_value "${spec%%|*}" "${spec#*|}"; return 0; }
+  done
+  return 1
+}
+NONDEV="not-a-dev-value-0123456789abcdef"
+
+# $1 = absent | present（ast-secrets の実在）。値は given_data で入れる。
+given_guard() {
+  given_secret "${1:-absent}"
+  [ "${1:-absent}" = "absent" ] && rm -f "$STATE/exists"
+  unset ALLOW_DEV_CLIENT_SECRETS
+  ALLOW_DEV_CLIENT_SECRETS_FLAG=0
+  AST_ESO_MODE=0
+}
+# $1 = キー, $2 = 平文（base64 にして稼働中の Secret に置く）
+given_data() { b64 "$2" > "$STATE/data-$1"; }
+run_guard() {
+  ( ast_dev_client_secret_guard ) > "$STATE/out" 2> "$STATE/err"
+  RC=$?
+  OUT="$(cat "$STATE/out")"
+  ERR="$(cat "$STATE/err")"
+}
+# 開発用の値・試験の値のどれも出力に出ていないこと。
+assert_no_values() {
+  local k leaked=''
+  for k in $GUARDED_KEYS; do
+    case "$OUT$ERR" in *"$(dev_of "$k")"*) leaked="$leaked $k" ;; esac
+  done
+  case "$OUT$ERR" in *"$NONDEV"*) leaked="$leaked NONDEV" ;; esac
+  assert_eq "$1" "$leaked" ''
+}
+
+# T-pcf9-01: 対象は 5 件ちょうど（svc・owner・kb-writer・kb-reader・llm-caller）。開発用の値はどれも空でなく互いに違う。
+got_keys="$(for spec in "${AST_DEV_GUARDED_CLIENT_SECRETS[@]}"; do printf '%s ' "${spec%%|*}"; done)"
+assert_eq 'T-pcf9-01 対象: 5 件' "$got_keys" "$GUARDED_KEYS "
+uniq_n="$(for k in $GUARDED_KEYS; do dev_of "$k"; echo; done | sort -u | grep -c .)"
+assert_eq 'T-pcf9-01 開発用の値: 5 件とも非空で互いに違う' "$uniq_n" "5"
+
+# T-pcf9-02: 従来経路の新規環境・env なし → 既定（svc / owner は開発用の値）で止まる
+given_guard absent
+run_guard
+assert_eq       'T-pcf9-02 新規・env なし: 非 0' "$RC" "1"
+assert_contains 'T-pcf9-02 新規・env なし: svc を名指す' "$ERR" 'service-auth-client-secret ($SERVICEAUTH_CLIENTSECRET)'
+assert_contains 'T-pcf9-02 新規・env なし: owner を名指す' "$ERR" 'discord-owner-auth-client-secret ($DISCORD_OWNERAUTH_CLIENTSECRET)'
+assert_missing  'T-pcf9-02 新規・env なし: 空既定の kb は名指さない（空は開発用の値ではない）' "$ERR" 'kb-auth-client-secret'
+assert_no_values 'T-pcf9-02 値を出さない'
+
+# T-pcf9-03: 従来経路・svc / owner に開発用でない値 → 進む
+given_guard absent
+export SERVICEAUTH_CLIENTSECRET="$NONDEV" DISCORD_OWNERAUTH_CLIENTSECRET="$NONDEV"
+run_guard
+assert_eq 'T-pcf9-03 開発用でない値: 0' "$RC" "0"
+assert_no_values 'T-pcf9-03 値を出さない'
+
+# T-pcf9-04: 従来経路・env で kb-reader に開発用の値（宣言から導いた値）→ 止まる
+given_guard absent
+export SERVICEAUTH_CLIENTSECRET="$NONDEV" DISCORD_OWNERAUTH_CLIENTSECRET="$NONDEV"
+export KB_READER_AUTH_CLIENTSECRET="$(dev_of kb-reader-auth-client-secret)"
+run_guard
+assert_eq       'T-pcf9-04 env の開発用の値: 非 0' "$RC" "1"
+assert_contains 'T-pcf9-04 env の開発用の値: kb-reader を名指す' "$ERR" 'kb-reader-auth-client-secret'
+assert_no_values 'T-pcf9-04 値を出さない'
+
+# T-pcf9-05: 従来経路・env なしで既存の Secret に開発用の値（llm-caller）→ 止まる。既存値が開発用でなければ進む
+given_guard present
+given_data service-auth-client-secret "$NONDEV"
+given_data discord-owner-auth-client-secret "$NONDEV"
+given_data llm-auth-client-secret "$(dev_of llm-auth-client-secret)"
+run_guard
+assert_eq       'T-pcf9-05 既存の開発用の値: 非 0' "$RC" "1"
+assert_contains 'T-pcf9-05 既存の開発用の値: llm-caller を名指す' "$ERR" 'llm-auth-client-secret'
+given_data llm-auth-client-secret "$NONDEV"
+run_guard
+assert_eq 'T-pcf9-05 既存が開発用でない: 0' "$RC" "0"
+
+# T-pcf9-05b: 従来経路・Secret は在るがキーが無い（env なし）→ sync_ast_secrets は既定値（svc は開発用の値）を書くので止まる
+given_guard present
+given_data discord-owner-auth-client-secret "$NONDEV"
+run_guard
+assert_eq       'T-pcf9-05b キーなし・env なし: 非 0' "$RC" "1"
+assert_contains 'T-pcf9-05b キーなし・env なし: svc を名指す' "$ERR" 'service-auth-client-secret'
+assert_missing  'T-pcf9-05b キーなし・env なし: 値のある owner は名指さない' "$ERR" 'discord-owner-auth-client-secret'
+# 起動器が出す問い合わせは「キーが無ければ空」の形である（`index` 単独は `<no value>` を出し、すり抜ける）。
+assert_contains 'T-pcf9-05b 問い合わせ: with で包む' "$(declare -f ast_secret_data_b64)" '{{with index .data'
+
+# T-pcf9-06: ESO 所有・Secret が無い → 確かめられないので止まる（env は見ない）
+given_guard absent
+AST_ESO_MODE=1
+export SERVICEAUTH_CLIENTSECRET="$NONDEV"
+run_guard
+assert_eq       'T-pcf9-06 ESO・Secret なし: 非 0' "$RC" "1"
+assert_contains 'T-pcf9-06 ESO・Secret なし: 確かめられないと言う' "$ERR" '確かめられない'
+
+# T-pcf9-07: ESO 所有・稼働中の値が開発用（kb-writer）→ 止まる。env に開発用でない値があっても使わない
+given_guard present
+AST_ESO_MODE=1
+for k in $GUARDED_KEYS; do given_data "$k" "$NONDEV"; done
+given_data kb-auth-client-secret "$(dev_of kb-auth-client-secret)"
+export KB_AUTH_CLIENTSECRET="$NONDEV"
+run_guard
+assert_eq       'T-pcf9-07 ESO・稼働中が開発用: 非 0' "$RC" "1"
+assert_contains 'T-pcf9-07 ESO・稼働中が開発用: kb-writer を名指す' "$ERR" 'kb-auth-client-secret'
+assert_no_values 'T-pcf9-07 値を出さない'
+# 陰性対照: 全件が開発用でなければ進む。ESO では env の開発用の値も見ない（ESO は env を使わない）
+given_data kb-auth-client-secret "$NONDEV"
+export SERVICEAUTH_CLIENTSECRET="$(dev_of service-auth-client-secret)"
+run_guard
+assert_eq 'T-pcf9-07 ESO・全件が開発用でない: 0（env は見ない）' "$RC" "0"
+
+# T-pcf9-08: 明示の opt-in だけが通す（フラグ・ALLOW_DEV_CLIENT_SECRETS=1）。`true` 等は opt-in ではない
+given_guard absent
+ALLOW_DEV_CLIENT_SECRETS_FLAG=1
+run_guard
+assert_eq       'T-pcf9-08 フラグ: 0' "$RC" "0"
+assert_contains 'T-pcf9-08 フラグ: 大きく警告する' "$ERR" '!!! WARNING'
+assert_no_values 'T-pcf9-08 値を出さない'
+given_guard absent
+export ALLOW_DEV_CLIENT_SECRETS=1
+run_guard
+assert_eq 'T-pcf9-08 env=1: 0' "$RC" "0"
+given_guard absent
+export ALLOW_DEV_CLIENT_SECRETS=true
+run_guard
+assert_eq 'T-pcf9-08 env=true: 非 0（1 だけが opt-in）' "$RC" "1"
+unset ALLOW_DEV_CLIENT_SECRETS SERVICEAUTH_CLIENTSECRET DISCORD_OWNERAUTH_CLIENTSECRET KB_AUTH_CLIENTSECRET KB_READER_AUTH_CLIENTSECRET
+
+# T-pcf9-09: 起動器の本体は、イメージを作る前に確かめて、止まったら進まない（順序の固定）
+pre_build="$(sed -n '/^echo "==> \[0\/5\]/,/k8s-local-images.sh/p' "$ROOT_DIR/scripts/k8s-local-deploy.sh")"
+assert_contains 'T-pcf9-09 順序: イメージを作る前に確かめる' "$pre_build" 'ast_dev_client_secret_guard || exit 1'
+assert_contains 'T-pcf9-09 順序: 供給経路を先に決める' "$pre_build" 'resolve_ast_eso_mode'
+# 未知のオプションにならない（引数の解釈）
+assert_contains 'T-pcf9-09 引数: --allow-dev-client-secrets を受け付ける' \
+  "$(sed -n '/^while \[ \$# -gt 0 \]/,/^done/p' "$ROOT_DIR/scripts/k8s-local-deploy.sh")" '--allow-dev-client-secrets) ALLOW_DEV_CLIENT_SECRETS_FLAG=1'
+
+printf '\nk8s-local-deploy.sh: メッシュ参入の受け口と引き継ぎ（IADR-0570）\n'
+
+# 解決と名前空間のラベルを続けて実行し、RC / OUT / ERR / MESH_OVERRIDES / MESH_CHANGED / NS_LABEL_LOG を埋める。
+run_mesh() {
+  rm -f "$STATE/ns-label.log"
+  (
+    resolve_ast_mesh_injection
+    rc=$?
+    printf '%s\n' "${AST_MESH_OVERRIDES[@]:-}" > "$STATE/mesh-overrides.txt"
+    [ "$rc" -ne 0 ] && exit "$rc"
+    ast_apply_mesh_namespace_label
+    rc=$?
+    printf '%s' "${AST_MESH_INJECTION_CHANGED:-}" > "$STATE/mesh-changed"
+    exit "$rc"
+  ) > "$STATE/out" 2> "$STATE/err"
+  RC=$?
+  OUT="$(cat "$STATE/out")"
+  ERR="$(cat "$STATE/err")"
+  MESH_OVERRIDES="$(cat "$STATE/mesh-overrides.txt" 2>/dev/null || true)"
+  MESH_CHANGED="$(cat "$STATE/mesh-changed" 2>/dev/null || true)"
+  NS_LABEL_LOG="$(cat "$STATE/ns-label.log" 2>/dev/null || true)"
+}
+given_ns_label() { rm -f "$STATE/ns-label"; [ -n "${1:-}" ] && printf '%s' "$1" > "$STATE/ns-label"; return 0; }
+MESH_ON='mesh:
+  sidecarInjection:
+    enabled: true
+    excludeOpend: true'
+MESH_OFF='mesh:
+  sidecarInjection:
+    enabled: false'
+
+# T-mesh-01: 新規・未指定 → helm へ何も足さず、名前空間に触らない（既定の不変）
+given_secret ""
+given_release_values absent
+given_ns_label ""
+run_mesh
+assert_eq 'T-mesh-01 新規: 正常終了する' "$RC" "0"
+assert_eq 'T-mesh-01 新規: helm へ何も足さない' "$MESH_OVERRIDES" ''
+assert_eq 'T-mesh-01 新規: ラベルに触らない' "$NS_LABEL_LOG" ''
+assert_eq 'T-mesh-01 新規: 状態は変わらない' "$MESH_CHANGED" '0'
+# 前回リリースはあるが mesh を宣言していない（本 PR より前の配備）→ 同じく何も足さない
+given_release_values 'broker:
+  tier: moomoo-sim'
+run_mesh
+assert_eq 'T-mesh-01 未宣言の前回: helm へ何も足さない' "$MESH_OVERRIDES" ''
+assert_eq 'T-mesh-01 未宣言の前回: ラベルに触らない' "$NS_LABEL_LOG" ''
+
+# T-mesh-02: 明示の 1 → enabled=true と excludeOpend=true を渡し、ラベルを貼り、状態が変わる
+for v in 1 true; do
+  given_secret ""
+  given_release_values absent
+  given_ns_label ""
+  export AST_MESH_INJECTION="$v"
+  run_mesh
+  assert_eq       "T-mesh-02 明示 $v: 正常終了する" "$RC" "0"
+  assert_contains "T-mesh-02 明示 $v: enabled=true を渡す" "$MESH_OVERRIDES" 'mesh.sidecarInjection.enabled=true'
+  assert_contains "T-mesh-02 明示 $v: OpenD を注入対象外に固定する" "$MESH_OVERRIDES" 'mesh.sidecarInjection.excludeOpend=true'
+  assert_eq       "T-mesh-02 明示 $v: ラベルを貼る" "$NS_LABEL_LOG" 'istio-injection=enabled'
+  assert_eq       "T-mesh-02 明示 $v: 状態が変わる" "$MESH_CHANGED" '1'
+done
+
+# T-mesh-03: 🔴 未指定の再実行は現行の true を引き継ぐ（手で与えた値・注釈が次の配備で外れない）
+given_secret ""
+given_release_values "$MESH_ON"
+given_ns_label enabled
+run_mesh
+assert_eq       'T-mesh-03 引き継ぎ: 正常終了する' "$RC" "0"
+assert_contains 'T-mesh-03 引き継ぎ: enabled=true を渡す' "$MESH_OVERRIDES" 'mesh.sidecarInjection.enabled=true'
+assert_contains 'T-mesh-03 引き継ぎ: OpenD を注入対象外に固定する' "$MESH_OVERRIDES" 'mesh.sidecarInjection.excludeOpend=true'
+assert_contains 'T-mesh-03 引き継ぎ: 引き継いだことを告げる' "$ERR" '引き継ぎ: mesh.sidecarInjection.enabled=true'
+assert_eq       'T-mesh-03 引き継ぎ: 貼ってあるラベルには触らない' "$NS_LABEL_LOG" ''
+assert_eq       'T-mesh-03 引き継ぎ: 状態は変わらない（全件 restart に広げない）' "$MESH_CHANGED" '0'
+
+# T-mesh-04: 引き継いだ true だがラベルが無い（名前空間を作り直した等）→ 貼り、状態が変わる
+given_ns_label ""
+run_mesh
+assert_eq 'T-mesh-04 ラベル欠落: 貼る' "$NS_LABEL_LOG" 'istio-injection=enabled'
+assert_eq 'T-mesh-04 ラベル欠落: 状態が変わる' "$MESH_CHANGED" '1'
+
+# T-mesh-05: 明示の 0 → enabled=false を渡し（excludeOpend は足さない）、ラベルを剥がし、状態が変わる
+for v in 0 false; do
+  given_secret ""
+  given_release_values "$MESH_ON"
+  given_ns_label enabled
+  export AST_MESH_INJECTION="$v"
+  run_mesh
+  assert_eq       "T-mesh-05 明示 $v: 正常終了する" "$RC" "0"
+  assert_eq       "T-mesh-05 明示 $v: enabled=false だけを渡す" "$MESH_OVERRIDES" '--set
+mesh.sidecarInjection.enabled=false'
+  assert_eq       "T-mesh-05 明示 $v: ラベルを剥がす" "$NS_LABEL_LOG" 'istio-injection-'
+  assert_eq       "T-mesh-05 明示 $v: 状態が変わる" "$MESH_CHANGED" '1'
+done
+# 明示の 0 でラベルが元から無く、前回も無効 → 何も変わらない
+given_secret ""
+given_release_values "$MESH_OFF"
+given_ns_label ""
+export AST_MESH_INJECTION=0
+run_mesh
+assert_eq 'T-mesh-05 無効のまま: ラベルに触らない' "$NS_LABEL_LOG" ''
+assert_eq 'T-mesh-05 無効のまま: 状態は変わらない' "$MESH_CHANGED" '0'
+
+# T-mesh-06: 引き継いだ false で手のラベルが残る → 触らず告げる
+given_secret ""
+given_release_values "$MESH_OFF"
+given_ns_label enabled
+run_mesh
+assert_eq       'T-mesh-06 手のラベル: 正常終了する' "$RC" "0"
+assert_eq       'T-mesh-06 手のラベル: enabled=false を引き継ぐ' "$MESH_OVERRIDES" '--set
+mesh.sidecarInjection.enabled=false'
+assert_eq       'T-mesh-06 手のラベル: 剥がさない' "$NS_LABEL_LOG" ''
+assert_contains 'T-mesh-06 手のラベル: 告げる' "$ERR" 'WARN: 名前空間 ai-stock-trading に istio-injection=enabled'
+# 既定（新規）でも同じく触らない
+given_release_values absent
+run_mesh
+assert_eq 'T-mesh-06 既定・手のラベル: 剥がさない' "$NS_LABEL_LOG" ''
+
+# T-mesh-07: 不正な値（空を含む）は exit 2 で、何も渡さずラベルにも触らない
+for v in '' yes 2 TRUE; do
+  given_secret ""
+  given_release_values "$MESH_ON"
+  given_ns_label enabled
+  export AST_MESH_INJECTION="$v"
+  run_mesh
+  assert_eq "T-mesh-07 不正 '$v': exit 2" "$RC" "2"
+  assert_eq "T-mesh-07 不正 '$v': 何も渡さない" "$MESH_OVERRIDES" ''
+  assert_eq "T-mesh-07 不正 '$v': ラベルに触らない" "$NS_LABEL_LOG" ''
+done
+
+# T-mesh-08: 前回値が真偽値として読めない → 止める（黙って既定へ戻さない）。明示すれば進む
+given_secret ""
+given_release_values 'mesh:
+  sidecarInjection:
+    enabled: maybe'
+run_mesh
+assert_eq       'T-mesh-08 読めない前回値: 非 0' "$RC" "1"
+assert_contains 'T-mesh-08 読めない前回値: 明示を案内する' "$ERR" 'AST_MESH_INJECTION=1'
+export AST_MESH_INJECTION=1
+run_mesh
+assert_eq 'T-mesh-08 読めない前回値・明示: 進む' "$RC" "0"
+assert_contains 'T-mesh-08 読めない前回値・明示: enabled=true' "$MESH_OVERRIDES" 'mesh.sidecarInjection.enabled=true'
+assert_eq 'T-mesh-08 読めない前回値・明示: 状態が変わったものとして扱う' "$MESH_CHANGED" '1'
+
+# T-mesh-09: ラベルの読み書きに失敗したら止める
+given_secret ""
+given_release_values absent
+export AST_MESH_INJECTION=1
+: > "$STATE/get-ns-fail"
+run_mesh
+assert_eq 'T-mesh-09 読めない: 非 0' "$RC" "1"
+rm -f "$STATE/get-ns-fail"
+: > "$STATE/label-ns-fail"
+run_mesh
+assert_eq 'T-mesh-09 貼れない: 非 0' "$RC" "1"
+rm -f "$STATE/label-ns-fail"
+
+# T-mesh-10: 🔴 注入の状態が変わった回は、絞り込みがあっても OpenD を除く全件を restart する
+given_secret ""
+given_deployments "$ALL_DEPLOYMENTS"
+given_built 'audit-service'
+( AST_IMAGE_SELECTION=1; AST_SECRETS_PATCHED=0; AST_MESH_INJECTION_CHANGED=1; ast_restart_step "$STATE/built" ) > "$STATE/out" 2> "$STATE/err"
+OUT="$(cat "$STATE/out")"
+RESTARTED="$(cat "$STATE/restarted.log" 2>/dev/null || true)"
+assert_contains 'T-mesh-10 状態の変更: 全件へ戻す' "$OUT" '11 件（OpenD は除外）'
+assert_contains 'T-mesh-10 状態の変更: 理由を表示する' "$OUT" 'サイドカー注入の状態を変えたため'
+assert_missing  'T-mesh-10 状態の変更: OpenD は作り直さない' "$RESTARTED" 'opend'
+# 陰性対照: 変わっていなければ絞り込みのまま
+given_deployments "$ALL_DEPLOYMENTS"
+( AST_IMAGE_SELECTION=1; AST_SECRETS_PATCHED=0; AST_MESH_INJECTION_CHANGED=0; ast_restart_step "$STATE/built" ) > "$STATE/out" 2> "$STATE/err"
+RESTARTED="$(cat "$STATE/restarted.log" 2>/dev/null || true)"
+assert_eq 'T-mesh-10 変更なし: 作り直した分だけ' "$RESTARTED" 'audit-service'
+
+# T-mesh-11: 起動器の本体は、解決とラベルを helm upgrade より前に行い、helm の値に載せる（順序の固定）
+main_body="$(sed -n '/^echo "==> \[3\/5\]/,/^helm upgrade --install/p' "$ROOT_DIR/scripts/k8s-local-deploy.sh")"
+assert_contains 'T-mesh-11 順序: 解決する' "$main_body" 'resolve_ast_mesh_injection || exit $?'
+assert_contains 'T-mesh-11 順序: ラベルを扱う' "$main_body" 'ast_apply_mesh_namespace_label || exit 1'
+assert_contains 'T-mesh-11 順序: helm の値に載せる' "$main_body" '"${AST_MESH_OVERRIDES[@]}"'
+unset AST_MESH_INJECTION
+
+# T-mesh-12: helm upgrade が失敗したら、この回にラベルか値を変えたときだけ明示の再実行を案内する（本体は失敗で止まる）
+( AST_MESH_INJECTION_CHANGED=1; ast_mesh_upgrade_failure_hint ) > "$STATE/out" 2> "$STATE/err"
+ERR="$(cat "$STATE/err")"
+assert_contains 'T-mesh-12 失敗・変更あり: 1 で再実行を案内する' "$ERR" 'AST_MESH_INJECTION=1 scripts/k8s-local-deploy.sh'
+assert_contains 'T-mesh-12 失敗・変更あり: 0 で再実行を案内する' "$ERR" 'AST_MESH_INJECTION=0 scripts/k8s-local-deploy.sh'
+( AST_MESH_INJECTION_CHANGED=0; ast_mesh_upgrade_failure_hint ) > "$STATE/out" 2> "$STATE/err"
+assert_eq 'T-mesh-12 失敗・変更なし: 案内しない' "$(cat "$STATE/err")" ''
+upgrade_block="$(sed -n '/^if ! helm upgrade --install/,/^fi/p' "$ROOT_DIR/scripts/k8s-local-deploy.sh")"
+assert_contains 'T-mesh-12 本体: upgrade の失敗で案内してから止まる' "$upgrade_block" 'ast_mesh_upgrade_failure_hint'
+assert_contains 'T-mesh-12 本体: 失敗で止まる' "$upgrade_block" 'exit 1'
 
 printf '\n%d passed, %d failed\n' "$PASSED" "$FAILED"
 [ "$FAILED" -eq 0 ] || exit 1

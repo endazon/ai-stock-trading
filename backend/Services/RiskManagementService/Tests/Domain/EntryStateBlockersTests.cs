@@ -207,4 +207,65 @@ public class EntryStateBlockersTests
         Long(Snapshot(0, false, false, true, false, Gfv.NotCashAccount, capitalKnown: false))
             .Should().BeEmpty("資金が未供給なら日次損失は判定しない（審査は CapitalBaselineUnavailable で止める）");
     }
+
+    // 🔴 T-10-2988, FR-10, FR-19, ADR-0070, ADR-0071, #1433, IADR-0572 決定1: 閉場前の締め切り・テーマの上限を供給すれば、口（Determine）は同じ入力の審査
+    // （RiskEvaluator.Evaluate）と同じ理由を同じ並びで返す（述語は同じ関数。どちらかだけを直すと赤になる）。窓の中／外 × テーマの他の銘柄の保有の有無
+    // × 方向 × kill switch（並びの確認）× 建玉数の上限（並びの確認）。
+    [Fact]
+    public void T_10_2988_締め切りとテーマを供給すれば口は審査と同じ理由を同じ並びで返す()
+    {
+        var themes = TradingDefaults.CreateThemeConcentration();
+        var close = new DateTimeOffset(2026, 9, 23, 20, 0, 0, TimeSpan.Zero);
+        var failures = new List<string>();
+        var sawCutoff = false;
+        var sawTheme = false;
+
+        var cases =
+            from within in new[] { false, true }
+            from themeHeld in new[] { false, true }
+            from side in new[] { TradeSide.Buy, TradeSide.Sell }
+            from killSwitch in new[] { false, true }
+            from positions in new[] { 0, MaxPositions }
+            select (within, themeHeld, side, killSwitch, positions);
+
+        foreach (var (within, themeHeld, side, killSwitch, positions) in cases)
+        {
+            var cutoff = new PreCloseEntryCutoffSupply(within ? close.AddMinutes(-30) : close.AddMinutes(-61), close, 60);
+            var snapshot = Snapshot(positions, killSwitch, false, false, false, Gfv.NotCashAccount, capitalKnown: true) with
+            {
+                HeldOrPendingSymbols = themeHeld
+                    ? new HashSet<(string, Market)> { ("COIN", Market.UnitedStates) }
+                    : new HashSet<(string, Market)>(),
+            };
+            var intent = new OrderIntent("MARA", Market.UnitedStates, side, ProductType.Cash, BrokerProvider.InternalPaper, 1, 10m, PositionEffect.Open);
+
+            var blockers = EntryStateBlockers.Determine(
+                side, Settings, snapshot, StopOutReentrySupply.NoneToday, DecisionExitReentrySupply.NoneToday, lockedOut: false,
+                cutoff, themes, "MARA", Market.UnitedStates);
+            var screened = RiskEvaluator.Evaluate(
+                    intent, Settings, snapshot, stopOuts: StopOutReentrySupply.NoneToday, decisionExits: DecisionExitReentrySupply.NoneToday,
+                    preCloseCutoff: cutoff, themes: themes)
+                .Reasons.Where(EntryStateBlockers.Determinable.Contains).ToList();
+
+            if (!blockers.SequenceEqual(screened))
+                failures.Add($"within={within} theme={themeHeld} side={side} kill={killSwitch} positions={positions}: 口=[{string.Join(",", blockers)}] 審査=[{string.Join(",", screened)}]");
+            if (within != blockers.Contains(RejectionReason.PreCloseEntryCutoff))
+                failures.Add($"締め切り within={within}: [{string.Join(",", blockers)}]");
+            if (themeHeld != blockers.Contains(RejectionReason.ThemeConcentrationExceeded))
+                failures.Add($"テーマ held={themeHeld}: [{string.Join(",", blockers)}]");
+            sawCutoff |= within;
+            sawTheme |= themeHeld;
+        }
+
+        failures.Should().BeEmpty();
+        (sawCutoff && sawTheme).Should().BeTrue();
+        EntryStateBlockers.Determinable.Should().Contain([RejectionReason.PreCloseEntryCutoff, RejectionReason.ThemeConcentrationExceeded]);
+
+        // 省略（供給しない）なら判定しない（判定コアと同じ規律）。休場日（閉場が null）は窓に入らない。
+        EntryStateBlockers.Determine(
+                TradeSide.Buy, Settings, Snapshot(0, false, false, false, false, Gfv.NotCashAccount, true),
+                StopOutReentrySupply.NoneToday, DecisionExitReentrySupply.NoneToday, false)
+            .Should().BeEmpty();
+        EntryStateBlockers.PreCloseCutoff(new PreCloseEntryCutoffSupply(close, SessionClose: null, 60)).Should().BeFalse();
+    }
 }

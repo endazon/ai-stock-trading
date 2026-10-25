@@ -105,10 +105,46 @@ public sealed class HttpHeldPositionProvider(
         }
     }
 
+    // 🔴 FR-04, FR-10, #1397, IADR-0562 決定 3: 保有中の全銘柄（数量つき）。照会・失敗の扱いは GetHeldSymbolsAsync と同じ（失敗は null＝不明）。
+    public async Task<IReadOnlyList<HeldHolding>?> GetHoldingsAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient
+                .GetAsync("/risk-controls/open-positions", cancellationToken)
+                .ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("保有中の全銘柄の照会に失敗（{Status}）。プロンプトは「不明」と書きます。", (int)response.StatusCode);
+                return null;
+            }
+
+            var positions = await response.Content
+                .ReadFromJsonAsync<List<OpenPositionDto>>(cancellationToken)
+                .ConfigureAwait(false);
+            return positions is null ? null : InterpretHoldings(positions, logger);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("保有中の全銘柄の照会がタイムアウト。プロンプトは「不明」と書きます。");
+            return null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "保有中の全銘柄の照会で例外。プロンプトは「不明」と書きます。");
+            return null;
+        }
+    }
+
     // 🔴 FR-02, FR-04, #1286, IADR-0521 決定 1: 応答の全行から保有中の (銘柄, 市場) を導く（輸送に依らず 1 つ。gRPC も呼ぶ）。
     // 行の検証は InterpretPositions と同じ規則（#943・#854）—— 銘柄・市場・方向・数量の欠けた行、数量が正でない行が 1 つでもあれば
     // 応答全体を解釈できない（null＝不明）。欠けた行を飛ばすと、その行の銘柄が黙って判断対象から落ちる。
     internal static IReadOnlyList<WatchedSymbol>? InterpretHeldSymbols(
+        IReadOnlyList<OpenPositionDto> positions, ILogger logger) =>
+        InterpretHoldings(positions, logger)?.Select(h => new WatchedSymbol(h.Symbol, h.Market)).ToList();
+
+    // 🔴 FR-04, FR-10, #1397, IADR-0562 決定 3: 同じ検証で、保有中の全銘柄を符号付き数量つきで返す（判断のプロンプトの「保有中の全銘柄」）。
+    internal static IReadOnlyList<HeldHolding>? InterpretHoldings(
         IReadOnlyList<OpenPositionDto> positions, ILogger logger)
     {
         if (positions.Any(p => p is null || string.IsNullOrEmpty(p.Symbol) || p.Market is null
@@ -121,8 +157,8 @@ public sealed class HttpHeldPositionProvider(
         // (銘柄, 市場) ごとに符号付きで合計し、0 でないものだけを残す（応答の順を保つ）。
         return positions
             .GroupBy(p => (Symbol: p.Symbol!, Market: p.Market!.Value))
-            .Where(g => g.Sum(p => p.Side == TradeSide.Buy ? p.Quantity!.Value : -p.Quantity!.Value) != 0)
-            .Select(g => new WatchedSymbol(g.Key.Symbol, g.Key.Market))
+            .Select(g => new HeldHolding(g.Key.Symbol, g.Key.Market, g.Sum(p => p.Side == TradeSide.Buy ? p.Quantity!.Value : -p.Quantity!.Value)))
+            .Where(h => h.SignedQuantity != 0)
             .ToList();
     }
 
@@ -159,11 +195,13 @@ public sealed class HttpHeldPositionProvider(
         var signed = 0;
         decimal? entryPrice = null;
         decimal? stopLossPrice = null;
+        List<OpenPositionEntryDto>? entries = null;
         foreach (var p in matched)
         {
             signed += p.Side == TradeSide.Buy ? p.Quantity!.Value : -p.Quantity!.Value;
             entryPrice = p.EntryPrice;
             stopLossPrice = p.StopLossPrice;
+            entries = p.Entries;
         }
 
         if (signed == 0)
@@ -173,7 +211,33 @@ public sealed class HttpHeldPositionProvider(
         return new HeldPosition(
             signed,
             entryPrice is > 0m ? entryPrice : null,
-            stopLossPrice is > 0m ? stopLossPrice : null);
+            stopLossPrice is > 0m ? stopLossPrice : null)
+        {
+            // FR-04, FR-10, #1384, IADR-0558 決定 6: ロットの列（射影は (銘柄, 市場) ごとに 1 行。複数行の応答はロットを渡さない）。
+            Lots = matched.Count == 1 ? InterpretLots(entries, Math.Abs(signed), logger) : null,
+        };
+    }
+
+    // FR-04, FR-10, #1384, IADR-0558 決定 6: ロットの列の解釈。🔴 **列が無い（旧い送り手）・行が欠けている・数量の合計が建玉と合わない列は
+    // null（記録の供給なし）** にする —— 取り違えた列を渡すと、保有中の判断が別のロットの条件で出口を探す。保有状況そのものは落とさない
+    // （ロットが読めないことを理由に、保有を「不明」へ倒して手仕舞いを止めない）。
+    internal static IReadOnlyList<HeldPositionLot>? InterpretLots(
+        IReadOnlyList<OpenPositionEntryDto>? entries, int heldQuantity, ILogger logger)
+    {
+        if (entries is null)
+            return null;
+
+        if (entries.Any(e => e is null || e.DecisionId is null || e.Quantity is not > 0 || e.OrderedAt is null)
+            || entries.Sum(e => e.Quantity!.Value) != heldQuantity)
+        {
+            logger.LogWarning("保有建玉のロットの列が欠けている、または数量が建玉と合いません。建てた条件は不明として扱います。");
+            return null;
+        }
+
+        return [.. entries.Select(e => new HeldPositionLot(
+            e.DecisionId!.Value, e.Quantity!.Value, e.OrderedAt!.Value,
+            string.IsNullOrWhiteSpace(e.EntryCondition) ? null : e.EntryCondition,
+            e.EntryReferencePrice is > 0m ? e.EntryReferencePrice : null))];
     }
 
     // FR-04, FR-10, ADR-0003, #934, IADR-0390 決定2: 当日の未約定の新規建て注文を GET /risk-controls/working-entry-orders から読む
@@ -262,6 +326,12 @@ public sealed class HttpHeldPositionProvider(
     // 価格 2 項目は nullable（項目を持たない応答を 0 と読まない）。
     // 🔴 #943, IADR-0390: 識別・数量の 4 項目も nullable で受ける —— 非 nullable だと項目の欠落（送り手の改名）が既定値
     // （銘柄 null・市場 0＝日本・方向 0＝買い・数量 0）に化けて「保有なし」と区別できない。契約は T-10-800 が本物の型で固定する。
+    // FR-04, FR-10, #1384, IADR-0558 決定 6: Entries（保有中のロット）。項目が無い応答（旧い送り手）は null＝記録の供給なし。
     internal sealed record OpenPositionDto(
-        string? Symbol, Market? Market, TradeSide? Side, int? Quantity, decimal? EntryPrice, decimal? StopLossPrice);
+        string? Symbol, Market? Market, TradeSide? Side, int? Quantity, decimal? EntryPrice, decimal? StopLossPrice,
+        List<OpenPositionEntryDto>? Entries = null);
+
+    // OpenPositionEntryView（RiskManagement・#1384）の受け手の行。全項目 nullable（欠落を既定値に化けさせない）。
+    internal sealed record OpenPositionEntryDto(
+        Guid? DecisionId, int? Quantity, DateTimeOffset? OrderedAt, string? EntryCondition, decimal? EntryReferencePrice);
 }

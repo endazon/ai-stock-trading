@@ -4,14 +4,14 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-10-04
-updated: 2026-10-10
+updated: 2026-10-17
 ---
 <!-- trace:
 ids: [NFR]
 adrs: [MSP:ADR-0029, MSP:ADR-0075, ADR-0047]
-iadrs: [IADR-0489, IADR-0284, IADR-0328, IADR-0331, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0439, IADR-0283, IADR-0493, IADR-0522]
-specs: [20261004_753_grpc-h2c-measurement-runbook, 20261010_243_policy-revision-max-tokens]
-issues: [#753, #626, #1178, #1181, #243]
+iadrs: [IADR-0489, IADR-0284, IADR-0328, IADR-0331, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0439, IADR-0283, IADR-0493, IADR-0522, IADR-0557, IADR-0559]
+specs: [20261004_753_grpc-h2c-measurement-runbook, 20261010_243_policy-revision-max-tokens, 20261017_1388_grpc-late-routes-held-symbols-asof-policy, 20261017_1391_grpc-order-execution-read-surface]
+issues: [#753, #626, #1178, #1181, #243, #1388, #1391]
 -->
 <!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
@@ -20,7 +20,7 @@ issues: [#753, #626, #1178, #1181, #243]
 > 運用仕様書（[`operations.md`](operations.md)）の下位にあたる手順書である。
 > 面・rpc・構成キーの正本は通信仕様書（[east-west gRPC 通信仕様書](../api/east-west-grpc.md)）にある。本書は**稼働クラスタで切り替えて測り、戻す**手順だけを持つ。
 
-サービス間の同期呼び出しは、段 1〜5 で gRPC の実装を持った。ただし呼び出し側はどれも「**既定は REST**。構成 `<提供側>:Grpc` を宣言したときだけ gRPC」であり、
+サービス間の同期呼び出しは、段 1〜5（とその追補）で gRPC の実装を持った。ただし呼び出し側はどれも「**既定は REST**。構成 `<提供側>:Grpc` を宣言したときだけ gRPC」であり、
 helm の既定と values-local には宣言が無い。提供側も `grpcPort` を宣言していないので、gRPC の面（h2c の専用ポート 8081）は既定の配備で開いていない。
 
 REST のアダプタを退役させる（段 6）前に、次の 2 つを稼働クラスタで済ませる必要がある。本書はその手順である。
@@ -42,8 +42,8 @@ REST のアダプタを退役させる（段 6）前に、次の 2 つを稼働�
 | チャート | **稼働中のリリースと同じコミット**のチェックアウトで行う（チャートのテンプレートに呼び出し側の宣言 `grpcClients` が入っていること）。イメージも同じコミット以降で作り直してあること（段 5 の書き込みまでの実装を含む） |
 | overlay | `deploy/helm/ai-stock-trading/values-grpc-measurement.yaml`。**既定の配備（values.yaml・values-local.yaml・`scripts/k8s-local-deploy.sh`）は参照しない** |
 | 発注経路 | `broker.tier` が `paper` か `moomoo-sim` であること（実弾は描画で拒否される） |
-| 対象のクラスタ | 🔴 **`scripts/k8s-local-deploy.sh`（values-local のプロファイル）で配備したクラスタに限る。** ArgoCD 管理下（values.yaml だけの本番プロファイル）では実施しない —— 本番プロファイルは REST の宛先（`*__BaseUrl`）の多くが空で、宣言を入れると「未結線 → 結線」が 8 経路（#2〜#7・#11・#12）に広がり、輸送の切り替えではなく業務の配線の変更になる。自動同期が宣言を巻き戻すおそれもある |
-| 時間帯 | 🔴 **適用と戻しは開場外に行う。** 9 つの Deployment（configuration・risk-management・audit・report・market-monitor・cost-control・trade-decision・information-collection・notification）がローリング再起動する。損切り監視（market-monitor）・リスク管理（risk-management）・取引判断（trade-decision）を含む。計測窓は開場中に取る |
+| 対象のクラスタ | 🔴 **`scripts/k8s-local-deploy.sh`（values-local のプロファイル）で配備したクラスタに限る。** ArgoCD 管理下（values.yaml だけの本番プロファイル）では実施しない —— 本番プロファイルは REST の宛先（`*__BaseUrl`）の多くが空で、宣言を入れると「未結線 → 結線」が 9 経路（#2〜#7・#11・#12・#15）に広がり、輸送の切り替えではなく業務の配線の変更になる。自動同期が宣言を巻き戻すおそれもある |
+| 時間帯 | 🔴 **適用と戻しは開場外に行う。** 11 の Deployment（configuration・risk-management・audit・report・market-monitor・cost-control・order-execution・trade-decision・backtest・information-collection・notification）がローリング再起動する。損切り監視（market-monitor）・リスク管理（risk-management）・発注執行（order-execution）・取引判断（trade-decision）を含む。計測窓は開場中に取る |
 | 所要時間の目安 | 適用と確認 15 分。計測は基準窓（REST）と計測窓（gRPC）をそれぞれ**開場中に 2 時間以上**。書き込みの経路は人の操作を含む |
 
 ### 🔴 values の配列を重ねない（なぜ overlay がこの形なのか）
@@ -59,11 +59,11 @@ values-local は 7 サービスの `extraEnv` を丸ごと持っているので�
 - 呼び出し側: `services.<name>.grpcClients.<提供側>: true` → env `<提供側>__Grpc` が描かれる。宛先は呼び先の `grpcPort` から `http://<呼び先>-service:8081` と導出される。
   呼び先に `grpcPort` が無い宣言・未知の提供側・`extraEnv` との二重定義は、**描画の時点で止まる**。
 
-CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps every env」）が、既定と values-local の両方で「overlay を重ねても消える env は 0 本、足されるのは gRPC の宣言だけ（呼び出し側 12〔#6 は別窓〕・提供側 6）で、宣言の宛先が期待表と一致する」こと、overlay に `grpcPort` と `grpcClients` 以外を書いていないことを毎回検めている。
+CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps every env」）が、既定と values-local の両方で「overlay を重ねても消える env は 0 本、足されるのは gRPC の宣言だけ（呼び出し側 15〔#6・#17 は別窓〕・提供側 7）で、宣言の宛先が期待表と一致する」こと、overlay に `grpcPort` と `grpcClients` 以外を書いていないことを毎回検めている。
 
 ## 経路表（実測の対象）
 
-呼び出し側 13 宣言（overlay が既定で入れるのは #6 を除く 12）・提供側 6 サービス。rpc の名前は提供側のメトリクスの `http.route`（`/<package>.<Service>/<Method>`）にそのまま現れる。
+呼び出し側 17 宣言（overlay が既定で入れるのは #6・#17 を除く 15）・提供側 7 サービス。rpc の名前は提供側のメトリクスの `http.route`（`/<package>.<Service>/<Method>`）にそのまま現れる。
 
 | # | 呼び出し側 | 宣言（env） | 呼び先:8081 | rpc（`aistocktrading.` を略す） | 段 | 発火のきっかけ | deadline（既定） |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -73,13 +73,17 @@ CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps ev
 | 4 | market-monitor | `RiskManagement__Grpc` | risk-management | `riskmanagement.v1.RiskControlsRead/GetOpenPositions` | 2 | 損切り監視の巡回（保有があるとき） | 5 秒 |
 | 5 | report | `RiskManagement__Grpc` | risk-management | `riskmanagement.v1.RiskControlsRead/GetOpenPositions`・`GetFills`・`GetDriftAdoptions`・`GetBuyInInferences`・`GetSessionUptime`・`GetStageGate`・`GetOpeningInventory` | 2 | 報告書の生成 | 10 秒 |
 | 6 | report | `Audit__Grpc` | audit | `audit.v1.AuditEventsRead/GetEventsByType` | 3 | 報告書の生成（監査台帳の 6 つの供給元）。🔴 **overlay の既定では宣言しない**（別窓。下の注意） | 10 秒 |
-| 7 | trade-decision | `Reports__Grpc` | report | `report.v1.DailyPolicyRead/GetConfirmedDailyPolicy` | 4 | 取引サイクル（その日の方針） | 5 秒 |
+| 7 | trade-decision | `Reports__Grpc` | report | `report.v1.DailyPolicyRead/GetConfirmedDailyPolicy`・`GetConfirmedDailyPolicyAsOf` | 4・5 の追補 | 取引サイクル（その日の方針）・Stage 0 の記録（当時の方針） | 5 秒 |
 | 8 | trade-decision | `MarketMonitor__Grpc` | market-monitor | `marketmonitor.v1.WatchlistRead/GetWatchlist`・`GetWatchlistAsOf` | 4 | 取引サイクル・Stage 0 の記録 | 5 秒 |
 | 9 | information-collection | `MarketMonitor__Grpc` | market-monitor | `marketmonitor.v1.WatchlistRead/GetWatchlist` | 4 | 収集の巡回（Finnhub を使う構成のとき） | 5 秒 |
 | 10 | information-collection | `CostControl__Grpc` | cost-control | `costcontrol.v1.CostStateRead/GetCostState` | 4 | 収集の巡回 | 5 秒 |
 | 11 | notification | `RiskManagement__Grpc` | risk-management | 読み: `riskmanagement.v1.RiskControlsOwnerRead/GetRiskStatus`・`RiskControlsRead/GetStageGate`／書き: `RiskControlsOwnerWrite/*`（8 本） | 5 | Discord の `/status`・`/stage`・`/pause`・`/resume`・`/gfv`・`/drift`・`/killswitch` | 5 秒 |
 | 12 | notification | `Reports__Grpc` | report | 読み: `report.v1.ReportOwnerRead/*`（3 本）／書き: `ReportOwnerWrite/*`（4 本） | 5 | Discord の `/report`・`/policy` | 5 秒（方針の改訂と適用の記録は 120 秒） |
 | 13 | notification | `MarketMonitor__Grpc` | market-monitor | 読み: `marketmonitor.v1.WatchlistRead/GetWatchlist`／書き: `WatchlistOwnerWrite/ApplyWatchlistProposal` | 5 | `/policy` の入れ替え案の適用 | 10 秒 |
+| 14 | information-collection | `RiskManagement__Grpc` | risk-management | `riskmanagement.v1.RiskControlsRead/GetOpenPositions` | 5 の追補 | 収集の巡回（監視銘柄に追随する構成で、保有を収集の対象へ足すとき） | 5 秒 |
+| 15 | trade-decision | `OrderExecution__Grpc` | order-execution | `orderexecution.v1.OrderExecutionRead/GetInFlightCloses`・`GetDailyBars` | 5 の追補 2 | 処理中の決済: 取引サイクル（保有中の銘柄で LLM を呼ぶ前）。日足: 出来高・ATR(14) が有効なとき（既定は無効）と Stage 0 の記録 | 8 秒 |
+| 16 | backtest | `OrderExecution__Grpc` | order-execution | `orderexecution.v1.OrderExecutionRead/GetDailyBars` | 5 の追補 2 | Stage 0 判定の定時駆動（過去データ源 `order-execution` を明示した構成のとき） | 30 秒 |
+| 17 | risk-management | `OrderExecution__Grpc` | order-execution | `orderexecution.v1.OrderExecutionRead/GetShortPermit` | 5 の追補 2 | 新規の売り建ての審査。🔴 **overlay の既定では宣言しない**（別窓。下の注意） | 5 秒 |
 
 基盤のテキスト生成（呼び出し側の宣言 `LlmGateway__Grpc`）はこの表に入らない。呼び先がこのチャートの外にあり、段 1〜5 とは別の系列である。
 
@@ -95,6 +99,14 @@ CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps ev
 > （`http_route="/audit/events/by-type"`）も取れる。overlay の既定は従来どおり `Audit: false` とし、#6 は**別の窓**で測る（手順 4 の 7）。
 
 > 🔴 **#11〜#13 は失敗しても REST へ落とさない。書き込みは再試行しない。** 時間切れは「結果は不明」である。
+>
+> 🔴 **#17 は values-local でも「初めての結線」になる。** リスク管理の `OrderExecution__BaseUrl` は values.yaml・values-local のどちらでも空であり、
+> 借株可否は常に「分からない」（新規の売り建ては拒否）である。宣言を入れると照会が新しく始まり、空売りの審査の入力が変わる
+> （SIMULATE の既定では照会が失敗するので結果は「分からない」のままだが、それは送り手の構成しだいである）。
+> overlay の既定は `OrderExecution: false` とし、#17 は**所有者の同意を得てから別の窓**で測る（手順 4 の 8）。REST の基準窓は無い。
+>
+> 🔴 **#16 はバックテストの失敗の扱いが他と違う。** 送り手が答えた失敗（`InvalidArgument` 等）はその銘柄の欠測、届かない・待ちきれない失敗
+> （`Unavailable`・`DeadlineExceeded`）は例外として送出され、定時駆動がその巡回を失敗として記録する（REST の通信例外と同じ）。
 
 ## 手順
 
@@ -148,9 +160,9 @@ echo "exit=$?"
 overlay はリリースの値の**後に**重ねて描かれる（次の手順の適用と同じ合成）。次の 3 点をすべて満たすことを確かめる。
 
 - 🔴 1 行目 `OpenD の Deployment（opend）:` が「変化なし」（または「どちらにも無い」）。**終了コード 3 なら適用しない。**
-- env のキーの差が**追加だけ**で、中身が `Grpc__Port`（configuration・risk-management・audit・report・market-monitor・cost-control の 6）と
-  `*__Grpc`（上の経路表の 13 から #6 を除いた 12）だけであること。**削除が 1 つでも出たら適用しない。**
-- 変わる Deployment は 9 つ（上の 6 ＋ trade-decision・information-collection・notification）。order-execution・backtest・OpenD は変わらない。
+- env のキーの差が**追加だけ**で、中身が `Grpc__Port`（configuration・risk-management・audit・report・market-monitor・cost-control・order-execution の 7）と
+  `*__Grpc`（上の経路表の 17 から #6・#17 を除いた 15）だけであること。**削除が 1 つでも出たら適用しない。**
+- 変わる Deployment は 11（上の 7 ＋ trade-decision・backtest・information-collection・notification）。OpenD は変わらない。
 
 ### 2. 適用する
 
@@ -158,7 +170,7 @@ overlay はリリースの値の**後に**重ねて描かれる（次の手順�
 helm upgrade ast deploy/helm/ai-stock-trading -n ai-stock-trading \
   --reset-then-reuse-values \
   -f deploy/helm/ai-stock-trading/values-grpc-measurement.yaml
-for d in configuration risk-management audit report market-monitor cost-control trade-decision information-collection notification; do
+for d in configuration risk-management audit report market-monitor cost-control order-execution trade-decision backtest information-collection notification; do
   kubectl -n ai-stock-trading rollout status "deploy/$d-service" --timeout=5m
 done
 ```
@@ -173,7 +185,7 @@ done
 1. env（値は出さない）:
 
    ```bash
-   for d in configuration risk-management audit report market-monitor cost-control trade-decision information-collection notification; do
+   for d in configuration risk-management audit report market-monitor cost-control order-execution trade-decision backtest information-collection notification; do
      printf '%s: ' "$d"
      kubectl -n ai-stock-trading get deploy "$d-service" \
        -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}{" "}{end}' | tr ' ' '\n' | grep -E '(__Grpc|^Grpc__Port)$' | tr '\n' ' '
@@ -181,8 +193,8 @@ done
    done
    ```
 
-   提供側 6 に `Grpc__Port`、呼び出し側に経路表どおりの `*__Grpc` があること。
-2. Service のポート: `kubectl -n ai-stock-trading get svc -o custom-columns=NAME:.metadata.name,PORTS:.spec.ports[*].name` で、提供側 6 に `http,grpc` があること。
+   提供側 7 に `Grpc__Port`、呼び出し側に経路表どおりの `*__Grpc` があること。
+2. Service のポート: `kubectl -n ai-stock-trading get svc -o custom-columns=NAME:.metadata.name,PORTS:.spec.ports[*].name` で、提供側 7 に `http,grpc` があること。
 3. 提供側の h2c リスナ: 起動ログに `Now listening on: http://[::]:8081` があること（HTTP/1.1 側の `:8080` と並んで出る）:
 
    ```bash
@@ -218,7 +230,7 @@ done
 3. **呼び出し側の失敗のログ**（輸送は**成功をログに出さない**。出るのは失敗だけである）:
 
    ```bash
-   for d in cost-control trade-decision market-monitor report information-collection notification; do
+   for d in cost-control trade-decision market-monitor report information-collection notification risk-management backtest; do
      echo "== $d"
      kubectl -n ai-stock-trading logs deploy/$d-service --since="$W" \
        | grep -E 'gRPC (照会|呼び出し)(に失敗|がタイムアウト)|gRPC 応答(を読めません|が不正)|サービストークンを取得できないため' || echo '(0 件)'
@@ -226,10 +238,11 @@ done
    ```
 
    各行に操作の名前と gRPC の状態（`Unavailable`・`DeadlineExceeded`・`Unauthenticated`・`PermissionDenied` 等）が載る。
+   backtest（#16）は送り手が答えた失敗を `発注執行の日足の照会で … を取得できませんでした` の行（理由に `gRPC <状態>`）で出し、届かない・待ちきれない失敗は定時駆動の巡回の失敗として出す。
 4. **提供側の失敗のログ**（gRPC のライブラリが出す。rpc の名前は載らないので、時刻で 3 と突き合わせる）:
 
    ```bash
-   for d in configuration risk-management audit report market-monitor cost-control; do
+   for d in configuration risk-management audit report market-monitor cost-control order-execution; do
      echo "== $d"; kubectl -n ai-stock-trading logs deploy/$d-service --since="$W" | grep -F "Error status code '" || echo '(0 件)'
    done
    ```
@@ -262,6 +275,19 @@ done
    再起動するのは report だけである（audit の `grpcPort` は overlay で既に入っている）。これも開場外に行う。報告書が生成されるまで待ち、
    1〜5 と同じ観測（`http_route="/aistocktrading.audit.v1.AuditEventsRead/GetEventsByType"`・report のログ）を取る。
    別窓の間に**生成・確定した報告書**（期間のキー）を控える（下の「記録」）。終わったら手順 5 で戻す（`--set …Audit=false` で #6 だけ外してもよい）。
+8. **経路 #17（リスク管理 → 借株可否）の別窓。** 🔴 **所有者の同意を得てから**行う（REST が未結線の経路であり、宣言すると借株可否の照会が始まる＝
+   空売りの審査の入力が変わる）。1〜6 の窓の後（宣言が入ったまま）に、#17 だけを足す:
+
+   ```bash
+   helm upgrade ast deploy/helm/ai-stock-trading -n ai-stock-trading \
+     --reset-then-reuse-values \
+     --set services.risk-management.grpcClients.OrderExecution=true
+   kubectl -n ai-stock-trading rollout status deploy/risk-management-service --timeout=5m
+   ```
+
+   再起動するのは risk-management だけである（order-execution の `grpcPort` は overlay で既に入っている）。これも開場外に行う。
+   新規の売り建ての審査が起きるまで待ち、1〜5 と同じ観測（`http_route="/aistocktrading.orderexecution.v1.OrderExecutionRead/GetShortPermit"`・risk-management のログ）を取る。
+   終わったら手順 5 で戻す（`--set …OrderExecution=false` で #17 だけ外してもよい）。
 
 ### 5. 戻す（REST の既定へ）
 
@@ -269,7 +295,7 @@ done
 
 ```bash
 helm rollback ast <手順 0 で控えたリビジョン> -n ai-stock-trading
-for d in configuration risk-management audit report market-monitor cost-control trade-decision information-collection notification; do
+for d in configuration risk-management audit report market-monitor cost-control order-execution trade-decision backtest information-collection notification; do
   kubectl -n ai-stock-trading rollout status "deploy/$d-service" --timeout=5m
 done
 node scripts/helm-release-drift.js --release ast --namespace ai-stock-trading \
@@ -327,7 +353,7 @@ echo "exit=$?"   # 手順 0 の 2 と同じ結果に戻ること
 ## 記録
 
 - 結果は起票済みの issue（段 6 の受け皿）にコメントで残す。書くもの: 実施日時（窓の開始・終了）・チャートのコミット・適用と戻しのリビジョン・
-  経路表の # ごとの判定（合格／不合格／未実測。#2 は採算評価ゲートの有無、#6 は別窓の有無を添える）・#6 の別窓の間に**生成・確定した報告書**（期間のキー。監査の実値が載ったもの）・提供側と呼び出し側の p95（gRPC と基準窓の REST）・失敗のログの件数と状態コード・中止した場合はその条件。
+  経路表の # ごとの判定（合格／不合格／未実測。#2 は採算評価ゲートの有無、#6・#17 は別窓の有無を添える）・#6 の別窓の間に**生成・確定した報告書**（期間のキー。監査の実値が載ったもの）・提供側と呼び出し側の p95（gRPC と基準窓の REST）・失敗のログの件数と状態コード・中止した場合はその条件。
 - ログの行やトークン・env の値は貼らない（件数と状態コードだけを書く）。
 
 ## 限界（この手順で担保できないこと）

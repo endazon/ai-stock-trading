@@ -15,12 +15,17 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // 可能性」と断定を書き分けるため）。null＝発注執行が判別を試みていない（ほかの理由・旧い送り手）であり、
 // 受け手は Unknown と同じく「分からない」と読む。追加は末尾・任意（既定 null）。旧形式の JSON はそのまま読める
 // （IADR-0079 / IADR-0134 決定2）。
+//
+// 🔴 FR-09, FR-04, #1338, IADR-0535 決定4: InFlightCloseOrderIds は理由 InFlightCloseCoversPosition のときにだけ発注執行が載せる、
+// 建玉を覆っている処理中の決済の注文 ID（ブローカーが生きていると答えた分）。通知はこの集合と銘柄・市場・方向を鍵に、同じ処理中の決済の
+// 見送りを 1 回へ畳む。null＝載せていない（ほかの理由・旧い送り手）であり、受け手は畳まない。追加は末尾・任意（既定 null）。
 public record OrderDispatchForgone(
     Guid DecisionId,
     OrderIntent Intent,
     OrderDispatchForgoneReason Reason,
     DateTimeOffset OccurredAt,
-    ForgoneCloseProtection? Protection = null);
+    ForgoneCloseProtection? Protection = null,
+    IReadOnlyList<string>? InFlightCloseOrderIds = null);
 
 // #331, IADR-0210 決定1 / IADR-0211: 見送りの理由。いずれも**発注前**に確定する。
 public enum OrderDispatchForgoneReason
@@ -102,4 +107,24 @@ public enum OrderDispatchForgoneReason
     /// </para>
     /// </summary>
     StopLossMethodConflict,
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0009 決定 3・4, IADR-0567 決定 3: 新規建て（Open）を送る直前の最終照会で、<b>全停止スイッチ（kill switch）が成立していた</b>。
+    /// 決済（Close）・損切りには効かない（照会もしない）。予約の後・<b>送信の前</b>に予約を Forgone へ移して見送る（確実に未発注）。
+    /// <b>末尾へ追加する</b>（序数 9。メトリクスのタグ・監査 payload の整数が往来する）。
+    /// </summary>
+    KillSwitchActive,
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0009 決定 3・4, IADR-0567 決定 3: 同上の最終照会で、<b>取引の一時停止（pause）が成立していた</b>（kill switch は成立していない）。
+    /// 決済・損切りには効かない。<b>末尾へ追加する</b>（序数 10）。
+    /// </summary>
+    TradingPaused,
+
+    /// <summary>
+    /// 🔴 FR-10, NFR-04, IADR-0567 決定 2・3: 同上の最終照会で、<b>停止の状態を確かめられなかった</b>（照会の失敗・タイムアウト・
+    /// 解釈できない応答・照会先の未構成）。不明は送らない側へ倒す（fail-closed）。決済・損切りには効かない。
+    /// <b>末尾へ追加する</b>（序数 11）。
+    /// </summary>
+    TradingHaltStateUnknown,
 }

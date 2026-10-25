@@ -42,4 +42,11 @@ public record PortfolioState
     /// <summary>当日に売買が成立した銘柄（銘柄コード, 市場）。差金決済防止の判定に用いる（#26）。</summary>
     public IReadOnlySet<(string Symbol, Market Market)> SymbolsTradedToday { get; init; }
         = new HashSet<(string, Market)>();
+
+    /// <summary>
+    /// 🔴 FR-10, #1397, IADR-0562 決定 2: 保有中の銘柄と、承認済みで生きている未約定の新規建て（予約を含む。IADR-0346・IADR-0529）の (銘柄, 市場)。
+    /// テーマごとの同時保有の上限の入力（方向は問わない）。
+    /// </summary>
+    public IReadOnlySet<(string Symbol, Market Market)> HeldOrPendingSymbols { get; init; }
+        = new HashSet<(string, Market)>();
 }

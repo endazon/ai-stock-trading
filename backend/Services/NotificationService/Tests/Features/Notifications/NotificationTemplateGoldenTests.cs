@@ -44,14 +44,22 @@ public class NotificationTemplateGoldenTests
             new OrderExecuted(Id, "ORD-1", OrderStatus.Filled, 10, 1050m, T, BrokerProvider.MoomooSimulate),
             new NotificationMessage(
                 "取引実行",
-                "約定 Filled 数量10@1050（OrderId=ORD-1・DecisionId=11111111-1111-1111-1111-111111111111）",
+                "約定 Filled（全量約定） 数量10@1050（OrderId=ORD-1・DecisionId=11111111-1111-1111-1111-111111111111）",
                 NotificationSeverity.Info)),
 
         ["OrderExecuted/Rejected"] = (
             new OrderExecuted(Id, "ORD-2", OrderStatus.Rejected, 0, 0m, T, BrokerProvider.MoomooSimulate),
             new NotificationMessage(
                 "取引実行",
-                "約定 Rejected 数量0@0（OrderId=ORD-2・DecisionId=11111111-1111-1111-1111-111111111111）",
+                "約定 Rejected（拒否: 証券会社が受理せず） 数量0@0（OrderId=ORD-2・DecisionId=11111111-1111-1111-1111-111111111111）",
+                NotificationSeverity.Warning)),
+
+        // 🔴 T-10-2679, FR-05, ADR-0067 決定5, #1339, IADR-0539: 失効（moomoo の Disabled）は**失注**であり、拒否と区別して表示する。
+        ["OrderExecuted/Expired"] = (
+            new OrderExecuted(Id, "ORD-3", OrderStatus.Expired, 0, 0m, T, BrokerProvider.MoomooSimulate),
+            new NotificationMessage(
+                "取引実行",
+                "約定 Expired（失注: 期限切れで失効） 数量0@0（OrderId=ORD-3・DecisionId=11111111-1111-1111-1111-111111111111）",
                 NotificationSeverity.Warning)),
 
         ["OrderRejected"] = (
@@ -154,6 +162,44 @@ public class NotificationTemplateGoldenTests
                 "費用統制: Halted",
                 "Llm 費用が月次上限の 100% に到達しました（2026-08・Halted）。",
                 NotificationSeverity.Critical)),
+
+        // 🔴 T-10-3045, FR-10, #1423 M-3, ADR-0073 決定3: 基準資金の観測の欠けによる新規建ての停止（リスク統制の発動・緊急度 高）。
+        // 止めていないもの（手仕舞い・損切り）と自動解除が本文から欠けると、利用者は建玉の扱いと再開の要否を誤る。
+        ["CapitalBaselineObservationMissing"] = (
+            new CapitalBaselineObservationMissing(new DateOnly(2026, 8, 31), new DateOnly(2026, 8, 29), false, T),
+            new NotificationMessage(
+                "リスク統制: 基準資金を照会できず新規建てを停止",
+                "口座照会（基準資金）が直前の米国東部暦日に 1 件も成功していません（最後の観測 2026-08-29・判定日 2026-08-31）。"
+                    + "**古い基準資金では統制を判定しないため、新規建てを止めています。手仕舞い・損切りは止めていません。**"
+                    + "口座照会・発注執行の巡回・ブローカーの接続を確認してください。直前の暦日の観測が成功すれば自動で解除されます。",
+                NotificationSeverity.Critical)),
+
+        ["CapitalBaselineObservationMissing/鮮度超過"] = (
+            new CapitalBaselineObservationMissing(new DateOnly(2026, 8, 31), new DateOnly(2026, 8, 25), true, T),
+            new NotificationMessage(
+                "リスク統制: 基準資金を照会できず新規建てを停止",
+                "口座照会（基準資金）が直前の米国東部暦日に 1 件も成功していません（最後の観測 2026-08-25・判定日 2026-08-31・鮮度の上限も超過）。"
+                    + "**古い基準資金では統制を判定しないため、新規建てを止めています。手仕舞い・損切りは止めていません。**"
+                    + "口座照会・発注執行の巡回・ブローカーの接続を確認してください。直前の暦日の観測が成功すれば自動で解除されます。",
+                NotificationSeverity.Critical)),
+
+        // 🔴 T-10-3058, FR-07, #1423 M-6, ADR-0075 決定4: 日報の無応答（停止・継続）。止めているもの・止めていないもの・確定で戻ることが本文から欠けない。
+        ["DailyReportNoResponse/停止"] = (
+            new DailyReportNoResponse("daily-2026-08-27", new DateOnly(2026, 8, 27), new DateTimeOffset(2026, 8, 27, 9, 30, 0, TimeSpan.FromHours(-4)), true, "daily-2026-08-26", T),
+            new NotificationMessage(
+                "取引判断を停止: 日報が無応答のまま期限を過ぎました",
+                "日報 daily-2026-08-27 が承認待ちのまま期限（2026-08-27 09:30 -04:00）を過ぎました。無応答時の設定が「停止」のため、"
+                    + "**日報が確定するまで取引判断（定時・急変・新規建て・AI 判断の決済）を見送っています。損切り・手仕舞いは止めていません。**"
+                    + "日報を確定すると自動で再開します。",
+                NotificationSeverity.Critical)),
+
+        ["DailyReportNoResponse/継続"] = (
+            new DailyReportNoResponse("daily-2026-08-27", new DateOnly(2026, 8, 27), new DateTimeOffset(2026, 8, 27, 9, 30, 0, TimeSpan.FromHours(-4)), false, "daily-2026-08-26", T),
+            new NotificationMessage(
+                "日報が無応答のまま期限を過ぎました",
+                "日報 daily-2026-08-27 が承認待ちのまま期限（2026-08-27 09:30 -04:00）を過ぎました。無応答時の設定が「継続」のため、"
+                    + "直近の確定済み日報（daily-2026-08-26）の方針で取引を続けています。日報を確定すると新しい方針に切り替わります。",
+                NotificationSeverity.Warning)),
 
         ["DailyPolicyUnconfirmed"] = (
             new DailyPolicyUnconfirmed(new DateOnly(2026, 8, 28), T),
@@ -366,16 +412,18 @@ public class NotificationTemplateGoldenTests
         // 🔴 FR-09, FR-10, UC-06, #847, IADR-0357: 手仕舞いが未約定残を残して終わった（引け跨ぎの失効・取消）。
         // **「未決済 N」と「翌日へ持ち越される」が本文から欠けると、利用者は建玉が残ったことに気づかない**
         // ——従来の「約定 Expired 数量0@0」がまさにそれだった。
+        // 🔴 #1395, IADR-0560 決定3: 残った建玉は推定と書き（建玉照会で確かめていない）、手仕舞い直す前に建玉を確かめさせる。
         ["PositionCloseAbandoned"] = (
             new PositionCloseAbandoned(
                 Id, "AAPL", Market.UnitedStates, TradeSide.Sell, 3381, 0, 3381, OrderStatus.Expired, T),
             new NotificationMessage(
                 "手仕舞いが約定せず終了",
-                "AAPL/UnitedStates Sell 数量3381 の手仕舞いが Expired で終了しました"
+                "AAPL/UnitedStates Sell 数量3381 の手仕舞いが Expired（失注: 期限切れで失効） で終了しました"
                     + "（約定 0・**未決済 3381**）。"
-                    + "建玉はこの数量ぶん残っています（当日注文は引け後に失効します）。"
+                    + "記録上はこの数量の建玉が残っている見込みです（終了の時点の記録による推定で、建玉の照会では確かめていません。"
+                    + "ソフトウェア逆指値などの別の決済で既に減っていることがあります。当日注文は引け後に失効します）。"
                     + "**逆指値なしの建玉はこのまま翌日へ持ち越されます。**"
-                    + "手仕舞い直すか、建玉を確認してください"
+                    + "建玉を確認してから、手仕舞い直すか判断してください"
                     + "（DecisionId=11111111-1111-1111-1111-111111111111）。",
                 NotificationSeverity.Warning)),
 

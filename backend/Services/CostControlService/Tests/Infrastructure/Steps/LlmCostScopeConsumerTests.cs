@@ -31,8 +31,9 @@ public class LlmCostScopeConsumerTests
 {
     private const string ServiceName = "ai-stock-trading.cost-control-service";
 
+    // #1461, IADR-0584: 費用計上月は JST の年月（本番と同じ導出を使う。UTC で求めると JST の月初 9 時間に食い違って落ちる）。
     private static string CurrentMonth() =>
-        DateTimeOffset.UtcNow.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+        CostControlService.Features.CostControl.CostControlAppService.MonthKey(DateTimeOffset.UtcNow);
 
     private static Task<IHost> BuildHostAsync(ICostLedger ledger) =>
         Host.CreateDefaultBuilder()

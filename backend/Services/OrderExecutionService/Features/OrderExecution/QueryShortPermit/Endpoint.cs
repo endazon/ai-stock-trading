@@ -20,15 +20,22 @@ public static class ShortPermitEndpoint
                 CancellationToken cancellationToken) =>
             {
                 // 値域外は照会しない（ブローカーの枠を使わない）。市場は数値（Market の値）で受ける。
-                if (string.IsNullOrWhiteSpace(symbol) || market is not { } marketValue || !Enum.IsDefined((Market)marketValue))
+                if (!IsValidQuery(symbol, market))
                 {
                     return Results.BadRequest(new { error = "symbol（銘柄コード）と market（市場の数値）が必要です。" });
                 }
 
-                return Results.Ok(await service.QueryAsync(symbol, (Market)marketValue, cancellationToken).ConfigureAwait(false));
+                return Results.Ok(await service.QueryAsync(symbol!, (Market)market!.Value, cancellationToken).ConfigureAwait(false));
             })
             .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
 
         return app;
     }
+
+    /// <summary>
+    /// 照会してよい入力か（値域外は照会しない＝ブローカーの枠を使わない）。REST と gRPC の面（OrderExecutionReadGrpcService）が共有する。
+    /// NFR, IADR-0559, #1391: gRPC の面を足すときに、REST の検証をそのまま切り出した（規則は 1 つも変えていない）。
+    /// </summary>
+    internal static bool IsValidQuery(string? symbol, int? market) =>
+        !string.IsNullOrWhiteSpace(symbol) && market is { } marketValue && Enum.IsDefined((Market)marketValue);
 }

@@ -8,6 +8,7 @@ using RiskManagementService.Features.RiskManagement.GetOpenPositions;
 using RiskManagementService.Features.RiskManagement.GetRiskStatus;
 using RiskManagementService.Features.RiskManagement.GetShortSellingStatus;
 using RiskManagementService.Features.RiskManagement.GetSizingContext;
+using RiskManagementService.Features.RiskManagement.GetTradingHalt;
 using RiskManagementService.Features.RiskManagement.GetEntryBlockers;
 using RiskManagementService.Features.RiskManagement.GetWorkingEntryOrders;
 using RiskManagementService.Hosted;
@@ -80,6 +81,8 @@ builder.Services.AddScoped<IKillSwitchStore, EfKillSwitchStore>();
 builder.Services.AddScoped<IPauseStore, EfPauseStore>();
 builder.Services.AddScoped<ILockoutStore, EfLockoutStore>();
 builder.Services.AddScoped<ISettingsChangeLog, EfSettingsChangeLog>();
+// 🔴 FR-11, #1291, IADR-0532 決定1: 設定の保存と変更履歴の記録を同じ DB トランザクションにする（RiskSettingsService が使う）。
+builder.Services.AddScoped<ISettingsWriteTransaction, EfSettingsWriteTransaction>();
 // FR-20, UC-06, IADR-0041/0070: 段階ゲートの遷移台帳（追記専用）と段階別実績（単一行・fail-safe 既定）。
 builder.Services.AddScoped<IStageGateStore, EfStageGateStore>();
 builder.Services.AddScoped<IStagePerformanceStore, EfStagePerformanceStore>();
@@ -151,7 +154,11 @@ builder.Services.AddScoped<IPortfolioStateProvider>(sp =>
         : new LedgerPortfolioStateProvider(ledger, workingEntryOrders, clock, currentPrices: null, initialCapital);
 });
 // FR-10, #829, IADR-0346 決定1: 未終端の承認済み新規建て注文（approved_orders 左結合 order_activity）。DbContext が scoped のため scoped。
+// #1319, IADR-0529 決定3: 承認行がまだ無い予約（entry_reservations）も同じ規則で返す。
 builder.Services.AddScoped<IWorkingEntryOrderSource, EfWorkingEntryOrderSource>();
+// 🔴 FR-10, #1319, IADR-0529 決定1・2: 新規建ての審査の直列化（pg_advisory_xact_lock）と予約。審査と同じ DbContext（scoped）に
+// 載せる——読み取り・判定・予約の書き込みが 1 つのトランザクションに入るのはこのためである。
+builder.Services.AddScoped<IEntryReservationStore, EfEntryReservationStore>();
 builder.Services.AddScoped<ICurrentPriceSource, CachedCurrentPriceSource>();
 // 現在値の補充は背景で行う（発注判断の同期経路にネットワーク往復を持ち込まない）。
 // 無効（既定）なら補充自体を起動しない＝台帳への巡回アクセスも発生させない。
@@ -182,14 +189,25 @@ builder.Services.AddSingleton<IBrokerAccountObservationStore>(sp =>
 // DbContext が scoped のため本ストアも scoped。
 builder.Services.Configure<CapitalBaselineOptions>(
     builder.Configuration.GetSection(CapitalBaselineOptions.SectionName));
-// FR-10, NFR-07, #889, IADR-0372: 読み出しの帰結（供給／観測の欠落／未供給の 3 理由）を観測する。
-// **門は変えない**——「残高 0 で新規建てを止めるか」は裁定待ちであり、まず見えるようにする。
+// FR-10, NFR-07, #889, IADR-0372: 読み出しの帰結（供給／未供給の 4 理由）を観測する。
+// 🔴 #1423 M-3, ADR-0073, IADR-0581: 直前の米国東部暦日に成功した観測が無ければ未供給（＝新規建ての拒否）とする。
 builder.Services.AddScoped<ICapitalBaselineStore>(sp => new EfCapitalBaselineStore(
     sp.GetRequiredService<RiskManagementDbContext>(),
     sp.GetRequiredService<IClock>(),
     sp.GetRequiredService<IOptions<CapitalBaselineOptions>>().Value,
     sp.GetRequiredService<ILogger<EfCapitalBaselineStore>>(),
     sp.GetRequiredService<BusinessMetrics>()));
+// FR-10, FR-09, #1423 M-3, ADR-0073 決定3, IADR-0581 決定3: 観測の欠けを検知し、取引日ごとに 1 回 Discord・監査へ知らせる。
+// 既定で有効（計画が求める通知）。`Risk:CapitalBaseline:NotifyObservationMissing=false` で止められる。
+if (builder.Configuration.GetSection(CapitalBaselineOptions.SectionName)
+        .Get<CapitalBaselineOptions>()?.NotifyObservationMissing ?? true)
+{
+    builder.Services.AddHostedService(sp => new CapitalBaselineObservationMissingService(
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<IClock>(),
+        sp.GetRequiredService<IOptions<CapitalBaselineOptions>>().Value,
+        sp.GetRequiredService<ILogger<CapitalBaselineObservationMissingService>>()));
+}
 // FR-19, FR-10, FR-11, #425, ADR-0025 決定2, IADR-0165: GFV 発生回数の**自前計数**の台帳。
 // **永続（EF）でなければならない**——違反記録をプロセス内に持つと再起動で消え、「2 件で新規建てを止める」
 // 統制が再起動 1 回で解ける（fail-open）。口座種別の観測（上・非永続）と設計が違うのは「集計 vs 現在値」の
@@ -218,6 +236,8 @@ builder.Services.AddScoped<WorkingEntryOrdersService>();
 // FR-10, FR-04, #1113, IADR-0463 決定 3: 銘柄単位の新規建ての可否（審査と同じ述語・同じ入力。読み取り専用）。
 builder.Services.AddScoped<EntryBlockersService>();
 builder.Services.AddScoped<KillSwitchService>();
+// 🔴 FR-10, ADR-0009, IADR-0567 決定 2: 発注執行が送る直前に読む停止の状態（審査と同じストア）。
+builder.Services.AddScoped<TradingHaltService>();
 // FR-10, FR-14, UC-06/07, ADR-0009: 一時停止/再開の操作と、稼働状態の集約照会（/status・表示専用）。
 builder.Services.AddScoped<PauseService>();
 builder.Services.AddScoped<RiskStatusService>();
@@ -283,8 +303,15 @@ builder.Services.AddScoped<RiskManagementService.Domain.IManipulativeOrderPatter
 builder.Services.AddHttpClient("order-execution", c => c.Timeout = TimeSpan.FromSeconds(5))
     .AddAiStockTradingServiceToken(builder.Configuration);
 builder.Services.AddSingleton<UnavailableShortSellBorrowSource>();
+// NFR, MSP:ADR-0029, IADR-0284 決定 5（段 5 の追補 2）, IADR-0559 決定 3, #1391 (#753): east-west gRPC（`OrderExecutionRead/GetShortPermit`）。
+// **`OrderExecution:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば借株可否の供給元が
+// gRPC 実装を選ぶ（`OrderExecution:BaseUrl` より優先し、BaseUrl が空でも読む）。不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingOrderExecutionGrpc(builder.Configuration);
 builder.Services.AddScoped<IShortSellBorrowSource>(sp =>
 {
+    if (sp.GetService<OrderExecutionGrpcTransport>() is { } orderExecutionGrpc)
+        return new GrpcShortSellBorrowSource(orderExecutionGrpc, sp.GetRequiredService<ILogger<GrpcShortSellBorrowSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["OrderExecution:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return sp.GetRequiredService<UnavailableShortSellBorrowSource>();
@@ -305,6 +332,18 @@ builder.Services.AddScoped(sp => new ShortSellContextSupplier(
     sp.GetRequiredService<IMaintenanceMarginSnapshotSource>(),
     sp.GetRequiredService<IClock>(),
     sp.GetRequiredService<ILogger<ShortSellContextSupplier>>()));
+// 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2: 閉場前の新規建ての締め切り。構築時に読む（範囲外・読めない値は起動を止める）。
+var configuredPreCloseCutoff = PreCloseEntryCutoffLoader.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(configuredPreCloseCutoff);
+// 🔴 FR-10, FR-19, #1397, IADR-0562 決定 1: テーマごとの同時保有の上限の定義。構築時に読む（誤った定義は起動を止める）。
+var configuredThemes = ThemeConcentrationLoader.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(configuredThemes);
+// 🔴 FR-10, FR-19, SC-02, #1407, IADR-0564 決定 1・2: 構成の値（締め切り・手仕舞い・テーマの定義）。画面で保存した値が無い項目はこの値が効く。
+// 手仕舞いの構成（PreCloseFlatten:*）は IADR-0561 決定 3 の取引判断からここへ移した。構築時に読む（範囲外・読めない値は起動を止める）。
+builder.Services.AddSingleton(new RiskManagementService.Domain.ConfiguredSessionAndThemeControls(
+    configuredPreCloseCutoff,
+    PreCloseFlattenLoader.FromConfiguration(builder.Configuration),
+    configuredThemes));
 builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetRequiredService<IRiskSettingsStore>(),
     sp.GetRequiredService<PortfolioSnapshotBuilder>(),
@@ -317,7 +356,13 @@ builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetRequiredService<IPortfolioLedgerStore>(),
     // FR-10, #967, IADR-0425 決定5: 空売り文脈の供給（必須引数）。配線の実効は ShortSellContextWiringTests（T-10-1027〜1029）が固定する。
     sp.GetRequiredService<ShortSellContextSupplier>(),
-    sp.GetService<RiskManagementService.Domain.IManipulativeOrderPatternDetector>()));
+    // 🔴 FR-10, #1319, IADR-0529 決定1・2: 新規建ての審査の直列化と予約（必須引数）。
+    sp.GetRequiredService<IEntryReservationStore>(),
+    // 🔴 FR-10, FR-19, #1396, IADR-0561 決定 2 / #1397, IADR-0562 決定 1・2: 閉場前の新規建ての締め切りとテーマの定義の**構成の値**（必須引数）。
+    // #1407, IADR-0564 決定 2: 画面で保存した値（設定行）があればそちらが効く（審査のたびに設定を読んで解決する）。
+    sp.GetRequiredService<RiskManagementService.Domain.ConfiguredSessionAndThemeControls>(),
+    sp.GetService<RiskManagementService.Domain.IManipulativeOrderPatternDetector>(),
+    sp.GetRequiredService<ILogger<OrderScreeningService>>()));
 // FR-10, #331, IADR-0210 決定5: 損切りの機械執行（旧 StopLossExecutionService・IADR-0015）は撤去した。
 // 損切りの実行はブローカー側の逆指値が担い、StopLossTriggered の購読は検知の記録のみを行う（二重決済の防止）。
 // FR-10, FR-11, UC-06, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い（POST /risk-controls/positions/close）。

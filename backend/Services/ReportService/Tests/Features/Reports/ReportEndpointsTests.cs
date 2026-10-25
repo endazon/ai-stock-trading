@@ -84,6 +84,9 @@ public class ReportEndpointsTests
         var policy = await client.GetFromJsonAsync<DailyPolicyDto>("/reports/daily-policy");
         policy!.Summary.Should().Be("翌営業日は押し目買い");
         policy.AssumptionsVersion.Should().Be(1);
+        // FR-04, FR-11, ADR-0068 決定4, #1373, IADR-0548 決定5: 確定版の期間キーと版番号（確定は版を 1 進める: Draft 1 → 2）。
+        policy.PeriodKey.Should().Be("daily-2026-07-10");
+        policy.Version.Should().Be(2);
     }
 
     [Fact]
@@ -132,6 +135,61 @@ public class ReportEndpointsTests
         var confirm = await OwnerClient(factory).PostAsJsonAsync("/reports/daily-nope/confirm", new { ExpectedVersion = 1 });
 
         confirm.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // FR-15, FR-07, ADR-0033 決定2, #1308, IADR-0528 決定3: ある時点で確定していた日報の方針（Stage 0 の記録器の as-of 入力 (c)）。
+    // 確定の時刻はサーバーの時計で決まるため、ここでは「確定より十分後」と「確定より十分前」で境界の外側を見る
+    // （境界ちょうどの扱いはストアの試験 EfReportStoreTests が持つ）。
+    [Fact]
+    public async Task サービスロールは時点を指定して確定済みの方針を照会でき_確定より前は_404()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+        var owner = OwnerClient(factory);
+        (await owner.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody()))
+            .IsSuccessStatusCode.Should().BeTrue();
+        (await owner.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var service = ClientWithRoles(factory, ServiceRole);
+
+        var later = await service.GetFromJsonAsync<DailyPolicyAsOfDto>("/reports/daily-policy/as-of?at=2999-01-01T00:00:00Z");
+        later!.Summary.Should().Be("翌営業日は押し目買い");
+        later.Date.Should().Be(new DateOnly(2026, 7, 10));
+        later.ConfirmedAt.Should().BeBefore(new DateTimeOffset(2999, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        // ADR-0068 決定3・4, #1373, IADR-0548: 判断時点までに確定した版の期間キーと版番号。
+        later.PeriodKey.Should().Be("daily-2026-07-10");
+        later.Version.Should().Be(2);
+
+        (await service.GetAsync("/reports/daily-policy/as-of?at=2000-01-01T00:00:00%2B09:00"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound, "その時点ではまだ確定していない");
+        // #1322 の AI レビュー: コロン無しの時差（+0900）も時差として受ける（400 にしない）。
+        (await service.GetAsync("/reports/daily-policy/as-of?at=2000-01-01T00:00:00%2B0900"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await service.GetFromJsonAsync<DailyPolicyAsOfDto>("/reports/daily-policy/as-of?at=2999-01-01T09:00:00%2B0900"))!
+            .Summary.Should().Be("翌営業日は押し目買い");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("?at=")]
+    [InlineData("?at=2026-09-15T20:00:00")]
+    [InlineData("?at=2026-09-15")]
+    [InlineData("?at=not-a-time")]
+    public async Task 時点が無い_またはオフセットの無い時刻なら_400(string query)
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+
+        (await OwnerClient(factory).GetAsync("/reports/daily-policy/as-of" + query))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest, "現地時刻と読み違えると判断時点がずれ、未来の方針を返し得る");
+    }
+
+    [Fact]
+    public async Task 時点を指定した方針の照会も未認証は_401()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+
+        (await factory.CreateClient().GetAsync("/reports/daily-policy/as-of?at=2026-09-15T20:00:00Z"))
+            .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Fact]
@@ -557,7 +615,10 @@ public class ReportEndpointsTests
 
     private sealed record BootstrapDto(string Kind, string PeriodKey, string PolicySummary);
 
-    private sealed record DailyPolicyDto(DateOnly Date, string Summary, int AssumptionsVersion);
+    private sealed record DailyPolicyDto(DateOnly Date, string Summary, int AssumptionsVersion, string? PeriodKey, int? Version);
+
+    private sealed record DailyPolicyAsOfDto(
+        DateOnly Date, string Summary, int AssumptionsVersion, DateTimeOffset ConfirmedAt, string? PeriodKey, int? Version);
 
     private sealed record PnlSummaryDto(decimal RealizedPnlGross, decimal RealizedPnlNet, int RealizingTradeCount);
 

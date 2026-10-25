@@ -17,7 +17,7 @@ namespace ReportService.Infrastructure.ExternalServices;
 // ここでは**用途を必ず載せて**発行する。
 //
 // #303, IADR-0122 決定1: 単価は要求側の希望モデルではなく**応答が名乗った実効モデル**から引く。
-// 未知モデルの倒し先（0 ではなく最大単価＝過小計上を作らない）は LlmPriceTable が持つ。
+// 未知モデルの倒し先（0 ではなく未知モデルの計上単価＝過小計上を作らない。#1305, IADR-0553）は LlmPriceTable が持つ。
 //
 // ADR-0013, IADR-0129, #354: 本アダプタは singleton（HttpReportNarrativeDrafter が singleton のため）。
 // IMessageBus は scoped なので、singleton の IWolverineRuntime から MessageBus を作って発行する
@@ -31,8 +31,9 @@ public sealed class PublishingLlmUsageReporter(
     public async Task ReportAsync(LlmUsage usage, CancellationToken cancellationToken = default)
     {
         // #1295, IADR-0524: 入力トークン数で 2 段の単価（プロンプト長）を引き分ける。
+        // #1306, IADR-0550: 取れない（null）は段の選択だけ高い側へ倒す。金額の式の入力トークン数は 0 のまま（推定しない）。
         var price = priceTable.Resolve(usage.Model, usage.InputTokens);
-        var amount = LlmPricing.Compute(usage.InputTokens, usage.OutputTokens, price);
+        var amount = LlmPricing.Compute(usage.InputTokens ?? 0, usage.OutputTokens, price);
 
         await new MessageBus(runtime)
             .PublishAsync(new LlmCostIncurred(amount, clock.UtcNow, usage.Purpose, usage.Model))

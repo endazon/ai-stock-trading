@@ -53,6 +53,8 @@ internal static class ReportEndpoints
         var read = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
 
         read.MapGetConfirmedDailyPolicy();
+        // FR-15, #1308, IADR-0528 決定3: ある時点で確定していた日報の方針（Stage 0 の記録器の as-of 入力 (c)）。
+        read.MapGetConfirmedDailyPolicyAsOf();
 
         // ---- 利用者のみ（ADR-0003・OwnerOnly）: 一覧・集計・ドラフト・確定。サービスには許可しない ----
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
@@ -99,6 +101,8 @@ internal static class ReportEndpoints
         ReportConcurrencyException => Results.Conflict(new { error = e.Message }),
         DbUpdateConcurrencyException => Results.Conflict(new { error = "報告書が他の更新と競合しました。最新を取得して再試行してください。" }),
         ReportAlreadyConfirmedException => Results.Conflict(new { error = e.Message }),
+        // FR-07, ADR-0068 決定1, #1373, IADR-0549 決定2: 効いている日報が移った後の版 n+1 の確定・版を足すドラフトの作成（理由を返す）。
+        ReportNoLongerEffectiveException => Results.Conflict(new { error = e.Message }),
         _ => null,
     };
 

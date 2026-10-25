@@ -11,6 +11,10 @@ public sealed class CostControlDbContext(DbContextOptions<CostControlDbContext> 
     // IADR-0055 決定5: 消費済みメッセージ ID（LlmCostIncurred の二重計上防止）。費用台帳とは別テーブル。
     public DbSet<ProcessedMessageRow> ProcessedMessages => Set<ProcessedMessageRow>();
 
+    // 🔴 NFR, FR-10, #1473, IADR-0587: DateTimeOffset（null 許容を含む）の全列を DB の境界で UTC へ揃える（照会のパラメータにも掛かる）。
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) =>
+        configurationBuilder.Properties<DateTimeOffset>().HaveConversion<UtcDateTimeOffsetConverter>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<CostEntryRow>(e =>

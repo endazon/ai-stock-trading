@@ -105,6 +105,6 @@ public class WatchlistArgumentExceptionMessageTests
         var body = await res.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
         res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        JsonNode.Parse(body)!["error"]!.GetValue<string>().Should().Contain("market は必須です。");
+        JsonNode.Parse(body)!["error"]!.GetValue<string>().Should().Be("market（市場）は必須です。");
     }
 }

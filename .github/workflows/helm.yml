@@ -21,6 +21,8 @@ on:
       # #1225, IADR-0512: Finnhub の予算の検査器と母集合・既定値を変えたら描画検査を回す。
       - "scripts/check-finnhub-key-budget.js"
       - "scripts/finnhub-key-budget.json"
+      # #1351: 起動器の Recreate 判定（ast_recreate_deployments）を実際の描画に当てる検査がある。
+      - "scripts/k8s-local-deploy.sh"
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
@@ -29,6 +31,8 @@ on:
       # #1225, IADR-0512: Finnhub の予算の検査器と母集合・既定値を変えたら描画検査を回す。
       - "scripts/check-finnhub-key-budget.js"
       - "scripts/finnhub-key-budget.json"
+      # #1351: 起動器の Recreate 判定（ast_recreate_deployments）を実際の描画に当てる検査がある。
+      - "scripts/k8s-local-deploy.sh"
 
 # NFR / IADR-0208 決定 1: 連続 push で古い実行を捨てる（PR のみ）。
 # 本ワークフローは約 40 回の `helm template` を直列に回すため、重複実行の無駄が大きい。
@@ -148,7 +152,7 @@ jobs:
             cl && line ~ /^      [A-Z][A-Za-z]*: (true|false)$/ { next }
             { printf "::error::%s:%d は許した形ではない（grpcPort / grpcClients.<提供側>: true|false だけを書く・#753）: %s\n", FILENAME, FNR, $0; bad=1 }
             END { exit bad }' "$O"
-          # 期待する宣言（Deployment・env・宛先）。#6（report → Audit）は既定 false（別窓で測る）。
+          # 期待する宣言（Deployment・env・宛先）。#6（report → Audit）・#17（risk-management → OrderExecution。#1391）は既定 false（別窓で測る）。
           expected="$(printf '%s\n' \
             'cost-control-service	Configuration__Grpc	http://configuration-service:8081' \
             'trade-decision-service	Configuration__Grpc	http://configuration-service:8081' \
@@ -159,9 +163,12 @@ jobs:
             'trade-decision-service	MarketMonitor__Grpc	http://market-monitor-service:8081' \
             'information-collection-service	MarketMonitor__Grpc	http://market-monitor-service:8081' \
             'information-collection-service	CostControl__Grpc	http://cost-control-service:8081' \
+            'information-collection-service	RiskManagement__Grpc	http://risk-management-service:8081' \
             'notification-service	RiskManagement__Grpc	http://risk-management-service:8081' \
             'notification-service	Reports__Grpc	http://report-service:8081' \
-            'notification-service	MarketMonitor__Grpc	http://market-monitor-service:8081' | sort)"
+            'notification-service	MarketMonitor__Grpc	http://market-monitor-service:8081' \
+            'trade-decision-service	OrderExecution__Grpc	http://order-execution-service:8081' \
+            'backtest-service	OrderExecution__Grpc	http://order-execution-service:8081' | sort)"
           for profile in default local; do
             if [ "$profile" = local ]; then base=(-f "$CHART/values-local.yaml"); else base=(); fi
             before_out="$(helm template ast "$CHART" "${base[@]}")"
@@ -177,14 +184,14 @@ jobs:
             if [ -n "$removed" ]; then
               echo "::error::[$profile] overlay を重ねると env が消える（配列の置き換え）:"; printf '%s\n' "$removed"; exit 1
             fi
-            # ④ 増えたのは gRPC の宣言だけ（提供側 6 の Grpc__Port）。
+            # ④ 増えたのは gRPC の宣言だけ（提供側 7 の Grpc__Port。#1391 で発注執行を足した）。
             added="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))"
             if grep -vqE $'\t''([A-Za-z]+__Grpc|Grpc__Port)$' <<<"$added"; then
               echo "::error::[$profile] overlay が gRPC 以外の env を足した:"; printf '%s\n' "$added"; exit 1
             fi
             ports="$(grep -cE $'\t''Grpc__Port$' <<<"$added" || true)"
-            if [ "$ports" -ne 6 ]; then
-              echo "::error::[$profile] 提供側の Grpc__Port が $ports/6。Runbook の経路表と揃える。"; exit 1
+            if [ "$ports" -ne 7 ]; then
+              echo "::error::[$profile] 提供側の Grpc__Port が $ports/7。Runbook の経路表と揃える。"; exit 1
             fi
             # ⑤ 呼び出し側の宣言（Deployment・env・宛先）が期待表と完全に一致する（数・呼び先の取り違え・false の無視を捕まえる）。
             got="$(grpc_urls <<<"$after_out")"
@@ -202,6 +209,9 @@ jobs:
           on="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -f "$O" --set services.report.grpcClients.Audit=true | grpc_urls)"
           grep -qx $'report-service\tAudit__Grpc\thttp://audit-service:8081' <<<"$on" \
             || { echo "::error::grpcClients.Audit=true で report に Audit__Grpc（http://audit-service:8081）が描かれない。"; exit 1; }
+          on17="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -f "$O" --set services.risk-management.grpcClients.OrderExecution=true | grpc_urls)"
+          grep -qx $'risk-management-service\tOrderExecution__Grpc\thttp://order-execution-service:8081' <<<"$on17" \
+            || { echo "::error::grpcClients.OrderExecution=true で risk-management に OrderExecution__Grpc（http://order-execution-service:8081）が描かれない（#1391）。"; exit 1; }
           # ⑦ 片方だけの宣言・未知の提供側・真偽値でない値・extraEnv との二重定義は、**その理由で**描画が止まる。
           must_fail() {
             local label="$1" want="$2"; shift 2
@@ -213,7 +223,7 @@ jobs:
           must_fail "未知の提供側" "grpcClients.Auditt は未知の提供側です" --set services.audit.grpcPort=8081 --set services.report.grpcClients.Auditt=true
           must_fail "真偽値でない" "grpcClients.Audit は true / false で指定してください" --set services.audit.grpcPort=8081 --set-string services.report.grpcClients.Audit=true
           must_fail "extraEnv と二重定義" "は extraEnv の Audit__Grpc と grpcClients.Audit を併用できません" -f "$O" --set services.report.grpcClients.Audit=true --set 'services.report.extraEnv[0].name=Audit__Grpc'
-          echo "ok: 計測 overlay は env を 1 本も消さず、段 1〜5 の宣言（呼び出し側 12〔#6 は別窓〕・提供側 6）だけを足す"
+          echo "ok: 計測 overlay は env を 1 本も消さず、段 1〜5 の宣言（呼び出し側 15〔#6・#17 は別窓〕・提供側 7）だけを足す"
       - name: helm template (externalSecrets.enabled=true)
         run: helm template ast "$CHART" --set externalSecrets.enabled=true > /dev/null
       # #24 / IADR-0094: API 鍵群（ast-secrets）の Vault 同期 opt-in。既定描画では評価されないため
@@ -384,6 +394,24 @@ jobs:
           # RSS が limit へ戻って OOMKilled になる（実測）。1 つでも欠ければ赤。
           missing_heap="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /ASPNETCORE_URLS/ && !/name: DOTNET_GCHeapHardLimitPercent/ { if (match($0, /  name: [a-z-]+/)) print substr($0, RSTART+8, RLENGTH-8) }')"
           if [ -n "$missing_heap" ]; then echo "::error::DOTNET_GCHeapHardLimitPercent が無い .NET Deployment がある（#782）: $missing_heap"; exit 1; fi
+          # #1348 / ADR-0006: .NET は GC 設定の環境変数を 16 進数として読む（Microsoft Learn「Garbage collector config settings」の
+          # 「Ways to specify the configuration」）。"60" は 0x60＝96% になる。ヒープ上限は 0x 付きで、16 進数として読んで 60（%）であること。
+          # gc_env: 描画から GC 設定の env（名前が DOTNET_GC / DOTNET_gc / COMPlus_GC / COMPlus_gc で始まる）を「名前=値」で全件出す。
+          gc_env() { printf '%s\n' "$1" | awk '/^ *- name: (DOTNET|COMPlus)_[Gg][Cc]/ { n = $3; next } n != "" { if ($1 == "value:") { v = $2; gsub(/"/, "", v); print n "=" v } n = "" }'; }
+          heap_vals="$(gc_env "$out" | sed -n 's/^DOTNET_GCHeapHardLimitPercent=//p')"
+          heap_n="$(printf '%s\n' "$heap_vals" | grep -c . || true)"
+          if [ "$heap_n" -ne 11 ]; then echo "::error::DOTNET_GCHeapHardLimitPercent の値が 11 件でない（$heap_n 件。#1348）"; exit 1; fi
+          for v in $heap_vals; do
+            case "$v" in 0x[0-9A-Fa-f]*|0X[0-9A-Fa-f]*) ;; *) echo "::error::DOTNET_GCHeapHardLimitPercent=$v は 0x の無い値。環境変数は 16 進数で読まれる（60% は 0x3C。#1348）"; exit 1 ;; esac
+            if [ "$((16#${v#0[xX]}))" -ne 60 ]; then echo "::error::DOTNET_GCHeapHardLimitPercent=$v は 16 進数で $((16#${v#0[xX]}))%（60% であるべき・0x3C。#1348）"; exit 1; fi
+          done
+          # #1348: 既定と values-local の両描画で、GC 設定の env（DOTNET_GC* / DOTNET_gc* / COMPlus_GC* / COMPlus_gc*）に 0x の無い
+          # 10 以上の 10 進数が無い（一桁は 16 進数でも同じ値なので許す）。extraEnv での追加も拾う。
+          for prof in default values-local; do
+            if [ "$prof" = default ]; then r="$out"; else r="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"; fi
+            bad_gc="$(gc_env "$r" | grep -E '=0*[1-9][0-9]+$' || true)"
+            if [ -n "$bad_gc" ]; then echo "::error::$prof: GC 設定の env に 0x の無い 10 以上の値がある（16 進数で読まれる。#1348）: $bad_gc"; exit 1; fi
+          done
           # #808 / ADR-0006: 同じ母集合に glibc のアリーナ上限（MALLOC_ARENA_MAX）が入っている。GC 設定 3 つでも
           # ヒープ外（Wolverine の実行時コンパイルの作業メモリが per-thread アリーナに残る）で RSS が limit を超える（実測）。1 つでも欠ければ赤。
           missing_arena="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /ASPNETCORE_URLS/ && !/name: MALLOC_ARENA_MAX/ { if (match($0, /  name: [a-z-]+/)) print substr($0, RSTART+8, RLENGTH-8) }')"
@@ -543,6 +571,33 @@ jobs:
           assert_reconciliation "moomoo-sim" "$(helm template ast "$CHART" --set broker.tier=moomoo-sim)"
           assert_reconciliation "values-local" "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
           echo "ok: 突合は 3 描画とも有効で、解放の門は閉じている（BatchSize も pin 済み）"
+      # 🔴 T-10-2973, FR-10, ADR-0009, IADR-0567: 発注執行が新規建てを送る直前に kill switch・一時停止を照会する宛先と s2s の資格情報。
+      #    これが描画されないと照会は常に「不明」になり、新規建てが全件見送られる（fail-closed。決済・損切りは止まらない）。
+      #    既定・moomoo-sim・values-local の 3 描画で、宛先が描画された risk-management の Service を指し、資格情報が ast-secrets の
+      #    契約キーを secretKeyRef で読み、token エンドポイントが描かれることを固定する。
+      - name: Assert order-execution is wired to the trading-halt query (IADR-0567)
+        run: |
+          set -eu
+          assert_halt_query() {
+            label="$1"; out="$2"
+            doc="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: order-execution-service/')"
+            [ -n "$doc" ] || { echo "::error::[$label] order-execution の Deployment が描画されない。"; exit 1; }
+            printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Service/ && /name: risk-management-service/' | grep -q 'port: 8080' \
+              || { echo "::error::[$label] risk-management-service の 8080 が描画されない（宛先が実在しない）。"; exit 1; }
+            printf '%s' "$doc" | grep -A1 'name: RiskManagement__BaseUrl$' | grep -q 'value: "http://risk-management-service:8080"' \
+              || { echo "::error::[$label] order-execution の RiskManagement__BaseUrl が risk-management-service:8080 を指さない（新規建てが全件見送られる・IADR-0567）。"; exit 1; }
+            for pair in "ServiceAuth__ClientId service-auth-client-id" "ServiceAuth__ClientSecret service-auth-client-secret"; do
+              key="${pair%% *}"; ref="${pair##* }"
+              printf '%s' "$doc" | grep -A4 "name: ${key}$" | grep -q "key: ${ref}$" \
+                || { echo "::error::[$label] order-execution の ${key} が ast-secrets の ${ref} を secretKeyRef で読まない（照会が 401 → 不明）。"; exit 1; }
+            done
+            printf '%s' "$doc" | grep -q 'name: ServiceAuth__TokenEndpoint$' \
+              || { echo "::error::[$label] order-execution に ServiceAuth__TokenEndpoint が描画されない（s2s トークンを取れない）。"; exit 1; }
+          }
+          assert_halt_query "既定描画" "$(helm template ast "$CHART")"
+          assert_halt_query "moomoo-sim" "$(helm template ast "$CHART" --set broker.tier=moomoo-sim)"
+          assert_halt_query "values-local" "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          echo "ok: 発注執行は 3 描画とも停止状態の照会先と s2s の資格情報を持つ"
       # #842, IADR-0347 追記: moomoo の調整値は「空（""）・未設定（null）＝アダプタ既定＝env を注入しない」。
       #    `{{- with }}` は数値の 0 を空と同じに扱い、`--set moomoo.stopLimitOffsetRatio=0` が既定 1% へ黙って戻っていた
       #    （replyTimeoutSeconds=0 は起動時に停止するはずが 15 秒へ戻っていた）。0 が値として届き、空は届かないことを固定する。
@@ -700,8 +755,8 @@ jobs:
           # #279 / IADR-0114 決定6: LLM 単価。未設定（0）だと毎回 ¥0 計上で月次費用上限が構造的に発火しない。
           # #303 / IADR-0122: 単価は**モデル別**。用途別モデル割当（ADR-0014）に追随できないと計上が実態とずれる
           # （global 単一ペアの opus 基準では trade-decision＝sonnet が約 2.5 倍の過大計上だった）。
-          # #1295 / IADR-0524: 割当は 5.5 系（opus-5-5 / sonnet-5-5 / haiku-5-5）。旧世代の行は移行期間だけ残す（#1296 で撤去）ため、
-          # 検査は 5.5 系の行に向ける（旧行だけ残って新行が落ちると、割当どおりの応答が未知モデル＝最大単価で過大計上になる）。
+          # #1295 / IADR-0524: 割当は 5.5 系（opus-5-5 / sonnet-5-5 / haiku-5-5）。検査は 5.5 系の行に向ける
+          # （新行が落ちると、割当どおりの応答が未知モデル＝未知モデルの計上単価で過大計上になる）。旧世代の行は #1296 で撤去した（下の否定の検査）。
           # 単価表はサービスごとに独立して構成される（IADR-0296）ため、report-service と trade-decision-service の
           # **両方の Deployment** で 5.5 系の全行を検査する（片方の表だけ欠けても全体 grep では緑になる）。
           # haiku-5-5 はプロンプト長で 2 段。第 2 段の閾値・入力・出力の 3 行が落ちると 100,000 トークン超の要求が
@@ -721,12 +776,25 @@ jobs:
               'claude_haiku_5_5__LongContextOutputPer1kTokens=0.409'; do
               key="${row%%=*}"; val="${row#*=}"
               printf '%s' "$dep" | grep -A1 -E "^ *- name: LlmPricing__PerModel__${key}\$" | grep -q "value: \"${val}\"" \
-                || { echo "::error::values-local の $svc で LlmPricing__PerModel__${key}=${val} が描画されない（5.5 系の計上が未知モデル＝最大単価か第 1 段へずれる）。"; exit 1; }
+                || { echo "::error::values-local の $svc で LlmPricing__PerModel__${key}=${val} が描画されない（5.5 系の計上が未知モデルの計上単価か第 1 段へずれる）。"; exit 1; }
+            done
+            # NFR-13 / ADR-0064 決定 9 / #1305 / IADR-0553: 未知モデルの計上単価（単価表の行ではない専用の設定値）を両 Deployment で固定する。
+            # 値が下がると、割当の誤りで高いモデルが答えた要求が過小計上になる（IADR-0122 の危険側）。
+            for row in 'InputPer1kTokens=1.637' 'OutputPer1kTokens=8.186'; do
+              key="${row%%=*}"; val="${row#*=}"
+              printf '%s' "$dep" | grep -A1 -E "^ *- name: LlmPricing__UnknownModel__${key}\$" | grep -q "value: \"${val}\"" \
+                || { echo "::error::values-local の $svc で LlmPricing__UnknownModel__${key}=${val} が描画されない（未知モデルの計上単価が \$10 / \$50 で固定されない）。"; exit 1; }
             done
           done
-          # 未知モデルの倒し先＝表の最大単価（fable-5）。これが消えると未知モデルが過小計上になる（IADR-0122 決定3）。
-          printf '%s' "$out" | grep -A1 'name: LlmPricing__PerModel__claude_fable_5__OutputPer1kTokens' | grep -q 'value: "8.186"' \
-            || { echo "::error::values-local で claude-fable-5 の出力単価 8.186 が描画されない（未知モデルの倒し先が下がる）。"; exit 1; }
+          # #1296 / ADR-0064 決定 7: 単価表の現行値は 5.5 系だけ（旧世代 opus-5 / opus-4-8 / sonnet-5 / haiku-4-5 の行を描画しない）。
+          # 旧行が戻ると、移行段の撤去後も旧 ID の応答が安い旧単価で計上され、割当不一致が費用の上で見えにくくなる。
+          if printf '%s' "$out" | grep -Eq 'name: LlmPricing__PerModel__claude_(opus_5|opus_4_8|sonnet_5|haiku_4_5)__'; then
+            echo "::error::values-local に旧世代の単価行が描画された（#1296 で撤去済み。5.5 系だけを受け付ける）。"; exit 1
+          fi
+          # #1305 / ADR-0064 決定 7・9: 単価表に禁止モデル（fable-5）の行を描画しない。上限値は上の未知モデルの計上単価が担う。
+          if printf '%s' "$out" | grep -Eq 'name: LlmPricing__PerModel__claude_fable_5(_1)?__'; then
+            echo "::error::values-local に claude-fable-5 の単価行が描画された（#1305 で撤去済み。表に無いモデルは LlmPricing__UnknownModel__* で計上する）。"; exit 1
+          fi
           # #279 / IADR-0114: 公式情報源（SEC EDGAR / FRED）を収集へ合流させる。provider の列挙漏れは全体の空振りになる。
           printf '%s' "$out" | grep -A1 'name: Collection__Source__Provider' | grep -q 'sec-edgar' \
             || { echo "::error::values-local の Collection__Source__Provider に sec-edgar が無い（SEC EDGAR 未収集）。"; exit 1; }
@@ -760,9 +828,14 @@ jobs:
           # 🔴 **合格は出ない** —— 過去データ源が空（バー 0 本）で fail-closed するため、開くのは経路であって門ではない。
           printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__Stage0__Enabled' | grep -q 'value: "true"'             || { echo "::error::values-local で backtest の Backtest__Stage0__Enabled=true が描画されない（verdict が 1 通も出ない）。"; exit 1; }
           printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__Stage0__Strategy' | grep -q 'value: "recorded-replay"'             || { echo "::error::values-local で backtest の Strategy=recorded-replay が描画されない（本番戦略が選ばれていない）。"; exit 1; }
-          need "Stage 0 評価銘柄（AAPL）" 'name: Backtest__Stage0__Symbols__0__Symbol'
-          # 🔴 過去データ源は空のまま（ADR-0023 決定5 の未確認 2 点・blocked A-3）。実データ源を開けていないこと。
-          printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__BarData__Provider' | grep -q 'value: ""'             || { echo "::error::values-local の Backtest__BarData__Provider が空でない（ADR-0023 決定5 の確認前に実データ源を開けた）。"; exit 1; }
+          need "Stage 0 評価銘柄" 'name: Backtest__Stage0__Symbols__0__Symbol'
+          # #1308 / IADR-0528 決定8（利用者裁定 2026-10-13）: 過去データ源は発注執行の日足の照会（order-execution）だけ。
+          # 🔴 moomoo（直結）は開けない（backtest の Pod に OpenD は配線しない）。Stage 0 に限った ADR-0023 決定5 の逸脱の受容は IADR-0528。
+          printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__BarData__Provider' | grep -q 'value: "order-execution"'             || { echo "::error::values-local の Backtest__BarData__Provider が order-execution でない（moomoo 直結を開けたか、源を空に戻した）。"; exit 1; }
+          printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__BarData__OrderExecution__BaseUrl' | grep -q 'value: "http://order-execution-service:8080"'             || { echo "::error::values-local の Backtest__BarData__OrderExecution__BaseUrl が発注執行を指していない（order-execution が no-op へ倒れる）。"; exit 1; }
+          if printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/' | grep -q 'name: Backtest__BarData__Moomoo__'; then
+            echo "::error::values-local の backtest に moomoo 直結の構成がある（backtest の Pod に OpenD は配線しない。IADR-0528 決定8）。"; exit 1
+          fi
           # カットオフ日（ADR-0037 決定2 の写し方。#1295 で 5.5 系の 2026-06-30）は駆動側・記録側で同値であること（食い違うと RecordingMismatch）。
           cutoffs="$(printf '%s' "$out" | grep -A1 'LlmTrainingCutoff' | grep -c 'value: "2026-06-30"')"
           if [ "$cutoffs" -ne 2 ]; then
@@ -1160,8 +1233,9 @@ jobs:
           # ② values-local 描画の ExternalSecret（契約の表と 1 対 1）。
           local_out="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
           names="$(printf '%s' "$local_out" | awk 'BEGIN{RS="---"} index($0, "\nkind: ExternalSecret\n") { if (match($0, /\n  name: [a-z-]+/)) print substr($0, RSTART+9, RLENGTH-9) }' | sort | tr '\n' ' ')"
-          [ "$names" = "ast-secrets moomoo-credentials moomoo-rsa " ] || fail "values-local の ExternalSecret が契約の 3 件でない（実測: 「$names」）。"
-          for n in ast-secrets moomoo-credentials moomoo-rsa; do
+          # IADR-0568: ast-rabbitmq-users（ブローカのサービスごとの資格情報）は画面の契約の外だが、ESO 所有では同じ形で同期する。
+          [ "$names" = "ast-rabbitmq-users ast-secrets moomoo-credentials moomoo-rsa " ] || fail "values-local の ExternalSecret が契約の 3 件＋ブローカの資格情報でない（実測: 「$names」）。"
+          for n in ast-secrets moomoo-credentials moomoo-rsa ast-rabbitmq-users; do
             d="$(doc_of "$local_out" ExternalSecret "$n")"
             printf '%s\n' "$d" | grep -qx 'apiVersion: external-secrets.io/v1' || fail "ExternalSecret $n が external-secrets.io/v1 でない（基盤の ESO は v1beta1 を提供しない）。"
             printf '%s\n' "$d" | grep -q 'name: vault-backend' || fail "ExternalSecret $n の store が vault-backend でない。"
@@ -1275,6 +1349,33 @@ jobs:
           # #722 / IADR-0322: 検証コードの投入面は既定で立てない（OpenD のコンソールへ書ける面を既定で開かない）。
           if printf '%s' "$out" | grep -q 'name: opend-auth'; then fail "authGateway が既定で有効になっている"; fi
           echo "ok: opend の既定描画は生 manifest と同等の不変条件を満たす"
+      # NFR, IADR-0570（Refs GHSA-j4qv-2w99-xg5p）: メッシュ参入の切り替えで OpenD の Pod テンプレートが変わらない
+      # （＝起動器が注入を有効・無効にしても OpenD は作り直されない）ことと、OpenD が常に注入対象外であることを固定する。
+      # 起動器と同じ形（values-local.yaml・namespace.create=false）で描き、注入の有無の 2 通りの OpenD を丸ごと突き合わせる。
+      # 陰性対照: excludeOpend=false なら注釈を描かない／namespace.create=false では名前空間のラベルを描かない
+      # （ラベルは起動器が貼る）／namespace.create=true かつ有効なときだけ chart がラベルを描く。
+      - name: Assert mesh sidecar injection toggle never changes the OpenD pod (IADR-0570)
+        run: |
+          fail() { echo "::error::メッシュ参入の切り替えの前提を満たさない: $1"; exit 1; }
+          common=(--set namespace.create=false --set opend.enabled=true -f "$CHART/values-local.yaml")
+          off="$(helm template ast "$CHART" "${common[@]}" -s templates/opend.yaml)"
+          on="$(helm template ast "$CHART" "${common[@]}" --set mesh.sidecarInjection.enabled=true --set mesh.sidecarInjection.excludeOpend=true -s templates/opend.yaml)"
+          [ "$off" = "$on" ] || { diff <(printf '%s\n' "$off") <(printf '%s\n' "$on") || true; fail "注入の有無で OpenD の描画が変わる（切り替えで OpenD が作り直される）"; }
+          pod="$(printf '%s\n' "$off" | awk '/^kind: Deployment/,0' | awk '/^  template:/,/^    spec:/')"
+          printf '%s' "$pod" | grep -q 'sidecar.istio.io/inject: "false"' || fail "OpenD の Pod に注入対象外の注釈が無い（無効のとき）"
+          printf '%s' "$on" | awk '/^kind: Deployment/,0' | awk '/^  template:/,/^    spec:/' | grep -q 'sidecar.istio.io/inject: "false"' \
+            || fail "OpenD の Pod に注入対象外の注釈が無い（有効のとき）"
+          # 陰性対照: excludeOpend=false なら注釈を描かない（検査が注釈の有無を見分けている）
+          neg="$(helm template ast "$CHART" "${common[@]}" --set mesh.sidecarInjection.enabled=true --set mesh.sidecarInjection.excludeOpend=false -s templates/opend.yaml)"
+          if printf '%s' "$neg" | grep -q 'sidecar.istio.io/inject'; then fail "excludeOpend=false でも注釈が描かれる"; fi
+          # 名前空間のラベル: 起動器の形（namespace.create=false）では描かない。chart が名前空間を持つときだけ描く。
+          if helm template ast "$CHART" --set namespace.create=false --set mesh.sidecarInjection.enabled=true | grep -q 'istio-injection'; then
+            fail "namespace.create=false で名前空間のラベルを描いている"
+          fi
+          helm template ast "$CHART" --set mesh.sidecarInjection.enabled=true -s templates/namespace.yaml | grep -q 'istio-injection: enabled' \
+            || fail "namespace.create=true かつ有効で名前空間のラベルが無い"
+          if helm template ast "$CHART" -s templates/namespace.yaml | grep -q 'istio-injection'; then fail "既定で名前空間のラベルを描いている"; fi
+          echo "ok: 注入の切り替えで OpenD の描画は変わらず、OpenD は常に注入対象外"
       # #722 / IADR-0322: サイドカーを有効にしたときの不変条件。**PVC を見せない**ことがいちばん重い
       # （PVC にはデバイス信頼の実体 Device.dat と OpenD.xml が入っている）。
       - name: Assert opend auth sidecar never mounts the PVC
@@ -1289,6 +1390,129 @@ jobs:
           if printf '%s' "$out" | grep -qE 'kind: (Ingress|Gateway|VirtualService)'; then fail "Ingress/Route を作っている"; fi
           if printf '%s' "$out" | grep -q 'nodePort'; then fail "NodePort を作っている"; fi
           echo "ok: opend-auth サイドカーは PVC を見ず、クラスタ外への口も持たない"
+      # NFR, IADR-0566: OpenD の Pod への到達の制限（NetworkPolicy）と、認証サイドカーの呼び出し元検証（共有シークレット）。
+      # 描画の形を期待値と**丸ごと**突き合わせる（規則の足し忘れ・緩め・セレクタの取り違えのどれでも赤）。
+      # 陰性対照: 既定（opend 無効）では描かない／authGateway 無効では 8080 の規則を描かない／届く相手が空なら描画で止まる。
+      - name: Assert opend NetworkPolicy and caller secret (IADR-0566)
+        run: |
+          fail() { echo "::error::OpenD の到達の制限・呼び出し元の検証（IADR-0566）: $1"; exit 1; }
+          # NetworkPolicy の spec だけを取り出す（コメント行は落とす）。
+          np_spec() { awk '/^kind: NetworkPolicy/{f=1} f&&/^spec:/{p=1} p&&/^---/{exit} p' | grep -v '^[[:space:]]*#'; }
+          if helm template ast "$CHART" | grep -q '^kind: NetworkPolicy'; then fail "既定（opend 無効）で NetworkPolicy が描かれた"; fi
+          if helm template ast "$CHART" -f "$CHART/values-local.yaml" | grep -q '^kind: NetworkPolicy'; then
+            fail "values-local（opend は起動器が --set で有効化する）だけで NetworkPolicy が描かれた"
+          fi
+          want_api='spec:
+            podSelector:
+              matchLabels: { app: opend }
+            policyTypes: [Ingress]
+            ingress:
+              - from:
+                  - podSelector:
+                      matchLabels:
+                        app: order-execution-service
+                ports:
+                  - { protocol: TCP, port: 11111 }'
+          want_auth="${want_api}"'
+              - from:
+                  - namespaceSelector:
+                      matchLabels: { kubernetes.io/metadata.name: "microservices-platform" }
+                    podSelector:
+                      matchLabels:
+                        app: bff-service
+                ports:
+                  - { protocol: TCP, port: 8080 }'
+          got="$(helm template ast "$CHART" --set opend.enabled=true -s templates/networkpolicy-opend.yaml | np_spec)"
+          diff <(printf '%s\n' "$want_api") <(printf '%s\n' "$got") \
+            || fail "opend.enabled=true の NetworkPolicy が期待（API は発注執行からだけ・サイドカーの口なし）と違う"
+          got="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set opend.enabled=true -s templates/networkpolicy-opend.yaml | np_spec)"
+          diff <(printf '%s\n' "$want_auth") <(printf '%s\n' "$got") \
+            || fail "経路B（authGateway 有効）の NetworkPolicy が期待（API は発注執行・サイドカーは基盤の BFF からだけ）と違う"
+          # egress は絞らない（OpenD は moomoo と DNS へ出る）。ipBlock・空の from（＝全許可）も描かない。
+          all="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set opend.enabled=true -s templates/networkpolicy-opend.yaml)"
+          if grep -qE 'Egress|ipBlock|from: \[\]|- \{\}' <<<"$all"; then fail "Egress・ipBlock・空の from のどれかが描かれた"; fi
+          # Service opend の全ポートが規則のどれかに入っている（口を足したのに規則を足し忘れると、その口は誰からも届かない）。
+          svc_ports="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set opend.enabled=true -s templates/opend.yaml \
+            | awk '/^kind: Service/{f=1} f' | sed -n 's/.*port: \([0-9]*\), targetPort.*/\1/p' | sort -u)"
+          np_ports="$(grep -oE 'port: [0-9]+ }' <<<"$all" | grep -oE '[0-9]+' | sort -u)"
+          [ -n "$svc_ports" ] || fail "Service opend のポートを読めない（検査の空振り）"
+          [ -n "$np_ports" ] || fail "NetworkPolicy のポートを読めない（検査の空振り。規則の書式を変えたらここの抽出も直す）"
+          [ "$svc_ports" = "$np_ports" ] || fail "Service opend のポート（$(echo $svc_ports)）と NetworkPolicy のポート（$(echo $np_ports)）が一致しない"
+          # 無効化は明示の値でだけ（既定は閉じる）。
+          if helm template ast "$CHART" --set opend.enabled=true --set opend.networkPolicy.enabled=false | grep -q '^kind: NetworkPolicy'; then
+            fail "opend.networkPolicy.enabled=false でも描かれた"
+          fi
+          must_fail() {
+            local label="$1" want="$2"; shift 2
+            local out
+            if out="$(helm template ast "$CHART" "$@" 2>&1)"; then fail "描画が通ってしまった: $label"; fi
+            grep -qF "$want" <<<"$out" || { echo "::error::$label: 期待した理由（$want）で止まっていない:"; printf '%s\n' "$out" | tail -3; exit 1; }
+          }
+          must_fail "API の届く相手が空" "apiClientPodLabels" --set opend.enabled=true --set opend.networkPolicy.apiClientPodLabels=null
+          must_fail "サイドカーの届く相手の namespace が空" "authGatewayClients.namespace" \
+            --set opend.enabled=true --set opend.authGateway.enabled=true --set opend.networkPolicy.authGatewayClients.namespace=""
+          must_fail "呼び出し元検証の Secret 名が空" "callerSecret.secretName" \
+            --set opend.enabled=true --set opend.authGateway.enabled=true --set opend.authGateway.callerSecret.secretName=""
+          # 呼び出し元検証: Secret はサイドカーだけがマウントし（OpenD 本体は見ない）、optional（無くても Pod は起動する）。
+          od="$(helm template ast "$CHART" --set opend.enabled=true --set opend.authGateway.enabled=true -s templates/opend.yaml)"
+          main="$(printf '%s\n' "$od" | awk '/- name: opend$/,/- name: opend-auth$/')"
+          side="$(printf '%s\n' "$od" | awk '/- name: opend-auth$/,/^      volumes:/')"
+          vols="$(printf '%s\n' "$od" | awk '/^      volumes:/,0')"
+          if grep -q 'caller-secret' <<<"$main"; then fail "OpenD 本体のコンテナが呼び出し元検証の Secret を見ている"; fi
+          grep -q 'name: OpendAuth__CallerSecretFile' <<<"$side" || fail "サイドカーに OpendAuth__CallerSecretFile が無い"
+          grep -A1 'name: OpendAuth__CallerSecretFile' <<<"$side" | grep -q 'value: "/var/run/opend-auth/caller-secret"' \
+            || fail "OpendAuth__CallerSecretFile がマウント先の下を指していない"
+          if grep -q 'OpendAuth__CallerSecret$' <<<"$side"; then fail "値を env で渡している（回すたびに Pod を作り直すことになる）"; fi
+          grep -A2 'name: caller-secret$' <<<"$vols" | grep -q 'secretName: opend-auth-caller-secret' || fail "Secret の volume が無い"
+          grep -A4 'name: caller-secret$' <<<"$vols" | grep -q 'optional: true' || fail "Secret の volume が optional でない（無いと Pod が起動せず発注経路まで止まる）"
+          if helm template ast "$CHART" --set opend.enabled=true -s templates/opend.yaml | grep -q 'caller-secret'; then
+            fail "authGateway 無効でも呼び出し元検証の Secret を描いた"
+          fi
+          # ESO: opend と authGateway が有効なときだけ同期する。
+          es="$(helm template ast "$CHART" --set opend.enabled=true --set opend.authGateway.enabled=true --set externalSecrets.enabled=true -s templates/external-secrets.yaml)"
+          grep -q 'name: opend-auth-caller-secret' <<<"$es" || fail "ExternalSecret opend-auth-caller-secret が描かれない"
+          grep -q 'key: "ai-stock-trading/opend-auth"' <<<"$es" || fail "ExternalSecret の Vault のキーが違う"
+          if helm template ast "$CHART" --set opend.enabled=true --set externalSecrets.enabled=true -s templates/external-secrets.yaml | grep -q 'opend-auth-caller-secret'; then
+            fail "authGateway 無効でも ExternalSecret を描いた"
+          fi
+          echo "ok: OpenD への到達は発注執行と基盤の BFF だけ・呼び出し元検証の Secret はサイドカーだけが optional でマウントする"
+      # NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: 全 Worker はブローカへサービスごとのユーザーで接続する。既定のユーザーの痕跡が無い。
+      - name: Assert per-service broker credentials (IADR-0568)
+        run: |
+          fail() { echo "::error::ブローカのサービスごとの資格情報（IADR-0568）: $1"; exit 1; }
+          for prof in default local; do
+            if [ "$prof" = local ]; then out="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"; else out="$(helm template ast "$CHART")"; fi
+            if grep -q 'guest' <<<"$out"; then fail "$prof: 描画に guest が現れた"; fi
+            n=0
+            for d in $(awk 'BEGIN{RS="---"} index($0, "\nkind: Deployment\n") { if (match($0, /\n  name: [a-z0-9-]+-service\n/)) print substr($0, RSTART+9, RLENGTH-10) }' <<<"$out"); do
+              svc="${d%-service}"
+              doc="$(awk -v n="$d" 'BEGIN{RS="---"} index($0, "\nkind: Deployment\n") && index($0, "\n  name: " n "\n")' <<<"$out")"
+              grep -A4 'name: RABBITMQ_PASSWORD$' <<<"$doc" | grep -q "key: ast-${svc}\$" || fail "$prof: $d のパスワードのキーが ast-${svc} でない"
+              grep -A4 'name: RABBITMQ_PASSWORD$' <<<"$doc" | grep -q 'name: ast-rabbitmq-users$' || fail "$prof: $d のパスワードの Secret が ast-rabbitmq-users でない"
+              if grep -A5 'name: RABBITMQ_PASSWORD$' <<<"$doc" | grep -q 'optional: true'; then fail "$prof: $d のパスワードが optional（無いときに別の資格情報へ戻る経路になる）"; fi
+              grep -A1 'name: RabbitMq__ConnectionString$' <<<"$doc" | grep -qF "value: \"amqp://ast-${svc}:\$(RABBITMQ_PASSWORD)@rabbitmq:5672\"" \
+                || fail "$prof: $d の接続文字列がサービスごとのユーザーでない"
+              # 補間は先に定義した env だけを参照できる（順序を崩すと $(RABBITMQ_PASSWORD) が文字のまま渡る）。
+              p="$(grep -n 'name: RABBITMQ_PASSWORD$' <<<"$doc" | cut -d: -f1)"; c="$(grep -n 'name: RabbitMq__ConnectionString$' <<<"$doc" | cut -d: -f1)"
+              [ "$p" -lt "$c" ] || fail "$prof: $d で RABBITMQ_PASSWORD が接続文字列より後にある"
+              n=$((n + 1))
+            done
+            [ "$n" -ge 11 ] || fail "$prof: Worker を ${n} 件しか読めない（抽出の空振り）"
+          done
+          # Reloader の注釈（経路B）に ast-rabbitmq-users が入る（値を回したら作り直す）。
+          loc="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml)"
+          c="$(grep -c 'secret.reloader.stakater.com/reload: ".*ast-rabbitmq-users' <<<"$loc" || true)"
+          [ "$c" -ge 11 ] || fail "Reloader の注釈に ast-rabbitmq-users が入る Deployment が ${c} 件しかない"
+          # 旧キーは描画で止める。設定点の欠落も止める。
+          must_fail() {
+            local label="$1" want="$2"; shift 2
+            local out
+            if out="$(helm template ast "$CHART" "$@" 2>&1)"; then fail "描画が通ってしまった: $label"; fi
+            grep -qF "$want" <<<"$out" || { echo "::error::$label: 期待した理由（$want）で止まっていない:"; printf '%s\n' "$out" | tail -3; exit 1; }
+          }
+          must_fail "旧キー rabbitmqConnectionString" "global.rabbitmqConnectionString は廃止" --set global.rabbitmqConnectionString=amqp://x@rabbitmq:5672
+          must_fail "Secret 名が空" "credentialsSecretName" --set global.rabbitmq.credentialsSecretName=""
+          echo "ok: 全 Worker がサービスごとのユーザーで接続し、既定のユーザーの痕跡は無い"
       # #132 / IADR-0060: 誤配備を描画時に止めるゲートが**実際に落ちる**ことを検査する（ゲートの空振り防止）。
       - name: Assert misconfiguration gates fail
         run: |
@@ -1308,3 +1532,59 @@ jobs:
           assert_fail "externalSecrets.enabled=true / secretStoreRef.name 空" --set externalSecrets.enabled=true --set externalSecrets.secretStoreRef.name=""
           # #24 / IADR-0094: appSecrets 有効化でストア名が空なら描画時に止まる（誤有効化の防止）。
           assert_fail "appSecrets.enabled=true / secretStoreRef.name 空" --set externalSecrets.enabled=true --set externalSecrets.appSecrets.enabled=true --set externalSecrets.secretStoreRef.name=""
+      # FR-15, ADR-0033 決定5, #1342, IADR-0537 決定5: Stage 0 の記録器の永続ボリューム。本番の既定では何も描かず、
+      # 経路B では PVC・mount・状態の置き場の env・Recreate を描き、書き出し先が mount の下にあること。
+      # 状態の置き場を extraEnv で与える・書き出し先が mount の外・mountPath が相対のときは、**その理由で**描画が止まる。
+      - name: Assert stage0 recorder persistence (#1342)
+        run: |
+          fail() { echo "::error::Stage 0 の記録器の永続ボリューム: $1"; exit 1; }
+          def="$(helm template ast "$CHART")"
+          if grep -qE 'trade-decision-stage0|Stage0Recording__StateDirectory|type: Recreate' <<<"$def"; then
+            fail "本番の既定で PVC・状態の置き場・Recreate のどれかが描かれた（既定は無効）"
+          fi
+          loc="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          grep -q 'name: trade-decision-stage0' <<<"$loc" || fail "経路B で PVC が描かれない"
+          grep -q 'helm.sh/resource-policy: keep' <<<"$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/pvc-stage0-recording.yaml)" \
+            || fail "PVC に keep が付いていない（uninstall で印と累計が消える）"
+          td="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml \
+            | awk 'BEGIN{RS="---"} /\n  name: trade-decision-service\n/ {print}')"
+          grep -q 'value: "/var/lib/ai-stock-trading/stage0/state"' <<<"$td" || fail "trade-decision に状態の置き場が注入されない"
+          grep -q 'value: "/var/lib/ai-stock-trading/stage0/records.json"' <<<"$td" || fail "書き出し先が mount の下にない"
+          grep -q 'mountPath: /var/lib/ai-stock-trading/stage0' <<<"$td" || fail "trade-decision に mount が無い"
+          grep -q 'claimName: trade-decision-stage0' <<<"$td" || fail "trade-decision の volume が PVC を指していない"
+          grep -q 'type: Recreate' <<<"$td" || fail "trade-decision の更新方式が Recreate でない"
+          others="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml \
+            | awk 'BEGIN{RS="---"} /kind: Deployment/ && !/\n  name: trade-decision-service\n/ {print}')"
+          if grep -qE 'stage0-recording|type: Recreate' <<<"$others"; then fail "trade-decision 以外に mount か Recreate が描かれた"; fi
+          must_fail() {
+            local label="$1" want="$2"; shift 2
+            local out
+            if out="$(helm template ast "$CHART" "$@" 2>&1)"; then fail "描画が通ってしまった: $label"; fi
+            grep -qF "$want" <<<"$out" || { echo "::error::$label: 期待した理由（$want）で止まっていない:"; printf '%s\n' "$out" | tail -3; exit 1; }
+          }
+          sed 's#"/var/lib/ai-stock-trading/stage0/records.json"#"/tmp/stage0/records.json"#' "$CHART/values-local.yaml" > /tmp/vl-outside.yaml
+          must_fail "書き出し先が mount の外" "の外です" -f /tmp/vl-outside.yaml
+          must_fail "mountPath が相対" "は絶対パスで指定してください" -f "$CHART/values-local.yaml" --set stage0Recording.persistence.mountPath=relative
+          must_fail "extraEnv に状態の置き場" "の extraEnv に Stage0Recording__StateDirectory は書けません" \
+            --set 'services.trade-decision.extraEnv[0].name=Stage0Recording__StateDirectory' --set 'services.trade-decision.extraEnv[0].value=/tmp/x'
+          echo "ok: 記録器の永続ボリュームは経路B だけで描かれ、誤配備は描画で止まる"
+      # FR-15, #1351: 起動器（scripts/k8s-local-deploy.sh）の移行の段は、描画から Recreate の Deployment を挙げる
+      # （ast_recreate_deployments）。描画の形が変わって awk が何も拾えなくなると、移行の段は黙って「対象なし」に倒れ、
+      # 既存の環境の upgrade が Forbidden で止まる。実際の描画に当てて、挙がる名前を固定する。
+      - name: Assert launcher detects Recreate deployments from the real render (#1351)
+        run: |
+          fail() { echo "::error::起動器の Recreate 判定（#1351）: $1"; exit 1; }
+          # 関数だけを取り出して読む（起動器の本体は実行しない）。
+          fn="$(sed -n '/^ast_recreate_deployments() {/,/^}/p' scripts/k8s-local-deploy.sh)"
+          [ -n "$fn" ] || fail "scripts/k8s-local-deploy.sh に ast_recreate_deployments が無い"
+          eval "$fn"
+          got() { helm template ast "$CHART" "$@" | ast_recreate_deployments | sort | paste -sd, -; }
+          check() {
+            local label="$1" want="$2"; shift 2
+            local out; out="$(got "$@")"
+            [ "$out" = "$want" ] || fail "$label: 期待 [$want] に対し [$out]"
+            echo "ok: $label → [$out]"
+          }
+          check "既定" ""
+          check "values-local" "trade-decision-service" -f "$CHART/values-local.yaml"
+          check "values-local + opend.enabled=true" "opend,trade-decision-service" -f "$CHART/values-local.yaml" --set opend.enabled=true

@@ -52,9 +52,32 @@ public class OrderDispatchForgoneProtectionContractTests
         var parameters = typeof(OrderDispatchForgone).GetConstructors()
             .Single(c => c.GetParameters().Length > 1).GetParameters();
 
-        parameters.Select(p => p.Name).Should().Equal("DecisionId", "Intent", "Reason", "OccurredAt", "Protection");
+        // T-10-2648, #1338, IADR-0535 決定4: Protection の後ろに InFlightCloseOrderIds（任意・既定 null）を足した。既存の位置は変えない。
+        parameters.Select(p => p.Name).Should().Equal("DecisionId", "Intent", "Reason", "OccurredAt", "Protection", "InFlightCloseOrderIds");
+        parameters[^2].HasDefaultValue.Should().BeTrue();
+        parameters[^2].DefaultValue.Should().BeNull();
         parameters[^1].HasDefaultValue.Should().BeTrue();
         parameters[^1].DefaultValue.Should().BeNull();
+    }
+
+    // T-10-2648, #1338, IADR-0535 決定4: 旧形式（InFlightCloseOrderIds 無し）の JSON は null（畳まない）として読め、新形式は往復する。
+    [Fact]
+    public void 処理中の決済の注文IDは旧形式ではnullで読め新形式は往復する()
+    {
+        var intent = new OrderIntent(
+            "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, BrokerProvider.MoomooSimulate, 13, 347.93m, PositionEffect.Close);
+        var legacy = JsonSerializer.Serialize(new OrderDispatchForgone(
+            Guid.NewGuid(), intent, OrderDispatchForgoneReason.InFlightCloseCoversPosition, DateTimeOffset.UnixEpoch));
+        var node = System.Text.Json.Nodes.JsonNode.Parse(legacy)!.AsObject();
+        node.Remove("InFlightCloseOrderIds");
+
+        JsonSerializer.Deserialize<OrderDispatchForgone>(node.ToJsonString())!.InFlightCloseOrderIds.Should().BeNull();
+
+        var withIds = new OrderDispatchForgone(
+            Guid.NewGuid(), intent, OrderDispatchForgoneReason.InFlightCloseCoversPosition, DateTimeOffset.UnixEpoch,
+            InFlightCloseOrderIds: ["AAPL-SELL-1"]);
+        JsonSerializer.Deserialize<OrderDispatchForgone>(JsonSerializer.Serialize(withIds))!.InFlightCloseOrderIds
+            .Should().Equal("AAPL-SELL-1");
     }
 
     // 🔴 序数 0 は Unknown（既定値へ落ちた値は「分からない」側へ倒れる）。序数は監査 payload の整数として往来するため固定する。

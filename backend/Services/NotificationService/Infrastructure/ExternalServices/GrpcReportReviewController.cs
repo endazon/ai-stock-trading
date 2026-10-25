@@ -53,7 +53,12 @@ public sealed class GrpcReportReviewController(
             periodKey,
             response.Version,
             response.UnsuppliedInputs is { } inputs ? [.. inputs.Names] : null,
-            logger);
+            logger,
+            // ADR-0068 決定1, #1373, IADR-0549 決定3: 版 n+1 のドラフトの表示（REST と同じ関数）。
+            response.HasConfirmedVersion ? response.ConfirmedVersion : null,
+            response.HasNoLongerEffective && response.NoLongerEffective,
+            // #1385, IADR-0556 決定 3: 最新の確定版の版番号（欠落＝確定版が無い・旧版の送り手）。
+            response.HasLatestConfirmedVersion ? response.LatestConfirmedVersion : null);
     }
 
     public async Task<ReportConfirmResult> ConfirmAsync(
@@ -64,7 +69,8 @@ public sealed class GrpcReportReviewController(
 
         const string operation = "報告書の確定";
         var request = new ReportProto.ReportConfirmationRequest { PeriodKey = periodKey, ExpectedVersion = expectedVersion, OnBehalfOf = onBehalfOf };
-        var outcome = await transport.Calls.CallOnceAsync(
+        // FR-07, FR-14, #1385, IADR-0556 決定 2: 確定だけは専用の deadline（`Reports:GrpcConfirmTimeoutSeconds`・既定 30 秒＝REST の `report-confirm`）。
+        var outcome = await transport.ConfirmCalls.CallOnceAsync(
             operation, options => transport.OwnerWrite.ConfirmReportAsync(request, options), cancellationToken).ConfigureAwait(false);
 
         if (outcome.Response is not { } response)
@@ -76,7 +82,9 @@ public sealed class GrpcReportReviewController(
                 return new ReportConfirmResult(true, false, HttpReportReviewController.VersionMismatchMessage);
             }
 
-            return new ReportConfirmResult(false, false, WriteFailure(operation, outcome.Status));
+            // #1385, IADR-0556 決定 3: 時間切れは「確定されたか分からない」の印をつけて返す（呼び出し側が照会して確かめる）。
+            return new ReportConfirmResult(
+                false, false, WriteFailure(operation, outcome.Status), OutcomeUnknown: outcome.Status == StatusCode.DeadlineExceeded);
         }
 
         // 🔴 gRPC の面は項目と同時に生まれたので、REST の「項目を返さない旧版」の窓は無い。欠落は解釈できない（確定したと騙らない）。

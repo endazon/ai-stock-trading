@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Contracts.Observability;
+
 namespace RiskManagementService.Features.RiskManagement;
 
 // FR-10, #869, ADR-0041 決定2, IADR-0354: **統制上限の基準資金（equity）の保持。**
@@ -25,12 +27,48 @@ public interface ICapitalBaselineStore
     /// <summary>
     /// 判定に用いる基準資金を返す。
     /// <para>
-    /// <b>当日より前の取引日の行が無い、または鮮度が切れている場合は <c>null</c> を返す。</b>
+    /// <b>当日より前の取引日の行が無い、鮮度が切れている、または直前の米国東部暦日に成功した観測が無い
+    /// （#1423 M-3・ADR-0073 決定1）場合は <c>null</c> を返す。</b>
     /// 呼び出し側（判定コア）は <c>null</c> を「口座を照会できていない」として**新規建てを止める**
     /// （fail-closed。ADR-0016 決定3・ADR-0028 と同じ形）。**手仕舞い・損切りは止めない。**
     /// </para>
     /// </summary>
     CapitalBaseline? GetCurrent();
+
+    /// <summary>
+    /// FR-10, SC-03, #1423 M-3, ADR-0073 決定1・3, IADR-0581: <see cref="GetCurrent"/> と<b>同じ判定</b>を、帰結つきで返す。
+    /// <para>
+    /// <b>計器を動かさず、ログも出さない。</b> 表示（SC-03）と通知の巡回が「なぜ未供給か」を読むためにある。
+    /// 審査（新規建ての可否）は従来どおり <see cref="GetCurrent"/> を使う（読み出しの帰結を数えるのは審査の側だけ）。
+    /// </para>
+    /// </summary>
+    CapitalBaselineReading Read();
+}
+
+/// <summary>
+/// FR-10, SC-03, #1423 M-3, ADR-0073, IADR-0581: 基準資金を読んだ結果（値と、その帰結）。
+/// </summary>
+/// <param name="Baseline">判定に用いる基準資金。未供給なら <c>null</c>（新規建ては止まる）。</param>
+/// <param name="Outcome">読み出しの帰結。</param>
+/// <param name="Today">判定した時点の取引日（米国東部時間の暦日）。</param>
+/// <param name="LatestTradingDay">当日より前で最新の行の取引日。行が 1 つも無ければ <c>null</c>。</param>
+/// <param name="LatestEquityInBase">その行の評価額。行が 1 つも無ければ <c>null</c>。</param>
+public sealed record CapitalBaselineReading(
+    CapitalBaseline? Baseline,
+    CapitalBaselineReadOutcome Outcome,
+    DateOnly Today,
+    DateOnly? LatestTradingDay,
+    decimal? LatestEquityInBase)
+{
+    /// <summary>直前の暦日から最新の行までの日数（行が無ければ <c>null</c>。平常は 1）。</summary>
+    public int? GapDays => LatestTradingDay is { } d ? Today.DayNumber - d.DayNumber : null;
+
+    /// <summary>
+    /// 🔴 ADR-0073 決定1・3: <b>観測が欠けたために</b>新規建てを止めているか（直前の暦日の欠け・鮮度切れ）。
+    /// 行が 1 つも無い（初回の配備）・人手で 0 を入れた（意図した停止）は含めない —— 欠けの通知はこの 2 つを鳴らさない。
+    /// </summary>
+    public bool ObservationMissing =>
+        Outcome is CapitalBaselineReadOutcome.UnavailableMissingPreviousDay or CapitalBaselineReadOutcome.UnavailableStale;
 }
 
 /// <summary>

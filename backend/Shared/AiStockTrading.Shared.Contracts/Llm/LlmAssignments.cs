@@ -26,33 +26,9 @@ public static class LlmAssignments
     /// <summary>スクリーニング層の割当と、日報の第 2 候補（ADR-0017 決定1）。</summary>
     public const string Haiku55 = "claude-haiku-5-5";
 
-    // ---- 移行期間に限り受ける直前世代（#1295, IADR-0524。外すのは #1296） --------------------------------
-    // 🔴 **一時措置である。** 基盤（MSP）の LLM ゲートウェイは**構成したモデル名**を応答に名乗り、本表はそれを完全一致で照合する。
-    // AST と MSP のどちらかが先に切り替わると、取引判断が `Unassigned`（Allowed=false）で止まる。そこで MSP の切り替えと
-    // PoC の確認が済むまで、各 5.5 系 ID の直前世代を**同じ位置**（第 1 候補・フォールバック先）として受ける。
-    // 受けた評価には `LlmAssignmentEvaluation.PreviousGenerationAccepted` の印が付く。
-    // 🔴 **Stage 0 の両層の組の判定（`Stage0TwoTierModels`）は直前世代を受けない**（旧組での合格は 5.5 系の組の合格にならない。
-    // ADR-0011 / ADR-0014 決定3 / ADR-0054 決定3）。
-
-    /// <summary>直前世代（移行期間のみ受ける）: <see cref="Sonnet55"/> の前。</summary>
-    public const string Sonnet5 = "claude-sonnet-5";
-
-    /// <summary>直前世代（移行期間のみ受ける）: <see cref="Opus55"/> の前。</summary>
-    public const string Opus5 = "claude-opus-5";
-
-    /// <summary>直前世代（移行期間のみ受ける）: <see cref="Haiku55"/> の前。</summary>
-    public const string Haiku45 = "claude-haiku-4-5";
-
-    /// <summary>
-    /// 移行期間に限り、5.5 系 ID（キー）と同じ位置で受ける直前世代の ID（値）。#1296 で撤去する。
-    /// </summary>
-    public static IReadOnlyDictionary<string, string> PreviousGenerationAccepted { get; } =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            [Sonnet55] = Sonnet5,
-            [Opus55] = Opus5,
-            [Haiku55] = Haiku45,
-        };
+    // 🔴 #1296, ADR-0064 決定 7・決定 8: **5.5 系の ID だけを受け付ける。** 切替の間だけ直前世代（旧 ID）を受ける移行段
+    // （#1295 / IADR-0524 決定 1）は撤去した。旧 ID の応答は `Unassigned` であり、取引判断は見送りへ倒れる（発注しない）。
+    // 基盤（MSP）と同時に配備して切り替える（利用者裁定 2026-10-10・planning#783）。
 
     /// <summary>
     /// **本システムでは使用しないモデル**（ADR-0015 / ADR-0017 決定1）。ZDR（ゼロデータ保持）非対応であり、
@@ -95,13 +71,6 @@ public static class LlmAssignments
     /// <summary>禁止モデルか（大小無視）。</summary>
     public static bool IsForbidden(string? model) =>
         model?.Trim() is { Length: > 0 } trimmed && ForbiddenModels.Contains(trimmed);
-
-    /// <summary>
-    /// 移行期間に限り <paramref name="assignedModel"/>（5.5 系 ID）と同じ位置で受ける直前世代か（大小無視）。#1295 / #1296。
-    /// </summary>
-    public static bool IsPreviousGenerationOf(string assignedModel, string? model) =>
-        PreviousGenerationAccepted.TryGetValue(assignedModel, out var previous)
-        && string.Equals(model, previous, StringComparison.OrdinalIgnoreCase);
 }
 
 // 1 用途分の割当。FallbackModels は**第 1 候補より後ろ**だけを順序どおりに持つ（空＝鎖なし）。
@@ -159,22 +128,6 @@ public static class LlmAssignmentEvaluator
             return new LlmAssignmentEvaluation(
                 LlmAssignmentOutcome.FallbackFired, assignment.PrimaryModel, model, assignment.FallbackAllowed);
 
-        // #1295, IADR-0524（移行期間のみ・#1296 で撤去）: 直前世代は 5.5 系 ID と同じ位置として受け、印を付ける。
-        // 位置は変えない —— 第 1 候補の直前世代は Primary、フォールバック先の直前世代は FallbackFired（取引判断系は
-        // 鎖が空なのでフォールバック先の直前世代も存在しない＝フォールバック禁止の意味は変わらない）。
-        if (LlmAssignments.IsPreviousGenerationOf(assignment.PrimaryModel, model))
-            return new LlmAssignmentEvaluation(LlmAssignmentOutcome.Primary, assignment.PrimaryModel, model, Allowed: true)
-            {
-                PreviousGenerationAccepted = true,
-            };
-
-        if (assignment.FallbackModels.Any(m => LlmAssignments.IsPreviousGenerationOf(m, model)))
-            return new LlmAssignmentEvaluation(
-                LlmAssignmentOutcome.FallbackFired, assignment.PrimaryModel, model, assignment.FallbackAllowed)
-            {
-                PreviousGenerationAccepted = true,
-            };
-
         return new LlmAssignmentEvaluation(LlmAssignmentOutcome.Unassigned, assignment.PrimaryModel, model, Allowed: false);
     }
 }
@@ -184,16 +137,4 @@ public readonly record struct LlmAssignmentEvaluation(
     LlmAssignmentOutcome Outcome,
     string? ExpectedModel,
     string? EffectiveModel,
-    bool Allowed)
-{
-    /// <summary>
-    /// #1295, IADR-0524（移行期間のみ・#1296 で撤去）: 実効モデルが 5.5 系 ID ではなく、その直前世代として受けたものか。
-    /// </summary>
-    public bool PreviousGenerationAccepted { get; init; }
-
-    /// <summary>
-    /// 第 1 候補（ピン）の**現行 ID そのもの**に答えられたか（直前世代の受け入れを含めない）。
-    /// Stage 0 の両層の組の判定（ADR-0011 / ADR-0014 決定3 / ADR-0054 決定3）はこちらを使う。
-    /// </summary>
-    public bool MatchesCurrentPin => Outcome == LlmAssignmentOutcome.Primary && !PreviousGenerationAccepted;
-}
+    bool Allowed);

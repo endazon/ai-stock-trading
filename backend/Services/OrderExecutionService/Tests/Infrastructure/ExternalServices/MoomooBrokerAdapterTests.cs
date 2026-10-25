@@ -392,6 +392,8 @@ public class MoomooBrokerAdapterTests
         MoomooBrokerAdapter.MapState(MoomooOrderState.FilledAll).Should().Be(OrderStatus.Filled);
         MoomooBrokerAdapter.MapState(MoomooOrderState.Cancelled).Should().Be(OrderStatus.Cancelled);
         MoomooBrokerAdapter.MapState(MoomooOrderState.Failed).Should().Be(OrderStatus.Rejected);
+        // 🔴 T-10-2678, #1339, IADR-0539: 失効は失注（Expired）。拒否と区別する。
+        MoomooBrokerAdapter.MapState(MoomooOrderState.Expired).Should().Be(OrderStatus.Expired);
         // 🔴 T-10-407, #848: **不明は拒否へ畳まない**（非終端＝まだ動くものとして押さえを残す）。
         MoomooBrokerAdapter.MapState(MoomooOrderState.Unknown).Should().Be(OrderStatus.Accepted);
     }

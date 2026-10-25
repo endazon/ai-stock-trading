@@ -85,6 +85,23 @@ public static class PolicyRevisionPromptBuilder
         "- 「十分に」「適切に」「ある程度」「目安で」のような数値の無い語だけで利確の条件を書かない。取引判断は条件に達したかを確かめられず、利確されないまま保有を続ける。書式どおりの「利確:」行が無い方針は、確定の前に利用者へ警告される。";
 
     /// <summary>
+    /// FR-04, FR-07, ADR-0048 決定 4, #1365, IADR-0544 決定 1: 日報の方針を自己完結で書く案内（日報の改訂にだけ出す）。
+    /// 取引判断は日報の方針だけを読み、週報・月報の本文は渡らない。参照で済ませた方針（「週次方針 weekly-2026-W41 のしきい値」）では
+    /// 判断が条件の成立を確かめられず見送り続けた（PoC の実測 2026-10-15）。判断へ渡る材料の節と同じ考え方（判断が確かめられない条件を書かない）。
+    /// </summary>
+    public const string SelfContainedHeading = "方針の書き方（日報の方針。取引判断の AI が読むのはこの方針だけである）:";
+
+    /// <summary>他の報告書・期間キーを参照で済ませない案内。</summary>
+    public const string SelfContainedRule =
+        "- 取引判断の AI へ渡るのは日報の方針（policySummary）だけで、週報・月報・前日の日報の本文は渡らない。"
+        + "「週次方針のしきい値に従う」「weekly-2026-W41 の条件」「上位方針のとおり」のように他の報告書や期間キー（daily-… / weekly-… / monthly-…）を参照で済ませない（判断は条件の成立を確かめられず、すべて見送りになる）。";
+
+    /// <summary>上位方針の条件・しきい値を数値で書き写す案内。</summary>
+    public const string CopyThresholdsRule =
+        "- 上位方針（parentPolicy）の条件・しきい値・重点銘柄を使うときは、数値と銘柄を方針の中へ書き写し、方針だけを読めば買い条件・売り条件が成り立つかを確かめられるようにする（例「AAPL: 前日比 -3% 以下で買い」）。"
+        + "説明の文でも、報告書の名前（週報・月報・日報・上位方針など）と期間キーを使わない。書き写さずに参照した方針は、確定の前に利用者へ警告される。";
+
+    /// <summary>
     /// FR-06, FR-07, 計画 ADR-0059 決定 1・フォローアップ 1, #1218, IADR-0519 決定 1: 週報の方針の数値目標を週次目標の書式行で書く案内（週報の改訂にだけ出す）。
     /// 翌週の日報 §6・週報 §1／§4 はこの行だけを読み、週初来の実現損益とコードで照合する（自由文は読まない）。
     /// </summary>
@@ -97,6 +114,63 @@ public static class PolicyRevisionPromptBuilder
         + "金額は符号つきでよく、3 桁ごとのカンマと小数 2 桁まで書ける。単位は USD（基準通貨）だけを書く（円で書くと照合できない）。"
         + "「数値目標」という語はこの行の中でだけ使う（説明の文・見出しに使うと行が 2 つあるとみなされ、目標が読まれない）。"
         + "書式どおりの行が無い週報は、確定の前に利用者へ警告される。";
+
+    /// <summary>
+    /// FR-04, FR-07, ADR-0003, #1384, IADR-0558 決定 8: 判断へ渡る材料の行（保有）。保有中の建玉は、建てたときの判断が記録した
+    /// <b>条件の記号と基準価格がロットごとに</b>渡る。改訂の AI が「記録に依存する出口は動くか分からない」と注記するしかなかった（PoC 2026-10-17）ため、
+    /// 渡ることと、記録が無い建玉は「不明」として既定の出口で扱われることを示す。
+    /// </summary>
+    public const string HeldPositionMaterial =
+        "- 確定済みの方針・監視銘柄の一覧・その銘柄の保有状況と未約定の新規建て注文・保有中の全銘柄（銘柄・方向・数量）・リスク制約（上限はコードが強制する）。"
+        + "保有状況には、建玉（ロット）ごとに、建てたときの判断が記録した条件の記号（方針の「条件 X:」行または「X 名前:」行の記号）と基準価格（その条件の判定に使った価格。例: 日中安値）が含まれる"
+        + "（記録の無い建玉〔この記録の導入前に建てた建玉・取り込み・手動〕は「不明」と渡り、方針の既定の出口で扱われる）";
+
+    /// <summary>FR-04, FR-07, #1384, IADR-0558 決定 8: 新規建ての条件の記号の書き方の節の見出し（日報の改訂にだけ出す）。</summary>
+    public const string EntryConditionHeading = "新規建ての条件の記号の書き方（日報の方針。建てた条件で出口を分けるとき）:";
+
+    /// <summary>
+    /// 条件の記号の行の書式の案内（試験が共有カーネルの読み取りで記号として読めることを固定する）。
+    /// #1393, IADR-0558 追記（2026-10-20）: 「条件 X:」に加え、稼働中の方針が使う行頭の「X 名前:」も案内する。
+    /// 書式の外（「条件」の語も名前も無い・行の途中・記号の直後に空白が無い）では記号が読まれず、記録は常に不明になる（PoC 2026-10-20）。
+    /// </summary>
+    public const string EntryConditionLineRule =
+        "- 新規建ての条件に記号を付けるときは、方針の中に、次のどちらかの書式の行で 1 行に 1 つずつ書く（JSON 文字列の中では行を \\n で区切る）。"
+        + "(1)「条件 <記号>: <条件>」（例「条件 A: AAPL 前日比 -3% 以下で買い」「買い条件 B（急落反発）: 日中安値から +1% 戻したら買い」）。"
+        + "(2) 行頭に「<記号> <名前>: <条件>」（例「A 上放れ追随: 当日始値比 +2% 以上で日中高値を更新したら買い」。名前は 20 字以内で空白を含めず、記号と名前の間に空白を 1 つ入れる）。"
+        + "記号は英大文字 1 字（A〜Z）にし、行の先頭（箇条書きの印「-」「*」「・」の後は可）に置く。取引判断は新規建てのとき、成立した条件の記号とその条件の判定に使った価格を建玉ごとに記録し、保有中の判断へ渡す（この 2 つの書式の行に無い記号は記録されない）。";
+
+    /// <summary>建てた条件で出口を分けるときの案内（記録が不明の建玉の既定の出口を書かせる）。</summary>
+    public const string EntryConditionExitRule =
+        "- 建てた条件ごとに出口を分けてよい（例「条件 B で建てた建玉は、B の判定に使った日中安値を現在値が下回ったら撤退」）。"
+        + "ただし記録が不明の建玉もあるため、建てた条件を限定しない既定の出口も必ず書く。建て増しで条件の異なる建玉が混ざると、いずれかの建玉の出口に達した時点で保有の全量の手仕舞いが検討される。";
+
+    /// <summary>FR-04, FR-07, FR-10, #1396, IADR-0561 決定 4: 閉場前の締め切りと手仕舞いの節の見出し（日報の改訂にだけ出す）。</summary>
+    public const string PreCloseHeading = "閉場前の締め切りと手仕舞いの書き方（日報の方針）:";
+
+    /// <summary>
+    /// 🔴 FR-04, FR-07, FR-10, #1396, IADR-0561 決定 4: 閉場前の締め切り（コードが強制）と、閉場前の手仕舞いの有効化・持ち越しの指定の書式の行。
+    /// 方針の「取引終盤は新規建てを控えて手仕舞いを優先する」は判断のプロンプトに時刻が無く効かなかった（PoC 2026-10-19）。自由文はシステムに読まれないことを示す。
+    /// 例の行は試験が共有カーネルの読み取り（PolicyPreCloseLines）で読めることを固定する。
+    /// </summary>
+    public const string PreCloseRule =
+        "- 閉場の一定時間前（既定 60 分）以降の新規建て（買い増し・売り増しを含む）は、コードが審査で拒否する（方針では変えられない）。"
+        + "閉場前の手仕舞い（閉場の一定時間前〔既定 15 分〕に保有を成行で全量手仕舞う）は既定で無効であり、方針で有効にするときは「閉場前の手仕舞い: 有効」の 1 行を書く。"
+        + "有効なときに翌日へ持ち越してよい銘柄は「持ち越し可: NVDA, AAPL」のように 1 行に並べる（銘柄コードだけを「,」で区切って並べ、括弧の注記などを付けない。付けた銘柄は読まれず手仕舞われる。書かなければ全建玉を手仕舞う）。"
+        + "この 2 つの書式の行の外の文（例「終盤は手仕舞いを優先する」）はシステムに読まれない。";
+
+    /// <summary>
+    /// 🔴 FR-04, FR-07, FR-10, #1397, IADR-0562 決定 4: テーマ（相関の高い銘柄の集まり）ごとの同時保有の上限の注記（日報の改訂にだけ出す）。
+    /// 方針の「COIN・MARA・MSTR・HOOD は同時に 1 銘柄まで」は、判断のプロンプトに他銘柄の保有が無く統制も無かったため効かなかった（PoC 2026-10-16）。
+    /// **この版から**審査が設定値の定義で強制し、判断には保有中の全銘柄が渡る。方針の文で集まりや上限は変えられないことを示す（現状と食い違わない書き方）。
+    /// </summary>
+    public const string ThemeConcentrationRule =
+        "- テーマ（相関の高い銘柄の集まり）ごとの同時保有の上限は、コードが審査で強制する（この版から有効。設定値の既定の定義: 暗号資産＝COIN・MARA・MSTR・HOOD、AI・半導体＝NVDA・SMCI、上限はどちらも 1 銘柄。未約定の新規建ても数える）。"
+        + "方針に「同時に 1 銘柄まで」のような制限を書くと判断の AI の案内になるが、集まりの銘柄や上限を方針の文で変えることはできない（変えるときは利用者が設定を変える）。"
+        + "取引判断の AI には保有中の全銘柄（銘柄・方向・数量）が渡る。";
+
+    /// <summary>日報の改訂で上位方針があるときの末尾の指示（#1365, IADR-0544 決定 1）。</summary>
+    public const string DailyParentPolicyInstruction =
+        "上位方針の目標と矛盾しない範囲で、利用者の指示を反映してください。上位方針の条件やしきい値を使うときは、参照で済ませず方針の中へ数値を書き写してください。矛盾する場合は rationale にその旨を書いてください。";
 
     public static string Build(PolicyRevisionContext context, bool decisionVolumeProvided = false)
     {
@@ -124,7 +198,8 @@ public static class PolicyRevisionPromptBuilder
         sb.AppendLine();
         // FR-07, FR-04, ADR-0048 決定 4, #1118, IADR-0467 決定 7: 判断へ渡る材料と「未提供」の材料。
         sb.AppendLine(DecisionMaterialsHeading);
-        sb.AppendLine("- 確定済みの方針・監視銘柄の一覧・その銘柄の保有状況と未約定の新規建て注文・リスク制約（上限はコードが強制する）");
+        // FR-04, FR-07, #1384, IADR-0558 決定 8: 保有状況には建玉ごとの建てた条件の記号と基準価格が含まれる。
+        sb.AppendLine(HeldPositionMaterial);
         sb.AppendLine("- 現在値・前日終値と前日比・当日始値と当日始値比・日中の高値と安値（米国株。系が計算した値）");
         sb.AppendLine("- 急変の検知（基準値と変動率）・ニュースの収集の状態・検索で拾えた参考情報（拾えないこともある）");
         sb.AppendLine(decisionVolumeProvided ? VolumeProvidedMaterial : VolumeNotProvidedMaterial);
@@ -140,6 +215,22 @@ public static class PolicyRevisionPromptBuilder
             sb.AppendLine(TakeProfitWordOnlyInLineRule);
             sb.AppendLine(TakeProfitExceptionRule);
             sb.AppendLine(VagueTakeProfitRule);
+            sb.AppendLine();
+            // FR-04, FR-07, #1365, IADR-0544 決定 1: 他の報告書を参照で済ませず、しきい値を書き写す。
+            sb.AppendLine(SelfContainedHeading);
+            sb.AppendLine(SelfContainedRule);
+            sb.AppendLine(CopyThresholdsRule);
+            sb.AppendLine();
+            // FR-04, FR-07, #1384, #1393, IADR-0558 決定 8: 新規建ての条件の記号（「条件 X:」行・「X 名前:」行）と、建てた条件で出口を分けるときの案内。
+            sb.AppendLine(EntryConditionHeading);
+            sb.AppendLine(EntryConditionLineRule);
+            sb.AppendLine(EntryConditionExitRule);
+            sb.AppendLine();
+            // FR-04, FR-07, FR-10, #1396, IADR-0561 決定 4: 閉場前の締め切り（コードが強制）と手仕舞いの書式の行。
+            sb.AppendLine(PreCloseHeading);
+            sb.AppendLine(PreCloseRule);
+            // FR-04, FR-07, FR-10, #1397, IADR-0562 決定 4: テーマの同時保有の上限（コードが強制。この版から有効）。
+            sb.AppendLine(ThemeConcentrationRule);
             sb.AppendLine();
         }
 
@@ -166,7 +257,10 @@ public static class PolicyRevisionPromptBuilder
         sb.AppendLine();
         sb.AppendLine(context.ParentPolicy is null
             ? "上位方針は未確定です。上位方針への言及はせず、現在の方針と利用者の指示から改訂してください。"
-            : "上位方針の目標と矛盾しない範囲で、利用者の指示を反映してください。矛盾する場合は rationale にその旨を書いてください。");
+            : context.Kind == ReportKind.Daily
+                // #1365, IADR-0544 決定 1: 日報では上位方針を参照で済ませず、使う条件を書き写す。
+                ? DailyParentPolicyInstruction
+                : "上位方針の目標と矛盾しない範囲で、利用者の指示を反映してください。矛盾する場合は rationale にその旨を書いてください。");
 
         return sb.ToString();
     }

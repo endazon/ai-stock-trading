@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import {
@@ -17,6 +17,7 @@ import {
   Tag,
 } from '@platform/ui';
 import { ApiError } from '@foundation/api/ApiError';
+import { validationMessageOf } from '@ai-stock-trading/lib/validationReasons';
 import { formatAt, marketLabel, MARKET_OPTIONS } from '@ai-stock-trading/lib/risk/contracts';
 import type { MonitoredSymbol, MonitorSettingsChangeEntry } from '@ai-stock-trading/lib/monitor/contracts';
 import { monitorChangeTypeLabel } from '@ai-stock-trading/lib/monitor/contracts';
@@ -41,6 +42,10 @@ import { QueryPhase } from '@ai-stock-trading/components/QueryPhase';
 // 置き換えてしまう）。**0 件と失敗の区別は保つ**——空の判定は成功したデータに対してだけ行い、
 // 「監視銘柄はありません。」は成功経路の中でしか描かれない。
 
+// NFR-19, #1414: フォーカスの着地点として JSX と効果の両方から引く id（片方だけ変えて壊さないため定数にする）。
+const DELETE_REASON_INPUT_ID = 'wl-delete-reason';
+const NEW_SYMBOL_INPUT_ID = 'wl-new-symbol';
+
 // (Symbol, Market) の同一性キー。区切りは銘柄コードに現れない縦棒を用いる（削除確認の対象特定に使う）。
 function keyOf(s: MonitoredSymbol): string {
   return `${s.symbol}|${s.market}`;
@@ -53,8 +58,8 @@ function messageOf(e: unknown): string {
       return i18n._(msg`競合が発生しました。最新を取得して再試行してください。`);
     }
     if (e.kind === 'validation') {
-      const detail = e.details.length > 0 ? `（${e.details.join(' / ')}）` : '';
-      return `${i18n._(msg`入力内容に誤りがあります。`)}${detail}`;
+      // #1465, IADR-0585: 本ユニットの 400 の本文（`{ error, details }`）からサーバの理由を出す。
+      return validationMessageOf(e, i18n._(msg`入力内容に誤りがあります。`));
     }
     if (e.kind === 'forbidden') {
       return i18n._(msg`変更する権限がありません。`);
@@ -87,6 +92,32 @@ export function WatchlistForm() {
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [deleteReason, setDeleteReason] = useState('');
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // 🔴 NFR-19, #1414（WCAG 2.4.3 フォーカス順序・2.1.1 キーボード）: **確認パネルの開閉でフォーカスを失わない。**
+  // 行の「削除」は確認中に無効化されるため、押した直後にフォーカスが `<body>` へ落ちていた（E2E で実測）。
+  // キーボードの利用者は確認パネルへ戻るのに頁の先頭から Tab を辿り直すことになる。着地点は次のとおり。
+  //   - 開いたら削除理由へ。
+  //   - 取り消したら、押した行の「削除」へ。
+  //   - 削除し終えたら、**削除した行を探さず**、残る行の先頭の「削除」へ（行が無ければ追加フォームの銘柄コードへ）。
+  //     削除した行は一覧の再取得まで DOM に残り得るため、そこへ当てると再取得で消えた時点で `<body>` へ落ちる
+  //     （#1467 の AI レビュー）。
+  // 要素は id とデータ属性で引く（`@platform/ui` の `Input` は単独リポのスタブでは ref を受けないため）。
+  const focusAfterClose = useRef<{ kind: 'cancelled' | 'deleted'; key: string } | null>(null);
+  useEffect(() => {
+    if (pendingKey !== null) {
+      document.getElementById(DELETE_REASON_INPUT_ID)?.focus();
+      return;
+    }
+    const target = focusAfterClose.current;
+    if (target === null) return;
+    focusAfterClose.current = null;
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button[data-watchlist-delete]'));
+    const next =
+      target.kind === 'cancelled'
+        ? buttons.find((b) => b.dataset.watchlistDelete === target.key)
+        : buttons.find((b) => b.dataset.watchlistDelete !== target.key);
+    (next ?? document.getElementById(NEW_SYMBOL_INPUT_ID))?.focus();
+  }, [pendingKey]);
 
   const canAdd = newSymbol.trim() !== '' && newReason.trim() !== '' && !addSymbol.isPending;
 
@@ -121,6 +152,7 @@ export function WatchlistForm() {
   }
 
   function cancelDelete(): void {
+    if (pendingKey !== null) focusAfterClose.current = { kind: 'cancelled', key: pendingKey };
     setPendingKey(null);
     setDeleteReason('');
     setDeleteError(null);
@@ -138,6 +170,7 @@ export function WatchlistForm() {
         market: target.market,
         reason: deleteReason.trim(),
       });
+      focusAfterClose.current = { kind: 'deleted', key: keyOf(target) };
       setPendingKey(null);
       setDeleteReason('');
       setAddNotice(null);
@@ -200,6 +233,7 @@ export function WatchlistForm() {
                           <TableCell>
                             <Button
                               type="button"
+                              data-watchlist-delete={keyOf(s)}
                               onClick={() => beginDelete(s)}
                               disabled={pendingKey !== null}
                             >
@@ -223,10 +257,10 @@ export function WatchlistForm() {
                   <p role="alert" className="text-[11px] text-danger">
                     {`${pendingTarget.symbol}（${marketLabel(pendingTarget.market)}）${i18n._(msg`を監視から削除します。理由を入力して確定してください。`)}`}
                   </p>
-                  <Label htmlFor="wl-delete-reason">{i18n._(msg`削除理由`)}</Label>
+                  <Label htmlFor={DELETE_REASON_INPUT_ID}>{i18n._(msg`削除理由`)}</Label>
                   {/* 削除理由は確認パネル内でのみ必須にする。追加フォームの送信を妨げないよう独立した入力にする。 */}
                   <Input
-                    id="wl-delete-reason"
+                    id={DELETE_REASON_INPUT_ID}
                     value={deleteReason}
                     onChange={(e) => setDeleteReason(e.target.value)}
                     required
@@ -237,7 +271,10 @@ export function WatchlistForm() {
                       type="button"
                       variant="danger"
                       onClick={() => void confirmDelete(pendingTarget)}
-                      disabled={deleteReason.trim() === '' || removeSymbol.isPending}
+                      // NFR-19, #1467: 送信中は `disabled` にしない（押した要素が無効になるとフォーカスが <body> へ落ちる）。
+                      // 二重送信は confirmDelete が isPending で止める。支援技術には aria-disabled で伝える。
+                      disabled={deleteReason.trim() === ''}
+                      aria-disabled={removeSymbol.isPending || undefined}
                     >
                       {i18n._(msg`監視から削除`)}
                     </Button>
@@ -261,9 +298,9 @@ export function WatchlistForm() {
                   </legend>
                   <div className="flex flex-wrap items-end gap-2">
                     <div>
-                      <Label htmlFor="wl-new-symbol">{i18n._(msg`監視銘柄コード`)}</Label>
+                      <Label htmlFor={NEW_SYMBOL_INPUT_ID}>{i18n._(msg`監視銘柄コード`)}</Label>
                       <Input
-                        id="wl-new-symbol"
+                        id={NEW_SYMBOL_INPUT_ID}
                         value={newSymbol}
                         onChange={(e) => setNewSymbol(e.target.value)}
                       />

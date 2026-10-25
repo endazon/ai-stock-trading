@@ -23,11 +23,14 @@ using RiskManagementService.Features.RiskManagement.GetShortSellingStatus;
 using RiskManagementService.Features.RiskManagement.GetSizingContext;
 using RiskManagementService.Features.RiskManagement.GetStageGate;
 using RiskManagementService.Features.RiskManagement.GetStageGateHistory;
+using RiskManagementService.Features.RiskManagement.GetTradingHalt;
 using RiskManagementService.Features.RiskManagement.GetWorkingEntryOrders;
 using RiskManagementService.Features.RiskManagement.PauseTrading;
 using RiskManagementService.Features.RiskManagement.RequestStageTransition;
 using RiskManagementService.Features.RiskManagement.ResumeTrading;
+using RiskManagementService.Features.RiskManagement.SessionAndThemeControls;
 using RiskManagementService.Features.RiskManagement.UpdateBrokerProvider;
+using RiskManagementService.Features.RiskManagement.UpdateHighVolatility;
 using RiskManagementService.Features.RiskManagement.UpdateRiskLimits;
 using RiskManagementService.Features.RiskManagement.UpdateStage1MinimumTradeCount;
 using RiskManagementService.Features.RiskManagement.UpdateStageSettings;
@@ -86,6 +89,8 @@ internal static class RiskControlEndpoints
         read.MapGetOpeningInventory();
         read.MapGetBuyInInferences();
         read.MapGetSessionUptime();
+        // 🔴 FR-10, ADR-0009, IADR-0567 決定 2: kill switch・一時停止の成立の有無だけ（発注執行が新規建てを送る直前に読む）。
+        read.MapGetTradingHalt();
 
         // ---- 利用者のみ（kill switch は ADR-0003・ガード設定は ADR-0007・段階は ADR-0008／OwnerOnly）: kill switch・設定変更。サービスには許可しない ----
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
@@ -122,6 +127,13 @@ internal static class RiskControlEndpoints
         owner.MapUpdateStage1MinimumTradeCount();
         // FR-10, FR-12, ADR-0040 決定1・決定3, #819, IADR-0342 決定2: 損切りの実行機構（利用者のみ）。
         owner.MapUpdateStopLossMethod();
+        // FR-10, UC-06, ADR-0063, #1291, IADR-0527 決定2: 高ボラティリティ銘柄の統制値（区分の上限・利用者の明示指定）。
+        owner.MapUpdateHighVolatility();
+        // 🔴 FR-10, FR-19, SC-02, ADR-0070 決定 5・ADR-0071 決定 5, #1407, IADR-0564: 閉場前の統制とテーマの上限（効いている値・食い違いの表示と保存）。
+        owner.MapGetPreCloseControls();
+        owner.MapUpdatePreCloseControls();
+        owner.MapGetThemeConcentration();
+        owner.MapUpdateThemeConcentration();
 
         // ---- 段階ゲート（FR-20, UC-06, ADR-0008, IADR-0041/0070） ----
         read.MapGetStageGate();

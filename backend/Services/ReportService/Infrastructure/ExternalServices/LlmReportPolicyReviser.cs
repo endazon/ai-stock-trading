@@ -34,7 +34,16 @@ public sealed class LlmReportPolicyReviser(
     // FR-14, FR-07, #243, IADR-0522 決定 1: 方針の改訂だけ 4096 → 8192。PoC の実測で出力の最大が 3,805（4096 の 93%）と
     // 3,378 に達し、他の用途（最大 1,017）と違って上限に余裕が無かった。🔴 上げるのはこの呼び出しだけ
     // （判断・一次スクリーニング・報告書の散文は 4096 のまま＝実測で十分な余裕がある）。
-    private const int MaxTokens = 8192;
+    // FR-14, FR-07, #1383, IADR-0555 決定 1: 8192 → 16384。5.5 系（sonnet-5-5 は thinking を無効にできず既定 effort は high）では
+    // 思考の量が呼び出しごとにぶれ、PoC で out=8192 のうち本文 1,609 文字で切れた（直前の改訂は 5,697 で通った）。
+    // effort は下げない（用途キーを報告書の散文と共有し、設定は基盤側。計画 ADR-0064 決定 5 は既定から変えるなら実測を求める）。
+    // 🔴 実効の天井は上限時間（既定 95 秒）× 出力の速さで、16384 はそれより上に置く＝打ち切りより先に時間切れになり得る（IADR-0555）。
+    public const int MaxTokens = 16384;
+
+    // FR-14, #1383, IADR-0555 決定 2: 出力上限で JSON が途中で切れたときの利用者への理由。思考の量は呼び出しごとにぶれるため、
+    // 同じ指示の再試行で通ることがある。「JSON ではありませんでした」（形式の誤り）と取り違えさせない。
+    public const string TruncatedMessage =
+        "AI の出力が上限で途中で切れました。再試行で通ることがあります（1 日の回数に数えます）。通らなければ指示を短くしてください";
 
     public async Task<PolicyRevisionOutcome> ReviseAsync(
         PolicyRevisionContext context, CancellationToken cancellationToken = default)
@@ -48,6 +57,7 @@ public sealed class LlmReportPolicyReviser(
         timeoutCts.CancelAfter(timeout);
 
         LlmModelUsage? modelUsage = null;
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             if (logPrompts)
@@ -75,6 +85,12 @@ public sealed class LlmReportPolicyReviser(
             }
 
             var dto = exchange.Payload!;
+            // FR-14, #1383, IADR-0555 決定 3: 所要時間と出力トークンを 1 行残す（出力の速さ＝上限時間の内に出せる出力の天井を
+            // PoC で測るため。費用計上のログは DBG で所要時間を運ばない）。本文の長さ（文字数）は思考の分の推定に使う。本文は載せない。
+            logger.LogInformation(
+                "方針の改訂 LLM の応答を受け取りました（elapsedMs={ElapsedMs} outputTokens={OutputTokens} maxTokens={MaxTokens} "
+                + "textLength={TextLength} stopReason={StopReason} model={Model}）。",
+                stopwatch.ElapsedMilliseconds, dto.OutputTokens, MaxTokens, dto.Text?.Length ?? 0, dto.StopReason, dto.Model);
             // FR-14, FR-11, #1267, IADR-0517: Sent=false を「機密区分による縮退」と断定しない。原因はゲートウェイの申告の要約
             // （1 行・切り詰め・秘密の伏せ字済み）のままログへ残す。🔴 利用者への理由は**原因の種類の定型文**だけにする
             // （上流の生の文言を画面に出さない。#1267 の AI レビュー 🟢）。
@@ -100,7 +116,8 @@ public sealed class LlmReportPolicyReviser(
             {
                 await usageReporter
                     .ReportAsync(
-                        new LlmUsage(LlmPurposes.PolicyRevision, dto.InputTokens ?? 0, dto.OutputTokens ?? 0, dto.Model),
+                        // NFR-13, ADR-0064 決定4, #1306, IADR-0550: 入力トークン数は 0 へ潰さない（取れない＝null は高い側の段で引く）。
+                        new LlmUsage(LlmPurposes.PolicyRevision, dto.InputTokens, dto.OutputTokens ?? 0, dto.Model),
                         timeoutCts.Token)
                     .ConfigureAwait(false);
             }
@@ -110,8 +127,6 @@ public sealed class LlmReportPolicyReviser(
             }
 
             var evaluation = LlmAssignmentEvaluator.Evaluate(purpose, dto.Model);
-            // #1295, IADR-0524（移行期間のみ・#1296 で撤去）: 直前世代を受けたことを用途とモデルの組ごとに 1 回だけ警告する。
-            LlmPreviousGenerationWarning.Shared.WarnOnce(logger, purpose, evaluation);
             modelUsage = new LlmModelUsage(purpose, evaluation.ExpectedModel, evaluation.EffectiveModel, evaluation.Outcome.ToString());
 
             if (evaluation.Outcome != LlmAssignmentOutcome.Primary)
@@ -155,6 +170,11 @@ public sealed class LlmReportPolicyReviser(
                 logger.LogWarning(
                     "方針の改訂 LLM の出力が案の形式に合いませんでした（理由={Reason}・stopReason={StopReason}・textLength={Length}）。",
                     parsed.Reason, dto.StopReason, dto.Text?.Length ?? 0);
+                // FR-14, #1383, IADR-0555 決定 2: 上限で切れて JSON として読めなかった出力は「形式の誤り」ではなく「途中で切れた」と返す
+                // （再試行の要否が分かる）。🔴 読めた JSON の検証違反（方針が長すぎる等）は max_tokens でも従来の理由のまま
+                // （指示を短くしても直らないことがあり、「途中で切れた」は誤った案内になる。#1386 の AI レビュー 🟡）。
+                if (LlmStopReasons.IsMaxTokens(dto.StopReason) && parsed.NotParsable)
+                    return PolicyRevisionOutcome.Failed(PolicyRevisionFailure.Truncated, TruncatedMessage, modelUsage);
                 return PolicyRevisionOutcome.Failed(PolicyRevisionFailure.InvalidOutput, parsed.Reason!, modelUsage);
             }
 
@@ -162,7 +182,9 @@ public sealed class LlmReportPolicyReviser(
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            logger.LogWarning("方針の改訂 LLM がタイムアウトしました（{Seconds} 秒）。", timeout.TotalSeconds);
+            // FR-14, #1383, IADR-0555 決定 3: 時間切れでも所要時間を残す（PoC で上限時間の効き方を測る）。
+            logger.LogWarning("方針の改訂 LLM がタイムアウトしました（{Seconds} 秒・elapsedMs={ElapsedMs}）。",
+                timeout.TotalSeconds, stopwatch.ElapsedMilliseconds);
             return PolicyRevisionOutcome.Failed(
                 PolicyRevisionFailure.TimedOut, $"AI の応答が {timeout.TotalSeconds:0} 秒以内に返りませんでした", modelUsage);
         }

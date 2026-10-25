@@ -80,6 +80,12 @@
     "Symbol": "String",
     "UnexplainedQuantity": "Int32"
   },
+  "CapitalBaselineObservationMissing": {
+    "LatestObservedTradingDay": "DateOnly",
+    "OccurredAt": "DateTimeOffset",
+    "Stale": "Boolean",
+    "TradingDay": "DateOnly"
+  },
   "CloseReducedForInFlightCloses": {
     "ApprovedQuantity": "Int32",
     "BrokerClosableQuantity": "Int32",
@@ -102,6 +108,14 @@
   "DailyPolicyUnconfirmed": {
     "BusinessDay": "DateOnly",
     "OccurredAt": "DateTimeOffset"
+  },
+  "DailyReportNoResponse": {
+    "Deadline": "DateTimeOffset",
+    "LastConfirmedPeriodKey": "String",
+    "OccurredAt": "DateTimeOffset",
+    "PeriodKey": "String",
+    "ReportDate": "DateOnly",
+    "TradingHalted": "Boolean"
   },
   "FxRateSourceFellBack": {
     "OccurredAt": "DateTimeOffset",
@@ -249,6 +263,7 @@
   },
   "OrderDispatchForgone": {
     "DecisionId": "Guid",
+    "InFlightCloseOrderIds": "IReadOnlyList\u003CString\u003E",
     "Intent": "OrderIntent",
     "OccurredAt": "DateTimeOffset",
     "Protection": "ForgoneCloseProtection",
@@ -256,6 +271,7 @@
   },
   "OrderExecuted": {
     "AveragePrice": "Decimal",
+    "CancelledBySoftwareStop": "Boolean",
     "CycleStartedAt": "DateTimeOffset?",
     "CycleTrigger": "String",
     "DecisionId": "Guid",
@@ -423,13 +439,16 @@
     "AuthorizedBy": "String",
     "ConfirmedAt": "DateTimeOffset",
     "Kind": "String",
-    "PeriodKey": "String"
+    "PeriodKey": "String",
+    "SupersededVersion": "Int32?",
+    "Version": "Int32?"
   },
   "ReportDraftPresented": {
     "Kind": "String",
     "OccurredAt": "DateTimeOffset",
     "PeriodKey": "String",
     "PeriodLabel": "String",
+    "ReconfirmingFromVersion": "Int32?",
     "Summary": "String",
     "Version": "Int32"
   },
@@ -493,6 +512,7 @@
     "CloseDecisionId": "Guid?",
     "CloseIntent": "OrderIntent",
     "CloseOrderId": "String",
+    "CloseOrigin": "OrderApprovalOrigin?",
     "EntryDecisionId": "Guid",
     "Market": "Market",
     "OccurredAt": "DateTimeOffset",
@@ -568,8 +588,10 @@
     "DecidedAt": "DateTimeOffset",
     "EventId": "Guid",
     "Market": "Market",
+    "Policy": "DailyPolicyReference",
     "Price": "Decimal",
     "Reason": "String",
+    "References": "DecisionReferences",
     "Symbol": "String"
   },
   "TradeDecisionMade": {
@@ -578,7 +600,9 @@
     "DecidedAt": "DateTimeOffset",
     "DecisionId": "Guid",
     "Intent": "OrderIntent",
+    "Policy": "DailyPolicyReference",
     "Rationale": "String",
+    "References": "DecisionReferences",
     "StopWidth": "StopWidthFloorApplication"
   },
   "TradeDecisionSkipped": {

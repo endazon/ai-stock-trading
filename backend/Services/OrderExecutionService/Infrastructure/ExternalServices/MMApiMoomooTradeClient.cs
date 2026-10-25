@@ -144,6 +144,10 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             c2sBuilder.SetTrailValue((double)trail);
             c2sBuilder.SetTrailSpread(0d); // 発火後は成行（TrailingStopLimit ではない）ため価差は置かない。
         }
+        // 🔴 FR-05, FR-10, #1339, IADR-0536 決定1: 有効期限は**指定されたときだけ**送る（null は欄を立てない＝ブローカーの既定）。
+        // 指定するのはアダプタが承認経路の指値の決済に載せる Day だけで、保護逆指値（Stop）の要求は従来どおり欄を持たない。
+        if (request.TimeInForce is { } timeInForce)
+            c2sBuilder.SetTimeInForce(ToOpenDTimeInForce(timeInForce));
         // #141, IADR-0092: DecisionId を remark（client order id相当）として紐づける。滞留 Reserved を後から
         // DecisionId で照合し、実照会リコンサイルで発注済みを終端化・未発注を解放できるようにする。
         if (!string.IsNullOrEmpty(request.Remark))
@@ -384,7 +388,8 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     }
 
     private static bool IsTerminal(MoomooOrderState state) =>
-        state is MoomooOrderState.FilledAll or MoomooOrderState.Cancelled or MoomooOrderState.Failed;
+        state is MoomooOrderState.FilledAll or MoomooOrderState.Cancelled or MoomooOrderState.Failed
+            or MoomooOrderState.Expired;
 
     private static DateTimeOffset? FromUnixTimestamp(double? seconds) =>
         seconds is > 0 ? DateTimeOffset.FromUnixTimeMilliseconds((long)(seconds.Value * 1000)) : null;
@@ -1023,6 +1028,14 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         _ => ((int)TrdCommon.TrdMarket.TrdMarket_US, (int)TrdCommon.TrdSecMarket.TrdSecMarket_US),
     };
 
+    // 🔴 FR-05, FR-10, #1339, IADR-0536 決定1: 有効期限の写像（SDK の TrdCommon.TimeInForce）。知らない値は送らずに落とす
+    // （黙って既定へ倒すと、指定したつもりの有効期限が効かない）。
+    public static int ToOpenDTimeInForce(MoomooTimeInForce timeInForce) => timeInForce switch
+    {
+        MoomooTimeInForce.Day => (int)TrdCommon.TimeInForce.TimeInForce_DAY,
+        _ => throw new ArgumentOutOfRangeException(nameof(timeInForce), timeInForce, "未対応の有効期限です。"),
+    };
+
     // OpenD OrderStatus（TrdCommon.OrderStatus）を moomoo アダプタの状態へ写像する（SDK 非依存・単体テスト対象）。
     //
     // 🔴 FR-10, UC-06, #848, IADR-0117（2026-09-19 追記・改定 3）: **「確認できた失敗」と「不明」を分ける。**
@@ -1038,7 +1051,9 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         11 => MoomooOrderState.FilledAll,                // Filled_All
         12 or 13 => MoomooOrderState.Submitted,          // Cancelling_*（取消進行中・まだ有効）
         14 or 15 or 24 => MoomooOrderState.Cancelled,    // Cancelled_Part / Cancelled_All / FillCancelled
-        3 or 21 or 22 or 23 => MoomooOrderState.Failed,  // SubmitFailed / Failed / Disabled / Deleted（**確認できた失敗**）
+        3 or 21 or 23 => MoomooOrderState.Failed,        // SubmitFailed / Failed / Deleted（**確認できた失敗**）
+        // 🔴 FR-05, ADR-0067 決定5, #1339, IADR-0539: Disabled（失効）は**失注**であり拒否と区別する（Failed へ畳まない）。
+        22 => MoomooOrderState.Expired,                  // Disabled
         _ => MoomooOrderState.Unknown,                   // NONE(-1) / TimeOut(4) / 未知の新コード（**結果が分からない**）
     };
 

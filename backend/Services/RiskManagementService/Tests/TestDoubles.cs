@@ -128,6 +128,17 @@ internal sealed class FakeCapitalBaseline : ICapitalBaselineStore
     }
 
     public CapitalBaseline? GetCurrent() => Baseline;
+
+    /// <summary>#1423 M-3: 未供給の帰結（既定は「行なし」）。欠けの通知・SC-03 の表示の試験が上書きする。</summary>
+    public AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome UnavailableOutcome { get; set; } =
+        AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome.UnavailableNoRow;
+
+    /// <summary>#1423 M-3: 未供給のときの最新行の取引日（既定は行なし）。</summary>
+    public DateOnly? UnavailableLatestTradingDay { get; set; }
+
+    public CapitalBaselineReading Read() => Baseline is { } b
+        ? new(b, AiStockTrading.Shared.Contracts.Observability.CapitalBaselineReadOutcome.Supplied, b.TradingDay.AddDays(1), b.TradingDay, b.EquityInBase)
+        : new(null, UnavailableOutcome, new DateOnly(2026, 7, 9), UnavailableLatestTradingDay, UnavailableLatestTradingDay is null ? null : 3_000m);
 }
 
 // FR-10, #967, IADR-0425: 空売り文脈の供給の既定のテスト用組み立て。**借株可否は常に「分からない」**
@@ -176,5 +187,30 @@ internal sealed class FixedShortSellBorrowSource(ShortSellBorrowObservation obse
     {
         Calls++;
         return Task.FromResult(observation);
+    }
+}
+
+// #1396, IADR-0561: 実時刻で動く試験の時計。実時刻が米国・東証のどちらかの閉場前の新規建ての締め切り（閉場の 60 分前以降の同じ現地の日）に入っているときは、
+// 入っていない時刻（その市場の締め切りの 1 分前）まで戻す。締め切りの拒否を、締め切りを関心に持たない試験へ時刻次第で混ぜない
+// （試験の結果を実行した時刻に依らせない）。戻すのは同じ市場ローカルの日のうちだけ（取引日は変わらない）。
+internal sealed class OutsidePreCloseCutoffClock : IClock
+{
+    // 本番の時計（SystemClock）を包む（本番の組み立てが結線する本物を試験が参照し続ける。IADR-0397 の W3）。
+    private readonly SystemClock _system = new();
+
+    public DateTimeOffset UtcNow => Resolve(_system.UtcNow);
+
+    public DateOnly Today => TradingDay.Of(UtcNow);
+
+    internal static DateTimeOffset Resolve(DateTimeOffset now)
+    {
+        foreach (var market in new[] { AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates, AiStockTrading.Shared.Contracts.Trading.Market.Japan })
+        {
+            var close = AiStockTrading.Shared.Kernel.Trading.MarketHours.SessionCloseOn(market, now);
+            if (AiStockTrading.Shared.Kernel.Trading.PreCloseWindow.IsAtOrAfter(now, close, Domain.TradingDefaults.PreCloseEntryCutoffMinutes))
+                now = close!.Value.AddMinutes(-Domain.TradingDefaults.PreCloseEntryCutoffMinutes - 1).ToUniversalTime();
+        }
+
+        return now;
     }
 }

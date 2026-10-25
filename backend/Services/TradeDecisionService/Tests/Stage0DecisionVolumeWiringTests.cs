@@ -40,6 +40,26 @@ public class Stage0DecisionVolumeWiringTests
             "判断サービスと同じ singleton（同じ設定の 1 か所の選択）");
     }
 
+    // FR-15, #1308, IADR-0528 決定7: 連鎖の最も内側は、方針（Reports:BaseUrl）と日足（OrderExecution:BaseUrl）の接続先がそろったときだけ
+    // 基底の供給になる。片方でも欠ければ従来の「入力なし」（記録は 0 件・LLM 0 回）。
+    [Theory]
+    [InlineData(null, null, typeof(NoAsOfDecisionInputProvider))]
+    [InlineData("http://report", null, typeof(NoAsOfDecisionInputProvider))]
+    [InlineData(null, "http://order-execution", typeof(NoAsOfDecisionInputProvider))]
+    [InlineData("not-a-url", "http://order-execution", typeof(NoAsOfDecisionInputProvider))]
+    [InlineData("http://report", "http://order-execution", typeof(BaseAsOfDecisionInputProvider))]
+    public void 連鎖の最も内側は方針と日足の接続先がそろったときだけ基底の供給になる(string? reports, string? orderExecution, Type expected)
+    {
+        using var factory = new Factory(enabled: null, baseUrl: orderExecution, reportsBaseUrl: reports);
+        _ = factory.CreateClient();
+
+        using var scope = factory.Services.CreateScope();
+        var outer = scope.ServiceProvider.GetRequiredService<IAsOfDecisionInputProvider>();
+        var floor = (StopWidthFloorAsOfDecisionInputProvider)InnerOf(outer);
+        var volume = (DailyVolumeAsOfDecisionInputProvider)floor.Inner;
+        volume.Inner.Should().BeOfType(expected);
+    }
+
     // 監視銘柄のデコレータは primary constructor の引数を捕捉している（内側は IAsOfDecisionInputProvider 型のフィールドが 1 つ）。
     private static IAsOfDecisionInputProvider InnerOf(IAsOfDecisionInputProvider outer) =>
         (IAsOfDecisionInputProvider)outer.GetType()
@@ -47,7 +67,7 @@ public class Stage0DecisionVolumeWiringTests
             .Single(f => f.FieldType == typeof(IAsOfDecisionInputProvider))
             .GetValue(outer)!;
 
-    private sealed class Factory(string? enabled, string? baseUrl) : WebApplicationFactory<Program>
+    private sealed class Factory(string? enabled, string? baseUrl, string? reportsBaseUrl = null) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -63,6 +83,8 @@ public class Stage0DecisionVolumeWiringTests
                     settings["DecisionVolume:Enabled"] = enabled;
                 if (baseUrl is not null)
                     settings["OrderExecution:BaseUrl"] = baseUrl;
+                if (reportsBaseUrl is not null)
+                    settings["Reports:BaseUrl"] = reportsBaseUrl;
                 cfg.AddInMemoryCollection(settings);
             });
             builder.ConfigureServices(services => services.DisableAllExternalWolverineTransports());

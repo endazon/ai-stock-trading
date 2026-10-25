@@ -234,7 +234,7 @@ public class ProtectiveStopOptimisticConcurrencyTests
         var other = TriggeredStop(guard, new InMemoryExecutedOrderStore(), 10);
         guard.Find(other.EntryDecisionId).Should().NotBeNull();
 
-        // 無条件の保存（常駐ガードの S0 経路が使う）は、追跡している写しが古くても通り、版を進める。
+        // 無条件の保存（新しい行を作る経路が使う。常駐ガードは #1449 で読み直して当て直す形へ移った）は、追跡している写しが古くても通り、版を進める。
         var handlerTracked = handler.Find(stop.EntryDecisionId)!; // handler の追跡は版 1 のまま（古い）
         handlerTracked.Version.Should().Be(1);
         handler.Save(handlerTracked with { UpdatedAt = Now.AddMinutes(1) });
@@ -258,6 +258,9 @@ public class ProtectiveStopOptimisticConcurrencyTests
 
     // T-10-796: 🔴 ハンドラとガードが**同じ試行**を確定しに行っても、帳簿の減算と ClosePlaced は 1 回だけ。
     // 送信 → 発注記録の保存 → （ここでガードが「記録済み」を見て先に確定）→ ハンドラの確定、の窓を再現する。
+    // ［2026-10-23 追記 / #1446, IADR-0575］決済の直列化の後は、同じプロセスの 2 経路がこの窓で交錯することは無い（後発は直列化で待つ）。
+    // 楽観並行は直列化が効かない場合（直列化を取れずに据え置いた後の競合・旧版との並走）の後ろ盾として残るため、
+    // ガードには別の直列化を渡して窓を作り、同じ契約を固定し続ける（同じ直列化を渡すと、記録の保存の中で待ち合って止まる）。
     [Fact]
     public async Task T_10_796_同じ試行をハンドラとガードが確定してもClosePlacedと減算は1回だけ()
     {
@@ -266,8 +269,9 @@ public class ProtectiveStopOptimisticConcurrencyTests
         var store = new HookedExecutedOrderStore();
         var reservations = new InMemoryOrderReservationStore();
         var handlerLog = new RecordingLogger<SoftwareStopExecutor>();
-        var handler = new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock(), handlerLog);
-        var guard = new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock());
+        var handler = new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock(), AlwaysOpenSessionGate.Instance, handlerLog);
+        var guard = new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock(), AlwaysOpenSessionGate.Instance,
+            closeLock: new InProcessClosePositionLock());
         var stop = TriggeredStop(stops, store, 707);
 
         SoftwareStopCloseOutcome? guardOutcome = null;
@@ -304,7 +308,7 @@ public class ProtectiveStopOptimisticConcurrencyTests
         var reservations = new InMemoryOrderReservationStore();
         var executorBroker = new FakeBroker { Positions = [Long(707)] };
         var executor = new SoftwareStopExecutor(
-            executorBroker, executorBroker, stops, store, reservations, new FakeClock());
+            executorBroker, executorBroker, stops, store, reservations, new FakeClock(), AlwaysOpenSessionGate.Instance);
         var adopterLog = new RecordingLogger<ProtectiveStopDriftAdopter>();
         var adopter = new ProtectiveStopDriftAdopter(
             stops, new OrderAmendmentService(broker, store, new InMemoryOrderLifecycleStore(), new FakeClock()),
@@ -383,7 +387,7 @@ public class ProtectiveStopOptimisticConcurrencyTests
         var stops = new InMemoryProtectiveStopOrderStore();
         var store = new InMemoryExecutedOrderStore();
         var executor = new SoftwareStopExecutor(
-            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock());
+            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance);
         var stop = TriggeredStop(stops, store, 707);
         broker.OnPositionsQueried = () => stops.TrySave(stops.Find(stop.EntryDecisionId)! with
         {
@@ -404,7 +408,7 @@ public class ProtectiveStopOptimisticConcurrencyTests
         var conflicting = new ConflictingStopStore(inner, row.EntryDecisionId, conflicts: 1);
         var broker2 = new FakeBroker { Positions = [Long(300)] };
         var executor2 = new SoftwareStopExecutor(
-            broker2, broker2, conflicting, store2, new InMemoryOrderReservationStore(), new FakeClock());
+            broker2, broker2, conflicting, store2, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance);
 
         await executor2.TryCloseAsync(inner.Find(row.EntryDecisionId)!, snapshot: null);
 
@@ -426,7 +430,7 @@ public class ProtectiveStopOptimisticConcurrencyTests
         var stops = new ConflictingStopStore(inner, b.EntryDecisionId, int.MaxValue);
         var log = new RecordingLogger<SoftwareStopExecutor>();
         var executor = new SoftwareStopExecutor(
-            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), log);
+            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), AlwaysOpenSessionGate.Instance, log);
 
         var result = await executor.OnTriggeredAsync(new StopLossTriggered(
             Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 1_428, 329m, 331.67m, Now));

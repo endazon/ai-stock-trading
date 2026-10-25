@@ -54,6 +54,7 @@ order_execution_svc	order_dispatch_reservations	reserved	ReservedAt	\"State\" = 
 order_execution_svc	order_lifecycle_events	ledger	OccurredAt	-
 order_execution_svc	protective_stop_orders	ledger	UpdatedAt	-
 report_svc	policy_revision_attempts	ledger	AttemptedAt	-
+report_svc	report_confirmed_versions	ledger	ConfirmedAt	-
 report_svc	report_regeneration_attempts	ledger	AttemptedAt	-
 report_svc	reports	ledger	ConfirmedAt	-
 risk_management_svc	account_equity_days	ledger	UpdatedAt	-
@@ -62,6 +63,7 @@ risk_management_svc	borrow_fee_accruals	ledger	AccruedAtUtc	-
 risk_management_svc	borrow_fee_unavailable_days	ledger	ObservedAtUtc	-
 risk_management_svc	broker_position_observation	state	UpdatedAt	-
 risk_management_svc	buy_in_inferences	ledger	InferredAtUtc	-
+risk_management_svc	entry_reservations	state	ApprovedAt	-
 risk_management_svc	good_faith_violation_clearances	ledger	ClearedAtUtc	-
 risk_management_svc	good_faith_violations	ledger	RecordedAtUtc	-
 risk_management_svc	kill_switch	state	ChangedAt	-
