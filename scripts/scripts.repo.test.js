@@ -5090,4 +5090,66 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.match(floorProblems1315(wf1315.replace('【実行制約・最重要】', '【実行制約・最重要】全スイートは最後の手段')).join('\n'), /旧文言/);
     });
   }
+
+  // --- NFR / #1478 / IADR-0590: setup-dotnet の SDK は厳密な版で、全ワークフローで同じ値にする ---------------
+  //
+  //   "10.0.x" は install script を --channel で呼び、aka.ms 経由で dotnetorigin.blob.core.windows.net を引く。
+  //   そこが 409 を返して全 CI が止まった（2026-10-26。MSP#2266 と同じ原因）。厳密な版は別の配布元を引くので通る。
+  //   値は workflow をまたいで 1 か所に置けない（env は workflow ごと・global.json は 10.0.100 + rollForward で版を固定しない）。
+  //   そこで各所に同じ値を書き、揃っていることと厳密であることをここで見る。
+  {
+    const fs = require('fs');
+    const path = require('path');
+    const WF = path.join(__dirname, '..', '.github/workflows');
+
+    // files: { name: content }。setup-dotnet の step ごとに dotnet-version を読み、違反の文を返す。
+    const dotnetVersionViolations = (files) => {
+      const out = [];
+      const values = [];
+      for (const [name, content] of Object.entries(files)) {
+        const lines = content.replace(/\r\n/g, '\n').split('\n');
+        lines.forEach((line, i) => {
+          if (!/^\s*-?\s*uses:\s*actions\/setup-dotnet@/.test(line)) return;
+          const keyIndent = line.indexOf('uses:'); // step のキーの桁（`- uses:` でも `- name:` の次の行でも同じ）
+          let version = null;
+          for (let j = i + 1; j < lines.length; j++) {
+            const l = lines[j];
+            if (l.trim() === '' || /^\s*#/.test(l)) continue;
+            if (l.search(/\S/) < keyIndent || /^\s*-\s/.test(l)) break; // 次の step・step の外
+            const m = /^\s*dotnet-version:\s*"?([^"\s#]+)"?/.exec(l);
+            if (m) version = m[1];
+            if (/^\s*global-json-file:/.test(l)) out.push(`${name}:${i + 1}: global-json-file を使っている（global.json は 10.0.100 + rollForward で版を固定しない で版を決めない）`);
+          }
+          if (version === null) { out.push(`${name}:${i + 1}: dotnet-version が無い`); return; }
+          if (!/^\d+\.\d+\.\d+$/.test(version)) out.push(`${name}:${i + 1}: dotnet-version が厳密な版でない（${version}）`);
+          values.push(version);
+        });
+      }
+      if (new Set(values).size > 1) out.push(`dotnet-version が揃っていない: ${[...new Set(values)].join(' / ')}`);
+      return { out, count: values.length };
+    };
+
+    const readAll = () => Object.fromEntries(
+      fs.readdirSync(WF).filter((f) => /\.ya?ml$/.test(f)).map((f) => [f, fs.readFileSync(path.join(WF, f), 'utf8')]),
+    );
+
+    ok('NFR / #1478: setup-dotnet の dotnet-version は全ワークフローで同じ厳密な版である', () => {
+      const { out, count } = dotnetVersionViolations(readAll());
+      assert.deepStrictEqual(out, []);
+      assert.ok(count >= 7, `setup-dotnet を読めていない（検査が空振りする）: ${count}`);
+    });
+
+    ok('NFR / #1478: 変異試験 —— x 指定・値の不一致・版の欠落・global-json-file を検出する', () => {
+      const base = { 'a.yml': 'jobs:\n  j:\n    steps:\n      - uses: actions/setup-dotnet@abc # v6\n        with:\n          dotnet-version: "10.0.403"\n      - run: dotnet build\n' };
+      assert.deepStrictEqual(dotnetVersionViolations(base).out, []);
+      const wild = { 'a.yml': base['a.yml'].replace('10.0.403', '10.0.x') };
+      assert.ok(dotnetVersionViolations(wild).out.some((e) => e.includes('厳密な版でない')));
+      const split = { ...base, 'b.yml': base['a.yml'].replace('10.0.403', '10.0.404') };
+      assert.ok(dotnetVersionViolations(split).out.some((e) => e.includes('揃っていない')));
+      const missing = { 'a.yml': base['a.yml'].replace(/\n\s*dotnet-version:[^\n]*/, '') };
+      assert.ok(dotnetVersionViolations(missing).out.some((e) => e.includes('dotnet-version が無い')));
+      const gj = { 'a.yml': base['a.yml'].replace(/dotnet-version:[^\n]*/, 'global-json-file: global.json') };
+      assert.ok(dotnetVersionViolations(gj).out.some((e) => e.includes('global-json-file')));
+    });
+  }
 };

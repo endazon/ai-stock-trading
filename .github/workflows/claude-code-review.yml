@@ -146,7 +146,7 @@ jobs:
       - uses: actions/setup-dotnet@v6
         if: steps.touched.outputs.setup == 'true'
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "10.0.403" # #1478: 厳密な版（"10.0.x" は配布元の 409 で導入できない）。全箇所で同じ値であることを scripts.repo.test.js が見る
 
       # EF マイグレーションの検証（`dotnet ef migrations has-pending-model-changes`）用。
       # 本リポジトリは tool manifest（.config/dotnet-tools.json）を持たないためグローバル導入する。

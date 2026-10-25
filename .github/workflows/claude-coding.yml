@@ -83,7 +83,7 @@ jobs:
       # 他スタックは actions/setup-node / actions/setup-python 等に置き換える）。
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "10.0.403" # #1478: 厳密な版（"10.0.x" は配布元の 409 で導入できない）。全箇所で同じ値であることを scripts.repo.test.js が見る
 
       # @claude メンションでモデルを選択する。既定は claude-sonnet-5-5（品質基準を満たす最安モデルを
       # 既定にし、高コストモデルは明示指定に限る。レビュー側 claude-code-review と同じ方針）。
