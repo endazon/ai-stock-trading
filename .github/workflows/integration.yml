@@ -48,7 +48,7 @@ jobs:
           restore-keys: nuget-${{ runner.os }}-
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "10.0.403" # #1478: 厳密な版（"10.0.x" は配布元の 409 で導入できない）。全箇所で同じ値であることを scripts.repo.test.js が見る
       # 自動起票が本当に動くかを実測するための入口（IADR-0208 残余リスク）。
       # 自動起票は失敗時にしか走らないため、平時は常に skip で緑になる ——
       # 意図的に失敗させない限り「壊れていること」に永久に気付けない。

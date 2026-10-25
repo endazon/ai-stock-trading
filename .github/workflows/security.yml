@@ -82,7 +82,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "10.0.403" # #1478: 厳密な版（"10.0.x" は配布元の 409 で導入できない）。全箇所で同じ値であることを scripts.repo.test.js が見る
       # ソリューションを自動発見して走査する（ルート単一 .sln/.slnx でも、ユニット第一構成
       # `src/<unit>/backend/backend.slnx` でも編集不要で動く）。スタックが異なる場合は差し替える。
       - name: Restore

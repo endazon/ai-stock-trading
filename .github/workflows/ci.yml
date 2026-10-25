@@ -579,7 +579,7 @@ jobs:
       - uses: actions/setup-dotnet@v6
         if: ${{ steps.gate.outputs.backend == 'true' }}
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "10.0.403" # #1478: 厳密な版（"10.0.x" は配布元の 409 で導入できない）。全箇所で同じ値であることを scripts.repo.test.js が見る
       - name: Format check
         if: ${{ steps.gate.outputs.backend == 'true' }}
         run: dotnet format backend/backend.slnx --verify-no-changes
@@ -637,7 +637,7 @@ jobs:
       - uses: actions/setup-dotnet@v6
         if: ${{ steps.gate.outputs.backend == 'true' }}
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "10.0.403" # #1478: 厳密な版（"10.0.x" は配布元の 409 で導入できない）。全箇所で同じ値であることを scripts.repo.test.js が見る
       # ⚠️ ここも setup-node を置かない（実測 4〜9 秒）。`list-test-projects.js` は依存を持たない
       # 素の Node スクリプトで、ランナー既定の Node で動く。**このジョブが必須チェックの
       # クリティカルパスそのもの**なので、数秒がそのまま待ち時間になる。
