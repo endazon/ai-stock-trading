@@ -9,8 +9,8 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-10, FR-12, FR-15, FR-19, FR-20, NFR, SC-01, SC-02, SC-03, SC-04]
 adrs: [ADR-0008, ADR-0016, ADR-0018]
-iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259, IADR-0280, IADR-0307, IADR-0335, IADR-0376, IADR-0497, IADR-0510, IADR-0087, IADR-0565, IADR-0599, MSP:IADR-0569]
-specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260923_887_test-id-duplicate-numbering, 20260925_923_775_test-id-baseline-ratchet-and-git-census, 20261007_1200_integration-skip-gate, 20261008_1235_test-trace-declared-ranges, 20261008_1240_t17-test-id-collision, 20261021_1411_e2e-standards-reference-and-live-guardrails, 20261030_1418_e2e-trading-gate-snapshot-restore]
+iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259, IADR-0280, IADR-0307, IADR-0335, IADR-0376, IADR-0497, IADR-0510, IADR-0087, IADR-0565, IADR-0599, IADR-0600, MSP:IADR-0569]
+specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260923_887_test-id-duplicate-numbering, 20260925_923_775_test-id-baseline-ratchet-and-git-census, 20261007_1200_integration-skip-gate, 20261008_1235_test-trace-declared-ranges, 20261008_1240_t17-test-id-collision, 20261021_1411_e2e-standards-reference-and-live-guardrails, 20261030_1418_e2e-trading-gate-snapshot-restore, 20261030_1502_in-flight-orders-owner-read]
 issues: [#204, #211, #331, #335, #337, #340, #342, #343, #344, #689, #690, #752, #887, #923, #1200, #1235, #1240, #1410, #1411, #1418, #1502, MSP#446, MSP#2013, MSP#2014, planning#575]
 -->
 
@@ -198,13 +198,14 @@ live の opt-in（`E2E_LIVE` / `E2E_LAYER`）、ロケータ・待機・試験�
   終了時の突合で差分が残れば赤にする。
 - **現状**: L1（設定・リスク設定・統制状態参照の各画面と発注先の変更）と、live 用 config・`e2e/live/` の読み取り層は在る。
   取引影響層の閉場判定（`scripts/e2e-market-closed.js`）と、スナップショット・突合・復元（`scripts/e2e-trading-restore.js`・
-  `frontend/e2e/live/support/{snapshot,restore}.ts`）も在る。ただし in-flight を BFF から読む経路がまだ無いため、
-  **取引影響層の門は常に exit 2 で、取引影響層は流れない**（経路は #1502 で足す）。禁止行の grep 検査は未整備で、網羅表の親 issue（#1410）の子で足す。
+  `frontend/e2e/live/support/{snapshot,restore}.ts`）も在る。in-flight は BFF の未終端の注文の照会（利用者だけの読み取り）で判定し、
+  1 件でもあるか照会に失敗すれば門は exit 2 になる（直近 2 日に終端のイベントが届かずに残った注文でも止まる。安全側）。禁止行の grep 検査は未整備で、網羅表の親 issue（#1410）の子で足す。
 
 ## 変更履歴
 
 | 日付 | 内容 |
 | --- | --- |
+| 2026-10-30 | 「現状」を更新した（#1502）。in-flight の判定が BFF の未終端の注文の照会で働くようになった。 |
 | 2026-10-30 | 「現状」を更新した（#1418）。取引影響層の閉場判定とスナップショット・突合・復元が入った。in-flight の判定の情報源（BFF の読み取り経路）が入るまで、取引影響層の門は常に exit 2 である。 |
 | 2026-10-21 | 「フロント Playwright E2E」行を更新し、基盤リポジトリの E2E テスト基準を正本として参照する節を足した（#1411）。本リポジトリ固有の点（テスト ID・harness・L3-L なし・禁止行 A-049/A-067・取引影響層の閉場後限定と復元）だけを書き、基準の本文は複写しない。 |
 | 2026-10-08 | テストコードが使うテスト ID の採番を検査 5 として追加し、参照の無い側に限る改番の例外を定めた（[#1240](https://github.com/endazon/ai-stock-trading/issues/1240)）。`T-17-…` の帯で、採算の見積りの試験と既定値の試験が同じ番号を使い、採算側の後続番号が表に無かったため。採算の見積りのテスト仕様書を起こし、既定値の 4 件を改番した。 |

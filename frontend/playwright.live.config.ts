@@ -40,7 +40,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   // NFR / IADR-0565 決定 2・3 / IADR-0599（#1418 / E-60）: `trading` 層を選んだときだけ、readiness の後に trading の門とスナップショット
   // （snapshot.ts）を、取引オーナーの失効（teardown.ts）の前に突合と復元（restore.ts）を置く。配列は書いた順に走る（teardown も同じ順）。
-  // 🔴 trading の門は、in-flight の情報源（#1502）が入るまで常に exit 2 になる（trading 層は流れない）。
+  // trading の門は、閉場（次の開場まで 60 分以上）と in-flight の注文が無いこと（IADR-0600）を確かめ、満たさなければ exit 2。
   globalSetup: cfg.live
     ? cfg.layers.includes('trading')
       ? ['./e2e/live/support/readiness.ts', './e2e/live/support/snapshot.ts']

@@ -10,6 +10,7 @@ using RiskManagementService.Features.RiskManagement.GetShortSellingStatus;
 using RiskManagementService.Features.RiskManagement.GetSizingContext;
 using RiskManagementService.Features.RiskManagement.GetTradingHalt;
 using RiskManagementService.Features.RiskManagement.GetEntryBlockers;
+using RiskManagementService.Features.RiskManagement.GetInFlightOrders;
 using RiskManagementService.Features.RiskManagement.GetWorkingEntryOrders;
 using RiskManagementService.Hosted;
 using RiskManagementService.Infrastructure.Steps;
@@ -156,6 +157,8 @@ builder.Services.AddScoped<IPortfolioStateProvider>(sp =>
 // FR-10, #829, IADR-0346 決定1: 未終端の承認済み新規建て注文（approved_orders 左結合 order_activity）。DbContext が scoped のため scoped。
 // #1319, IADR-0529 決定3: 承認行がまだ無い予約（entry_reservations）も同じ規則で返す。
 builder.Services.AddScoped<IWorkingEntryOrderSource, EfWorkingEntryOrderSource>();
+// NFR, #1502, IADR-0600: 承認済みで終端していない注文（新規建て・決済）。live の E2E の取引影響層の門が読む。
+builder.Services.AddScoped<IInFlightOrderSource, EfInFlightOrderSource>();
 // 🔴 FR-10, #1319, IADR-0529 決定1・2: 新規建ての審査の直列化（pg_advisory_xact_lock）と予約。審査と同じ DbContext（scoped）に
 // 載せる——読み取り・判定・予約の書き込みが 1 つのトランザクションに入るのはこのためである。
 builder.Services.AddScoped<IEntryReservationStore, EfEntryReservationStore>();
@@ -233,6 +236,7 @@ builder.Services.AddScoped<SizingContextService>();
 builder.Services.AddScoped<OpenPositionsService>();
 // FR-04, FR-10, #934, IADR-0390 決定1: 取引判断へ供給する当日の未約定の新規建て注文（統制 IADR-0346 と同じ定義）。
 builder.Services.AddScoped<WorkingEntryOrdersService>();
+builder.Services.AddScoped<InFlightOrdersService>();
 // FR-10, FR-04, #1113, IADR-0463 決定 3: 銘柄単位の新規建ての可否（審査と同じ述語・同じ入力。読み取り専用）。
 builder.Services.AddScoped<EntryBlockersService>();
 builder.Services.AddScoped<KillSwitchService>();

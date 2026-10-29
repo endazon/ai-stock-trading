@@ -120,6 +120,12 @@ public static class RiskControlsBffEndpoints
             ProxyAsync(httpFactory, http, HttpMethod.Get, "/risk-controls/short-selling", ct))
             .WithName("BffRiskControlsShortSelling");
 
+        // NFR, #1502, IADR-0600: 承認済みで終端していない注文（新規建て・決済）。live の E2E の取引影響層の門が読む
+        // （画面は叩かない。IADR-0071 決定2 の例外として、E2E の門という実消費者がある）。GET だけ・後段 OwnerOnly。
+        g.MapGet("/in-flight-orders", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
+            ProxyAsync(httpFactory, http, HttpMethod.Get, "/risk-controls/in-flight-orders", ct))
+            .WithName("BffRiskControlsInFlightOrders");
+
         return app;
     }
 
