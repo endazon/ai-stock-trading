@@ -56,6 +56,9 @@ public sealed class AuditGrpcTransport : IDisposable
         _client = new Proto.AuditEventsRead.AuditEventsReadClient(channel);
     }
 
+    /// <summary>生成クライアント（試験の暖機用。NFR, IADR-0364, #1517）。製品の呼び出しは <see cref="ReadAsync{T}"/> を通す。</summary>
+    internal Proto.AuditEventsRead.AuditEventsReadClient Client => _client;
+
     internal TimeSpan Timeout => _calls.Timeout;
 
     internal int MaxAttempts => _calls.MaxAttempts;
