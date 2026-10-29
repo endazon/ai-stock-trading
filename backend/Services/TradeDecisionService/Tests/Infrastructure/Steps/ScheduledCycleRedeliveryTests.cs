@@ -181,6 +181,7 @@ public class ScheduledCycleRedeliveryTests
         IHeldPositionProvider? held = null,
         ScheduledCycleRetryChain? retryChain = null,
         IHeldSymbolsProvider? heldSymbols = null,
+        Action<WolverineOptions>? extra = null,
         params WatchedSymbol[] watchlist) =>
         Host.CreateDefaultBuilder()
             .ConfigureLogging(l =>
@@ -203,6 +204,8 @@ public class ScheduledCycleRedeliveryTests
                 opts.Services.AddSingleton<NewsCollectionStatusStore>();
                 opts.Services.AddSingleton<ITradeDecisionFailureReporter>(failures);
                 opts.Services.AddSingleton(budget);
+                // 🔴 FR-02, NFR-02, #1485, IADR-0593: 定時判断を判断した時点で送る発行口（定時の購読の必須依存。本番は Program.cs の singleton）。
+                opts.Services.AddSingleton(sp => new ScheduledDecisionPublisher(sp.GetRequiredService<Wolverine.Runtime.IWolverineRuntime>()));
                 // 🔴 FR-02, FR-04, #1286, IADR-0521: 定時の購読の必須依存（保有銘柄の供給口）。NoOp＝常に不明＝監視銘柄だけを判断する（従来の巡回と同じ）。
                 opts.Services.AddSingleton<IHeldSymbolsProvider>(heldSymbols ?? new NoOpHeldPositionProvider());
                 // #1286, IADR-0521 決定 4: 保有のみの銘柄の全注文の可否（定時の購読の必須依存）。NoOp＝不明＝外さない。
@@ -224,6 +227,8 @@ public class ScheduledCycleRedeliveryTests
                     opts.Services.AddSingleton(retryChain);
                     opts.Policies.Add<ScheduledCycleRetryPolicy>();
                 }
+
+                extra?.Invoke(opts);
             })
             .StartAsync();
 
@@ -236,6 +241,8 @@ public class ScheduledCycleRedeliveryTests
     // #1169 の実測（1 回目の MSFT の判断が下流へ届かず、再試行が新しい DecisionId で出した）を、上限を 2 秒にして再現する。
     // ［2026-10-08 追記 / #1194・IADR-0505］本試験は共通の失敗方針（再試行 3 回）の経路である。本番の定時サイクルの試行の上限は
     // ScheduledCycleRetryPolicy が与え、既定・経路B では 1（再試行しない。T-10-2405）。本試験は試行の上限が 2 以上の構成の不変条件として残す。
+    // ［2026-10-29 追記 / #1485・IADR-0593 決定2］判断は判断した時点で送る（1 回目の試行の AAPL は送られる）。再試行の巡回は、このプロセスで
+    // 送り済みの AAPL を判断し直さず送り直さない（LLM も 1 回）。銘柄ごとに 1 件だけ・決定的な DecisionId、は変わらない。
     [Fact]
     public async Task T_10_2246_打ち切られて再試行されたサイクルは判断を二重に発行しない()
     {
@@ -249,11 +256,11 @@ public class ScheduledCycleRedeliveryTests
             .PublishMessageAndWaitAsync(message);
 
         llm.CancelledHangs.Should().Be(1, "前提: 1 回目の試行がサイクルの上限で打ち切られた");
-        llm.Targets.Count(t => t == "other").Should().BeGreaterThanOrEqualTo(2, "前提: AAPL は 1 回目と再試行で 2 回判断された");
+        llm.Targets.Count(t => t == "other").Should().Be(1, "AAPL は 1 回目の試行で送り済み。再試行は判断し直さない（#1485, IADR-0593 決定2）");
 
         var decisions = session.Sent.MessagesOf<TradeDecisionMade>().ToList();
         decisions.Select(d => d.Intent.Symbol).Should().BeEquivalentTo(
-            ["AAPL", "MSFT"], "銘柄ごとに 1 件だけ（1 回目の試行の AAPL の発行は捨てられる）");
+            ["AAPL", "MSFT"], "銘柄ごとに 1 件だけ（1 回目の試行の AAPL は判断した時点で送られ、再試行は送り直さない）");
         decisions.Single(d => d.Intent.Symbol == "AAPL").DecisionId
             .Should().Be(ScheduledDecisionIds.For(message.EventId, "AAPL", Market.UnitedStates)!.Value);
         decisions.Single(d => d.Intent.Symbol == "MSFT").DecisionId
@@ -293,7 +300,9 @@ public class ScheduledCycleRedeliveryTests
         llm.CancelledHangs.Should().Be(1, "前提: 1 回目の試行がサイクルの上限で打ち切られた");
         llm.Targets.Count(t => t == "MSFT").Should().Be(1, "再試行しない（MSFT の LLM は 1 回だけ）");
         llm.Targets.Count(t => t == "other").Should().Be(1, "再試行しない（AAPL の LLM は 1 回だけ）");
-        session.Sent.MessagesOf<TradeDecisionMade>().Should().BeEmpty("打ち切られた試行の発行は捨てられる");
+        // ［2026-10-29 / #1485・IADR-0593 決定1］判断は判断した時点で送る: 打ち切りの前に判断した AAPL は送られている（決定的な DecisionId）。
+        session.Sent.MessagesOf<TradeDecisionMade>().Should().ContainSingle("打ち切りの前に判断した AAPL だけが送られる")
+            .Which.DecisionId.Should().Be(ScheduledDecisionIds.For(message.EventId, "AAPL", Market.UnitedStates)!.Value);
         session.MovedToErrorQueue.MessagesOf<InformationCollected>().Should().ContainSingle()
             .Which.EventId.Should().Be(message.EventId);
         failures.Calls.Should().BeEmpty("サイクルの打ち切りは銘柄の失敗ではない");
@@ -329,15 +338,19 @@ public class ScheduledCycleRedeliveryTests
     // 🔴 T-10-2245（否定形）: 同じ起点イベントが再配送されて**発行まで**もう一度走っても（発行の後・受信の完了の前に落ちた場合）、
     // 判断は同じ DecisionId で出る＝下流の DecisionId の冪等（承認済みの再配送は再審査しない・発注は DecisionId で一意予約）が止める。
     // 別の起点イベント（次の巡回）は別の DecisionId になる（次の巡回の判断を再配送と見て捨てない）。
+    // ［2026-10-29 追記 / #1485・IADR-0593 決定2］落ちた後の再配送は**別のプロセス**（再起動した Pod）が受けるので、別のホストで受ける。
+    // 同じプロセスへの再配送は、送り済みの判断をし直さず送り直さない（下の samePodRedelivery）。
     [Fact]
     public async Task T_10_2245_同じ起点イベントの再配送は同じDecisionIdで判断を出す()
     {
         var failures = new RecordingTradeDecisionFailureReporter();
         using var host = await BuildAsync(new InstantLlm(), ProductionLikeBudget(), failures, watchlist: [Aapl, Msft]);
+        using var restarted = await BuildAsync(new InstantLlm(), ProductionLikeBudget(), failures, watchlist: [Aapl, Msft]);
         var message = new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow);
 
         var first = await host.TrackActivityForTest().PublishMessageAndWaitAsync(message);
-        var redelivered = await host.TrackActivityForTest().PublishMessageAndWaitAsync(message);
+        var samePodRedelivery = await host.TrackActivityForTest().PublishMessageAndWaitAsync(message);
+        var redelivered = await restarted.TrackActivityForTest().PublishMessageAndWaitAsync(message);
         var nextCycle = await host.TrackActivityForTest()
             .PublishMessageAndWaitAsync(message with { EventId = Guid.NewGuid() });
 
@@ -347,9 +360,11 @@ public class ScheduledCycleRedeliveryTests
 
         firstIds.Should().HaveCount(2);
         redeliveredIds.Should().BeEquivalentTo(firstIds, "再配送は同じ判断として下流の冪等に止められる");
+        samePodRedelivery.Sent.MessagesOf<TradeDecisionMade>().Should().BeEmpty("同じプロセスは送り済みの判断を送り直さない（#1485, IADR-0593 決定2）");
         nextIds.Should().HaveCount(2).And.NotIntersectWith(firstIds, "次の巡回は新しい判断");
 
         await host.StopAsync();
+        await restarted.StopAsync();
     }
 
     // 🔴 T-10-2247: 1 銘柄が締め切りを超えても、その銘柄の失敗として分離し（最終の失敗を 1 件報告）、他の銘柄は発行する。
@@ -567,10 +582,12 @@ public class ScheduledCycleRedeliveryTests
         var llm = new ScriptedLlm(target => target == "AAPL" ? BuyJson : SellJson);
         var held = new HeldBySymbol(new Dictionary<string, int> { ["MSFT"] = -10, ["TSLA"] = 10 });
         using var host = await BuildAsync(llm, ProductionLikeBudget(), failures, held: held, watchlist: [Aapl, Msft, Tsla]);
+        // ［2026-10-29 / #1485・IADR-0593 決定2］落ちた後の再配送は別のプロセス（再起動した Pod）が受ける。
+        using var restarted = await BuildAsync(llm, ProductionLikeBudget(), failures, held: held, watchlist: [Aapl, Msft, Tsla]);
         var message = new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow);
 
         var first = await host.TrackActivityForTest().PublishMessageAndWaitAsync(message);
-        var redelivered = await host.TrackActivityForTest().PublishMessageAndWaitAsync(message);
+        var redelivered = await restarted.TrackActivityForTest().PublishMessageAndWaitAsync(message);
 
         var firstDecisions = first.Sent.MessagesOf<TradeDecisionMade>().ToList();
         firstDecisions.Select(d => (d.Intent.Symbol, d.Intent.Side, d.Intent.PositionEffect)).Should().BeEquivalentTo(
@@ -588,6 +605,7 @@ public class ScheduledCycleRedeliveryTests
             .Should().BeEquivalentTo(firstDecisions.Select(d => d.DecisionId), "再配送は同じ判断として下流の冪等に止められる");
 
         await host.StopAsync();
+        await restarted.StopAsync();
     }
 
     // 🔴 T-10-2251（#1169 監査 🟡1）: 鮮度の上限を**超えて**古い起点は判断せずに捨てる（LLM を呼ばず、何も発行せず、再試行もしない）。
@@ -653,5 +671,68 @@ public class ScheduledCycleRedeliveryTests
         llm.Targets.Should().NotContain("MSFT", "引けの後の銘柄は判断しない");
 
         await host.StopAsync();
+    }
+
+    // 🔴 T-10-3076, FR-02, NFR-02, #1485, IADR-0593 決定1: 巡回の 1 銘柄目の判断は、**巡回の末尾を待たずに**下流へ届く。
+    // 是正前はハンドラの中の発行がハンドラの終わりまで送られず、判断→審査の承認が 35〜125 秒遅れた（PoC 2026-10-27）。
+    // 下流の代役としてローカルキューの受け手を置き、2 銘柄目（MSFT）の LLM が 1 銘柄目（AAPL）の判断の到着を待つ（上限 10 秒）。
+    // 届かないまま待ちが切れれば赤（是正前の形）。
+    [Fact]
+    public async Task T_10_3076_一銘柄目の判断は巡回の末尾を待たずに下流へ届く()
+    {
+        var probe = new DecisionArrivalProbe();
+        var llm = new WaitForFirstDecisionLlm("MSFT", probe, TimeSpan.FromSeconds(10));
+        var failures = new RecordingTradeDecisionFailureReporter();
+        using var host = await BuildAsync(
+            llm, ProductionLikeBudget(), failures,
+            extra: opts =>
+            {
+                opts.Services.AddSingleton(probe);
+                opts.Discovery.IncludeType(typeof(DecisionArrivalProbeHandler));
+                opts.PublishMessage<TradeDecisionMade>().ToLocalQueue("decision-arrival-probe");
+            },
+            watchlist: [Aapl, Msft]);
+        var message = new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow);
+
+        var session = await host.TrackActivityForTest()
+            .DoNotAssertOnExceptionsDetected()
+            .Timeout(TimeSpan.FromSeconds(60))
+            .PublishMessageAndWaitAsync(message);
+
+        llm.ArrivedBeforeSecondJudgment.Should().BeTrue("1 銘柄目の判断は 2 銘柄目の判断（LLM）の前に下流へ届いている");
+        session.Sent.MessagesOf<TradeDecisionMade>().Select(d => d.Intent.Symbol).Should().BeEquivalentTo(["AAPL", "MSFT"]);
+        failures.Calls.Should().BeEmpty();
+
+        await host.StopAsync();
+    }
+
+    // 下流の代役（審査の受信の到着を観測する）。
+    public sealed class DecisionArrivalProbe
+    {
+        public TaskCompletionSource<string> FirstArrival { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    public static class DecisionArrivalProbeHandler
+    {
+        public static void Handle(TradeDecisionMade decision, DecisionArrivalProbe probe) =>
+            probe.FirstArrival.TrySetResult(decision.Intent.Symbol);
+    }
+
+    // 指定した銘柄の判断で、先の判断の到着を待ってから即答する LLM（他の銘柄は即答）。
+    private sealed class WaitForFirstDecisionLlm(string waitSymbol, DecisionArrivalProbe probe, TimeSpan bound) : ILlmCompletionClient
+    {
+        public bool ArrivedBeforeSecondJudgment { get; private set; }
+
+        public async Task<string> CompleteAsync(
+            string prompt, string? model = null, string? purpose = null, CancellationToken ct = default)
+        {
+            if (IsTarget(prompt, waitSymbol) && !ArrivedBeforeSecondJudgment)
+            {
+                var winner = await Task.WhenAny(probe.FirstArrival.Task, Task.Delay(bound, ct)).ConfigureAwait(false);
+                ArrivedBeforeSecondJudgment = winner == probe.FirstArrival.Task;
+            }
+
+            return BuyJson;
+        }
     }
 }

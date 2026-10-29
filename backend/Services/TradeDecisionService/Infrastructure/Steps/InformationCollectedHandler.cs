@@ -4,7 +4,6 @@ using TradeDecisionService.Features.TradeDecision;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.Logging;
-using Wolverine;
 using AppSvc = TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDecisionAppService;
 
 namespace TradeDecisionService.Infrastructure.Steps;
@@ -34,6 +33,10 @@ namespace TradeDecisionService.Infrastructure.Steps;
 // 🔴 FR-02, FR-04, UC-01, ADR-0051, #1286, IADR-0521: 判断対象は「監視銘柄 ∪ 保有中の銘柄」である（利用者裁定 2026-10-09
 //   「保有銘柄も判断対象に」）。監視銘柄の外の保有銘柄（保有のみ）は出口専用で判断する（DecisionTrigger.ExitOnly）。
 //   保有銘柄が読めなければ（null＝不明）監視銘柄だけを判断する（従来の巡回と同じ）。保有の供給口も**必須依存**（上と同じ理由）。
+//
+// 🔴 FR-02, NFR-02, #1485, IADR-0593: 判断は**判断した時点で**送る（ScheduledDecisionPublisher。ハンドラの文脈の IMessageBus で発行すると
+//   ハンドラの終わりまで送られず、判断が巡回の末尾までまとめて遅れる）。送った DecisionId を覚え、再試行の巡回は同じ判断をし直さない。
+//   発行口も**必須依存**（上と同じ理由）。
 public sealed class InformationCollectedHandler(
     AppSvc decisionService,
     IWatchlistProvider watchlist,
@@ -45,12 +48,12 @@ public sealed class InformationCollectedHandler(
     NewsCollectionStatusStore newsStatus,
     ITradeDecisionFailureReporter failureReporter,
     ScheduledCycleBudget budget,
+    ScheduledDecisionPublisher publisher,
     ILogger<InformationCollectedHandler> logger)
 {
-    public async Task Handle(InformationCollected message, IMessageBus bus, CancellationToken cancellationToken)
+    public async Task Handle(InformationCollected message, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(message);
-        ArgumentNullException.ThrowIfNull(bus);
 
         // 🔴 #1169 監査 🟡1, IADR-0490 決定3: 古い起点は判断せずに捨てる（何も発行せず、正常に終えて受信を完了させる＝再試行しない）。
         // 受信は 1 本ずつ（Inline）なので、遅い LLM でサイクルが巡回間隔より長くなると起点が溜まる。溜まった起点を順に判断すると
@@ -118,7 +121,21 @@ public sealed class InformationCollectedHandler(
             // 1 銘柄の判断/発行失敗でサイクル全体を再配送させない（IADR-0023）。再配送すると発行済み銘柄も再ループされる。
             // 失敗銘柄はログに残して次銘柄へ継続し、次回巡回で再評価する（キャンセルは伝播させる）。
             // ［2026-10-06 追記 / #1169・IADR-0490］旧注記「DecisionId は都度新規採番のため下流の冪等をすり抜け重複発注し得る」は
-            // 決定2 で解消した（再配送でも同じ DecisionId）。なお Wolverine は失敗した試行の発行を送らずに捨てる（発行は成功後にまとめて送る）。
+            // 決定2 で解消した（再配送でも同じ DecisionId）。
+            // ［2026-10-29 追記 / #1485・IADR-0593］発行は判断した時点で送る（打ち切られた試行の判断も送られている）。
+            // 🔴 #1169, IADR-0490 決定2: 再配送をまたいで同じ DecisionId にする。起点イベントの ID が空なら導かない
+            // （空から導くと以後の判断がすべて同じ ID になり、下流が再配送として捨てる）。
+            var decisionId = ScheduledDecisionIds.For(message.EventId, watched.Symbol, watched.Market);
+
+            // 🔴 #1485, IADR-0593 決定2: この判断をこのプロセスで既に送っていれば（打ち切られた試行の再試行）、判断し直さない
+            // （LLM を二重に呼ばない・同じ DecisionId を二重に送らない）。
+            if (decisionId is { } sentId && publisher.AlreadyPublished(sentId))
+            {
+                logger.LogInformation(
+                    "定時判断は先の試行で送り済みのため判断し直しません: DecisionId={DecisionId} {Symbol}", sentId, watched.Symbol);
+                continue;
+            }
+
             try
             {
                 // #1169, IADR-0490 決定1: 1 銘柄の締め切り。超えたらこの銘柄の失敗として下の catch が捕まえる
@@ -142,11 +159,9 @@ public sealed class InformationCollectedHandler(
                 if (decision is null)
                     continue; // 方針なし・Hold・見送り
 
-                // 🔴 #1169, IADR-0490 決定2: 再配送をまたいで同じ DecisionId にする。起点イベントの ID が空なら導かない
-                // （空から導くと以後の判断がすべて同じ ID になり、下流が再配送として捨てる）。
-                if (ScheduledDecisionIds.For(message.EventId, watched.Symbol, watched.Market) is { } decisionId)
+                if (decisionId is { } deterministicId)
                 {
-                    decision = decision with { DecisionId = decisionId };
+                    decision = decision with { DecisionId = deterministicId };
                 }
                 else
                 {
@@ -160,7 +175,8 @@ public sealed class InformationCollectedHandler(
                 logger.LogInformation(
                     "定時判断: DecisionId={DecisionId} {Symbol} {Side} 数量={Quantity} exitOnly={ExitOnly}",
                     decision.DecisionId, decision.Intent.Symbol, decision.Intent.Side, decision.Intent.Quantity, exitOnly);
-                await bus.PublishAsync(decision).ConfigureAwait(false);
+                // 🔴 #1485, IADR-0593 決定1: 今すぐ送る（ハンドラの終わりを待たない）。決定的な DecisionId だけを覚える。
+                await publisher.PublishAsync(decision, remember: decisionId is not null).ConfigureAwait(false);
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {

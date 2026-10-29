@@ -330,6 +330,8 @@ public class TradeDecisionFailureRecordTests
                 opts.Services.AddSingleton<IHeldSymbolsProvider>(new NoOpHeldPositionProvider());
                 opts.Services.AddSingleton<IEntryBlockersProvider>(new NoOpEntryBlockersProvider());
                 opts.Services.AddSingleton(ScheduledCycleBudget.Derive(TimeSpan.FromSeconds(30), 2, ScheduledCycleBudget.DefaultMaxWatchedSymbols));
+                // 🔴 FR-02, NFR-02, #1485, IADR-0593: 定時判断を判断した時点で送る発行口（定時の購読の必須依存。本番は Program.cs の singleton）。
+                opts.Services.AddSingleton(sp => new ScheduledDecisionPublisher(sp.GetRequiredService<Wolverine.Runtime.IWolverineRuntime>()));
                 if (reporter is not null)
                     opts.Services.AddSingleton(reporter);
                 else
