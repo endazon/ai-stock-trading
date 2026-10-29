@@ -9,6 +9,7 @@ import {
   type TradingClient,
 } from './live/support/snapshot';
 import { restoreCommandError, verdictOf } from './live/support/restore';
+import { testSymbolOf } from './live/support/symbols';
 
 // NFR / IADR-0565 決定 2・3 / IADR-0599（#1418 / E-60）: live の trading 層の**門**と**突合の判定**を L1 で固定する。
 // 稼働の環境には触れない（時刻と in-flight の判定を差し替えて、門の関数だけを呼ぶ）。市場の規則そのものの境界は
@@ -109,4 +110,13 @@ test('突合が例外で落ちたら、スナップショットの場所と単�
   expect(line).toContain(
     'node scripts/e2e-trading-restore.js --snapshot /x/test-results/trading-snapshot-r1.json --live',
   );
+});
+
+// NFR / IADR-0601（#1419 / A-047）: 試験銘柄のコードは常に `E2E` ＋ 数字 6 桁（runId に数字が足りなければ時刻の数字で補う）。
+test('A-047 の試験銘柄のコードは、runId の数字が足りなくても常に E2E ＋ 6 桁になる', () => {
+  const now = new Date(1_700_000_123_456);
+  expect(testSymbolOf('20261030-010203', now)).toBe('E2E010203');
+  expect(testSymbolOf('abc', now)).toBe('E2E123456');
+  expect(testSymbolOf('run-42', now)).toBe('E2E345642'); // 時刻の数字（…123456）の後に runId の数字（42）を置いた下 6 桁
+  for (const id of ['', 'x', '1', 'abc-def', '20261030-010203']) expect(testSymbolOf(id, now)).toMatch(/^E2E\d{6}$/);
 });
