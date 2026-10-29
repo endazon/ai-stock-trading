@@ -14,12 +14,21 @@ public sealed class GrpcLlmCostHaltGate(CostControlGrpcTransport transport, ILog
 {
     public async Task<bool> IsHaltedAsync(CancellationToken cancellationToken = default)
     {
-        var response = await transport.CallAsync(
-            "費用統制",
-            "停止していないものとして判断を続けます。",
-            (client, options) => client.GetCostStateAsync(new Proto.GetCostStateRequest(), options),
-            cancellationToken).ConfigureAwait(false);
-        return Interpret(response, logger);
+        try
+        {
+            var response = await transport.CallAsync(
+                "費用統制",
+                "停止していないものとして判断を続けます。",
+                (client, options) => client.GetCostStateAsync(new Proto.GetCostStateRequest(), options),
+                cancellationToken).ConfigureAwait(false);
+            return Interpret(response, logger);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            // REST（HttpLlmCostHaltGate）と同じ向き: 呼び出し元自身の取り消しだけを伝播し、他の例外（破棄済みのチャネル等）は停止していない。
+            logger.LogWarning(ex, "費用統制の gRPC 照会で例外が発生しました。停止していないものとして判断を続けます。");
+            return false;
+        }
     }
 
     /// <summary>線上の応答 → 停止しているか（純関数に近い）。応答なし・欠落は false（停止していない）。</summary>

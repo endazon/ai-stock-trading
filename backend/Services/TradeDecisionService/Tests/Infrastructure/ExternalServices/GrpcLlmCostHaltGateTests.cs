@@ -97,6 +97,41 @@ public class GrpcLlmCostHaltGateTests
         halted.Should().BeFalse();
     }
 
+    // 🔴 呼び出し元自身の取り消しは「停止していない」へ畳まず OperationCanceledException として伝播する（REST の HttpLlmCostHaltGate と同じ向き）。
+    [Fact]
+    public async Task T_10_3085_呼び出し元の取り消しは伝播する()
+    {
+        var behavior = CostStateStubBehavior.Hangs();
+        await using var host = await CostStateGrpcStubHost.StartAsync(behavior);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAiStockTradingCostControlGrpc(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["CostControl:Grpc"] = host.Address }).Build());
+        await using var sp = services.BuildServiceProvider();
+        var gate = new GrpcLlmCostHaltGate(sp.GetRequiredService<CostControlGrpcTransport>(), NullLogger<GrpcLlmCostHaltGate>.Instance);
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        var act = async () => await gate.IsHaltedAsync(cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    // 上と対: 取り消し以外で CallAsync の外へ出る例外（破棄済みのチャネル等）は、REST と同じく停止していない（判断サイクルへ伝播させない）。
+    [Fact]
+    public async Task T_10_3085_取り消し以外の例外は停止していない()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAiStockTradingCostControlGrpc(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["CostControl:Grpc"] = "http://127.0.0.1:9" }).Build());
+        await using var sp = services.BuildServiceProvider();
+        var transport = sp.GetRequiredService<CostControlGrpcTransport>();
+        transport.Dispose();
+        var gate = new GrpcLlmCostHaltGate(transport, NullLogger<GrpcLlmCostHaltGate>.Instance);
+
+        (await gate.IsHaltedAsync(TestContext.Current.CancellationToken)).Should().BeFalse();
+    }
+
     private sealed class JsonStub(string body) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
