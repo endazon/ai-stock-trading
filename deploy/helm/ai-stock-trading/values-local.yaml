@@ -15,8 +15,9 @@
 #   - secret は secretKeyRef のまま（平文の鍵・トークンは置かない）。実値は ESO(Vault) 同期（IADR-0094）が既定で
 #     供給する（#795 / IADR-0341: 値は基盤の画面から Vault へ書く）。AST_ESO=0 の従来経路でだけ
 #     k8s-local-deploy.sh が env から ast-secrets を作る。
-#   - order-execution は extraEnv だけを写す（#1339: 判断由来の決済の未約定取消の有効化）。broker は書かない → Broker__Provider は
-#     template 既定 paper（broker.tier 未指定・IADR-0111）＝実弾 OFF 不変。発注予約の自動リコンサイル（Reconciliation__*）は
+#   - 発注先は broker.tier: moomoo-sim（OpenD 経由の SIMULATE）を書く（計画 ADR-0076 決定 1・#1500・IADR-0598。下の broker 節）。
+#     実弾 OFF は不変（moomoo-live は描画で止まる・IADR-0111）。本番既定（values.yaml）は paper のまま。
+#   - order-execution は extraEnv だけを写す（#1339: 判断由来の決済の未約定取消の有効化）。発注予約の自動リコンサイル（Reconciliation__*）は
 #     values.yaml と同じ値を写す。🔴 #1051: 解放の門は取引環境ごとの
 #     Reconciliation__ReleaseOnNotPlaced__Simulate / __Real で、**ローカルでもどちらも "false"（閉）**。ここで上書きしない
 #     （開けるには、その取引環境の実機の記録を添えた values.yaml の変更が要る。docs/operations/operations.md）。
@@ -59,6 +60,15 @@ opend:
 # （ClusterSecretStore・基盤が作る）。scripts/k8s-local-deploy.sh は AST_ESO（未設定＝本値から導出）で経路を選び、
 # ESO 所有の間は ast-secrets を作らず discord.bot.* も渡さない。ESO の無いクラスタでは AST_ESO=0 で従来経路へ戻す
 # （helm へ両フラグ false を明示する）。OpenD は moomoo-credentials / moomoo-rsa が揃うまで起動を待つ（fail-closed）。
+# 🔴 FR-05, FR-20, 計画 ADR-0076 決定 1・2, ADR-0072, #1500, IADR-0598: PoC の経路の発注先は moomoo-sim（OpenD 経由の SIMULATE）。
+#   配備の手順の引き継ぎ（BROKER_TIER・前回のリリースの値）に委ねず、構成に書く（ADR-0072 の取消は moomoo の構成でだけ働く）。
+#   - 実弾には届かない: Broker__Environment=sim。moomoo-live は描画で止まる（IADR-0111）。ArgoCD は本ファイルを重ねない。
+#   - 🔴 OpenD が常駐し、ログイン済みであることが前提。そうでない間は新規建てが拒否される（fail-closed）。
+#     OpenD の無いクラスタでは k8s-local-deploy.sh に BROKER_TIER=paper を明示する（--set は本ファイルより優先し、次回へ引き継がれる）。
+#   - opend.enabled は書かない（OpenD の常駐の有無は環境固有。従来どおり OPEND_ENABLED → 引き継ぎ。上の opend 節）。
+broker:
+  tier: moomoo-sim
+
 externalSecrets:
   enabled: true
   appSecrets:
@@ -103,8 +113,8 @@ services:
       # ADR-0008 の撤退基準は実DD を入力に取るが、それを書く本番コードがバックテスト射影 1 箇所しか無いため
       # 構造的に発火し得なかった。本ドライバが営業日の定時に建玉台帳の DrawdownRatio をサンプリングし、
       # 段階実績台帳へ単調 latch する（IADR-0103）。上の EnableMarkToMarket=true が前提で、経路B では既に満たす。
-      # 台帳依存: 経路B の既定ブローカは paper で擬似約定が台帳へ入るため実効する。moomoo SIMULATE 経路は
-      # 約定が台帳へ伝播しないため #270 が入るまで DD は 0 のまま＝不活性（安全側）。
+      # 台帳依存: 約定が台帳へ入るので実効する。経路B の発注先は moomoo-sim（#1500。上の broker 節）で、約定は短周期の
+      # ポーリングで台帳へ入る（#270 / IADR-0113）。paper へ上書きした環境では擬似約定が台帳へ入る。
       - { name: ObservedDrawdownRefresh__Enabled, value: "true" }  # ← 実DD 供給（既定 false＝本番既定）
       # ★ 撤退の**実行側**（IADR-0083）。上の実DD 供給とセットで初めて ADR-0008 の撤退基準が評価される。
       #   ⚠️ 条件成立時は**自動で kill switch が起動**し、解除には確認フレーズが要る（IADR-0097）＝
@@ -138,7 +148,8 @@ services:
   # FR-10, FR-19, ADR-0067 決定 2・6, #1339, IADR-0539: 判断由来の決済の指値が N 分たっても約定しなければ取り消す（取り消すだけ）。
   # 本番既定（values.yaml）は無効のまま（キーを置かない）。N は暫定値の 15 分（既定と同じ）なので __UnfilledMinutes は書かない。
   # 🔴 Helm はリスト(extraEnv)を置換するため、values.yaml の order-execution の extraEnv を全要素写す（値は本番既定と同一。
-  #    helm.yml の「values-local drops no env from prod default」検査に掛かる）。Broker__Provider は template が決めるので不変（paper）。
+  #    helm.yml の「values-local drops no env from prod default」検査に掛かる）。Broker__Provider は上の broker.tier（moomoo-sim）から
+  #    template が決める（moomoo・Environment=sim。#1500）。取消は moomoo の構成でだけ働く（paper は即時に約定し、取り消す対象が残らない）。
   #    発注予約の自動リコンサイルの解放の門（Reconciliation__ReleaseOnNotPlaced__*）も本番既定と同じ "false"（閉）のまま（#1051）。
   order-execution:
     extraEnv:

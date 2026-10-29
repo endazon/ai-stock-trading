@@ -294,7 +294,8 @@ sync_ast_secrets() {
 # #626, IADR-0283 / #673: 前回リリースの値を個別に引き継ぐ Helm values のキー定義:
 # <ドット区切りパス>|<環境変数>|<set 方式>。<set 方式> は "set"（--set。列挙値・真偽値向け）または
 # "set-string"（--set-string。snowflake ID 等の数値化事故を避ける。helm_escape を適用する）。
-# ast-secrets と異なり dev 既定は持たない（未指定・前回値なしは chart 既定＝paper / false / 空文字 に委ねる）。
+# ast-secrets と異なり dev 既定は持たない（未指定・前回値なしは -f で重ねるプロファイル → chart 既定に委ねる。
+# broker.tier はプロファイル values-local.yaml の moomoo-sim〔#1500・IADR-0598〕、opend.enabled は chart 既定の false）。
 # discord.bot.* の 4 件は #673 で合流した（従来は values-local.yaml の env 直渡しのみで引き継ぎ対象外だった）。
 # #795, IADR-0341: ESO 所有の経路では discord.bot.* を解決しない（ast-secrets の discord-bot-* から読むため）。
 AST_VALUE_KEYS=(
