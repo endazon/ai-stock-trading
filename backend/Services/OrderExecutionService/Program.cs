@@ -3,6 +3,7 @@ using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.AdoptPositionDrift;
 using OrderExecutionService.Features.OrderExecution.AmendOrder;
 using OrderExecutionService.Features.OrderExecution.CancelUnfilledDecisionCloses;
+using OrderExecutionService.Features.OrderExecution.CancelUnfilledDecisionEntries;
 using OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
 using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
@@ -415,6 +416,15 @@ builder.Services.AddOptions<DecisionCloseUnfilledCancelOptions>()
     .ValidateOnStart();
 builder.Services.AddSingleton<
     Microsoft.Extensions.Options.IValidateOptions<DecisionCloseUnfilledCancelOptions>, DecisionCloseUnfilledCancelOptionsValidator>();
+// 🔴 FR-10, FR-19, #1486, IADR-0594 決定1: 判断由来の**新規建て**の指値の未約定時の取消（**既定は無効**。計画の裁定待ち＝planning#852。有効化は裁定の後）。
+// 検証は決済の取消と同じ範囲で、構成を問わず起動で走らせる。
+builder.Services.AddOptions<DecisionEntryUnfilledCancelOptions>()
+    .Bind(builder.Configuration.GetSection(
+        DecisionEntryUnfilledCancelOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<
+    Microsoft.Extensions.Options.IValidateOptions<DecisionEntryUnfilledCancelOptions>,
+    DecisionEntryUnfilledCancelOptionsValidator>();
 if (brokerSelection.IsMoomoo)
 {
     // 🔴 FR-10, #833 項目1, IADR-0389: 受理だけで完了させた S1 の保護記録の再武装。約定追跡が「確認できた
@@ -440,6 +450,8 @@ if (brokerSelection.IsMoomoo)
         sp.GetRequiredService<OrderExecutionAppService>()));
     // 🔴 #1339, IADR-0539: 約定追跡の常駐が巡回ごとに呼ぶ（新しい常駐は足さない）。無効なら何もしない。
     builder.Services.AddScoped<DecisionCloseUnfilledCanceller>();
+    // 🔴 #1486, IADR-0594 決定1: 新規建ての取消も同じ常駐が巡回ごとに呼ぶ。無効（既定）なら何もしない。
+    builder.Services.AddScoped<DecisionEntryUnfilledCanceller>();
     builder.Services.AddHostedService<OrderFillPollingService>();
 }
 

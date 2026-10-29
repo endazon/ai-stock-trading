@@ -37,81 +37,22 @@ public sealed class DecisionCloseUnfilledCanceller(
     /// <summary>ライフサイクル台帳・OrderCancelled に残す取消の理由（系による取消であることを識別できる固定の接頭辞）。</summary>
     public const string ReasonPrefix = "判断由来の決済の指値が未約定のため系が取消（ADR-0067）";
 
-    private static readonly Market[] SupportedMarkets = Enum.GetValues<Market>();
-
     private readonly ILogger _logger = logger ?? NullLogger<DecisionCloseUnfilledCanceller>.Instance;
 
     /// <summary>
     /// 1 巡回。無効なら何もせず空を返す。<paramref name="cappedOrderIds"/> は前の巡回までに回数の上限で取り消さないと決めた注文で、
     /// 問い合わせの段で除く（印を書かずに毎巡回候補へ戻って件数の上限を占めないように。呼び出し側＝常駐がプロセス内で持つ）。
     /// </summary>
-    public async Task<DecisionCloseUnfilledCancelResult> RunOnceAsync(
+    public Task<DecisionCloseUnfilledCancelResult> RunOnceAsync(
         IReadOnlyCollection<string>? cappedOrderIds = null, CancellationToken cancellationToken = default)
     {
         var settings = options.Value;
         if (!settings.Enabled)
-            return DecisionCloseUnfilledCancelResult.Empty;
+            return Task.FromResult(DecisionCloseUnfilledCancelResult.Empty);
 
-        cancellationToken.ThrowIfCancellationRequested();
-        var now = clock.UtcNow;
-        // 🔴 対象は今の市場の現地取引日に発注した決済だけ（前日以前の非終端は当日の一覧に無く、取消を送れない記録＝IADR-0536 残余 1。
-        // 回数の枠を消費させない）。問い合わせの下限は全市場の日の始まりの早いほう、市場ごとの厳密な下限は下で見る。
-        var earliestDayStart = SupportedMarkets.Min(m => TradingDayRange(m, now).Start);
-        var candidates = store.FindUnfilledDecisionCloses(
-            now - settings.Unfilled, settings.EffectiveBatchSize, cappedOrderIds, earliestDayStart);
-        if (candidates.Count == 0)
-            return DecisionCloseUnfilledCancelResult.Empty;
-
-        var confirmed = new List<OrderCancelled>();
-        var requested = new List<ExecutionRecord>();
-        var capped = new List<ExecutionRecord>();
-        var failed = 0;
-
-        foreach (var record in candidates)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            // 決定2: 回数の上限は市場の現地取引日で数える（米国株は米国東部の暦日。UTC の暦日では数えない）。
-            var (dayStart, dayEnd) = TradingDayRange(record.Market, now);
-            if (record.ExecutedAt < dayStart)
-                continue; // 前の取引日に発注した決済（上の注記）。
-            var used = store.CountUnfilledCancelRequests(record.Symbol, record.Market, record.Side, dayStart, dayEnd);
-            if (used >= settings.MaxCancelsPerPositionPerDay)
-            {
-                capped.Add(record);
-                continue;
-            }
-
-            // 印を先に書く。書けない（並行に終端した・既に印がある）なら取り消さない。
-            if (!store.MarkUnfilledCancelRequested(record.OrderId, now))
-                continue;
-
-            requested.Add(record);
-            var reason = $"{ReasonPrefix}: 発注から {(int)(now - record.ExecutedAt).TotalMinutes} 分（N={settings.UnfilledMinutes} 分）";
-            try
-            {
-                var outcome = await amendments.CancelAsync(record.DecisionId, reason, cancellationToken).ConfigureAwait(false);
-                _logger.LogWarning(
-                    "判断由来の決済の指値を取り消しました（発注から {N} 分以上未約定。置き直し・成行への切り替えはしません。次の判断の巡回に任せます）: "
-                        + "DecisionId={DecisionId} OrderId={OrderId} 銘柄={Symbol} 方向={Side} 約定 {Filled}/{Quantity} 発注={PlacedAt} "
-                        + "取消の確認={Confirmed} 照会した状態={Observed}。確認できない取消は約定追跡が終端を確かめてから解放します。",
-                    settings.UnfilledMinutes, record.DecisionId, record.OrderId, record.Symbol, record.Side,
-                    record.FilledQuantity, record.Quantity, record.ExecutedAt, outcome.Confirmed,
-                    outcome.ObservedStatus is { } observed ? OrderStatusDisplay.Describe(observed) : "不明");
-                if (outcome.Event is { } cancelled)
-                    confirmed.Add(cancelled);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                failed++;
-                _logger.LogWarning(ex,
-                    "判断由来の決済の指値の取消に失敗しました（再試行はしません。注文は当日限り〔DAY〕で失効します）: "
-                        + "DecisionId={DecisionId} OrderId={OrderId} 銘柄={Symbol}。証券会社の画面で注文を確認してください。",
-                    record.DecisionId, record.OrderId, record.Symbol);
-            }
-        }
-
-        return new DecisionCloseUnfilledCancelResult(requested, confirmed, capped, failed);
+        // #1486, IADR-0594 決定1: 取消の本体は新規建ての取消と共有する（対象の建玉効果・理由の接頭辞・文言の語だけが違う）。
+        return UnfilledDecisionOrderCancellation.RunAsync(
+            store, amendments, clock, settings, PositionEffect.Close, ReasonPrefix, "決済", _logger, cappedOrderIds, cancellationToken);
     }
 
     /// <summary>

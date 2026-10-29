@@ -231,9 +231,9 @@ public class OneShareCapacityDecisionTests
     // T-10-2384: 🔴 省かない経路（LLM を呼ぶ）。保有中（決済の判断を残す。買い増しは LLM の後に数量 0）・未約定あり・現在値ソースが未有効
     // （サイジングは LLM の参照価格を使うので LLM の前には分からない）・段階残枠または日次残枠が未供給（「分からない」を「足りない」と読まない）。
     // どれも従来どおり LLM の後にサイジングの数量 0 で見送る。
+    // ［2026-10-29 / #1486・IADR-0594 決定2］保有 0 で未約定ありは LLM の前で見送るようになったので外した（T-10-3078 が固定する）。
     [Theory]
     [InlineData("held")]
-    [InlineData("working")]
     [InlineData("noCurrentPrice")]
     [InlineData("stageUnknown")]
     [InlineData("dailyUnknown")]
@@ -242,7 +242,6 @@ public class OneShareCapacityDecisionTests
         var probe = kind switch
         {
             "held" => Create(Context(stageRemaining: 2_000m), new FakeHeld(10)),
-            "working" => Create(Context(stageRemaining: 2_000m), new FakeHeld(0, working: true)),
             "noCurrentPrice" => Create(
                 Context(stageRemaining: 2_000m), new FakeHeld(0), new FakeCurrentPrice(GooglPrice, enabled: false)),
             "stageUnknown" => Create(Context(stageRemaining: null, dailyRemaining: 2_000m), new FakeHeld(0)),

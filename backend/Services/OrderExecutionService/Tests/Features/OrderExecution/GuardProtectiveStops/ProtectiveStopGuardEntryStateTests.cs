@@ -121,7 +121,7 @@ public class ProtectiveStopGuardEntryStateTests
     // S0 の行（逆指値 stop-1・試行 1）とエントリーの発注記録（DecisionId＝EntryDecisionId）を置く。
     private static Harness NewHarness(
         OrderStatus? entryRecordStatus = OrderStatus.Accepted, int entryRecordFilled = 0, ProtectiveStopOrder? row = null,
-        ILogger<ProtectiveStopGuard>? logger = null)
+        ILogger<ProtectiveStopGuard>? logger = null, OrderApprovalOrigin? entryOrigin = null)
     {
         var entry = row?.EntryDecisionId ?? Guid.NewGuid();
         var broker = new EntryStateBroker();
@@ -132,7 +132,8 @@ public class ProtectiveStopGuardEntryStateTests
         {
             store.Save(new ExecutionRecord(
                 entry, EntryOrderId, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, PositionEffect.Open,
-                10, 1_000m, entryRecordFilled, entryRecordFilled > 0 ? 1_000m : 0m, status, 0m, Now.AddMinutes(-10)));
+                10, 1_000m, entryRecordFilled, entryRecordFilled > 0 ? 1_000m : 0m, status, 0m, Now.AddMinutes(-10),
+                ApprovalOrigin: entryOrigin));
         }
 
         var reservations = new InMemoryOrderReservationStore();
@@ -762,5 +763,48 @@ public class ProtectiveStopGuardEntryStateTests
         h.Held.IsDue(stopDecisionId, Now).Should().BeTrue("発行できなかった通知で 1 時間黙らない");
         h.Clock.UtcNow = Now.AddSeconds(30);
         FilledBeforeEntryNotices(await h.PatrolAsync()).Should().ContainSingle("次の巡回で出し直す");
+    }
+
+    // 🔴 T-10-3081, FR-10, FR-19, #1486, IADR-0594 決定1: 判断由来の新規建ての指値が発注から N 分未約定なら系が取り消し（有効時）、
+    // 保護の記録（エントリーの約定を待っている S0 の逆指値）も、次の保護の巡回で閉じる（逆指値を取り消して完了）。置き直しはしない。
+    // N 分より前は取り消さず、保護の巡回も逆指値を残す（約定後の保護を失わない）。
+    [Fact]
+    public async Task T_10_3081_N分未約定の判断由来の新規建ては取り消され保護の記録も閉じる()
+    {
+        var h = NewHarness(entryOrigin: OrderApprovalOrigin.TradeDecision);
+        h.Broker.Orders[StopOrderId] = StopOrder(OrderStatus.Accepted);
+        h.Broker.Orders[EntryOrderId] = EntryOrder(OrderStatus.Accepted, filled: 0);
+        h.Broker.Positions = [];
+        var canceller = new OrderExecutionService.Features.OrderExecution.CancelUnfilledDecisionEntries.DecisionEntryUnfilledCanceller(
+            h.Store,
+            new OrderExecutionService.Features.OrderExecution.AmendOrder.OrderAmendmentService(
+                h.Broker, h.Store, new InMemoryOrderLifecycleStore(), h.Clock),
+            h.Clock,
+            Microsoft.Extensions.Options.Options.Create(
+                new OrderExecutionService.Features.OrderExecution.CancelUnfilledDecisionEntries.DecisionEntryUnfilledCancelOptions
+                {
+                    Enabled = true,
+                }));
+
+        // 発注から 10 分（N＝15 分の前）: 取り消さない。保護の巡回は生きているエントリーの逆指値を残す。
+        (await canceller.RunOnceAsync()).Requested.Should().BeEmpty();
+        await h.PatrolAsync();
+        h.Broker.Cancelled.Should().BeEmpty();
+        h.Row.State.Should().Be(ProtectiveStopState.Active);
+
+        // 発注から 15 分: 新規建てを取り消す（置き直さない）。次の保護の巡回で逆指値を取り消して記録を閉じる。
+        h.Clock.UtcNow = Now.AddMinutes(5);
+        var result = await canceller.RunOnceAsync();
+        result.Requested.Select(r => r.OrderId).Should().Equal([EntryOrderId]);
+        result.Confirmed.Should().ContainSingle().Which.Reason
+            .Should().StartWith(OrderExecutionService.Features.OrderExecution.CancelUnfilledDecisionEntries.DecisionEntryUnfilledCanceller.ReasonPrefix);
+        h.Broker.Cancelled.Should().Equal([EntryOrderId]);
+
+        await h.PatrolAsync();
+
+        h.Broker.Cancelled.Should().Equal([EntryOrderId, StopOrderId], "建玉は生じなかった——残る逆指値は取り消す");
+        h.Row.State.Should().Be(ProtectiveStopState.Completed, "保護の記録を閉じる");
+        h.Broker.StopPlaceCount.Should().Be(0);
+        h.Broker.MarketCloseCount.Should().Be(0);
     }
 }
