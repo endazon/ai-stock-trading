@@ -196,6 +196,23 @@ public class EfStoreTests
         new EfPriceBaselineStore(db2).GetBaseline("AAPL", Market.UnitedStates).Should().Be(1_234m);
     }
 
+    // FR-03, #1487, IADR-0596: 置いた時刻（UpdatedAt）つきで読める（取引日をまたいだ基準値の置き直しに使う）。
+    [Fact]
+    public void 基準値は置いた時刻つきで読める_1487()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var before = DateTimeOffset.UtcNow;
+        using (var db = NewContext(dbName))
+        {
+            new EfPriceBaselineStore(db).SetBaseline("AAPL", Market.UnitedStates, 1_234m);
+        }
+        using var db2 = NewContext(dbName);
+        var entry = new EfPriceBaselineStore(db2).GetBaselineEntry("AAPL", Market.UnitedStates);
+        entry!.Price.Should().Be(1_234m);
+        entry.SetAt.Should().NotBeNull().And.BeOnOrAfter(before);
+        new EfPriceBaselineStore(db2).GetBaselineEntry("MSFT", Market.UnitedStates).Should().BeNull();
+    }
+
     [Fact]
     public void 基準値は更新できる()
     {

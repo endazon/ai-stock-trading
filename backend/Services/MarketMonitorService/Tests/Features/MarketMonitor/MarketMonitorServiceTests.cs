@@ -521,4 +521,43 @@ public class MarketMonitorServiceTests
         delivered.Should().Equal(("AAPL", Now.AddSeconds(5), 1), ("MSFT", Now.AddSeconds(10), 2));
         result.StopLosses.Select(s => s.Symbol).Should().Equal("AAPL", "MSFT");
     }
+
+    // 🔴 FR-03, UC-02, #1487, IADR-0596: 基準値は**その市場の現地取引日のうち**だけ使う。前の取引日に置いた基準値は、新しい取引日の最初の場中の巡回で
+    // そのときの現在値へ置き直し、その巡回では判定しない（前日の判断の価格と翌日の寄り付きの差を急変と見ない）。同じ取引日に置いた基準値は従来どおり判定する。
+    // Now＝2026-07-10 01:00Z は米国東部 7/9 21:00（7/9 の取引日）。前の取引日＝7/8 の 15:00 EDT（19:00Z）に置いた基準値。
+    [Fact]
+    public async Task 前の取引日に置いた基準値は新しい取引日の最初の巡回で現在値へ置き直し急変と見ない_1487()
+    {
+        var h = new Harness(Settings(Aapl));
+        h.Baselines.SetBaseline("AAPL", Market.UnitedStates, 1_000m, new DateTimeOffset(2026, 7, 8, 19, 0, 0, TimeSpan.Zero));
+        h.Market.Set("AAPL", Market.UnitedStates, 1_100m); // 前日の基準値比 +10%
+
+        var first = await h.Service().EvaluateRoundAsync();
+
+        first.PriceMovements.Should().BeEmpty("前日の基準値で急変を検知しない");
+        h.Baselines.GetBaseline("AAPL", Market.UnitedStates).Should().Be(1_100m, "新しい取引日の現在値へ置き直す");
+
+        // 置き直した基準値からの変動は従来どおり判定する（+4%）。
+        h.Market.Set("AAPL", Market.UnitedStates, 1_144m);
+        var second = await h.Service().EvaluateRoundAsync();
+        second.PriceMovements.Should().ContainSingle().Which.BaselinePrice.Should().Be(1_100m);
+    }
+
+    // 否定形: 同じ取引日に置いた基準値（7/9 14:00 EDT＝18:00Z）は置き直さずに判定する。置いた時刻が分からない基準値も従来どおり判定する。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task 同じ取引日か置いた時刻が分からない基準値は置き直さずに判定する_1487(bool knownTime)
+    {
+        var h = new Harness(Settings(Aapl));
+        if (knownTime)
+            h.Baselines.SetBaseline("AAPL", Market.UnitedStates, 1_000m, new DateTimeOffset(2026, 7, 9, 18, 0, 0, TimeSpan.Zero));
+        else
+            h.Baselines.SetBaseline("AAPL", Market.UnitedStates, 1_000m);
+        h.Market.Set("AAPL", Market.UnitedStates, 1_100m);
+
+        var result = await h.Service().EvaluateRoundAsync();
+
+        result.PriceMovements.Should().ContainSingle().Which.BaselinePrice.Should().Be(1_000m);
+    }
 }
