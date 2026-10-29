@@ -440,6 +440,23 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
         res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
+    // NFR, #1502, IADR-0600: 未終端の注文（live の E2E の門が読む）は OwnerOnly の読み取り。サービス・他の役割は 403、未認証は 401。
+    // 返すのは門に要る最小の欄（銘柄・市場・種別・状態・承認時刻）だけで、数量・価格・判断 ID は返さない。
+    [Fact]
+    public async Task in_flight_orders_は利用者だけが配列で読め最小の欄だけを返す_1502()
+    {
+        (await factory.CreateClient().GetAsync("/risk-controls/in-flight-orders")).StatusCode
+            .Should().Be(HttpStatusCode.Unauthorized);
+        (await ClientWithRoles(Service).GetAsync("/risk-controls/in-flight-orders")).StatusCode
+            .Should().Be(HttpStatusCode.Forbidden);
+        (await ClientWithRoles("viewer").GetAsync("/risk-controls/in-flight-orders")).StatusCode
+            .Should().Be(HttpStatusCode.Forbidden);
+
+        var res = await OwnerClient().GetAsync("/risk-controls/in-flight-orders");
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await res.Content.ReadFromJsonAsync<List<System.Text.Json.JsonElement>>()).Should().NotBeNull();
+    }
+
     [Fact]
     public async Task サービスロールは_status_を照会できない_403()
     {
