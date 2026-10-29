@@ -53,7 +53,7 @@ public class EntryBlockersBeforeLlmTests
     }
 
     // 保有照会（実結線）。held が null なら不明。working は null なら不明、true なら未約定あり。
-    private sealed class FakeHeld(int? held, bool? working = false) : IHeldPositionProvider
+    private sealed class FakeHeld(int? held, bool? working = false, TradeSide workingSide = TradeSide.Buy) : IHeldPositionProvider
     {
         public bool IsEnabled => true;
 
@@ -73,7 +73,7 @@ public class EntryBlockersBeforeLlmTests
             Task.FromResult(working switch
             {
                 null => null,
-                true => new WorkingEntryOrders([new WorkingEntryOrder(TradeSide.Buy, 5, 1_000m, Now.AddMinutes(-1))]),
+                true => new WorkingEntryOrders([new WorkingEntryOrder(workingSide, 5, 1_000m, Now.AddMinutes(-1))]),
                 false => WorkingEntryOrders.None,
             });
     }
@@ -307,6 +307,21 @@ public class EntryBlockersBeforeLlmTests
         probe.Forgone.Reports.Should().ContainSingle().Which.Reason.Should().Be(DecisionForgoneBeforeLlmReason.EntryOrderWorking);
         probe.Skips.Reasons.Should().Equal([DecisionSkipReason.EntryOrderWorking]);
         probe.Held.Reports.Should().BeEmpty("TradeDecisionHeld は出さない（判断をしていない見送り。IADR-0452 決定 1）");
+    }
+
+    // T-10-3078: 未約定の新規建てが**空売り**でも同じ（結論は Hold・重ね売り・保有 0 での買い〔反対方向の新規建てを、板に残る空売りと並べて建てる〕しか無い）。
+    // LLM が買いを返す・売りを返す、のどちらの出力でも LLM を呼ばない。
+    [Theory]
+    [InlineData(BuyJson)]
+    [InlineData(SellJson)]
+    public async Task T_10_3078_未約定の新規建てが空売りでもLLMを呼ばずに見送る(string llmOutput)
+    {
+        var probe = Create(new FakeHeld(0, working: true, workingSide: TradeSide.Sell), new FakeBlockers(EntryBlockers.None), llmOutput);
+
+        (await probe.Service.DecideAsync(Trigger(), TestContext.Current.CancellationToken)).Should().BeNull();
+
+        probe.Llm.Calls.Should().Be(0);
+        probe.Forgone.Reports.Should().ContainSingle().Which.Reason.Should().Be(DecisionForgoneBeforeLlmReason.EntryOrderWorking);
     }
 
     // T-10-3078: 見送らない側（窓の減る側）。未約定が不明・保有中・未約定なしでは LLM を呼ぶ。

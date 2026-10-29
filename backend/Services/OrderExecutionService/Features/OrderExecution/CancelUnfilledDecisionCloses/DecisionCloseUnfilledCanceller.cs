@@ -37,7 +37,6 @@ public sealed class DecisionCloseUnfilledCanceller(
     /// <summary>ライフサイクル台帳・OrderCancelled に残す取消の理由（系による取消であることを識別できる固定の接頭辞）。</summary>
     public const string ReasonPrefix = "判断由来の決済の指値が未約定のため系が取消（ADR-0067）";
 
-
     private readonly ILogger _logger = logger ?? NullLogger<DecisionCloseUnfilledCanceller>.Instance;
 
     /// <summary>
