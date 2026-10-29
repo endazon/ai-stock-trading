@@ -25,8 +25,9 @@ const base = () => ({
 });
 
 /** 偽の BFF。書き込みは記録して、状態へ反映する（復元が効いたかを、もう一度の突合で見る）。 */
-function fakeBff(state, { failGet = null, rejectWrites = false } = {}) {
+function fakeBff(state, { failGet = null, rejectWrites = false, failFirst = null } = {}) {
   const sent = [];
+  let failedOnce = false;
   return {
     sent,
     state,
@@ -37,6 +38,10 @@ function fakeBff(state, { failGet = null, rejectWrites = false } = {}) {
     async send(method, p, body) {
       sent.push({ method, path: p, body });
       if (rejectWrites) throw new Error(`${method} ${p} が 500`);
+      if (failFirst === `${method} ${p}` && !failedOnce) {
+        failedOnce = true;
+        throw new Error(`${method} ${p} が 500`);
+      }
       const s = state['/bff/risk-controls/settings'];
       if (p === '/bff/risk-controls/settings/limits') s.limits = body.limits;
       else if (p === '/bff/risk-controls/settings/stage1-minimum-trade-count') s.stage1MinimumTradeCount = body.minimumTradeCount;
@@ -115,6 +120,25 @@ test('復元の要求が失敗したら errors に残り、差分も残る（赤
   const r = await core.reconcile(bff, snap);
   assert.strictEqual(r.errors.length, 1);
   assert.deepStrictEqual(r.remaining.map((d) => d.key), ['limits']);
+});
+
+test('監視銘柄の復元は 1 件目の DELETE が失敗しても残りを試し、失敗は errors に集め、差分は赤のまま残る', async () => {
+  const bff = fakeBff(base(), { failFirst: 'DELETE /bff/monitor/watchlist' });
+  const snap = await core.takeSnapshot(bff, 'r8');
+  bff.state['/bff/monitor/watchlist'] = [
+    { symbol: 'AAPL', market: 0 },
+    { symbol: 'E2EA', market: 0 },
+    { symbol: 'E2EB', market: 0 },
+  ];
+  const r = await core.reconcile(bff, snap);
+  assert.deepStrictEqual(
+    bff.sent.map((x) => `${x.method} ${x.body.symbol}`),
+    ['DELETE E2EA', 'DELETE E2EB', 'POST MSFT'],
+    '1 件目の失敗の後も、残りの DELETE と POST を送る',
+  );
+  assert.strictEqual(r.errors.length, 1);
+  assert.ok(r.errors[0].startsWith('watchlist: DELETE 0:E2EA'), r.errors[0]);
+  assert.deepStrictEqual(r.remaining.map((d) => d.key), ['watchlist'], '消せなかった銘柄の差分は残る（赤）');
 });
 
 test('dryRun は書き込まず、差分をそのまま残りとして返す', async () => {

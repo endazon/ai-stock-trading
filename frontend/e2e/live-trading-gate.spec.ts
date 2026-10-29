@@ -6,7 +6,7 @@ import {
   runIdOf,
   tradingGateProblems,
 } from './live/support/snapshot';
-import { verdictOf } from './live/support/restore';
+import { restoreCommandError, verdictOf } from './live/support/restore';
 
 // NFR / IADR-0565 決定 2・3 / IADR-0599（#1418 / E-60）: live の trading 層の**門**と**突合の判定**を L1 で固定する。
 // 稼働の環境には触れない（時刻と in-flight の判定を差し替えて、門の関数だけを呼ぶ）。市場の規則そのものの境界は
@@ -62,4 +62,14 @@ test('スナップショットは取引に影響する設定の GET を全て読
     '/bff/monitor/watchlist',
     '/bff/assumptions',
   ]);
+});
+
+test('突合が例外で落ちたら、スナップショットの場所と単独実行の復元コマンドを ::error:: で出す', () => {
+  const line = restoreCommandError('/x/test-results/trading-snapshot-r1.json', new Error('GET /bff/assumptions が 503\n詳細'));
+  expect(line).toMatch(/^::error::/);
+  expect(line).toContain('GET /bff/assumptions が 503');
+  expect(line).not.toContain('詳細');
+  expect(line).toContain(
+    'node scripts/e2e-trading-restore.js --snapshot /x/test-results/trading-snapshot-r1.json --live',
+  );
 });

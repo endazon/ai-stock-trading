@@ -96,11 +96,23 @@ const ITEMS = [
     key: 'watchlist',
     from: '/bff/monitor/watchlist',
     pick: (v) => sortWatchlist(v),
+    // 🔴 1 件の失敗で残りを止めない（1 件ずつ試し、失敗は返して errors に集める。差分は再突合で赤のまま残る）。
     restore: async (client, before, after, reason) => {
       const want = new Set(before.map(keyOf));
       const have = new Set(after.map(keyOf));
-      for (const s of after) if (!want.has(keyOf(s))) await client.send('DELETE', '/bff/monitor/watchlist', { ...s, reason });
-      for (const s of before) if (!have.has(keyOf(s))) await client.send('POST', '/bff/monitor/watchlist', { ...s, reason });
+      const ops = [
+        ...after.filter((s) => !want.has(keyOf(s))).map((s) => ['DELETE', s]),
+        ...before.filter((s) => !have.has(keyOf(s))).map((s) => ['POST', s]),
+      ];
+      const failures = [];
+      for (const [method, s] of ops) {
+        try {
+          await client.send(method, '/bff/monitor/watchlist', { ...s, reason });
+        } catch (e) {
+          failures.push(`${method} ${keyOf(s)}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      return failures;
     },
   },
   // 全体前提条件は値だけを比べる（版は同値の保存でも進む）。全置換の PUT は版の扱いを伴うので復元しない（画面で戻す）。
@@ -173,7 +185,9 @@ async function reconcile(client, snapshot, { dryRun = false } = {}) {
       const item = ITEMS.find((i) => i.key === d.key);
       attempted.push(d.key);
       try {
-        await item.restore(client, d.before, d.after, reason);
+        // restore は失敗の一覧（文字列の配列）を返してよい（1 件ずつ試す項目。監視銘柄）。
+        const failures = await item.restore(client, d.before, d.after, reason);
+        if (Array.isArray(failures)) for (const f of failures) errors.push(`${d.key}: ${f}`);
       } catch (e) {
         errors.push(`${d.key}: ${e instanceof Error ? e.message : String(e)}`);
       }

@@ -52,7 +52,7 @@ plan_refs:
 ## 検証
 
 - `REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js`（市場の門 7 件と、復元の本体の試験の起動 1 件を含む）。
-- `node scripts/e2e-trading-restore.test.js`（9 件）。
+- `node scripts/e2e-trading-restore.test.js`（10 件。レビューで監視銘柄の 1 件目の失敗の試験を足した）。
 - `npx playwright test e2e/live-trading-gate.spec.ts e2e/live-opt-in.spec.ts`（L1）、`npm run typecheck`・`e2e:typecheck`・eslint。
 - 規則の突合（実装時に 1 回）: 2022-01-01〜2035-12-31 の米国の休場日・半日取引日を、C# の `MarketHolidays`（使い捨てのコンソールで共有カーネルを参照）と本スクリプトで列挙し、170 行が一致した。
 - 門の結線の手動の確かめ: 偽の BFF（`/bff/auth/me` が 200）を手元に立て、`E2E_LIVE=1 E2E_LAYER=trading` で live の config を流した。readiness を通った後、trading の門が「UnitedStates は開場中」と「in-flight を BFF から読めない（#1502）」で exit 2 になり、取引オーナーの state が消えたことを確かめた。

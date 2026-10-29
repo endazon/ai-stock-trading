@@ -20,6 +20,15 @@ export function verdictOf(result: ReconcileResult): { failed: boolean; lines: st
   };
 }
 
+/** 突合が例外で落ちたときに出す行（純関数）。スナップショットの場所と、単独実行の復元コマンドを含む。 */
+export function restoreCommandError(snapshotFile: string, error: unknown): string {
+  const reason = error instanceof Error ? error.message.split('\n')[0] : String(error);
+  return (
+    `::error::[e2e-live] trading の突合が例外で落ちた（${reason}）。スナップショット: ${snapshotFile}。` +
+    `復元は frontend の外で次を流す: node scripts/e2e-trading-restore.js --snapshot ${snapshotFile} --live`
+  );
+}
+
 export default async function tradingGlobalTeardown(): Promise<void> {
   const cfg = parseLiveEnv(process.env);
   if (!cfg.live || !cfg.layers.includes('trading')) return;
@@ -38,6 +47,11 @@ export default async function tradingGlobalTeardown(): Promise<void> {
   let result: ReconcileResult;
   try {
     result = await restoreCore.reconcile(restoreCore.wrapPlaywrightRequest(ctx), snapshot);
+  } catch (e) {
+    // 🔴 突合そのものが例外で落ちた（GET の失敗など）。差分の成果物は書けないので、スナップショットの場所と単独実行の
+    //    復元コマンドを人へ出してから再送出する（例外で実行を失敗にする。process.exit しないので後ろの失効は止めない）。
+    process.stdout.write(`${restoreCommandError(file, e)}\n`);
+    throw e;
   } finally {
     await ctx.dispose();
   }
