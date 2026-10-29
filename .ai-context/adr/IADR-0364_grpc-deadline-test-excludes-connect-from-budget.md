@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-17, IADR-0063, IADR-0284, IADR-0328, IADR-0331]
 author: claude (Claude Code)
 created: 2026-09-19
-updated: 2026-09-19
+updated: 2026-10-30
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-17)
 ---
@@ -204,3 +204,21 @@ Expected host.Stub.Calls to be 1 because 既定は再試行しない, but found 
 
 - Supersedes: なし（IADR-0331 決定 6 を**補う**。決定内容は覆さない）
 - Superseded by: なし
+
+## ［2026-10-30 追記 / #1517］決定 6 — 「暖機」は構成した deadline の経路で行わず、同じチャネルで長い deadline の生の呼び出しで済ませる
+
+決定 1 の後、各サービスの deadline の試験 7 件（取引判断・情報収集・市場監視・報告書）は、**1 回目は応答し 2 回目から黙る提供側**
+（`RespondsOnceThenHangs`）を使い、**1 回目（暖機）を製品の経路＝構成した短い deadline（1〜3 秒）のまま**呼んでいた。
+MSP の Integration（job 123745660928）で、情報収集の `T_10_1698_提供側が黙れば構成した_deadline_で_Normal_へ倒れ再試行しない` が
+`Expected (gate.GetAsync()).Halted to be True because 暖機, but found False.` で赤になった——**暖機そのものが打ち切られた。**
+
+- 実測（手元・計装）: 暖機の所要は、プロセスで最初の gRPC 呼び出しのとき **216 / 256 / 323 ms**（試験 1 本だけを流したとき）、
+  他の試験が先に gRPC を使った後は 3〜7 ms。暖まったプロセスで新しい提供側の初回は 3〜47 ms、同じ提供側へ新しいチャネルの初回は 2〜10 ms。
+  **遅いのは接続の確立ではなく、プロセスで一度きりの立ち上がり（JIT など）である。** CI の負荷下では本 ADR の実測どおり秒の桁へ伸び、2 秒を超え得る。
+- 決定: 暖機は **同じチャネル**（輸送の internal の生成クライアント `Client`）で **deadline 30 秒**の生の呼び出しにする。
+  接続・立ち上がりは 2 回目の予算の外に出たまま、暖機は時間に依存しなくなる。2 回目（黙った提供側）は製品の経路・構成した deadline のまま測り、
+  **deadline の値・経過時間の上界・呼ばれた回数の表明は変えない**（決定 4・5 の検出力を保つ）。
+- 輸送の `Client` が見えない試験プロジェクト（情報収集・市場監視・報告書）に `InternalsVisibleTo` を足し、報告書の監査の輸送は `Client` を internal で見せる
+  （取引判断などと同じ形。公開面は増やさない）。
+- red → green: 提供側の 1 回目の応答を 3.5 秒（どの試験の構成した deadline よりも長い）遅らせる一時的な注入で、旧形は 7 件とも赤、新形は 7 件とも緑。
+

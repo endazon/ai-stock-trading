@@ -15,6 +15,11 @@
     <None Remove="Tests/**" />
   </ItemGroup>
   <ItemGroup>
+    <!-- NFR, IADR-0364, #1517: deadline の試験が、暖機（接続とプロセスの立ち上がり）を構成した deadline の外で済ませるため、
+         輸送の生成クライアント（internal の `Client`）を同じチャネルで長い deadline で呼ぶ。公開面は増やさない（取引判断と同じ形）。 -->
+    <InternalsVisibleTo Include="ReportService.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（RabbitMQ）。共通配線は shim の WolverineExtensions。 -->
     <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="WolverineFx.RuntimeCompilation" />

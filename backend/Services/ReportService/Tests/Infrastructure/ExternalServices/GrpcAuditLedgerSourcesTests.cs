@@ -377,8 +377,12 @@ public class GrpcAuditLedgerSourcesTests
         var (sp, t) = Compose(host.Address, new() { ["Audit:GrpcTimeoutSeconds"] = "3" });
         await using (sp)
         {
+            // 🔴 NFR, IADR-0364 決定 1, #1517: 暖機は**同じチャネル**で長い deadline（30 秒）の生の呼び出しで済ませる。構成した短い deadline の経路で
+            // 暖機すると、プロセスで最初の gRPC の立ち上がり（無負荷で 200〜300 ms・CI の負荷下で秒の桁）が予算を食い、暖機自体が打ち切られて赤になる。
+            // 2 回目（黙った提供側）は製品の経路・構成した deadline のまま測る。
+            (await t.Client.GetEventsByTypeAsync(new Proto.GetEventsByTypeRequest(), deadline: DateTime.UtcNow.AddSeconds(30)))
+                .Should().NotBeNull("暖機（1 回目は応答する）");
             var source = new GrpcTradeRationaleSource(t, Log<GrpcTradeRationaleSource>());
-            (await source.GetRationalesAsync(From, To)).Should().NotBeNull("暖機");
 
             var elapsed = System.Diagnostics.Stopwatch.StartNew();
             var rationales = await source.GetRationalesAsync(From, To);

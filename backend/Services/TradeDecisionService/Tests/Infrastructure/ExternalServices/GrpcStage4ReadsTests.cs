@@ -320,8 +320,13 @@ public class GrpcStage4ReadsTests
             Policy = Stage4ReadStubBehavior.RespondsOnceThenHangs(ok),
         });
         await using var sp = Compose(host.Address, new() { ["Reports:GrpcTimeoutSeconds"] = "2" });
+        // 🔴 NFR, IADR-0364 決定 1, #1517: 暖機は**同じチャネル**で長い deadline（30 秒）の生の呼び出しで済ませる。構成した短い deadline の経路で
+        // 暖機すると、プロセスで最初の gRPC の立ち上がり（無負荷で 200〜300 ms・CI の負荷下で秒の桁）が予算を食い、暖機自体が打ち切られて赤になる。
+        // 2 回目（黙った提供側）は製品の経路・構成した deadline のまま測る。
+        var warm = await sp.GetRequiredService<ReportsGrpcTransport>().Client.GetConfirmedDailyPolicyAsync(
+            new ReportProto.GetConfirmedDailyPolicyRequest(), deadline: DateTime.UtcNow.AddSeconds(30));
+        warm.Policy.Should().NotBeNull("暖機（1 回目は応答する）");
         var provider = Policy(sp);
-        (await provider.GetCurrentAsync()).Should().NotBeNull("暖機");
 
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
         var policy = await provider.GetCurrentAsync();

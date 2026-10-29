@@ -202,7 +202,12 @@ public class RiskManagementGrpcTests
         {
             var store = new GrpcPositionStore(
                 transport, new BusinessMetrics(), sp.GetRequiredService<ILogger<GrpcPositionStore>>());
-            (await store.GetOpenPositionsAsync()).Should().ContainSingle("暖機（接続確立を deadline に含めない。#885）");
+            // 🔴 NFR, IADR-0364 決定 1, #1517: 暖機は**同じチャネル**で長い deadline（30 秒）の生の呼び出しで済ませる。構成した短い deadline の経路で
+            // 暖機すると、プロセスで最初の gRPC の立ち上がり（無負荷で 200〜300 ms・CI の負荷下で秒の桁）が予算を食い、暖機自体が打ち切られて赤になる。
+            // 2 回目（黙った提供側）は製品の経路・構成した deadline のまま測る。
+            var warm = await transport.Client.GetOpenPositionsAsync(
+                new Proto.GetOpenPositionsRequest(), deadline: DateTime.UtcNow.AddSeconds(30));
+            warm.Positions.Should().ContainSingle("暖機（1 回目は応答する）");
 
             var elapsed = System.Diagnostics.Stopwatch.StartNew();
             var positions = await store.GetOpenPositionsAsync();
