@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { defaultBff, installBff, pathWithRoles } from './fixtures';
+import { defaultBff, installBff, pathWithRoles, RISK_STATUS, STAGE_GATE } from './fixtures';
 
 // SC-03, FR-10, FR-20, UC-06, IADR-0087: 統制状態参照画面（参照専用）の実ブラウザ E2E。
 // BFF 応答はモック（page.route）。実 API・実クラスタ疎通に依存しない（live 検証は #82 系／MSP#284）。
@@ -135,5 +135,85 @@ test.describe('SC-03 空売りの現況と参照専用性（#340）', () => {
     await expect(page.locator('textarea')).toHaveCount(0);
     await expect(page.locator('form')).toHaveCount(0);
     await expect(page.getByRole('button')).toHaveCount(0);
+  });
+});
+
+// #1513（#1410 の網羅表 A-055・A-056）, SC-03, FR-10, FR-11, FR-20, ADR-0040 決定1, ADR-0041 決定1, ADR-0073 決定3:
+// 単体テストだけで固定していた参照の描き分けを、実ブラウザの L1 でも固定する（偽 BFF のフィクスチャだけ。live には触れない）。
+test.describe('SC-03 未知の値・算入されない期間・取り込み・基準資金の描き分け（#1513）', () => {
+  // A-055: 未知の損切りの実行機構を S0 に倒さず「不明(N)」と出す（S0 と読ませると保護の前提を取り違える）。
+  test('A-055 未知の損切りの実行機構は S0 に倒さず「不明(9)」と出す', async ({ page }) => {
+    await installBff(page, {
+      ...defaultBff(),
+      'GET /risk-controls/status': { status: 200, body: { ...RISK_STATUS, stopLossMethod: 9 } },
+    });
+    await page.goto(pathWithRoles('/controls', ['trading-owner']));
+
+    await expect(page.getByText('損切りの実行機構')).toBeVisible();
+    await expect(page.getByText('不明(9)')).toBeVisible();
+    await expect(page.getByText('S0 ブローカー側逆指値（既定）')).toHaveCount(0);
+  });
+
+  // A-056 ①: Stage 1 の進捗は SIMULATE の約定だけを数え、paper 稼働で算入しなかった営業日数を併記する（0 なら出さない）。
+  test('A-056 Stage 1 の進捗に paper 稼働で除外した営業日数を併記し、0 日なら出さない', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/controls', ['trading-owner']));
+    await expect(page.getByText(/経過 42 \/ \d+ 営業日（paper 稼働により 3 日を除外）/)).toBeVisible();
+
+    await installBff(page, {
+      ...defaultBff(),
+      'GET /risk-controls/stage-gate': {
+        status: 200,
+        body: { ...STAGE_GATE, stage1Progress: { ...STAGE_GATE.stage1Progress, excludedInternalPaperDays: 0 } },
+      },
+    });
+    await page.reload();
+    await expect(page.getByText(/経過 42 \/ \d+ 営業日/)).toBeVisible();
+    await expect(page.getByText(/paper 稼働により/)).toHaveCount(0);
+  });
+
+  // A-056 ②: 当日のシステム外売買の取り込み件数。0 件は「取り込みが無かった」事実であり行ごと消さない。1 件以上なら損益がずれ得る旨を出す。
+  test('A-056 システム外売買の取り込み件数は 0 件でも行を出し、1 件以上なら損益がずれ得る旨を添える', async ({ page }) => {
+    await installBff(page, {
+      ...defaultBff(),
+      'GET /risk-controls/status': { status: 200, body: { ...RISK_STATUS, driftAdoptionCountToday: 0 } },
+    });
+    await page.goto(pathWithRoles('/controls', ['trading-owner']));
+    await expect(page.getByText('システム外売買の取り込み')).toBeVisible();
+    await expect(page.getByText('0件', { exact: true })).toBeVisible();
+    await expect(page.getByText(/実際の口座とずれている可能性があります/)).toHaveCount(0);
+
+    await installBff(page, {
+      ...defaultBff(),
+      'GET /risk-controls/status': { status: 200, body: { ...RISK_STATUS, driftAdoptionCountToday: 2 } },
+    });
+    await page.reload();
+    await expect(page.getByText('2件', { exact: true })).toBeVisible();
+    await expect(page.getByText(/実際の口座とずれている可能性があります/)).toBeVisible();
+  });
+
+  // A-056 ③: 基準資金（直前の暦日の口座照会）が未観測なら、新規建てを止めている理由と最後の観測日を本画面から読めるようにする。
+  test('A-056 基準資金が未観測なら新規建ての停止の理由と最後の観測日を出す', async ({ page }) => {
+    await installBff(page, {
+      ...defaultBff(),
+      'GET /risk-controls/status': {
+        status: 200,
+        body: { ...RISK_STATUS, capitalBaselineObservationMissing: true, capitalBaselineLatestTradingDay: '2026-10-27' },
+      },
+    });
+    await page.goto(pathWithRoles('/controls', ['trading-owner']));
+
+    await expect(
+      page.getByText(/新規建てを停止中: 直前の米国東部暦日に口座照会（基準資金）が成功していません（最後の観測: 2026-10-27）/),
+    ).toBeVisible();
+    await expect(page.getByText(/手仕舞い・損切りは止めていません/)).toBeVisible();
+  });
+
+  test('A-056 基準資金が観測済みなら停止の注記を出さない', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/controls', ['trading-owner']));
+
+    await expect(page.getByRole('table', { name: '上限使用率' })).toBeVisible();
+    await expect(page.getByText(/新規建てを停止中/)).toHaveCount(0);
   });
 });

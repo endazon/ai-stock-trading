@@ -956,3 +956,22 @@ test.describe('SC-02 運用段階と発注先（参照）（#1412）', () => {
     await expect(panel.locator('input, select, textarea, button, form')).toHaveCount(0);
   });
 });
+
+// #1513（#1410 の網羅表 A-041 の読み替え）, SC-02, FR-10, #364, IADR-0152 決定1, IADR-0151 決定4:
+// 実額には**その値の実際の通貨**を明示する。#364 で判定の基準通貨は USD に移り、実額は米ドル建てである
+// （網羅表の文面「円」は移行前のもの。#1410 のコメントで訂正）。円の記号を付けると桁を 100 倍以上見誤り得る。
+test.describe('SC-02 実額の通貨の明示（#1513）', () => {
+  test('A-041 現在の equity と各上限の実額に $ を付けて米ドル建てであることを明示し、円は付けない', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+
+    const form = limitsForm(page);
+    await expect(form).toBeVisible();
+    // equity（RISK_STATUS.capital = 1,000,000）を米ドルの記号つきで出し、基準通貨が米ドルである旨を添える。
+    await expect(form).toContainText('現在の equity（$1,000,000）での実額');
+    await expect(form).toContainText('基準通貨＝米ドル建て');
+    // 各上限の実額も $ つき。
+    await expect(form.getByText(/現在の equity での実額: \$[\d,]+(\.\d+)?/).first()).toBeVisible();
+    await expect(form).not.toContainText('円');
+  });
+});
