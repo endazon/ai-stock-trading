@@ -5,6 +5,7 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Logging;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -126,13 +127,27 @@ public sealed class MarketMonitorAppService(
                 continue;
             }
 
-            var baseline = baselineStore.GetBaseline(monitored.Symbol, monitored.Market);
-            if (baseline is null)
+            var entry = baselineStore.GetBaselineEntry(monitored.Symbol, monitored.Market);
+            if (entry is null)
             {
                 continue; // 基準値未確定（前回判断なし）は変動判定しない。#1077, IADR-0452: Hold も判断に数える
             }
 
-            var movement = PriceMovementEvaluator.Evaluate(quote.Price, baseline.Value, settings.MovementThresholdRatio);
+            // 🔴 FR-03, UC-02, #1487, IADR-0596: 基準値は**その市場の現地取引日のうち**だけ使う。前の取引日に置いた基準値は、新しい取引日の最初の
+            // 場中の巡回でそのときの現在値へ置き直し、この巡回では判定しない（前日の判断の価格〔指値を含む〕と翌日の値の差を急変と見ない。
+            // PoC 2026-10-28: HOOD の前日の売り指値 95.71 が残り、開場直後に疑似の急変を 2 件検知した）。置いた時刻が分からない基準値は従来どおり。
+            if (entry.SetAt is { } setAt && LocalTradingDate(setAt, monitored.Market) < LocalTradingDate(now, monitored.Market))
+            {
+                baselineStore.SetBaseline(monitored.Symbol, monitored.Market, quote.Price);
+                _logger.LogInformation(
+                    "急変の基準値を新しい取引日の現在値へ置き直しました: 銘柄 {Symbol}（{Market}） / 前の基準値 {Previous}（{SetAt:O}） / 新しい基準値 {Price}",
+                    LogSanitizer.Sanitize(monitored.Symbol), monitored.Market, entry.Price, setAt, quote.Price);
+                continue;
+            }
+
+            var baseline = entry.Price;
+
+            var movement = PriceMovementEvaluator.Evaluate(quote.Price, baseline, settings.MovementThresholdRatio);
             if (!movement.Exceeded)
             {
                 continue;
@@ -145,14 +160,14 @@ public sealed class MarketMonitorAppService(
 
             movements.Add(new PriceMovementDetected(
                 Guid.NewGuid(), monitored.Symbol, monitored.Market,
-                quote.Price, baseline.Value, movement.ChangeRatio, now));
+                quote.Price, baseline, movement.ChangeRatio, now));
             cooldownStore.SetLastTriggered(monitored.Symbol, monitored.Market, now);
             // FR-03, ADR-0003, #1364: 検知の中身（銘柄・現在値・基準値・変動率）を INFO で 1 行残す（従来は発行だけで監査で追えなかった）。
             // 銘柄は監視銘柄の設定（利用者・提案の入力）由来のため、行を割らないよう LogSanitizer を通す（NFR, IADR-0316）。
             _logger.LogInformation(
                 "急変を検知しました: 銘柄 {Symbol}（{Market}） / 現在値 {Price} / 基準値 {BaselinePrice} / 変動率 {ChangeRatio} / 閾値 {ThresholdRatio}",
                 LogSanitizer.Sanitize(monitored.Symbol), monitored.Market,
-                quote.Price, baseline.Value, movement.ChangeRatio.ToString("P2", CultureInfo.InvariantCulture),
+                quote.Price, baseline, movement.ChangeRatio.ToString("P2", CultureInfo.InvariantCulture),
                 settings.MovementThresholdRatio.ToString("P2", CultureInfo.InvariantCulture));
         }
 
@@ -169,6 +184,10 @@ public sealed class MarketMonitorAppService(
             ],
         };
     }
+
+    // #1487, IADR-0596: その瞬間が属する市場の現地取引日（米国株は米国東部の暦日。サマータイムは TimeZoneInfo が吸収する）。
+    private static DateTime LocalTradingDate(DateTimeOffset instant, Market market) =>
+        TimeZoneInfo.ConvertTime(instant, MarketHours.ZoneOf(market)).Date;
 
     // #1189, IADR-0494: この巡回で既に照会した（銘柄・市場）なら、その結果（null も）を返す。無ければ照会して覚える。
     // 呼び出し側の停止要求は例外のまま伝わり、覚えない。
