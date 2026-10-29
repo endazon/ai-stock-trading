@@ -5,7 +5,7 @@ status: active
 related_ids: [NFR, ADR-0029, IADR-0207, IADR-0320]
 author: claude (Claude Code)
 created: 2026-09-27
-updated: 2026-10-17
+updated: 2026-10-30
 ---
 
 # 別紙: 計画 ID レンジの引き直し履歴と実測の記録（#1052）
@@ -94,3 +94,6 @@ trace ブロック規約〔ADR-0029 決定4〕の値域検査が読む）。
 - **2026-10-24 に 0075 へ**〔ADR-0072 判断由来の決済の指値の未約定時の取消は、PoC の経路に限り AST#1214 の実弾確認の前に有効にする（ADR-0067 決定 6 の部分改定）。planning#821／ADR-0073 基準資金（equity）の「照会できない」は、直前の米国東部暦日に成功した観測が無いことを指し、そのときは新規建てを拒否して SC-03 と Discord へ知らせる（ADR-0041 決定 2・フォローアップ 3 の補完）。planning#829／ADR-0074 月次 LLM 費用上限の 100% 到達では定時・価格変動の両方の判断を LLM の前で見送る（NFR-13・§6.1 の補完）。planning#830／ADR-0075 日報の無応答時の設定「停止」は、期限を過ぎて日報が未確定の間、取引判断の全体を見送る（FR-07・UC-03・ADR-0003 フォローアップの補完）。planning#831。いずれも Accepted。前回の実測（`577d21f`）以降、既存の AST 計画 ADR の状態の変更は 0 件（`07_adr/` の差分は 4 件の追加のほか、ADR-0003・0041・0063・0066・0067・0070・0071 への補完・例外 4 の注記と README のみ。状態は Accepted のまま）。本リポの追随は #1423 M-3（IADR-0581 と同じ PR）〕。
   **2026-10-24 実測**: 計画リポの `origin/main`（`a47c050`。`git rev-parse --is-shallow-repository` → `true` のため `git worktree add --detach origin/main` で展開した木で実行。
   ファイルの実在の検査であり履歴は使わない）で `node tools/doc-checks/gen-plan-ranges.js --check` が exit 0、ai-stock-trading は ADR **[1, 75]・75 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。
+- **2026-10-30 に 0076 へ**〔ADR-0076 PoC の経路の発注先は moomoo-sim とし、PoC の構成（`values-local.yaml`）に `broker.tier: moomoo-sim` を書く（ADR-0072 の補完）。planning#821 の追加の裁定（planning#844 で追加）。Accepted。前回の実測（`a47c050`）以降、既存の AST 計画 ADR の状態の変更は 0 件（`07_adr/` の差分は ADR-0076 の追加のほか、ADR-0072 への日付つきの補完の注と README のみ。状態は Accepted のまま）。本リポの追随は #1481（週次監査の自動起票）。ADR-0076 決定 1 の構成の変更（`values-local.yaml` は 2026-10-30 の develop `3f9e1c9e` でも発注先を書かず、チャートの既定の paper に委ねている）は本 PR の対象外〕。
+  **2026-10-30 実測**: 計画リポの `origin/main`（`b06dafe`。`git rev-parse --is-shallow-repository` → `true` のため `git worktree add --detach origin/main` で展開した木で実行。
+  ファイルの実在の検査であり履歴は使わない）で `node tools/doc-checks/gen-plan-ranges.js --check` が exit 0、ai-stock-trading は ADR **[1, 76]・76 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。
