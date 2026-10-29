@@ -5152,4 +5152,80 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.ok(dotnetVersionViolations(gj).out.some((e) => e.includes('global-json-file')));
     });
   }
+  // --- NFR, #1418（E-60）, IADR-0565 決定 2, IADR-0599: live の trading 層の市場の閉場の門（scripts/e2e-market-closed.js）---
+  // 規則は backend の MarketSessions.cs / MarketHolidays.cs の写しである。境界は MarketSessionsTests と同じ値で固定する
+  // （前場・後場・閉場・半日・休場の 5 ケース）。2 か所に置く規則がずれたら、ここが赤になる。
+  {
+    const mc = require('./e2e-market-closed.js');
+    const hm = (h, m) => h * 60 + m;
+    ok('E-60 市場の門: 前場（東証 9:00 包含・11:30 排他）', () => {
+      for (const [h, m, want] of [[8, 59, false], [9, 0, true], [11, 29, true], [11, 30, false]]) {
+        assert.strictEqual(mc.isWithinSession('Japan', hm(h, m), false), want, `${h}:${m}`);
+      }
+    });
+    ok('E-60 市場の門: 後場（東証 12:30 包含・15:30 排他。昼休みは場外。半日フラグは無視）', () => {
+      for (const [h, m, want] of [[12, 29, false], [12, 30, true], [15, 29, true], [15, 30, false]]) {
+        assert.strictEqual(mc.isWithinSession('Japan', hm(h, m), false), want, `${h}:${m}`);
+        assert.strictEqual(mc.isWithinSession('Japan', hm(h, m), true), want, `${h}:${m} 半日`);
+      }
+    });
+    ok('E-60 市場の門: 閉場（米国 9:30 包含・16:00 排他。昼休みなし）', () => {
+      for (const [h, m, want] of [[9, 29, false], [9, 30, true], [12, 0, true], [15, 59, true], [16, 0, false]]) {
+        assert.strictEqual(mc.isWithinSession('UnitedStates', hm(h, m), false), want, `${h}:${m}`);
+      }
+      assert.strictEqual(mc.isWithinSession('Unknown', hm(10, 0), false), false, '未知の市場は場外');
+    });
+    ok('E-60 市場の門: 半日（米国 13:00 排他）と半日取引日の規則', () => {
+      for (const [h, m, want] of [[9, 30, true], [12, 59, true], [13, 0, false], [15, 59, false]]) {
+        assert.strictEqual(mc.isWithinSession('UnitedStates', hm(h, m), true), want, `${h}:${m}`);
+      }
+      const day = (s) => new Date(`${s}T00:00:00Z`);
+      for (const s of ['2026-11-27', '2026-12-24', '2027-11-26']) assert.ok(mc.isUnitedStatesHalfDay(day(s)), s);
+      // 7/4 が土曜の年の 7/3 は振替休日そのもの（半日ではない）。12/24 が金曜の年は振替休日。
+      for (const s of ['2026-07-03', '2027-12-24', '2026-11-26']) assert.ok(!mc.isUnitedStatesHalfDay(day(s)), s);
+    });
+    ok('E-60 市場の門: 休場（米国の 10 日を規則で計算。元日の土曜は振替しない）', () => {
+      const day = (s) => new Date(`${s}T00:00:00Z`);
+      const holidays2026 = ['2026-01-01', '2026-01-19', '2026-02-16', '2026-04-03', '2026-05-25', '2026-06-19', '2026-07-03', '2026-09-07', '2026-11-26', '2026-12-25'];
+      for (const s of holidays2026) assert.ok(mc.isUnitedStatesHoliday(day(s)), s);
+      for (const s of ['2027-03-26', '2027-06-18', '2027-07-05', '2027-12-24']) assert.ok(mc.isUnitedStatesHoliday(day(s)), s);
+      // 連邦休日だが株式市場は開く日（コロンブスデー・復員軍人の日）と、元日が土曜の年の前日（2027-12-31 は開く）。
+      for (const s of ['2026-10-12', '2026-11-11', '2027-12-31']) assert.ok(!mc.isUnitedStatesHoliday(day(s)), s);
+      // 休場日は場中の時刻でも閉場（2026-11-26 感謝祭 11:00 ET = 16:00 UTC）。
+      assert.strictEqual(mc.isOpenAt('UnitedStates', new Date('2026-11-26T16:00:00Z')), false);
+      assert.strictEqual(mc.isOpenAt('UnitedStates', new Date('2026-11-25T16:00:00Z')), true);
+    });
+    ok('E-60 市場の門: 開場中・60 分以内に開場は不成立、閉場で 60 分以上あれば成立（夏時間・冬時間）', () => {
+      // 2026-10-29（木・EDT）: 9:30 ET = 13:30 UTC。
+      assert.ok(mc.closedGateProblems(new Date('2026-10-29T14:00:00Z')).some((p) => p.includes('開場中')));
+      assert.ok(mc.closedGateProblems(new Date('2026-10-29T12:31:00Z')).some((p) => p.includes('59 分後に開場')));
+      assert.deepStrictEqual(mc.closedGateProblems(new Date('2026-10-29T12:30:00Z')), [], 'ちょうど 60 分前は通す');
+      assert.deepStrictEqual(mc.closedGateProblems(new Date('2026-10-29T20:00:00Z')), [], '16:00 ET の閉場の直後');
+      // 2026-11-05（木・EST）: 9:30 ET = 14:30 UTC。夏時間の 13:30 UTC は冬時間では閉場で 60 分前。
+      assert.deepStrictEqual(mc.closedGateProblems(new Date('2026-11-05T13:30:00Z')), []);
+      assert.ok(mc.closedGateProblems(new Date('2026-11-05T14:30:00Z')).some((p) => p.includes('開場中')));
+      // 週末・休場日の翌営業日の寄り付きの前。
+      assert.deepStrictEqual(mc.closedGateProblems(new Date('2026-10-31T15:00:00Z')), [], '土曜');
+      assert.deepStrictEqual(mc.closedGateProblems(new Date('2026-11-26T15:00:00Z')), [], '感謝祭');
+      // 東証を対象に含めると、JST の場中は不成立。
+      assert.ok(mc.closedGateProblems(new Date('2026-10-29T01:00:00Z'), { markets: ['UnitedStates', 'Japan'] }).some((p) => p.startsWith('Japan')));
+    });
+    ok('E-60 市場の門: CLI は閉場で exit 0・開場中で exit 2・引数の誤りで exit 2', () => {
+      const { spawnSync: sp } = require('child_process');
+      const run = (...a) => sp(process.execPath, ['scripts/e2e-market-closed.js', ...a], { encoding: 'utf8' });
+      assert.strictEqual(run('--now', '2026-10-29T20:00:00Z').status, 0);
+      const open = run('--now', '2026-10-29T14:00:00Z');
+      assert.strictEqual(open.status, mc.NOT_READY_EXIT_CODE, open.stderr);
+      assert.ok(open.stderr.includes('開場中'));
+      assert.strictEqual(run('--markets', 'Mars').status, mc.NOT_READY_EXIT_CODE);
+      assert.strictEqual(run('--now', 'きのう').status, mc.NOT_READY_EXIT_CODE);
+    });
+  }
+
+  // --- NFR, #1418（E-60）, IADR-0565 決定 3, IADR-0599: スナップショットと突合・復元（scripts/e2e-trading-restore.js）---
+  // 本体は非同期なので、別ファイルの試験を node の経路で起動する（偽の BFF の口で、送った要求と残った差分を見る）。
+  ok('E-60 復元: e2e-trading-restore.test.js が通る', () => {
+    const r = require('child_process').spawnSync(process.execPath, ['scripts/e2e-trading-restore.test.js'], { encoding: 'utf8' });
+    assert.strictEqual(r.status, 0, `${r.stdout || ''}${r.stderr || ''}`.slice(-3000));
+  });
 };
