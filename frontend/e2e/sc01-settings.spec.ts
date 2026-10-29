@@ -171,6 +171,7 @@ test.describe('SC-01 前提条件の型の検証（#1513）', () => {
 
       await page.getByLabel('変更理由', { exact: true }).fill('型の検証');
       const field = page.getByLabel(label, { exact: true });
+      const original = await field.inputValue();
       await field.fill('');
 
       await expect(page.getByRole('alert').filter({ hasText: '未入力または数値でない項目があります' })).toContainText(label);
@@ -181,11 +182,13 @@ test.describe('SC-01 前提条件の型の検証（#1513）', () => {
       await expect(page.getByText('保存しました。')).toHaveCount(0);
       expect(putCount).toBe(0);
 
-      // 数値へ直せば保存できる（検証が欄の値に追随している）。
-      await field.fill('1000');
+      // 元の数値へ直せば保存できる（検証が欄の値に追随している）。#1514 で費用上限は合計 ＝ 総額も要るため、元の値へ戻す。
+      await field.fill(original);
       await expect(save).toBeEnabled();
     });
   }
+});
+
 // #1514（#1410 の網羅表 A-023 の合計の整合・A-024）, SC-01, FR-17, 05_trading-assumptions §6, IADR-0605:
 // 月次費用上限は「総額 ＝ LLM＋インフラ＋データ」・各欄 0 以上。画面は同じ規則で保存を無効にし（正は後段の 400）、
 // 金額の単位「円」を明示する（費用上限は円建て。判定の基準通貨 USD はリスク統制の側だけ）。
