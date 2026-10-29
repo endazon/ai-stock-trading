@@ -2,6 +2,7 @@ using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.CancelUnfilledDecisionCloses;
+using OrderExecutionService.Features.OrderExecution.CancelUnfilledDecisionEntries;
 using OrderExecutionService.Features.OrderExecution.PollOrderFills;
 using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
 using AiStockTrading.Shared.Contracts.Events;
@@ -288,9 +289,21 @@ public sealed class OrderFillPollingService(
     private async Task CancelUnfilledDecisionClosesAsync(
         IServiceProvider services, MessageBus bus, CancellationToken cancellationToken)
     {
-        if (services.GetService<DecisionCloseUnfilledCanceller>() is not { } canceller)
-            return;
+        if (services.GetService<DecisionCloseUnfilledCanceller>() is { } closes)
+            await CancelUnfilledDecisionOrdersAsync(services, bus, closes.RunOnceAsync, "決済", cancellationToken).ConfigureAwait(false);
 
+        // 🔴 FR-10, FR-19, #1486, IADR-0594 決定1: 判断由来の新規建ての指値も同じ形で取り消す（既定は無効。計画の裁定待ち＝planning#852）。
+        if (services.GetService<DecisionEntryUnfilledCanceller>() is { } entries)
+            await CancelUnfilledDecisionOrdersAsync(services, bus, entries.RunOnceAsync, "新規建て", cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task CancelUnfilledDecisionOrdersAsync(
+        IServiceProvider services,
+        MessageBus bus,
+        Func<IReadOnlyCollection<string>?, CancellationToken, Task<DecisionCloseUnfilledCancelResult>> runOnce,
+        string kind,
+        CancellationToken cancellationToken)
+    {
         DecisionCloseUnfilledCancelResult result;
         try
         {
@@ -298,11 +311,11 @@ public sealed class OrderFillPollingService(
             var now = services.GetRequiredService<IClock>().UtcNow;
             foreach (var expired in _cappedUntil.Where(kv => kv.Value <= now).Select(kv => kv.Key).ToList())
                 _cappedUntil.Remove(expired);
-            result = await canceller.RunOnceAsync(_cappedUntil.Keys, cancellationToken).ConfigureAwait(false);
+            result = await runOnce(_cappedUntil.Keys, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogError(ex, "判断由来の決済の指値の未約定時の取消に失敗しました。次の巡回で再試行します。");
+            logger.LogError(ex, "判断由来の{Kind}の指値の未約定時の取消に失敗しました。次の巡回で再試行します。", kind);
             return;
         }
 
@@ -325,9 +338,9 @@ public sealed class OrderFillPollingService(
             if (!_cappedUntil.TryAdd(r.OrderId, DecisionCloseUnfilledCanceller.TradingDayRange(r.Market, r.ExecutedAt).End))
                 continue;
             logger.LogInformation(
-                "判断由来の決済の指値は未約定ですが、取消の上限（1 建玉 1 日あたり）に達したため取り消しません（当日限り〔DAY〕の失効に任せます）: "
+                "判断由来の{Kind}の指値は未約定ですが、取消の上限（1 建玉 1 日あたり）に達したため取り消しません（当日限り〔DAY〕の失効に任せます）: "
                     + "DecisionId={DecisionId} OrderId={OrderId} 銘柄={Symbol} 方向={Side} 発注={PlacedAt}",
-                r.DecisionId, r.OrderId, r.Symbol, r.Side, r.ExecutedAt);
+                kind, r.DecisionId, r.OrderId, r.Symbol, r.Side, r.ExecutedAt);
         }
     }
 

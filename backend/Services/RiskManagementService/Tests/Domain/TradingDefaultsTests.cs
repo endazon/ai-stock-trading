@@ -223,6 +223,16 @@ public class TradingDefaultsTests
             "ADR-0067 決定2: 有効時の N は相場操縦の検知の窓より長い");
     }
 
+    // 🔴 T-10-3079, FR-10, FR-19, #1486, IADR-0594 決定1: 判断由来の**新規建て**の取消は既定で無効（計画の裁定待ち。planning#852）。
+    // 有効にしたときの暫定の初期値は決済側の値を共用する（新しい値を作らない）。裁定で値が決まったら、この試験と既定を一緒に改める。
+    [Fact]
+    public void 判断由来の新規建ての未約定時の取消は既定で無効で値は決済側を共用する()
+    {
+        TradingDefaults.DecisionEntryUnfilledCancelEnabled.Should().BeFalse("計画に規則が無い（planning#852 の裁定待ち）");
+        TradingDefaults.DecisionEntryUnfilledCancelMinutes.Should().Be(TradingDefaults.DecisionCloseUnfilledCancelMinutes);
+        TradingDefaults.DecisionEntryUnfilledCancelMaxPerPositionPerDay.Should().Be(TradingDefaults.DecisionCloseUnfilledCancelMaxPerPositionPerDay);
+    }
+
     // FR-20, #333, 06_daytrading-review §4: Stage 1 は moomoo `SIMULATE`（OpenD 経由のデモ環境）であり、
     // 内蔵 `paper`（擬似約定）とは別物である。**呼称を Paper へ戻す退行を検知する**退行防止テスト。
     // 数値 1 は不変である（永続化された遷移履歴の意味を変えないため）。

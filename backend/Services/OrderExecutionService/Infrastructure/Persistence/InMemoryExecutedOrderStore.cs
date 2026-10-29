@@ -226,6 +226,12 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
     // 🔴 FR-10, ADR-0067 決定1・4, #1339, IADR-0539: 発注から N 分以上たって非終端の判断由来の決済で、系がまだ取消を求めていないもの（古い順・上限つき）。
     public IReadOnlyList<ExecutionRecord> FindUnfilledDecisionCloses(
         DateTimeOffset placedAtOrBefore, int limit, IReadOnlyCollection<string>? excludedOrderIds = null,
+        DateTimeOffset? placedOnOrAfter = null) =>
+        FindUnfilledDecisionOrders(PositionEffect.Close, placedAtOrBefore, limit, excludedOrderIds, placedOnOrAfter);
+
+    // 🔴 #1486, IADR-0594 決定1: 決済・新規建ての共通の問い合わせ（判断由来・非終端・未印・発注から N 分）。
+    public IReadOnlyList<ExecutionRecord> FindUnfilledDecisionOrders(
+        PositionEffect effect, DateTimeOffset placedAtOrBefore, int limit, IReadOnlyCollection<string>? excludedOrderIds = null,
         DateTimeOffset? placedOnOrAfter = null)
     {
         var from = placedOnOrAfter ?? DateTimeOffset.MinValue;
@@ -233,7 +239,7 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
         lock (_gate)
         {
             return _records
-                .Where(r => r.PositionEffect == PositionEffect.Close && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
+                .Where(r => r.PositionEffect == effect && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
                     && OrderStatusLifecycle.IsPending(r.Status) && r.UnfilledCancelRequestedAt is null
                     && r.ExecutedAt <= placedAtOrBefore && r.ExecutedAt >= from && !excluded.Contains(r.OrderId))
                 .OrderBy(r => r.ExecutedAt)
@@ -244,15 +250,20 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
 
     // 🔴 FR-10, ADR-0067 決定2, #1339, IADR-0539: 同じ建玉の判断由来の決済で、系が取消を求めた時刻が [from, to) にある件数。
     public int CountUnfilledCancelRequests(
-        string symbol, Market market, TradeSide closeSide, DateTimeOffset fromInclusive, DateTimeOffset toExclusive)
+        string symbol, Market market, TradeSide closeSide, DateTimeOffset fromInclusive, DateTimeOffset toExclusive) =>
+        CountUnfilledCancelRequests(PositionEffect.Close, symbol, market, closeSide, fromInclusive, toExclusive);
+
+    // 🔴 #1486, IADR-0594 決定1: 決済・新規建ての共通の数え（建玉＝銘柄・市場・注文の方向）。
+    public int CountUnfilledCancelRequests(
+        PositionEffect effect, string symbol, Market market, TradeSide side, DateTimeOffset fromInclusive, DateTimeOffset toExclusive)
     {
         ArgumentException.ThrowIfNullOrEmpty(symbol);
 
         lock (_gate)
         {
-            return _records.Count(r => r.PositionEffect == PositionEffect.Close
+            return _records.Count(r => r.PositionEffect == effect
                 && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
-                && r.Symbol == symbol && r.Market == market && r.Side == closeSide
+                && r.Symbol == symbol && r.Market == market && r.Side == side
                 && r.UnfilledCancelRequestedAt is { } at && at >= fromInclusive && at < toExclusive);
         }
     }

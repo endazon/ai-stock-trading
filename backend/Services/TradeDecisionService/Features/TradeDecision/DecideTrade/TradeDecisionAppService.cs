@@ -260,7 +260,7 @@ public sealed class TradeDecisionAppService(
         return Skip(trigger, ToSkipReason(reason));
     }
 
-    // #1092, IADR-0462 決定4: 台帳の語彙（#1113・#1176・#1174・#1286・#1338・#1434 で 1 値ずつ足した）→ 観測の語彙（DecisionSkipReason）。名前は同じ（試験が固定する）。
+    // #1092, IADR-0462 決定4: 台帳の語彙（#1113・#1176・#1174・#1286・#1338・#1434・#1423・#1486 で 1 値ずつ足した）→ 観測の語彙（DecisionSkipReason）。名前は同じ（試験が固定する）。
     internal static DecisionSkipReason ToSkipReason(DecisionForgoneBeforeLlmReason reason) => reason switch
     {
         DecisionForgoneBeforeLlmReason.DailyPolicyUnconfirmed => DecisionSkipReason.DailyPolicyUnconfirmed,
@@ -275,6 +275,8 @@ public sealed class TradeDecisionAppService(
         DecisionForgoneBeforeLlmReason.BrokerPositionClosed => DecisionSkipReason.BrokerPositionClosed,
         DecisionForgoneBeforeLlmReason.LlmCostCapHalted => DecisionSkipReason.LlmCostCapHalted,
         DecisionForgoneBeforeLlmReason.DailyReportNoResponseHalted => DecisionSkipReason.DailyReportNoResponseHalted,
+        // #1486, IADR-0594 決定2: 保有 0 で未約定の新規建てあり。
+        DecisionForgoneBeforeLlmReason.EntryOrderWorking => DecisionSkipReason.EntryOrderWorking,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "LLM を呼ぶ前の見送りの理由ではない"),
     };
 
@@ -419,6 +421,19 @@ public sealed class TradeDecisionAppService(
                 "出口専用の判断で保有が 0 または不明のため LLM を呼ばずに見送り（IADR-0521）: {Symbol} held={Held}",
                 trigger.Symbol, heldPosition is null ? "不明" : heldPosition.SignedQuantity);
             return await SkipBeforeLlmAsync(trigger, DecisionForgoneBeforeLlmReason.ExitOnlyWithoutHolding, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // 🔴 FR-04, FR-10, #1486, IADR-0594 決定2: 保有が既知で 0 で、同じ銘柄の未約定の新規建てが既知なら LLM を呼ばずに見送る（定時・価格変動とも）。
+        // この銘柄で LLM の結論は Hold・重ね買い（板に残る指値を知りながら同じ銘柄を重ねて買う＝#934 の形）・裸の売り（IADR-0119 で必ず見送り）しか無い。
+        // 未約定が不明（null）・保有中（決済の判断は残す）・保有が不明では省かない。審査・発注の規則は変えない（費用の最適化）。
+        // 是正前は判断ごとに LLM を呼び、ほとんど Hold だった（TSLA 2026-10-27・68 回中 67 回）。
+        if (heldPosition is { SignedQuantity: 0 } && workingEntries is { Any: true })
+        {
+            logger.LogInformation(
+                "保有 0 で未約定の新規建て注文があるため LLM を呼ばずに見送り（IADR-0594）: {Symbol} 件数={Count} trigger={Trigger}",
+                trigger.Symbol, workingEntries.Orders.Count, trigger.MetricTrigger);
+            return await SkipBeforeLlmAsync(trigger, DecisionForgoneBeforeLlmReason.EntryOrderWorking, cancellationToken)
                 .ConfigureAwait(false);
         }
 

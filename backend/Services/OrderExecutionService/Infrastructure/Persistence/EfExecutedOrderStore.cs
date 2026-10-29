@@ -223,12 +223,18 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
     // 除外（回数の上限で取り消さないと決めた注文）は件数の上限の前に問い合わせの段で行う。
     public IReadOnlyList<ExecutionRecord> FindUnfilledDecisionCloses(
         DateTimeOffset placedAtOrBefore, int limit, IReadOnlyCollection<string>? excludedOrderIds = null,
+        DateTimeOffset? placedOnOrAfter = null) =>
+        FindUnfilledDecisionOrders(PositionEffect.Close, placedAtOrBefore, limit, excludedOrderIds, placedOnOrAfter);
+
+    // 🔴 #1486, IADR-0594 決定1: 決済・新規建ての共通の問い合わせ（判断由来・非終端・未印・発注から N 分）。
+    public IReadOnlyList<ExecutionRecord> FindUnfilledDecisionOrders(
+        PositionEffect effect, DateTimeOffset placedAtOrBefore, int limit, IReadOnlyCollection<string>? excludedOrderIds = null,
         DateTimeOffset? placedOnOrAfter = null)
     {
         string[] excluded = [.. excludedOrderIds ?? []];
         var from = placedOnOrAfter ?? DateTimeOffset.MinValue;
         return [.. db.ExecutedOrders
-            .Where(r => r.PositionEffect == PositionEffect.Close
+            .Where(r => r.PositionEffect == effect
                 && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
                 && (r.Status == OrderStatus.Accepted || r.Status == OrderStatus.PartiallyFilled)
                 && r.UnfilledCancelRequestedAt == null
@@ -243,13 +249,18 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
     // 🔴 FR-10, ADR-0067 決定2, #1339, IADR-0539: 同じ建玉（銘柄・市場・決済の方向）の判断由来の決済で、系が取消を求めた時刻が
     // [from, to) にある件数（1 建玉 1 日の回数の上限。範囲は呼び出し側が市場の現地取引日から作る）。
     public int CountUnfilledCancelRequests(
-        string symbol, Market market, TradeSide closeSide, DateTimeOffset fromInclusive, DateTimeOffset toExclusive)
+        string symbol, Market market, TradeSide closeSide, DateTimeOffset fromInclusive, DateTimeOffset toExclusive) =>
+        CountUnfilledCancelRequests(PositionEffect.Close, symbol, market, closeSide, fromInclusive, toExclusive);
+
+    // 🔴 #1486, IADR-0594 決定1: 決済・新規建ての共通の数え（建玉＝銘柄・市場・注文の方向）。
+    public int CountUnfilledCancelRequests(
+        PositionEffect effect, string symbol, Market market, TradeSide side, DateTimeOffset fromInclusive, DateTimeOffset toExclusive)
     {
         ArgumentException.ThrowIfNullOrEmpty(symbol);
 
-        return db.ExecutedOrders.Count(r => r.PositionEffect == PositionEffect.Close
+        return db.ExecutedOrders.Count(r => r.PositionEffect == effect
             && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
-            && r.Symbol == symbol && r.Market == market && r.Side == closeSide
+            && r.Symbol == symbol && r.Market == market && r.Side == side
             && r.UnfilledCancelRequestedAt != null
             && r.UnfilledCancelRequestedAt >= fromInclusive && r.UnfilledCancelRequestedAt < toExclusive);
     }

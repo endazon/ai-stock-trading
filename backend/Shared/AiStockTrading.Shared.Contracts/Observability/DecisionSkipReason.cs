@@ -164,4 +164,10 @@ public enum DecisionSkipReason
     /// （<c>DecisionForgoneBeforeLlmReason.DailyReportNoResponseHalted</c> と同名）。定時・価格変動の両方。
     /// </summary>
     DailyReportNoResponseHalted,
+    /// <summary>
+    /// 🔴 FR-04, FR-10, #1486, IADR-0594 決定2: <b>LLM を呼ぶ前</b>の見送り。保有が既知で 0 で、同じ銘柄の未約定の新規建て注文が既知である
+    /// （<c>DecisionForgoneBeforeLlmReason.EntryOrderWorking</c> と同名）。LLM の結論は Hold・重ね買い（#934 の形）・裸の売り（必ず見送り）しか無い。
+    /// <para>🔴 計器の移動: 是正前は同じ判断が LLM を呼び、ほとんどが <see cref="LlmHold"/> になっていた（TSLA 2026-10-27・68 回中 67 回）。</para>
+    /// </summary>
+    EntryOrderWorking,
 }

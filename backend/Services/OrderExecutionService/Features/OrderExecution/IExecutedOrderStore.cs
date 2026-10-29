@@ -180,6 +180,32 @@ public interface IExecutedOrderStore
             && r.UnfilledCancelRequestedAt is { } at && at >= fromInclusive && at < toExclusive);
 
     /// <summary>
+    /// 🔴 FR-10, #1486, IADR-0594 決定1: <see cref="FindUnfilledDecisionCloses"/> と同じ問い合わせを、<paramref name="effect"/>（決済・新規建て）の
+    /// 判断由来の注文について行う（新規建ての指値の未約定時の取消の対象）。既定の実装（試験用の包み型のためのもの）は全件を読んでから絞る。
+    /// </summary>
+    IReadOnlyList<ExecutionRecord> FindUnfilledDecisionOrders(
+        PositionEffect effect, DateTimeOffset placedAtOrBefore, int limit, IReadOnlyCollection<string>? excludedOrderIds = null,
+        DateTimeOffset? placedOnOrAfter = null) =>
+        GetAll()
+            .Where(r => r.PositionEffect == effect && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
+                && OrderStatusLifecycle.IsPending(r.Status) && r.UnfilledCancelRequestedAt is null
+                && r.ExecutedAt <= placedAtOrBefore && (placedOnOrAfter == null || r.ExecutedAt >= placedOnOrAfter)
+                && (excludedOrderIds == null || !excludedOrderIds.Contains(r.OrderId)))
+            .OrderBy(r => r.ExecutedAt)
+            .Take(limit)
+            .ToList();
+
+    /// <summary>
+    /// 🔴 FR-10, #1486, IADR-0594 決定1: <see cref="CountUnfilledCancelRequests(string, Market, TradeSide, DateTimeOffset, DateTimeOffset)"/> と同じ数えを、
+    /// <paramref name="effect"/>（決済・新規建て）の判断由来の注文について行う（建玉は銘柄・市場・注文の方向）。
+    /// </summary>
+    int CountUnfilledCancelRequests(
+        PositionEffect effect, string symbol, Market market, TradeSide side, DateTimeOffset fromInclusive, DateTimeOffset toExclusive) =>
+        GetAll().Count(r => r.PositionEffect == effect && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
+            && r.Symbol == symbol && r.Market == market && r.Side == side
+            && r.UnfilledCancelRequestedAt is { } at && at >= fromInclusive && at < toExclusive);
+
+    /// <summary>
     /// 🔴 FR-10, ADR-0067 決定1, #1339, IADR-0539: 記録に「系が取消を求めた」印（<paramref name="requestedAt"/>）を書く（<b>その 1 列だけ</b>）。
     /// <b>取消を送る前に呼ぶ</b>——送った後に落ちても、同じ注文を二度取り消さず、回数にも数えられる（少ない側へ倒す）。
     /// 記録が無い・既に印がある・終端なら何もせず false。既定の実装（試験用の包み型のためのもの）は何もしない（＝取り消さない側）。

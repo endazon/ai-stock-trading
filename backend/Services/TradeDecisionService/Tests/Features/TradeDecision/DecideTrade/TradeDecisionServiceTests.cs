@@ -1920,6 +1920,8 @@ public class TradeDecisionServiceTests
 
     // T-10-712 / T-10-713（アプリケーション経由）: 照会した未約定が本判断・一次の両プロンプトへ届き、「保有: なし」が出ない。
     // 🔴 変異注入「判断の入力から未約定を落とす」（プロンプトへ渡さない）で赤になるのはこのテストである。
+    // ［2026-10-29 / #1486・IADR-0594 決定2］保有 0 で未約定ありは LLM の前で見送るようになったので、LLM へ届くのは保有中の銘柄の未約定（買い増し）である。
+    // 保有 0 の行（FilledNoneButWorkingLine）はプロンプトの組み立ての試験が固定する。
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -1934,8 +1936,8 @@ public class TradeDecisionServiceTests
         var screeningPasses = new RecordingLlm(BuyJson);
 
         // 一次は Hold だと本判断が走らないため、一次の確認と本判断の確認を分けて走らせる。
-        await CreateRecording(llm, new FakeHeld(0, working: Working715), options: options).DecideAsync(Trigger());
-        await CreateRecording(screeningPasses, new FakeHeld(0, working: Working715), options: options).DecideAsync(Trigger());
+        await CreateRecording(llm, new FakeHeld(10, working: Working715), options: options).DecideAsync(Trigger());
+        await CreateRecording(screeningPasses, new FakeHeld(10, working: Working715), options: options).DecideAsync(Trigger());
 
         llm.Calls[0].Purpose.Should().Be(LlmPurposes.TradeDecisionScreening);
         var prompts = new[] { llm.Calls[0].Prompt, screeningPasses.Calls[1].Prompt };
@@ -1943,7 +1945,6 @@ public class TradeDecisionServiceTests
         {
             prompt.Should().NotContain(TradeDecisionPromptBuilder.HeldNoneLine);
             prompt.Should().NotContain("保有: なし");
-            prompt.Should().Contain(TradeDecisionPromptBuilder.FilledNoneButWorkingLine);
             prompt.Should().Contain($"{TradeDecisionPromptBuilder.WorkingEntryLinePrefix}: 買い（Buy） 715 株");
         }
     }
@@ -2015,12 +2016,17 @@ public class TradeDecisionServiceTests
 
     // T-10-749: 未約定が在っても新規建てそのものはコードでは止めない（重ね買いの統制＝クールダウンは #935・裁定待ち）。
     // 本件が正すのは判断の**前提**であり、金額の統制は IADR-0346 の算入が担う。
+    // ［2026-10-29 / #1486・IADR-0594 決定2］**保有 0** で未約定ありは LLM の前で見送る（IADR-0390 決定6 を保有 0 について改めた）。
+    // 保有中の銘柄の買い増しは従来どおりコードでは止めない。
     [Fact]
     public async Task 未約定が在ってもLLMがBuyを返せば新規建ては従来どおり出る_統制は935の範囲()
     {
-        var decision = await CreateWithHeld(BuyJson, new FakeHeld(0, working: Working715)).DecideAsync(Trigger());
+        var decision = await CreateWithHeld(BuyJson, new FakeHeld(10, working: Working715)).DecideAsync(Trigger());
 
-        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Open);
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Open, "保有中の銘柄の買い増しは止めない");
+
+        (await CreateWithHeld(BuyJson, new FakeHeld(0, working: Working715)).DecideAsync(Trigger()))
+            .Should().BeNull("保有 0 で未約定ありは LLM の前で見送る（#1486）");
     }
 
     // 未約定の照会だけが例外を出す偽物（保有の照会は成功する）。
