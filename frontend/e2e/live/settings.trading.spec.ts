@@ -18,7 +18,6 @@ import { restoreCore, type TradingSnapshot } from './support/snapshot';
 const cfg = parseLiveEnv(process.env);
 const RUN_ID = process.env.E2E_RUN_ID ?? '';
 const TAG = `[e2e ${RUN_ID}]`;
-const CSRF = { 'X-MSP-CSRF': '1' };
 
 
 let writes: WriteRecord[] = [];
@@ -129,13 +128,22 @@ test.describe('取引オーナー（e2e-trading-owner）・閉場後', () => {
     await expect(page.getByRole('form', { name: 'リスク上限の変更' }).getByLabel('保有建玉数上限 件')).toHaveValue(String(next));
   });
 
-  // SC-02, FR-13: A-045。理由が空のまま保存ボタンが無効（送らない）。
-  test('A-045: リスク上限の変更理由が空のままなら保存ボタンが無効で、PUT を送らない', { tag: ['@p1', '@trading'] }, async ({ page }) => {
+  // SC-02, FR-13: A-045。値を変えても、理由が空のままなら保存ボタンが無効（送らない）。理由を入れると有効になる（保存はしない）。
+  // 🔴 値を変えてから見る —— 未変更のままだと、無効の理由が「理由が空」か「未変更」かを区別できない。
+  test('A-045: リスク上限を変えても変更理由が空のままなら保存ボタンが無効で、理由を入れると有効になる（PUT は送らない）', { tag: ['@p1', '@trading'] }, async ({ page }) => {
+    const settings = await getJson<{ limits: { maxOpenPositions: number } }>(page, '/bff/risk-controls/settings');
+    const current = settings.limits.maxOpenPositions;
+    const next = current > 1 ? current - 1 : current + 1; // 値域 1〜20
     await page.goto('/settings/risk');
     const form = page.getByRole('form', { name: 'リスク上限の変更' });
-    await expect(form.getByLabel('保有建玉数上限 件')).toBeVisible();
+    const field = form.getByLabel('保有建玉数上限 件');
+    await expect(field).toHaveValue(String(current));
+    await field.fill(String(next));
     await form.getByLabel('変更理由').fill('');
-    await expect(form.getByRole('button', { name: '保存' })).toBeDisabled();
+    const save = form.getByRole('button', { name: '保存' });
+    await expect(save, '値を変えても理由が空なら無効').toBeDisabled();
+    await form.getByLabel('変更理由').fill(`${TAG} A-045 理由を入れると有効`);
+    await expect(save, '理由を入れると有効').toBeEnabled();
     expect(writes.filter((w) => w.path === '/bff/risk-controls/settings/limits'), 'limits への PUT').toEqual([]);
   });
 
@@ -143,16 +151,30 @@ test.describe('取引オーナー（e2e-trading-owner）・閉場後', () => {
   // 🔴 版を要求に載せて楽観排他を掛けるのは全体前提条件（SC-01 の `expectedVersion`）だけである。SC-02 のリスク上限の PUT は版を持たず、
   //    409 は DB の同時書き込みの競合でしか出ない（live で決定的に起こせない。L1 が 409 の描画を固定している）。行の画面 ID は SC-02 だが、
   //    同じ「別 context で版を進めた後の保存」を SC-01 で検証する（作業仕様書・IADR-0601 決定 2）。
-  test('A-046: 別の context で版を進めた後に保存すると「競合」を出し、自動で再試行しない（SC-01 の版で検証）', { tag: ['@p2', '@trading'] }, async ({ page }) => {
+  test('A-046: 別の context で版を進めた後に保存すると「競合」を出し、自動で再試行しない（SC-01 の版で検証）', { tag: ['@p2', '@trading'] }, async ({ page, browser }) => {
     const before = await getJson<{ assumptions: unknown; version: number }>(page, '/bff/assumptions');
     await page.goto('/settings');
     await expect(page.getByText(new RegExp(`現在のバージョン:\\s*${before.version}`))).toBeVisible();
-    // 別の context（同じ取引オーナーの cookie）で、同じ値を保存して版を進める。
-    const other = await page.request.put('/bff/assumptions', {
-      headers: CSRF,
-      data: { assumptions: before.assumptions, expectedVersion: before.version, reason: `${TAG} A-046 別 context で版を進める` },
+    // 別の context（同じ取引オーナーの cookie）の**画面**から、同じ値を保存して版を進める。
+    // 🔴 page.request の書き込みは使わない（guard は browser context の経路だけを塞ぐ。live-opt-in.spec.ts が検査する）。
+    const other = await browser.newContext({
+      storageState: stateFile(cfg.authDir, 'trading-owner'),
+      baseURL: cfg.edgeUrl,
+      ignoreHTTPSErrors: cfg.insecureTls,
+      locale: 'ja-JP',
     });
-    expect(other.status(), '別 context の保存').toBe(200);
+    try {
+      const otherPage = await other.newPage();
+      const otherWrites = await installTradingGuard(otherPage);
+      await otherPage.goto('/settings');
+      await expect(otherPage.getByText(new RegExp(`現在のバージョン:\\s*${before.version}`))).toBeVisible();
+      await otherPage.getByLabel('変更理由', { exact: true }).fill(`${TAG} A-046 別 context で版を進める`);
+      await otherPage.getByRole('button', { name: '保存', exact: true }).click();
+      await expect(otherPage.getByText('保存しました。')).toBeVisible();
+      expect(dangerousOf(otherWrites), '別 context の危険な送信').toEqual([]);
+    } finally {
+      await other.close();
+    }
     const putsBefore = writes.filter((w) => w.path === '/bff/assumptions').length;
     await page.getByLabel('変更理由', { exact: true }).fill(`${TAG} A-046 古い版で保存`);
     await page.getByRole('button', { name: '保存', exact: true }).click();
