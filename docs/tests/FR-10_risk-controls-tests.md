@@ -7752,6 +7752,6 @@ T-10-2659（データベース実装とインメモリ実装の両方で、打�
 | **T-10-3075** | 口が返し得る 11 理由 | 線上へ写し、受け手が読み、プロンプトの文言を作る。保有 0・未約定なしで口が欠けを返す | どの理由も名前で写る。保有 0 なら LLM を呼ばずに見送る（理由 `EntryBlockedByRiskControls`） | 判断側は結果を読むだけ | 自動 |
 
 試験の置き場所: T-10-3072 は `EntryBlockersServiceTests`、T-10-3073・T-10-3074 は `EntryStateBlockersTests`（リスク管理）。
-T-10-3075 は `EntryBlockersEndpointTests`・`EntryBlockersProviderTests`・`HeldAddOnBlockersTests`・`EntryBlockersBeforeLlmTests`（取引判断）。
+T-10-3075 は `HeldAddOnBlockersTests`・`EntryBlockersBeforeLlmTests`（取引判断。理由の列挙を足した）と、口の理由・線上の全値を走査する既存の `EntryBlockersEndpointTests`（送り手）・`EntryBlockersProviderTests`（受け手。どちらも変更なしで新しい値を確かめる）。
 
 **再現（是正前に赤）**: T-10-3072 の欠けと鮮度切れの 2 例が、口の空の答えで赤になった（是正後に緑）。

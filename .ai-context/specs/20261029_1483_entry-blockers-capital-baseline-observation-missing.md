@@ -62,7 +62,8 @@ git grep -n "10 理由\|ENTRY_BLOCKER_THEME\|EntryStateBlockers.Determinable\|�
 | `EntryStateBlockers.cs`（`Determinable`・冒頭の注記） | 10 → 11 理由 |
 | `RiskReadWireMapping.ToProto`・proto `EntryBlocker`・`GrpcEntryBlockersProvider.Reason`・`scripts/proto-contract-baseline.json` | 値 13 を足す（非破壊） |
 | `TradeDecisionPromptBuilder.EntryBlockerLabel` | 日本語名を足す |
-| `HeldAddOnBlockersTests`（11 理由を名付ける）・`EntryBlockersBeforeLlmTests`（理由ごとの見送り）・`EntryBlockersEndpointTests`（全対象の写像） | 追随 |
+| `HeldAddOnBlockersTests`（11 理由を名付ける）・`EntryBlockersBeforeLlmTests`（理由ごとの見送り） | 追随（理由の列挙を足した） |
+| `EntryBlockersEndpointTests`（`Determinable` を走査して送り手の写像を確かめる）・`EntryBlockersProviderTests`（proto の全値を走査して受け手の写像を確かめる） | **変更不要**（走査で自動追随。値 13 の写像が無ければこの 2 本が赤になる） |
 | `docs/functional/FR-10_risk-controls.md` §LLM を呼ぶ前に見送る（対象の理由・返さない理由） | 追随 |
 | `docs/tests/FR-10_risk-controls-tests.md` | 試験 ID を足す |
 | 除外: `.ai-context/specs/`・`.ai-context/adr/` の過去の記録 | point-in-time の記録（書き換えない） |
@@ -86,6 +87,13 @@ git grep -n "10 理由\|ENTRY_BLOCKER_THEME\|EntryStateBlockers.Determinable\|�
 - [x] 全組み合わせで口と審査が一致する（健全性・完全性。資金の次元を「既知／欠け／その他の未供給」の 3 値にする）（T-10-1782 の拡張・T-10-3073）。
 - [x] `RejectionReason` の全値が「口の対象／全注文の口／除外（理由つき）」のどれか 1 つに置かれている。置かれていない値があれば赤（T-10-3074）。
 - [x] 線上で写り、判断側で読み、保有 0 なら LLM を 0 回で見送る。プロンプトの文言に日本語名が出る（T-10-3075）。
+
+## 残余
+
+- 未供給の日だけ、スナップショットの組み立てで `Read()` の読みが 1 回増える（`AccountEquityDays` の当日より前の先頭 1 行）。組み立ては口・審査・資金の照会・SC-03 の状態で呼ばれ、
+  判断は 1 件ごとに資金の照会（LLM の前の口より先に読む）と口でそれぞれ 1 回組み立てるので、巡回 1 回で判断対象 N 件なら増えるのはおよそ 2N 回
+  （監視 12 件なら約 24 回）。ほかに決済の審査（新規建ては審査でも拒否される）・SC-03 の状態の表示ごとに 1 回。
+  平常の日（供給あり）は増えない。2 回の読みは連言なので食い違っても安全側（口が審査より多く止めない）に倒れ、コードは変えない。
 
 ## 検証
 
