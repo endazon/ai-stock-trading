@@ -1,10 +1,12 @@
 import { expect, test } from '@playwright/test';
 import {
-  IN_FLIGHT_SOURCE_MISSING,
+  IN_FLIGHT_PATH,
   inFlightProblems,
+  inFlightProblemsFrom,
   restoreCore,
   runIdOf,
   tradingGateProblems,
+  type TradingClient,
 } from './live/support/snapshot';
 import { restoreCommandError, verdictOf } from './live/support/restore';
 import { testSymbolOf } from './live/support/symbols';
@@ -16,22 +18,57 @@ import { testSymbolOf } from './live/support/symbols';
 const CLOSED = new Date('2026-10-29T20:00:00Z'); // 木曜 16:00 EDT（閉場の直後）
 const OPEN = new Date('2026-10-29T14:00:00Z'); // 木曜 10:00 EDT（場中）
 
-test('🔴 in-flight の門は、情報源（#1502）が入るまで常に不成立で、閉場中でも trading 層は流れない', () => {
-  expect(inFlightProblems()).toEqual([IN_FLIGHT_SOURCE_MISSING]);
-  expect(tradingGateProblems(CLOSED)).toEqual([IN_FLIGHT_SOURCE_MISSING]);
-  expect(IN_FLIGHT_SOURCE_MISSING).toContain('#1502');
+// NFR / IADR-0600（#1502）: in-flight の門は BFF の `/bff/risk-controls/in-flight-orders` が空のときだけ通す。照会の失敗も不成立。
+const reply = (status: number, json: unknown): TradingClient => ({
+  get: async (path) => {
+    expect(path).toBe(IN_FLIGHT_PATH);
+    return { status, json };
+  },
+  send: async () => {
+    throw new Error('門は書き込まない');
+  },
 });
 
-test('市場の門: 開場中は不成立、閉場で次の開場まで 60 分以上あれば成立（in-flight の判定を差し替えたとき）', () => {
-  const none = () => [];
-  expect(tradingGateProblems(CLOSED, none)).toEqual([]);
-  expect(tradingGateProblems(OPEN, none)).toEqual([expect.stringContaining('開場中')]);
+test('in-flight の門: 一覧が空なら通し、1 件でもあれば銘柄・種別・状態を理由に並べて不成立', async () => {
+  expect(await inFlightProblems(reply(200, []))).toEqual([]);
+  const problems = await inFlightProblems(
+    reply(200, [
+      { symbol: 'HOOD', market: 0, kind: 2, state: 1, approvedAt: '2026-10-29T19:08:20Z' },
+      { symbol: 'NVDA', market: 0, kind: 1, state: 2, approvedAt: '2026-10-29T19:00:00Z' },
+    ]),
+  );
+  expect(problems).toHaveLength(1);
+  expect(problems[0]).toContain('2 件');
+  expect(problems[0]).toContain('HOOD（決済・承認済み・未終端');
+  expect(problems[0]).toContain('NVDA（新規建て・予約');
+});
+
+test('🔴 in-flight の門: 照会の失敗（200 でない・配列でない・届かない）は不成立（判断できないものを「無い」と読まない）', async () => {
+  expect(inFlightProblemsFrom({ status: 403, json: null })).toEqual([expect.stringContaining('403')]);
+  expect(inFlightProblemsFrom({ status: 502, json: null })).toEqual([expect.stringContaining('502')]);
+  expect(inFlightProblemsFrom({ status: 200, json: { items: [] } })).toEqual([
+    expect.stringContaining('配列でない'),
+  ]);
+  const unreachable: TradingClient = {
+    get: async () => {
+      throw new Error('connect ECONNREFUSED\n詳細');
+    },
+    send: async () => undefined,
+  };
+  expect(await inFlightProblems(unreachable)).toEqual([expect.stringContaining('届かない（connect ECONNREFUSED。')]);
+});
+
+test('門: 閉場で in-flight が無いときだけ通し、開場中・まもなく開場・in-flight ありは不成立（両方の理由を並べる）', async () => {
+  const none = async () => [];
+  const some = async () => ['in-flight の注文が 1 件ある'];
+  expect(await tradingGateProblems(CLOSED, none)).toEqual([]);
+  expect(await tradingGateProblems(CLOSED, some)).toEqual(['in-flight の注文が 1 件ある']);
+  expect(await tradingGateProblems(OPEN, none)).toEqual([expect.stringContaining('開場中')]);
   // 開場の 30 分前（9:00 EDT）。
-  expect(tradingGateProblems(new Date('2026-10-29T13:00:00Z'), none)).toEqual([
+  expect(await tradingGateProblems(new Date('2026-10-29T13:00:00Z'), none)).toEqual([
     expect.stringContaining('30 分後に開場'),
   ]);
-  // 両方の門の理由を並べる（片方で止めて、もう片方を隠さない）。
-  expect(tradingGateProblems(OPEN, inFlightProblems)).toHaveLength(2);
+  expect(await tradingGateProblems(OPEN, some)).toHaveLength(2);
 });
 
 test('runId: E2E_RUN_ID を英数字とハイフンで固定でき、無ければ時刻から作る', () => {
