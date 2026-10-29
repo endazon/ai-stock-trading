@@ -40,7 +40,7 @@ plan_refs:
   - `TradeDecisionParser.ReadEnvelope`（一次・二次で共通の前段）。抽出が失敗し、走査が末尾で文字列の内側に終わったときだけ補修を試みる。補修の後で改めて抽出・JSON 構文・action の検査を通す（以降の検査は変えない）。
   - `ParsedScreening` / `ParsedTradeDecision` に補修の印（`Repair`）を持たせる。
   - `DecisionOrchestrator` は、一次・二次それぞれで補修したときに WRN 1 行を出す。中身は**補修した事実と形（`layer` と `shape`）だけ**で、応答の本文は書かない。
-  - 試験: パーサの正例 4・否定形 3・正しい JSON は補修しない 1、オーケストレータの 1（一次の補修で二次へ進む・WRN の中身）。
+  - 試験: パーサの正例 4・否定形 4（`」` の後の `,` に `"` が続かない形をレビューで追加）・正しい JSON は補修しない 1、オーケストレータの 1（一次の補修で二次へ進む・WRN の中身）。
   - IADR-0597、IADR の索引。
 - 対象外:
   - 他の候補（`NoBrace` / `FullWidthBraces` / `UnclosedBrace`）の頑健化。IADR-0531 決定 3 のまま（原本で原因が確定してから）。
@@ -85,7 +85,7 @@ plan_refs:
 
 ## 検証
 
-- red → green: 補修を無効にする変異（`TryRepair` が常に false を返す）で、正例の試験 5 件（パーサの正例の Theory 4 ケースと、オーケストレータの試験 1 件）が赤になる（`Failed: 5, Passed: 4`。否定形 3 ケースと正しい JSON の 1 件は緑のまま）。戻すと緑になる。
+- red → green: 補修を無効にする変異（`TryRepair` が常に false を返す）で、正例の試験 5 件（パーサの正例の Theory 4 ケースと、オーケストレータの試験 1 件）が赤になる（`Failed: 5, Passed: 5`。否定形 4 ケースと正しい JSON の 1 件は緑のまま）。戻すと緑になる。
 - `dotnet build backend/backend.slnx`・`dotnet test`（TradeDecisionService.Tests・Architecture.Tests）・`dotnet format --verify-no-changes`。
 - 文書系の検査: `node scripts/scripts.test.js`・`node scripts/check-trace-blocks.js`・`node scripts/gen-knowledge-graph.js --check`・`node scripts/check-cross-repo-refs.js`。
 

@@ -369,11 +369,12 @@ public class TradeDecisionParserTests
     }
 
     // 否定形: 補修の形に当たらないものは従来どおり解析不能のまま（閉じかぎの後が未知のキー・閉じかぎの無い閉じない文字列・
-    // 素の '"' の混入）。正しい JSON の中の閉じかぎは補修しない（印も立たない）。
+    // 素の '"' の混入・閉じかぎの後の ',' に '"' が続かない）。正しい JSON の中の閉じかぎは補修しない（印も立たない）。
     [Theory]
     [InlineData("{\"action\":\"Sell\",\"rationale\":\"利確」,\"price\":95.7}")]
     [InlineData("{\"action\":\"Hold\",\"rationale\":\"監視銘\"柄に材料なし\"}")]
     [InlineData("{\"action\":\"Hold\",\"rationale\":\"様子見」 と書いたが閉じない")]
+    [InlineData("{\"action\":\"Hold\",\"rationale\":\"様子見」,referencePrice:1}")]
     public void 補修の形に当たらない閉じない文字列は解析不能のまま_1332(string output)
     {
         TradeDecisionParser.ParseScreening(output).IsUnparseable.Should().BeTrue();
