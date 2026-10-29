@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-05, NFR-07, UC-06, IADR-0129, IADR-0255, IADR-0370, IADR-0374]
 author: claude (Claude Code)
 created: 2026-09-25
-updated: 2026-09-30
+updated: 2026-10-30
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10「逆指値なしの建玉を持たない」・NFR-07 可観測性)
 ---
@@ -97,6 +97,14 @@ IADR-0370 決定 3′ により、乖離の取り込みに保護を追随させ�
   試験は ④足した reader の `Collect()` を 2 つの系列がそろうまで短い間隔で繰り返し（期限 10 秒）、exporter が累積で同じ点を再び出すため
   各回の前に sink を空にして**最後の `Collect()` の点だけ**で判定・表明する。変異①は門で、②は期限切れの後に exporter の表明で引き続き赤。
   作業仕様書 `20260930_1108_t786-otel-collect-race`。
+- **［2026-10-30 追記 / #1507］** T-10-786 に **4 つ目の競走**があった（赤の形は `Expected reader.Collect() to be True … but found False`。
+  CI の Integration E2E で 81 ms＝1 回目の `Collect()` で赤。#1504 と #1507 の 2 回）。原因は相乗りと読んでいる（CI でどの呼び出しと重なったかは未特定）——`MetricReader.Collect` は、同じ reader で収集が既に走っていれば
+  **それに相乗りしてその結果を返す**（OTel 1.16 `MetricReader.Collect` の `!shouldRunCollect` の枝。プロバイダの `ForceFlush`・`Shutdown` が合成の reader 越しに
+  期限つきで回すと期限切れの false、`Shutdown` と重なれば待ちの打ち切りで false）。この false は足した exporter の成否と別の事象であり、
+  試験が守る性質（2 つの系列が exporter に届く）でもない。試験は ⑤`Collect()` の戻り値を表明せず、false の回は点を判定に使わず次の回へ進む
+  （期限切れは従来どおり exporter の表明で赤。失敗した回数を表明の文面に出す）。CI でどの呼び出しと重なったかは未特定である（手元では
+  15 回 × 51 件で再現せず）。再現は同じ reader への期限 0 の `Collect` を 4 本並走させる注入で行い、旧形は 3 回中 1 回この文面で赤、是正後は 6 回とも緑。
+  作業仕様書 `20261030_1507_t786-collect-join-false`。
 
 ### 決定 4: アラート `AstDriftAdoptionFollowUpAbandoned`（IADR-0374 決定 4 の規約どおり）
 
