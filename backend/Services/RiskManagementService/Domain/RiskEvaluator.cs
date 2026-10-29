@@ -46,8 +46,9 @@ public static class RiskEvaluator
         // 空売りしない）・ADR-0028（未供給時の fail-closed）と同じ形であり、新しい規律を作っていない。
         //
         // **手仕舞い（Close）・損切りは止めない**（isEntry の短絡）。口座種別の未確認と同じ扱いである。
+        // #1483, IADR-0592 決定1: 述語は EntryStateBlockers.CapitalUnavailable（口は欠けのときだけ同じ理由を返す）。
         var equity = snapshot.Capital;
-        if (isEntry && equity is null)
+        if (isEntry && EntryStateBlockers.CapitalUnavailable(snapshot))
         {
             reasons.Add(RejectionReason.CapitalBaselineUnavailable);
         }

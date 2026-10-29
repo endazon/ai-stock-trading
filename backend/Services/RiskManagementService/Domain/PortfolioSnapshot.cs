@@ -33,6 +33,20 @@ public record PortfolioSnapshot
     /// </summary>
     public decimal? Capital { get; init; }
 
+    /// <summary>
+    /// 🔴 FR-10, ADR-0073 決定1・2, #1483, IADR-0592 決定1: <see cref="Capital"/> が <c>null</c> である理由が<b>観測の欠け</b>
+    /// （直前の米国東部暦日に成功した観測が無い・鮮度切れ。<c>CapitalBaselineReading.ObservationMissing</c>）か。
+    /// <para>
+    /// 欠けは<b>その暦日のあいだ確定した状態</b>である（当日の観測は直前の暦日の行を書かない）。新規建ての可否の口（<see cref="EntryStateBlockers"/>）は
+    /// これが真のときだけ <see cref="RejectionReason.CapitalBaselineUnavailable"/> を返す。審査は従来どおり <see cref="Capital"/> の null だけで止める（変えない）。
+    /// </para>
+    /// <para>
+    /// <see cref="Capital"/> が値を持つときは常に偽（組み立て側が連言で入れる）。既定は偽 —— 明示しない組み立てでは口は返さず、LLM を呼ぶ側
+    /// （審査が止める側）へ倒れる。
+    /// </para>
+    /// </summary>
+    public bool CapitalObservationMissing { get; init; }
+
     /// <summary>保有**建玉**数（ADR-0016 決定9。「保有銘柄数」では数えない）。</summary>
     public int OpenPositionCount { get; init; }
 

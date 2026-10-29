@@ -12,7 +12,8 @@ namespace RiskManagementService.Tests;
 // 一致の定義:
 //   - 健全性（常に）: 口が返す理由は、審査がその新規建てを拒否する理由に必ず含まれる（口が「落ちる」と言えば審査は落とす）。
 //   - 完全性（状態が既知のとき）: 審査の拒否理由のうち口の対象（Determinable）に入るものは、口もすべて返す（並びも同じ）。
-//   - 不明（StopOutStatusUnknown・GFV 件数の未供給・資金の未供給）は口は返さない（LLM を呼ぶ側へ倒す。裁定 3）。
+//   - 不明（StopOutStatusUnknown・GFV 件数の未供給・資金の未供給〔観測の欠けを除く〕）は口は返さない（LLM を呼ぶ側へ倒す。裁定 3）。
+//   - ［2026-10-29 / #1483・IADR-0592 決定1］資金の観測の欠け（ADR-0073）は確定した状態として返す（審査と同じ CapitalBaselineUnavailable）。
 public class EntryStateBlockersTests
 {
     private const int MaxPositions = 3; // TradingDefaults の保有建玉数上限。
@@ -21,6 +22,14 @@ public class EntryStateBlockersTests
 
     private static OrderIntent Entry(TradeSide side) =>
         new("AAPL", Market.UnitedStates, side, ProductType.Cash, BrokerProvider.InternalPaper, 1, 10m, PositionEffect.Open);
+
+    // #1483, IADR-0592 決定1: 基準資金の状態（既知／観測の欠け〔ADR-0073〕／その他の未供給〔行なし・0 以下〕）。
+    public enum CapitalState
+    {
+        Known,
+        ObservationMissing,
+        OtherUnavailable,
+    }
 
     public enum Gfv
     {
@@ -35,9 +44,12 @@ public class EntryStateBlockersTests
     }
 
     private static PortfolioSnapshot Snapshot(
-        int openPositions, bool killSwitch, bool paused, bool dailyLoss, bool drawdown, Gfv gfv, bool capitalKnown) => new()
+        int openPositions, bool killSwitch, bool paused, bool dailyLoss, bool drawdown, Gfv gfv, bool capitalKnown,
+        bool observationMissing = false) => new()
         {
             Capital = capitalKnown ? 100_000m : null,
+            // #1483, IADR-0592 決定1: 未供給の理由が観測の欠けか（組み立ての連言と同じく、資金が既知なら偽）。
+            CapitalObservationMissing = !capitalKnown && observationMissing,
             OpenPositionCount = openPositions,
             KillSwitchEngaged = killSwitch,
             TradingPaused = paused,
@@ -84,13 +96,16 @@ public class EntryStateBlockersTests
             from dailyLoss in bools
             from drawdown in bools
             from gfv in Enum.GetValues<Gfv>()
-            from capitalKnown in bools
-            select (positions, longStop, shortStop, longExit, shortExit, side, killSwitch, paused, dailyLoss, drawdown, gfv, capitalKnown);
+            from capital in Enum.GetValues<CapitalState>()
+            select (positions, longStop, shortStop, longExit, shortExit, side, killSwitch, paused, dailyLoss, drawdown, gfv, capital);
 
-        foreach (var (positions, longStop, shortStop, longExit, shortExit, side, killSwitch, paused, dailyLoss, drawdown, gfv, capitalKnown)
+        foreach (var (positions, longStop, shortStop, longExit, shortExit, side, killSwitch, paused, dailyLoss, drawdown, gfv, capital)
             in cases)
         {
-            var snapshot = Snapshot(positions, killSwitch, paused, dailyLoss, drawdown, gfv, capitalKnown);
+            // T-10-3073, #1483, IADR-0592 決定1: 資金の次元を「既知／観測の欠け／その他の未供給（行なし・0 以下）」の 3 値にした。
+            var snapshot = Snapshot(
+                positions, killSwitch, paused, dailyLoss, drawdown, gfv,
+                capitalKnown: capital == CapitalState.Known, observationMissing: capital == CapitalState.ObservationMissing);
             var stopOuts = new StopOutReentrySupply(longStop, shortStop);
             // T-10-2319, #1176, IADR-0495 決定3: 判断由来の決済（両方向の有無）の次元を足した。
             var exits = new DecisionExitReentrySupply(longExit, shortExit);
@@ -98,10 +113,10 @@ public class EntryStateBlockersTests
             var blockers = EntryStateBlockers.Determine(side, Settings, snapshot, stopOuts, exits, lockedOut: false);
             var screened = RiskEvaluator.Evaluate(Entry(side), Settings, snapshot, stopOuts: stopOuts, decisionExits: exits).Reasons;
             var screenedDeterminable = screened.Where(EntryStateBlockers.Determinable.Contains).ToList();
-            var known = gfv != Gfv.CashUnknownCount;
+            var known = gfv != Gfv.CashUnknownCount && capital != CapitalState.OtherUnavailable;
 
             var label = $"positions={positions} stop={longStop}/{shortStop} exit={longExit}/{shortExit} side={side} kill={killSwitch} pause={paused} " +
-                $"loss={dailyLoss} dd={drawdown} gfv={gfv} capital={capitalKnown}: 口=[{string.Join(",", blockers)}] " +
+                $"loss={dailyLoss} dd={drawdown} gfv={gfv} capital={capital}: 口=[{string.Join(",", blockers)}] " +
                 $"審査=[{string.Join(",", screenedDeterminable)}]";
             if (!blockers.All(screened.Contains))
                 failures.Add("健全性 " + label);
@@ -109,6 +124,10 @@ public class EntryStateBlockersTests
                 failures.Add("完全性 " + label);
             if (blockers.Contains(RejectionReason.StopOutStatusUnknown))
                 failures.Add("不明を返した " + label);
+            if (capital == CapitalState.OtherUnavailable && blockers.Contains(RejectionReason.CapitalBaselineUnavailable))
+                failures.Add("欠けではない未供給を返した " + label);
+            if (capital == CapitalState.ObservationMissing && !blockers.Contains(RejectionReason.CapitalBaselineUnavailable))
+                failures.Add("観測の欠けを返さない " + label);
 
             checkedCases++;
             if (blockers.Count > 0)
@@ -116,7 +135,7 @@ public class EntryStateBlockersTests
         }
 
         failures.Should().BeEmpty();
-        checkedCases.Should().Be(3 * 3 * 3 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 5 * 2);
+        checkedCases.Should().Be(3 * 3 * 3 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 5 * 3);
         blockedCases.Should().BeGreaterThan(0).And.BeLessThan(checkedCases, "塞がる組と塞がらない組の両方を試す");
     }
 
@@ -267,5 +286,81 @@ public class EntryStateBlockersTests
                 StopOutReentrySupply.NoneToday, DecisionExitReentrySupply.NoneToday, false)
             .Should().BeEmpty();
         EntryStateBlockers.PreCloseCutoff(new PreCloseEntryCutoffSupply(close, SessionClose: null, 60)).Should().BeFalse();
+    }
+
+    // 🔴 T-10-3074, FR-10, FR-04, #1483, IADR-0592 決定2: **審査の拒否理由のすべてを、口の対象・全注文の口・除外（理由つき）のどれか 1 つへ置く。**
+    // 列挙（RejectionReason）に値を足して下の表へ置かなければ赤になる —— 審査に「状態だけで新規建てを必ず拒否する理由」を足した者は、
+    // 口（EntryStateBlockers）にも足すか、足さない理由を書くかを必ず決める（#1433・#1483 は口への足し忘れで LLM を空回りさせた）。
+    // 母集合と除外の理由の出典は作業仕様書 20260930_1113（IADR-0463）・20261023_1433_1434（IADR-0572）・20261029_1483（IADR-0592）。
+    private enum Gate
+    {
+        /// <summary>口が新規建ての方向別に返す（EntryStateBlockers.Determinable）。</summary>
+        Entry,
+
+        /// <summary>全注文の口（AnyOrder。OrderStateBlockers）。</summary>
+        AnyOrder,
+
+        /// <summary>口は返さない（理由つき）。審査だけが止める。</summary>
+        Excluded,
+    }
+
+    private static readonly IReadOnlyDictionary<RejectionReason, (Gate Gate, string Why)> Classification =
+        new Dictionary<RejectionReason, (Gate, string)>
+        {
+            [RejectionReason.KillSwitchActive] = (Gate.Entry, "状態だけで確定"),
+            [RejectionReason.StageProhibitsLiveTrading] = (Gate.Excluded, "注文の発注先に依存し決済にも掛かる"),
+            [RejectionReason.StageCapitalCapExceeded] = (Gate.Excluded, "注文額に依存"),
+            [RejectionReason.ProductTypeDisabled] = (Gate.Excluded, "注文の商品種別・方向に依存"),
+            [RejectionReason.MarketDisabled] = (Gate.AnyOrder, "決済にも掛かる（全注文の口）"),
+            [RejectionReason.BannedSymbol] = (Gate.AnyOrder, "決済にも掛かる（全注文の口）"),
+            [RejectionReason.SameDayReentry] = (Gate.Excluded, "注文の商品種別・口座種別に依存"),
+            [RejectionReason.PerOrderAmountExceeded] = (Gate.Excluded, "注文額に依存"),
+            [RejectionReason.DailyOrderAmountExceeded] = (Gate.Excluded, "注文額に依存"),
+            [RejectionReason.MaxPositionsExceeded] = (Gate.Entry, "状態だけで確定"),
+            [RejectionReason.DailyLossLimitReached] = (Gate.Entry, "状態だけで確定（ロックアウトを含む）"),
+            [RejectionReason.MaxDrawdownReached] = (Gate.Entry, "状態だけで確定"),
+            [RejectionReason.ManipulativeOrderPattern] = (Gate.Excluded, "注文と注文履歴に依存し決済にも掛かる"),
+            [RejectionReason.TradingPaused] = (Gate.Entry, "状態だけで確定"),
+            [RejectionReason.ShortSellDisabled] = (Gate.Excluded, "空売り専用（保有 0 の売りは判断の後で見送られる）"),
+            [RejectionReason.BorrowUnavailable] = (Gate.Excluded, "空売り専用"),
+            [RejectionReason.BorrowCostExceeded] = (Gate.Excluded, "空売り専用"),
+            [RejectionReason.ShortExposureExceeded] = (Gate.Excluded, "空売り専用・注文額に依存"),
+            [RejectionReason.MaintenanceMarginBreach] = (Gate.Excluded, "空売り専用"),
+            [RejectionReason.DividendRecordDateNear] = (Gate.Excluded, "空売り専用"),
+            [RejectionReason.ShortPriceFloorBreach] = (Gate.Excluded, "空売り専用・価格に依存"),
+            [RejectionReason.StopOrderRequired] = (Gate.Excluded, "空売り専用・注文の属性に依存"),
+            [RejectionReason.BuyInBanned] = (Gate.Excluded, "空売り専用"),
+            [RejectionReason.StageProductTypeProhibited] = (Gate.Excluded, "注文の商品種別に依存"),
+            [RejectionReason.StageShortSellReleaseUnmet] = (Gate.Excluded, "注文の商品種別に依存"),
+            [RejectionReason.CashAccountSettlementHold] = (Gate.Excluded, "注文額に依存"),
+            [RejectionReason.BrokerAccountTypeUnverified] = (Gate.Excluded, "不明（照会の欠落。裁定 3）"),
+            [RejectionReason.GoodFaithViolationLimitReached] = (Gate.Entry, "件数が既知のときだけ"),
+            [RejectionReason.InformationSourceDegraded] = (Gate.Excluded, "縮退と不明が 1 ビットに混ざる"),
+            [RejectionReason.CapitalBaselineUnavailable] = (Gate.Entry, "観測の欠け（ADR-0073）のときだけ。行なし・0 以下は返さない"),
+            [RejectionReason.StoppedOutSameDay] = (Gate.Entry, "状態だけで確定（方向別）"),
+            [RejectionReason.StopOutStatusUnknown] = (Gate.Excluded, "不明（裁定 3）"),
+            [RejectionReason.DecisionExitSameDay] = (Gate.Entry, "状態だけで確定（方向別）"),
+            [RejectionReason.PreCloseEntryCutoff] = (Gate.Entry, "時刻と暦だけで確定"),
+            [RejectionReason.ThemeConcentrationExceeded] = (Gate.Entry, "保有の状態だけで確定"),
+        };
+
+    [Fact]
+    public void T_10_3074_審査の拒否理由はすべて口の対象か除外かに分類されている()
+    {
+        Enum.GetValues<RejectionReason>().Where(r => !Classification.ContainsKey(r))
+            .Should().BeEmpty("列挙に足した拒否理由は、口へ足すか除外の理由を書いて、この表へ置く（#1483）");
+        Classification.Where(kv => kv.Value.Gate == Gate.Entry).Select(kv => kv.Key)
+            .Should().BeEquivalentTo(EntryStateBlockers.Determinable, "表の『口の対象』と口が返し得る理由が一致する");
+        Classification.Values.Should().OnlyContain(v => !string.IsNullOrWhiteSpace(v.Why), "除外にも対象にも理由を書く");
+
+        // 全注文の口は、該当の理由を実際に返す（表だけで縛らない）。
+        var guard = TradingDefaults.CreateGuardSettings() with
+        {
+            EnabledMarkets = new HashSet<Market> { Market.UnitedStates },
+            BannedSymbols = [new BannedSymbol("TSLA", Market.UnitedStates, "試験", new DateOnly(2026, 10, 9))],
+        };
+        OrderStateBlockers.Determine(guard, "TSLA", Market.UnitedStates)
+            .Concat(OrderStateBlockers.Determine(guard, "7203", Market.Japan))
+            .Should().BeEquivalentTo(Classification.Where(kv => kv.Value.Gate == Gate.AnyOrder).Select(kv => kv.Key));
     }
 }
