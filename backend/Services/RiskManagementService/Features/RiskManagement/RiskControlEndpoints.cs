@@ -24,6 +24,7 @@ using RiskManagementService.Features.RiskManagement.GetSizingContext;
 using RiskManagementService.Features.RiskManagement.GetStageGate;
 using RiskManagementService.Features.RiskManagement.GetStageGateHistory;
 using RiskManagementService.Features.RiskManagement.GetTradingHalt;
+using RiskManagementService.Features.RiskManagement.GetInFlightOrders;
 using RiskManagementService.Features.RiskManagement.GetWorkingEntryOrders;
 using RiskManagementService.Features.RiskManagement.PauseTrading;
 using RiskManagementService.Features.RiskManagement.RequestStageTransition;
@@ -96,6 +97,8 @@ internal static class RiskControlEndpoints
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
 
         owner.MapGetKillSwitch();
+        // NFR, #1502, IADR-0600: 承認済みで終端していない注文（新規建て・決済）。live の E2E の取引影響層の門が BFF 経由で読む（利用者のみ）。
+        owner.MapGetInFlightOrders();
         owner.MapEngageKillSwitch();
         owner.MapDisengageKillSwitch();
 
