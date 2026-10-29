@@ -509,6 +509,10 @@ builder.Services.AddSingleton<ITradeDecisionFailureReporter>(sp => new Publishin
 // **singleton にする**（スコープごとに作ると記録した値が判断へ届かない）。未配線なら判断のプロンプトは常に「ニュース: 不明」と書く。
 builder.Services.AddSingleton<NewsCollectionStatusStore>();
 
+// 🔴 FR-02, NFR-02, #1485, IADR-0593: 定時判断を判断した時点で送る発行口（定時の購読の必須依存）。**singleton**（送った DecisionId を
+// 試行・巡回をまたいで覚え、打ち切られた試行の再試行が同じ判断をし直さない）。ランタイムの MessageBus から送る（ハンドラの文脈に乗せない）。
+builder.Services.AddSingleton(sp => new ScheduledDecisionPublisher(sp.GetRequiredService<IWolverineRuntime>()));
+
 // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価ゲート（Profitability:*）。未設定なら Default（無効＝現行挙動）。
 // 有効時は往復概算費用に対する最小期待利益を評価し、採算不成立・費用見積り不能は Hold に倒す。
 builder.Services.AddSingleton(ProfitabilityGateOptionsLoader.FromConfiguration(builder.Configuration));
