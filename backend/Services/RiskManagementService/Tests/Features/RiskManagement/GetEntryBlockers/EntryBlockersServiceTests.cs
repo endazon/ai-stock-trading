@@ -5,6 +5,7 @@ using RiskManagementService.Features.RiskManagement.GetEntryBlockers;
 using RiskManagementService.Infrastructure.ExternalServices;
 using RiskManagementService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
@@ -31,11 +32,14 @@ public class EntryBlockersServiceTests
         public InMemoryRiskSettingsStore Settings { get; } = new(settings);
         public IClock Clock { get; } = new FakeClock(now ?? Now, TradingDay.Of(now ?? Now));
 
+        // #1483, IADR-0592: 基準資金（口座照会）。既定は照会できている。欠けの試験が差し替える（審査と口が同じストアを読む）。
+        public FakeCapitalBaseline Capital { get; } = FakeCapitalBaseline.Of(100_000m);
+
         private PortfolioSnapshotBuilder Snapshots() => new(
             new LedgerPortfolioStateProvider(
                 Ledger, new InMemoryWorkingEntryOrderSource(Ledger, new InMemoryOrderActivityStore()), Clock),
             KillSwitch, Pause, new InMemoryBrokerAccountObservationStore(TimeProvider.System),
-            FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
+            FakeInformationDegradation.Affirmed(), capitalBaseline: Capital);
 
         public EntryBlockersService Blockers() => new(Settings, Snapshots(), Lockout, Ledger, Clock, Controls);
 
@@ -324,5 +328,45 @@ public class EntryBlockersServiceTests
         HoldLong(g, "COIN");
         g.Blockers().Build("MARA", Market.UnitedStates).LongSide.Should().BeEmpty();
         (await ScreenedDeterminableAsync(g, "MARA")).Should().BeEmpty();
+    }
+
+    // 🔴 T-10-3072, FR-10, FR-04, ADR-0073 決定1・2, #1483, IADR-0592 決定1: **基準資金の直前の暦日の観測の欠け**（ADR-0073）と鮮度切れの日は、
+    // 口も両方向に CapitalBaselineUnavailable を返す（同じストアの審査も同じ理由で拒否する）。観測がある日は返さない。
+    // 欠けではない未供給（行なし＝初回の配備・0 以下＝人手の意図した停止）は従来どおり返さない（審査は止める。IADR-0592 決定3）。
+    [Theory]
+    [InlineData(CapitalBaselineReadOutcome.UnavailableMissingPreviousDay, true)]
+    [InlineData(CapitalBaselineReadOutcome.UnavailableStale, true)]
+    [InlineData(CapitalBaselineReadOutcome.UnavailableNoRow, false)]
+    [InlineData(CapitalBaselineReadOutcome.UnavailableNonPositive, false)]
+    [InlineData(CapitalBaselineReadOutcome.Supplied, false)]
+    public async Task T_10_3072_基準資金の観測の欠けの日は口が両方向に理由を返す(CapitalBaselineReadOutcome outcome, bool blocked)
+    {
+        var f = new Fixture();
+        if (outcome != CapitalBaselineReadOutcome.Supplied)
+        {
+            f.Capital.Baseline = null;
+            f.Capital.UnavailableOutcome = outcome;
+            f.Capital.UnavailableLatestTradingDay = new DateOnly(2026, 9, 20);
+        }
+
+        var view = f.Blockers().Build("AAPL", Market.UnitedStates);
+        var outcomeOfScreening = await f.Screening().ScreenAsync(Buy());
+
+        if (blocked)
+        {
+            view.LongSide.Should().Equal(RejectionReason.CapitalBaselineUnavailable);
+            view.ShortSide.Should().Equal([RejectionReason.CapitalBaselineUnavailable], "資金は方向を問わない");
+            view.LongSide.Should().Equal(await ScreenedDeterminableAsync(f), "口と審査が一致する（同じストア・同じ読み）");
+        }
+        else
+        {
+            view.LongSide.Should().BeEmpty();
+            view.ShortSide.Should().BeEmpty();
+        }
+
+        // 審査は変えない: 未供給なら観測の欠けかどうかに依らず拒否する（口が返さない未供給も審査が止める＝両端で止める）。
+        var rejectedForCapital = outcomeOfScreening.Rejected?.Reasons.Contains(RejectionReason.CapitalBaselineUnavailable) ?? false;
+        rejectedForCapital.Should().Be(outcome != CapitalBaselineReadOutcome.Supplied);
+        view.AnyOrder.Should().BeEmpty("資金の欠けは新規建てだけを止める（決済は止めない）");
     }
 }

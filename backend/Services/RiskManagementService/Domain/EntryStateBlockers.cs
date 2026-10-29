@@ -12,13 +12,16 @@ namespace RiskManagementService.Domain;
 // ［2026-10-07 / #1176・IADR-0495 決定3］判断由来の決済の後の同日・同方向〔DecisionExitSameDay〕を足して 7 → 8 理由。
 // ［2026-10-23 / #1433・IADR-0572 決定1］閉場前の新規建ての締め切り〔PreCloseEntryCutoff〕とテーマの同時保有の上限〔ThemeConcentrationExceeded〕を
 // 足して 8 → 10 理由。どちらも銘柄・市場・時刻・状態だけで決まり、数量・価格・商品種別・方向に依らない）。
-// 🔴 **不明は返さない**（裁定 3）。StopOutStatusUnknown・資金の未供給・口座種別の未確認・縮退の不明・GFV 件数の未供給は
+// ［2026-10-29 / #1483・IADR-0592 決定1］基準資金の直前の暦日の観測の欠け（ADR-0073）〔CapitalBaselineUnavailable。欠け・鮮度切れのときだけ〕を
+// 先頭（審査の到達順）に足して 10 → 11 理由。欠けはその米国東部暦日のあいだ確定した状態で、ADR-0073 の後は「照会できていないから分からない」ではない。
+// 🔴 **不明は返さない**（裁定 3）。StopOutStatusUnknown・資金の未供給（行なし・0 以下。欠けを除く）・口座種別の未確認・縮退の不明・GFV 件数の未供給は
 // 審査では止まるが、口は「確定した」とは答えない —— 判断側は LLM を呼ぶ側へ倒れる（審査が止める）。
 public static class EntryStateBlockers
 {
     /// <summary>口が返し得る理由（審査の到達順）。<c>DailyLossLimitReached</c> はロックアウトでも立つ。</summary>
     public static IReadOnlyList<RejectionReason> Determinable { get; } =
     [
+        RejectionReason.CapitalBaselineUnavailable,
         RejectionReason.KillSwitchActive,
         RejectionReason.TradingPaused,
         RejectionReason.StoppedOutSameDay,
@@ -30,6 +33,19 @@ public static class EntryStateBlockers
         RejectionReason.DailyLossLimitReached,
         RejectionReason.MaxDrawdownReached,
     ];
+
+    /// <summary>
+    /// 基準資金（equity）が未供給か（FR-10, ADR-0041 決定2, IADR-0354）。判定コアはこれで新規建てを <c>CapitalBaselineUnavailable</c> で止める
+    /// （行なし・欠け・鮮度切れ・0 以下のどれでも）。
+    /// </summary>
+    public static bool CapitalUnavailable(PortfolioSnapshot snapshot) => snapshot.Capital is null;
+
+    /// <summary>
+    /// 🔴 ADR-0073 決定1・2, #1483, IADR-0592 決定1: 基準資金が未供給で、その理由が<b>観測の欠け</b>（直前の米国東部暦日の観測が無い・鮮度切れ）か。
+    /// 口はこのときだけ <c>CapitalBaselineUnavailable</c> を返す（欠けはその暦日のあいだ確定する）。行なし・0 以下は返さない（審査は止める）。
+    /// </summary>
+    public static bool CapitalObservationMissing(PortfolioSnapshot snapshot) =>
+        CapitalUnavailable(snapshot) && snapshot.CapitalObservationMissing;
 
     /// <summary>全停止スイッチ（kill switch）。</summary>
     public static bool KillSwitch(PortfolioSnapshot snapshot) => snapshot.KillSwitchEngaged;
@@ -114,6 +130,10 @@ public static class EntryStateBlockers
             ArgumentException.ThrowIfNullOrWhiteSpace(symbol);
 
         var reasons = new List<RejectionReason>();
+        // 🔴 #1483, ADR-0073, IADR-0592 決定1: 基準資金の観測の欠け（審査と同じ位置＝先頭。方向は問わない）。
+        if (CapitalObservationMissing(snapshot))
+            reasons.Add(RejectionReason.CapitalBaselineUnavailable);
+
         if (KillSwitch(snapshot))
             reasons.Add(RejectionReason.KillSwitchActive);
 

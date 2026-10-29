@@ -154,6 +154,9 @@ public class EntryBlockersBeforeLlmTests
         // T-10-2990, FR-10, ADR-0070, ADR-0071, #1433, IADR-0572 決定1: 口が返すようになった閉場前の締め切り・テーマの上限でも同じ（判断側は結果を読むだけ）。
         RejectionReason.PreCloseEntryCutoff,
         RejectionReason.ThemeConcentrationExceeded,
+
+        // T-10-3075, FR-10, ADR-0073, #1483, IADR-0592 決定1: 口が返すようになった基準資金の観測の欠けでも同じ（判断側は結果を読むだけ）。
+        RejectionReason.CapitalBaselineUnavailable,
     ];
 
     // T-10-1791: 保有 0・未約定なし・買いの新規建てが塞がっている → LLM を 0 回で見送り、台帳へ理由つきで 1 件、
