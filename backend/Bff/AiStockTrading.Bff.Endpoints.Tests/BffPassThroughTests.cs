@@ -51,6 +51,8 @@ public class BffPassThroughTests
         ["GET", "/bff/risk-controls/stage-gate"],
         // AST #640, SC-03, FR-10, FR-19: 空売りの現況（維持率等）。後段は実装済みだが BFF 登録が漏れていた。
         ["GET", "/bff/risk-controls/short-selling"],
+        // NFR, #1502, IADR-0600: 未終端の注文（live の E2E の取引影響層の門が読む。GET だけ）。
+        ["GET", "/bff/risk-controls/in-flight-orders"],
         ["GET", "/bff/monitor/watchlist"],
         ["POST", "/bff/monitor/watchlist"],
         ["DELETE", "/bff/monitor/watchlist"],
@@ -148,6 +150,29 @@ public class BffPassThroughTests
         host.Downstream.LastRequest!.Headers.Authorization.Should().NotBeNull();
         // BFF プレフィックスを剥がした後段パスへ転送される。
         host.Downstream.LastRequest!.RequestUri!.AbsolutePath.Should().Be("/assumptions");
+    }
+
+    // NFR, #1502, IADR-0600: 未終端の注文の照会は GET で後段の /risk-controls/in-flight-orders へ素通しする（利用者のトークンを伝播し、
+    // 後段の OwnerOnly の 403 もそのまま返す）。
+    [Fact]
+    public async Task 未終端の注文の照会は後段へGETで素通しする_1502()
+    {
+        await using var host = await BffTestHost.StartAsync();
+        host.Downstream.ResponseBody = """[{"symbol":"AAPL","market":0,"kind":2,"state":1,"approvedAt":"2026-10-29T20:00:00+00:00"}]""";
+        host.Downstream.Status = HttpStatusCode.OK;
+
+        var resp = await host.SendAuthed(HttpMethod.Get, "/bff/risk-controls/in-flight-orders");
+
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await resp.Content.ReadAsStringAsync()).Should().Contain("\"kind\":2");
+        host.Downstream.LastRequest!.Method.Should().Be(HttpMethod.Get);
+        host.Downstream.LastRequest!.Headers.Authorization.Should().NotBeNull();
+        host.Downstream.LastRequest!.RequestUri!.AbsolutePath.Should().Be("/risk-controls/in-flight-orders");
+
+        host.Downstream.Status = HttpStatusCode.Forbidden;
+        host.Downstream.ResponseBody = "{}";
+        (await host.SendAuthed(HttpMethod.Get, "/bff/risk-controls/in-flight-orders")).StatusCode
+            .Should().Be(HttpStatusCode.Forbidden, "後段の OwnerOnly の拒否をそのまま返す");
     }
 
     [Theory]
