@@ -90,7 +90,15 @@
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <!-- NFR, ADR-0013, IADR-0129, #354（第 3 段階）: 実 RabbitMQ 上のトポロジ（キュー・consumer 数・DLQ）を
          受動宣言で読むために Integration E2E だけが直接参照する。WolverineFx.RabbitMQ が推移的に持ち込む版と
-         同一に固定する（CPM の推移ピン留めが効いており、版がずれると同居できない）。 -->
-    <PackageVersion Include="RabbitMQ.Client" Version="7.1.2" />
+         同一に固定する（CPM の推移ピン留めが効いており、版がずれると同居できない）。
+         ［2026-10-29 / #1482, IADR-0595］推移ピン留めで全サービスの版を 7.1.2 → 7.2.2 へ上げた。7.1.2 は開き損ねた接続
+         （ハンドシェイクの途中で失敗）を閉じず、自動回復が裏で繋ぎ直しを続けた（起動の再試行のたびに 1 本ずつ漏れ、ブローカの準備が
+         整った時点で一斉に生き返る。PoC で AST の接続が 121 本）。7.2.x は開き損ねた接続を閉じて破棄する。WolverineFx.RabbitMQ 6.24.5 の
+         依存は 7.1.2 以上。試験は PlatformShim.Tests の RabbitMqFailedOpenConnectionLeakTests。
+         🔴 推移ピン留めの理由は**不具合の是正**であり、脆弱性（CVE）ではない（上流の修正は 7.2.0 の
+         rabbitmq-dotnet-client#1857「prevent possible connection leak in AutorecoveringConnection during creation」）。
+         🔴 基盤（MSP）は WolverineFx.RabbitMQ 6.24.4 の推移で 7.1.2 のまま（2026-10-29 に dotnet list package で確認）であり、
+         **基盤と版が食い違う**。MSP 側が追随したら、この注記を外して基盤と揃っていることを確かめる。 -->
+    <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
   </ItemGroup>
 </Project>
