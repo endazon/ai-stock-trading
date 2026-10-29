@@ -170,6 +170,8 @@ public class InformationCollectedConsumerTests
                 opts.Services.AddSingleton<NewsCollectionStatusStore>();
                 // FR-02, #1169, IADR-0490: 定時サイクルの予算（ハンドラの必須依存。本番は Program.cs の singleton。値は本番の既定と同じ導出）。
                 opts.Services.AddSingleton(ScheduledCycleBudget.Derive(TimeSpan.FromSeconds(30), 2, ScheduledCycleBudget.DefaultMaxWatchedSymbols));
+                // 🔴 FR-02, NFR-02, #1485, IADR-0593: 定時判断を判断した時点で送る発行口（定時の購読の必須依存。本番は Program.cs の singleton）。
+                opts.Services.AddSingleton(sp => new ScheduledDecisionPublisher(sp.GetRequiredService<Wolverine.Runtime.IWolverineRuntime>()));
                 // NFR, FR-04, FR-11, #1111, IADR-0483: 最中の例外の最終の失敗の報告口（両ハンドラの必須依存。本番は Program.cs の singleton）。
                 opts.Services.AddSingleton<ITradeDecisionFailureReporter>(new RecordingTradeDecisionFailureReporter());
 
