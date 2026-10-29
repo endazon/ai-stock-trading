@@ -21,7 +21,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 const { closedGateProblems } = require('./e2e-market-closed.js');
 
 const FRONTEND = path.join(__dirname, '..', 'frontend');
@@ -54,16 +54,32 @@ function runIdOf(env, now = new Date()) {
   return now.toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '-');
 }
 
-/** Playwright の終了コードを、記録の結果と、この口の終了コードへ写す（純関数）。 */
-function verdictOf(playwrightStatus) {
+/** 門（globalSetup）が exit 2 で抜けるときに必ず出す目印（readiness.ts・snapshot.ts の行）。 */
+const NOT_READY_MARKER = '前提未整備（exit 2）';
+
+/**
+ * Playwright の終了コードと出力を、記録の結果と、この口の終了コードへ写す（純関数）。
+ * 🔴 「前提未整備」は、終了コードが 2 **かつ**門の目印の行が出力にあるときだけ。目印の無い 2 は失敗として扱う
+ *    （Playwright や Node が別の理由で 2 を返すのを、門で止まったと取り違えない）。
+ */
+function verdictOf(playwrightStatus, output = '') {
   if (playwrightStatus === 0) return { result: '成功', exit: 0 };
-  if (playwrightStatus === NOT_READY) return { result: '前提未整備', exit: 0 }; // 🔴 赤にしない
+  if (playwrightStatus === NOT_READY && output.includes(NOT_READY_MARKER)) return { result: '前提未整備', exit: 0 }; // 🔴 赤にしない
   return { result: '失敗', exit: 1 };
 }
 
-/** 未復元一覧（項目名と、復元の失敗の行）。ファイルが無ければ null（trading 層が書き込みを始めていない）。 */
-function remainingOf(reportFile, read = (f) => fs.readFileSync(f, 'utf8'), exists = fs.existsSync) {
-  if (!exists(reportFile)) return null;
+/**
+ * 未復元一覧（項目名と、復元の失敗の行）。ファイルが無いか、**この起動より前**に書かれたもの（前回の実行の残り）なら
+ * null（trading 層が今回は書き込みを始めていない）。
+ */
+function remainingOf(
+  reportFile,
+  startedAtMs = 0,
+  read = (f) => fs.readFileSync(f, 'utf8'),
+  mtimeOf = (f) => (fs.existsSync(f) ? fs.statSync(f).mtimeMs : null),
+) {
+  const mtime = mtimeOf(reportFile);
+  if (mtime === null || mtime < startedAtMs) return null;
   const r = JSON.parse(read(reportFile));
   return [...(r.remaining || []).map((d) => d.key), ...(r.errors || []).map((e) => `復元の失敗: ${e}`)];
 }
@@ -74,7 +90,29 @@ function recordRow({ date, runId, layers, result, remaining }) {
   return `| ${date} | ${runId} | ${layers.join(',')} | ${result} | ${left} | （書く） | （書く） |`;
 }
 
-function main() {
+/** Playwright を起動し、出力をそのまま流しつつ溜める（目印の判定に使う）。 */
+function runPlaywright(env) {
+  const cli = require.resolve('@playwright/test/cli', { paths: [FRONTEND] });
+  return new Promise((resolve) => {
+    let output = '';
+    const child = spawn(process.execPath, [cli, 'test', '--config', 'playwright.live.config.ts'], {
+      cwd: FRONTEND,
+      stdio: ['inherit', 'pipe', 'pipe'],
+      env,
+    });
+    child.stdout.on('data', (b) => {
+      process.stdout.write(b);
+      output += b.toString();
+    });
+    child.stderr.on('data', (b) => {
+      process.stderr.write(b);
+      output += b.toString();
+    });
+    child.on('close', (status) => resolve({ status, output }));
+  });
+}
+
+async function main() {
   let args;
   try {
     args = parseArgs(process.argv.slice(2));
@@ -102,19 +140,17 @@ function main() {
     }
   }
 
-  // 2. Playwright を起動する（frontend の依存から）。
-  const cli = require.resolve('@playwright/test/cli', { paths: [FRONTEND] });
-  const r = spawnSync(process.execPath, [cli, 'test', '--config', 'playwright.live.config.ts'], {
-    cwd: FRONTEND,
-    stdio: 'inherit',
-    env: { ...process.env, E2E_LIVE: '1', E2E_LAYER: args.layers.join(','), E2E_RUN_ID: runId },
-  });
-  const v = verdictOf(r.status);
+  // 2. Playwright を起動する（frontend の依存から）。🔴 同じ runId の前回の復元レポートは先に消す（前回の未復元を今回の結果に混ぜない）。
+  const reportFile = path.join(FRONTEND, 'test-results', `trading-restore-${runId}.json`);
+  fs.rmSync(reportFile, { force: true });
+  const startedAtMs = Date.now();
+  const r = await runPlaywright({ ...process.env, E2E_LIVE: '1', E2E_LAYER: args.layers.join(','), E2E_RUN_ID: runId });
+  const v = verdictOf(r.status, r.output);
 
-  // 4. 未復元一覧。
+  // 4. 未復元一覧（この起動の後に書かれたものだけ）。
   let remaining = null;
   if (args.layers.includes('trading')) {
-    remaining = remainingOf(path.join(FRONTEND, 'test-results', `trading-restore-${runId}.json`));
+    remaining = remainingOf(reportFile, startedAtMs);
     if (remaining && remaining.length) {
       process.stdout.write(`::error::[e2e-live-run] 未復元: ${remaining.join('、')}（SC-01/02 の画面で戻す）\n`);
     }
@@ -128,6 +164,6 @@ function main() {
   return exit;
 }
 
-module.exports = { parseArgs, runIdOf, verdictOf, remainingOf, recordRow, NOT_READY, USAGE };
+module.exports = { parseArgs, runIdOf, verdictOf, remainingOf, recordRow, NOT_READY, NOT_READY_MARKER, USAGE };
 
-if (require.main === module) process.exit(main());
+if (require.main === module) main().then((code) => process.exit(code));

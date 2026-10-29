@@ -5239,16 +5239,44 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.throws(() => lr.parseArgs(['--x']), /未知の引数/);
     });
     ok('E-62 手元の口: 🔴 前提未整備（Playwright の exit 2）は赤にしない（exit 0）。成功は 0、それ以外は 1', () => {
-      assert.deepStrictEqual(lr.verdictOf(0), { result: '成功', exit: 0 });
-      assert.deepStrictEqual(lr.verdictOf(2), { result: '前提未整備', exit: 0 });
-      assert.deepStrictEqual(lr.verdictOf(1), { result: '失敗', exit: 1 });
-      assert.deepStrictEqual(lr.verdictOf(null), { result: '失敗', exit: 1 }, 'シグナルで落ちた（status が null）も失敗');
+      const gate = '[e2e-live] trading の前提未整備（exit 2）。test は 1 件も流していない:';
+      assert.deepStrictEqual(lr.verdictOf(0, ''), { result: '成功', exit: 0 });
+      assert.deepStrictEqual(lr.verdictOf(2, gate), { result: '前提未整備', exit: 0 });
+      assert.deepStrictEqual(lr.verdictOf(1, gate), { result: '失敗', exit: 1 });
+      assert.deepStrictEqual(lr.verdictOf(null, ''), { result: '失敗', exit: 1 }, 'シグナルで落ちた（status が null）も失敗');
+    });
+    ok('E-62 手元の口: 🔴 門の目印（前提未整備（exit 2））の無い終了コード 2 は、前提未整備ではなく失敗（exit 1）', () => {
+      assert.deepStrictEqual(lr.verdictOf(2, 'Error: 設定の読み込みに失敗\n'), { result: '失敗', exit: 1 });
+      assert.deepStrictEqual(lr.verdictOf(2), { result: '失敗', exit: 1 });
+      assert.ok(lr.NOT_READY_MARKER === '前提未整備（exit 2）');
+      // 目印は門の 2 つの出力（readiness・trading の門とスナップショット）に必ず含まれる。
+      for (const f of ['frontend/e2e/live/support/readiness.ts', 'frontend/e2e/live/support/snapshot.ts']) {
+        const src = require('fs').readFileSync(f, 'utf8');
+        const lines = src.split('\n').filter((l) => /exit \$\{NOT_READY_EXIT_CODE\}）/.test(l));
+        assert.ok(lines.length > 0, f);
+        for (const l of lines) assert.ok(l.includes('前提未整備（exit ${NOT_READY_EXIT_CODE}）'), `${f}: ${l.trim()}`);
+      }
+    });
+    ok('E-62 手元の口: 🔴 前回の復元レポートが残っていても、今回 exit 2（門）で止まれば「前提未整備」で exit 0（前回の未復元を混ぜない）', () => {
+      const stale = JSON.stringify({ remaining: [{ key: 'limits' }], errors: [] });
+      const startedAt = 2_000;
+      // 前回の実行のレポート（起動より前の mtime）は読まない＝未復元なし（書き込みなし）。
+      assert.strictEqual(lr.remainingOf('r.json', startedAt, () => stale, () => 1_000), null);
+      // 今回の起動の後に書かれたものだけを採る。
+      assert.deepStrictEqual(lr.remainingOf('r.json', startedAt, () => stale, () => 3_000), ['limits']);
+      const v = lr.verdictOf(2, '[e2e-live] 前提未整備（exit 2）。test は 1 件も流していない:');
+      const remaining = lr.remainingOf('r.json', startedAt, () => stale, () => 1_000);
+      const exit = remaining && remaining.length ? 1 : v.exit;
+      assert.deepStrictEqual([v.result, exit], ['前提未整備', 0]);
+      // 起動の前に同じ runId のレポートを消す（口の本体の順序を固定する）。
+      const src = require('fs').readFileSync('scripts/e2e-live-run.js', 'utf8');
+      assert.ok(src.indexOf('fs.rmSync(reportFile') < src.indexOf('await runPlaywright('), '消してから起動する');
     });
     ok('E-62 手元の口: 未復元一覧は残った差分の項目名と復元の失敗を並べ、ファイルが無ければ null（書き込みなし）', () => {
       const report = JSON.stringify({ remaining: [{ key: 'limits' }], errors: ['watchlist: DELETE 0:E2EA: 500'] });
-      assert.deepStrictEqual(lr.remainingOf('x.json', () => report, () => true), ['limits', '復元の失敗: watchlist: DELETE 0:E2EA: 500']);
-      assert.deepStrictEqual(lr.remainingOf('x.json', () => '{"remaining":[],"errors":[]}', () => true), []);
-      assert.strictEqual(lr.remainingOf('x.json', () => '', () => false), null);
+      assert.deepStrictEqual(lr.remainingOf('x.json', 0, () => report, () => 1), ['limits', '復元の失敗: watchlist: DELETE 0:E2EA: 500']);
+      assert.deepStrictEqual(lr.remainingOf('x.json', 0, () => '{"remaining":[],"errors":[]}', () => 1), []);
+      assert.strictEqual(lr.remainingOf('x.json', 0, () => '', () => null), null);
     });
     ok('E-62 手元の口: 実行記録の 1 行は E2E_LIVE.md の表と同じ 7 列（flaky とイメージの作成日時は人が書く）', () => {
       const row = lr.recordRow({ date: '2026-10-30', runId: '20261030-010203', layers: ['ro', 'trading'], result: '成功', remaining: [] });
