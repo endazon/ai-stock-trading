@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { parseLiveEnv, stateFile } from './support/env';
 import { DANGEROUS, dangerousOf, type WriteRecord } from './support/guard';
 import { restoreCore, type TradingSnapshot } from './support/snapshot';
+import { testSymbolOf } from './support/symbols';
 
 // NFR / SC-01 / SC-02 / FR-03 / FR-10 / FR-13 / FR-17 / FR-20 / IADR-0565 決定 1・3 / IADR-0599 / IADR-0601（#1419 / E-61）:
 // live の取引影響層（`trading` project・L3-T）の **SC-01 / SC-02 の変更 → 確認 → 復元**。網羅表（#1410）の A-026・A-044〜A-048。
@@ -188,7 +189,7 @@ test.describe('取引オーナー（e2e-trading-owner）・閉場後', () => {
 
   // SC-02, FR-03, FR-13: A-047。試験銘柄を足し、一覧と履歴で確かめ、直ちに削除する。既存の銘柄には触れない。
   test('A-047: 監視銘柄に試験銘柄を足して一覧と履歴で確かめ、直ちに削除する（既存の銘柄は触らない）', { tag: ['@p2', '@trading'] }, async ({ page }) => {
-    const symbol = `E2E${RUN_ID.replace(/\D/g, '').slice(-6)}`;
+    const symbol = testSymbolOf(RUN_ID);
     const existing = await getJson<{ symbol: string; market: number }[]>(page, '/bff/monitor/watchlist');
     expect(existing.some((s) => s.symbol === symbol), '試験銘柄は既存の一覧に無い').toBe(false);
     const ownBefore = await ownRows(page, '/bff/monitor/watchlist/history');
