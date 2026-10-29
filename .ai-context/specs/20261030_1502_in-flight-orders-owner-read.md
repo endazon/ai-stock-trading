@@ -37,7 +37,7 @@ plan_refs:
 - BFF の経路の一覧を持つ箇所: `RiskControlsBffEndpoints.cs` と `BffPassThroughTests.cs` の `AllRoutes`（完全一致の試験がある）→ 両方へ足す。
 - risk-management の読み取りの口の一覧: `RiskControlEndpoints.cs`（read / owner のグループ）→ owner へ足す。gRPC の読み取りの面（`risk_controls_read.proto`）はサービスの呼び手のための面で、OwnerOnly の口は載せない（除外）。
 - 通信仕様書（`docs/api/openapi.yaml`）は risk-controls の経路を列挙していない（`working-entry-orders` も無い）ので足さない（除外）。
-- 門の「#1502 が入るまで常に不成立」と書いた箇所（規則 10。#1503 の取り込み後に引き直す）: `snapshot.ts`・`live-trading-gate.spec.ts`・`playwright.live.config.ts` のコメント・`docs/tests/README.md`・`scripts/README.md` は除外せずに直す。IADR-0599 は凍結記録で、IADR-0600 決定 4 が改める（索引で示す）。
+- 門の「#1502 が入るまで常に不成立」と書いた箇所（規則 10。#1503 の取り込み後に引き直す）: `snapshot.ts`・`live-trading-gate.spec.ts`・`playwright.live.config.ts` のコメント・`docs/tests/README.md` を直す（取り込み後に `git grep -E "#1502|IN_FLIGHT_SOURCE_MISSING|常に不成立|常に exit 2"` で引いた。`scripts/README.md` には該当の記述が無かった）。IADR-0599 は凍結記録で、IADR-0600 決定 4 が改める（索引で示す）。
 
 ## 受け入れ基準
 
