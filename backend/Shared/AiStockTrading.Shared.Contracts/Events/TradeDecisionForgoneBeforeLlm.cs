@@ -11,8 +11,8 @@ namespace AiStockTrading.Shared.Contracts.Events;
 //
 //   - Reason: 9 値（`DecisionSkipReason` のうち LLM より前の全部。名前は同じ）。#1113 / IADR-0463 で EntryBlockedByRiskControls を、
 //     #1176 / IADR-0495 で EntryCapacityBelowMinimumNotional を、#1174 / IADR-0500 で EntryCapacityBelowOneShare を、
-//     #1286 / IADR-0521 で ExitOnlyWithoutHolding を、#1338 / IADR-0535 で InFlightCloseCoversPosition を、#1434 / IADR-0572 で BrokerPositionClosed を
-//     末尾へ足した。
+//     #1286 / IADR-0521 で ExitOnlyWithoutHolding を、#1338 / IADR-0535 で InFlightCloseCoversPosition を、#1434 / IADR-0572 で BrokerPositionClosed を、
+//     #1423 / IADR-0582 で LlmCostCapHalted を、#1423 / IADR-0583 で DailyReportNoResponseHalted を、#1486 / IADR-0594 で EntryOrderWorking を末尾へ足した。
 //   - CycleTrigger: `BusinessMetrics.TriggerScheduled` / `TriggerPriceMovement` の語彙（TradeDecisionHeld と同じ）。
 //   - 監査台帳だけが購読する（通知しない。日報の未確定の通知は DailyPolicyUnconfirmed が営業日ごとに出す）。
 public record TradeDecisionForgoneBeforeLlm(
@@ -92,4 +92,10 @@ public enum DecisionForgoneBeforeLlmReason
     /// 日報が確定するまで、定時・価格変動のどちらの判断も（新規建ても出口の判断も）LLM の前で見送る。損切り・手仕舞いは本見送りを通らない。
     /// </summary>
     DailyReportNoResponseHalted,
+    /// <summary>
+    /// 🔴 FR-04, FR-10, #1486, IADR-0594 決定2: 保有が既知で 0 で、同じ銘柄の未約定の新規建て注文が既知である。LLM の結論は Hold・重ね買い
+    /// （板に残る指値を知りながら同じ銘柄を重ねて買う＝#934 の形）・裸の売り（必ず見送り）しか無いので、LLM を呼ばずに見送る。
+    /// 未約定の新規建ては約定・DAY の失効・取消（新規建ての未約定時の取消。既定は無効）で消え、次の判断で読み直す。
+    /// </summary>
+    EntryOrderWorking,
 }

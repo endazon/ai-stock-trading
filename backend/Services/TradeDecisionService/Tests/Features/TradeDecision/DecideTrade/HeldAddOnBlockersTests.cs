@@ -318,6 +318,7 @@ public class HeldAddOnBlockersTests
 
     // T-10-1908: #1113 の経路（保有 0・未約定なし・買いが塞がり）は変わらない（LLM 0 回・LLM を呼ぶ前の見送り・照会 1 回）。
     // 保有 0 で未約定あり／不明・保有不明は照会しない（従来どおり。本件は保有中だけを足した）。
+    // ［2026-10-29 / #1486・IADR-0594 決定2］保有 0 で未約定ありは LLM の前で見送る（EntryOrderWorking）。
     [Theory]
     [InlineData("保有0", 1)]
     [InlineData("未約定あり", 0)]
@@ -339,7 +340,13 @@ public class HeldAddOnBlockersTests
 
         blockers.Calls.Should().HaveCount(expectedCalls, name);
         probe.Skips.Reasons.Should().NotContain(DecisionSkipReason.AddOnBlockedByRiskControls, name);
-        if (name == "保有0")
+        if (name == "未約定あり")
+        {
+            probe.Llm.Prompts.Should().BeEmpty();
+            probe.Forgone.Reports.Should().ContainSingle()
+                .Which.Reason.Should().Be(DecisionForgoneBeforeLlmReason.EntryOrderWorking);
+        }
+        else if (name == "保有0")
         {
             probe.Llm.Prompts.Should().BeEmpty();
             probe.Forgone.Reports.Should().ContainSingle()

@@ -3,15 +3,15 @@ title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-10-24
+updated: 2026-10-29
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-07, NFR-13, UC-02, FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07, NFR, FR-02]
 adrs: [ADR-0075, ADR-0074, ADR-0001, ADR-0003, ADR-0040, ADR-0049]
-iadrs: [IADR-0583, IADR-0582, IADR-0580, IADR-0572, IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483, IADR-0487, IADR-0495, IADR-0500, IADR-0521, IADR-0534, IADR-0569]
-specs: [20261023_1454_stop-filled-before-entry, 20261023_1433_1434_llm-precheck-cutoff-theme-and-closed-position, 20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id, 20261002_1111_decision-final-failure-record, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261013_1330_approved-close-not-external-reduction]
-issues: [#1454, #1434, #17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148, #1111, #1164, #1176, #1174, #1286, #1330]
+iadrs: [IADR-0594, IADR-0583, IADR-0582, IADR-0580, IADR-0572, IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483, IADR-0487, IADR-0495, IADR-0500, IADR-0521, IADR-0534, IADR-0569]
+specs: [20261029_1486_entry-unfilled-cancel-and-pre-llm-skip, 20261023_1454_stop-filled-before-entry, 20261023_1433_1434_llm-precheck-cutoff-theme-and-closed-position, 20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id, 20261002_1111_decision-final-failure-record, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261013_1330_approved-close-not-external-reduction]
+issues: [#1486, #1454, #1434, #17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148, #1111, #1164, #1176, #1174, #1286, #1330, planning#852]
 -->
 
 
@@ -157,6 +157,8 @@ issues: [#1454, #1434, #17, #18, #809, #819, #820, #821, #848, #849, #1002, #853
   🔴 従来、価格変動の判断は上限の後も LLM を呼んでいた（定時は情報収集が止まるので判断自体が起きない）。解除は費用統制の月替わりで自動。
   `DailyReportNoResponseHalted` は、日報の無応答時の設定が「停止」で、承認待ちの日報が期限（翌営業日の米国市場の開場）を過ぎた間に、定時・価格変動の
   **どちらの判断でも**判断の入口で出る（新規建ても出口の判断も見送る。損切り・手仕舞いは止まらない）。日報を確定すると次の判断から出なくなる。
+  `EntryOrderWorking` は、保有が分かっていて 0 で、同じ銘柄の未約定の新規建て注文が分かっているときに出る（LLM の結論は様子見・重ね買い・裸の売りしか無い）。
+  🔴 従来その判断は LLM を呼び、ほとんどが様子見（`TradeDecisionHeld`・理由 `LlmHold`）として残っていた。その一部がこちらへ移る。未約定の新規建てが約定・失効・取消で消えると次の判断から出なくなる。
 - 日報が承認待ちのまま期限を過ぎた事実（`DailyReportNoResponse`。要約「日報 … が無応答のまま期限 … を過ぎた（停止／継続）」）。
   設定が継続でも停止でも、期間キーごとに 1 件。相関は日報の方針と同じ固定キー。
 - 取引判断が LLM の結論を得た**後**に見送った事実（`TradeDecisionHeld`。要約「判断後の見送り（理由）判断時点価格」）のうち、理由

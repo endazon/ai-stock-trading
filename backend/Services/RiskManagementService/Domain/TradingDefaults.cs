@@ -300,6 +300,18 @@ public static class TradingDefaults
     /// <summary>ADR-0067 決定2, IADR-0539: 取消の回数の上限（1 建玉・1 市場の現地取引日あたり 1 回。§5）。</summary>
     public const int DecisionCloseUnfilledCancelMaxPerPositionPerDay = DecisionCloseUnfilledCancelDefaults.MaxCancelsPerPositionPerDay;
 
+    /// <summary>
+    /// 🔴 FR-10, FR-19, #1486, IADR-0594 決定1: 判断由来の<b>新規建て</b>の指値の未約定時の取消は<b>既定で無効</b>（計画の裁定待ち。planning#852）。
+    /// 実行するのは発注執行（<c>DecisionEntryUnfilledCancelOptions</c>）で、値の単一情報源は Shared.Kernel の定数である。
+    /// </summary>
+    public const bool DecisionEntryUnfilledCancelEnabled = DecisionEntryUnfilledCancelDefaults.Enabled;
+
+    /// <summary>#1486, IADR-0594 決定1: 新規建ての取消までの未約定の時間 N（分。決済側の値を共用する暫定の初期値）。</summary>
+    public const int DecisionEntryUnfilledCancelMinutes = DecisionEntryUnfilledCancelDefaults.UnfilledMinutes;
+
+    /// <summary>#1486, IADR-0594 決定1: 新規建ての取消の回数の上限（1 建玉・1 市場の現地取引日あたり。決済側の値を共用する暫定の初期値）。</summary>
+    public const int DecisionEntryUnfilledCancelMaxPerPositionPerDay = DecisionEntryUnfilledCancelDefaults.MaxCancelsPerPositionPerDay;
+
     public static RiskManagementSettings CreateSettings() =>
         new(CreateGuardSettings(), CreateRiskLimits(), CreateStageSettings())
         {

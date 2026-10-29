@@ -327,13 +327,14 @@ public class DecisionHeldReportTests
         }
     }
 
-    // 判断後の 12 地点と判断前の 12 地点で語彙 24 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
+    // 判断後の 12 地点と判断前の 13 地点で語彙 25 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
     // 判断前の 5 地点目〔#1113 の EntryBlockedByRiskControls〕は EntryBlockersBeforeLlmTests が、判断後の 10 地点目
     // 〔T-10-1907, #1130 の AddOnBlockedByRiskControls〕は HeldAddOnBlockersTests が固定する。#1176 の 2 値〔判断前の EntryCapacityBelowMinimumNotional・判断後の
     // SizedBelowMinimumNotional〕は MinimumEntryNotionalDecisionTests が、#1174 の判断前の EntryCapacityBelowOneShare は OneShareCapacityDecisionTests が固定する）。
     [Fact]
-    public void 判断前と判断後の見送りは語彙24値を過不足なく覆う()
+    public void 判断前と判断後の見送りは語彙25値を過不足なく覆う()
     {
+        // T-10-3078, #1486, IADR-0594 決定2: 判断前に EntryOrderWorking を足した（24 → 25。振る舞いは EntryBlockersBeforeLlmTests）。
         // T-10-3060, #1423 M-6, IADR-0583: 判断前に DailyReportNoResponseHalted を足した（23 → 24。振る舞いは DailyReportNoResponseHaltTests）。
         // T-10-3052, #1423 M-5, IADR-0582: 判断前に LlmCostCapHalted を足した（22 → 23。振る舞いは LlmCostCapHaltBeforeLlmTests）。
         // T-10-2994, #1434, IADR-0572 決定2: 判断前に BrokerPositionClosed を足した（21 → 22。振る舞いは InFlightCloseBeforeLlmTests）。
@@ -350,6 +351,7 @@ public class DecisionHeldReportTests
             DecisionSkipReason.EntryCapacityBelowOneShare, DecisionSkipReason.ExitOnlyWithoutHolding,
             DecisionSkipReason.InFlightCloseCoversPosition, DecisionSkipReason.BrokerPositionClosed,
             DecisionSkipReason.LlmCostCapHalted, DecisionSkipReason.DailyReportNoResponseHalted,
+            DecisionSkipReason.EntryOrderWorking,
         ];
         DecisionSkipReason[] after =
         [
