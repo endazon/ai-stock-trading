@@ -31,6 +31,17 @@
       "desc": "AiStockTrading.Bff.Endpoints を新設（unit-owned BFF・MSP#286 の依存）",
       "reason": "件名の要約に他リポ参照が `MSP` + 半角スペース + `#286` の形（空白区切りの修飾）で入っており、#487 で確定した表記規約（短縮形へ詰めて書く）に反する。**コミット件名は書き換えない**（履歴不変・force push 禁止）ため、`.claude/rules/traceability.md`「事前防止と事後補正の使い分け」に従い生成物のみをここで是正する。**type と scope は変えない** —— 誤っていたのは要約の中の表記だけであり、種別 feat と起点 ID IADR-0091 は当時も現在も正しい。**空白区切りは `.md` では誤リンクを起こさない**（自動リンクするのはフルパス形式だけ）ため実害は表記ゆれに留まるが、CHANGELOG は追跡下の成果物であり検査対象に含めると決めた（除外して見なかったことにしない）。",
       "desc_before": "AiStockTrading.Bff.Endpoints を新設（unit-owned BFF・MSP #286 の依存）"
+    },
+    {
+      "hash": "cf784543e9012855a1207ed4a92062f4514b01b5",
+      "action": "remap",
+      "type": "fix",
+      "scope": "NFR",
+      "desc": "RabbitMQ.Client を 7.2.2 へ上げ、開き損ねた接続が裏で自動回復を続けて起動の再試行のたびに接続が漏れるのを止める (#1491)",
+      "reason": "オーケストレーターがマージ時に件名を空で渡した（squash の際に GitHub API が 503 を返し、PR タイトルを取れないまま進んだ）。件名は ` (#1491)`・本文は `Closes #1482` で、種別・起点 ID・要約が無く、生成器は種別 other・要約 ` (#1491)` として読む。履歴は不変の原則（force push 禁止）で、生成物のみをここで是正する。type・scope・desc は PR #1491 のタイトルどおり。",
+      "type_before": "",
+      "scope_before": "",
+      "desc_before": " (#1491)"
     }
   ]
 }
