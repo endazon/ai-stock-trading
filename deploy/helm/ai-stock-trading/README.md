@@ -256,8 +256,8 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   risk-management `ObservedDrawdownRefresh__Enabled=true` ＋ `WithdrawalEvaluation__Enabled=true`。前者が営業日の定時に
   建玉台帳の `DrawdownRatio` をサンプリングして段階実績台帳へ単調 latch し、後者が ADR-0008 の撤退基準を評価する。
   **自動 kill switch の発火は Stage 2/3（実弾段階）に限られ、現在の Stage 0 では起きない**（下記「撤退評価と自動 kill switch」）。
-  経路B の既定ブローカ paper では擬似約定が台帳へ入るため実効し、moomoo SIMULATE 経路は約定が台帳へ伝播しないため
-  [#270](https://github.com/endazon/ai-stock-trading/issues/270) が入るまで DD は 0 のまま（不活性・安全側）。
+  約定が台帳へ入るので実効する。経路B の発注先は moomoo-sim（[#1500](https://github.com/endazon/ai-stock-trading/issues/1500)・
+  IADR-0598）で、約定は短周期のポーリングで台帳へ入る（[#270](https://github.com/endazon/ai-stock-trading/issues/270) / IADR-0113）。
 - **LLM 費用の単価（#303 / IADR-0122 / #279 / IADR-0114 決定6 / IADR-0055）**: trade-decision
   `LlmPricing__PerModel__<model-id>__InputPer1kTokens` / `__OutputPer1kTokens`（**円 / 1,000 トークン**・**モデル別**）。
   未設定（既定 0）だと毎回 ¥0 計上で月次費用上限（¥15,000）が構造的に発火しない。下記「LLM 費用の単価」参照。
@@ -271,7 +271,7 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
 
 **本番（ArgoCD）はバイト等価**: `deploy/argocd/application.yaml` は `valueFiles` を持たず `values.yaml` のみを描画するため、
 `values-local.yaml` は本番描画に一切関与しない。`helm.yml` の CI が「既定描画に経路B有効化が漏れていないこと」と
-「`values-local` 描画で①②③＋Discord＋価格文脈＋実DD 供給＋公式情報源＋ニュース源が ON かつ Broker=paper・opend/ExternalSecret 不在であること」を
+「`values-local` 描画で①②③＋Discord＋価格文脈＋実DD 供給＋公式情報源＋ニュース源が ON かつ発注先が moomoo-sim（`Broker__Environment=sim`。moomoo-live は描画で止まる）・opend 不在であること」を
 両検証する。加えて「**`values-local` が既定描画の env を 1 つも落としていないこと**」も検査する（#279 / IADR-0114 決定4）——
 Helm は**リストを置換する**ため、`extraEnv` を上書きしているサービスでは本番 `values.yaml` にキーが増えたときの写し忘れが
 **当該 env の消失**になり、「有効化したつもりで別の機能を落とす」事故になるため。
