@@ -38,8 +38,19 @@ export default defineConfig({
   timeout: 60_000,
   globalTimeout: 40 * 60_000,
   forbidOnly: !!process.env.CI,
-  globalSetup: cfg.live ? './e2e/live/support/readiness.ts' : undefined,
-  globalTeardown: cfg.live ? './e2e/live/support/teardown.ts' : undefined,
+  // NFR / IADR-0565 決定 2・3 / IADR-0599（#1418 / E-60）: `trading` 層を選んだときだけ、readiness の後に trading の門とスナップショット
+  // （snapshot.ts）を、取引オーナーの失効（teardown.ts）の前に突合と復元（restore.ts）を置く。配列は書いた順に走る（teardown も同じ順）。
+  // 🔴 trading の門は、in-flight の情報源（#1502）が入るまで常に exit 2 になる（trading 層は流れない）。
+  globalSetup: cfg.live
+    ? cfg.layers.includes('trading')
+      ? ['./e2e/live/support/readiness.ts', './e2e/live/support/snapshot.ts']
+      : './e2e/live/support/readiness.ts'
+    : undefined,
+  globalTeardown: cfg.live
+    ? cfg.layers.includes('trading')
+      ? ['./e2e/live/support/restore.ts', './e2e/live/support/teardown.ts']
+      : './e2e/live/support/teardown.ts'
+    : undefined,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     ...devices['Desktop Chrome'],
