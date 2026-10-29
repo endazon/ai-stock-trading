@@ -599,9 +599,16 @@ builder.Services.AddSingleton(MinimumEntryNotionalOptionsLoader.FromConfiguratio
 // （常に停止していない＝従来どおり）。判断のたびに 1 回照会する（短いタイムアウト。失敗は停止していない側へ倒す）。
 builder.Services.AddHttpClient("cost", c => c.Timeout = TimeSpan.FromSeconds(3))
     .AddAiStockTradingServiceToken(builder.Configuration);
+// NFR, MSP:ADR-0029, IADR-0284 決定 5（段 5 の追補 3）, IADR-0604, #1510 (#753): east-west gRPC（`CostStateRead/GetCostState`）。
+// **`CostControl:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば LLM 費用の停止の関所が
+// gRPC 実装を選ぶ（CostControl:BaseUrl より優先）。不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingCostControlGrpc(builder.Configuration);
 builder.Services.AddSingleton<NoOpLlmCostHaltGate>();
 builder.Services.AddScoped<ILlmCostHaltGate>(sp =>
 {
+    if (sp.GetService<CostControlGrpcTransport>() is { } costGrpc)
+        return new GrpcLlmCostHaltGate(costGrpc, sp.GetRequiredService<ILogger<GrpcLlmCostHaltGate>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["CostControl:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return sp.GetRequiredService<NoOpLlmCostHaltGate>();

@@ -670,6 +670,9 @@ services:
       #    s2s は下の ServiceAuth__*（trading-service。token エンドポイントは auth: true の Authority から導く）。
       #    将来リスク管理に NetworkPolicy を置くときは、発注執行（order-execution-service）からの 8080 を許可すること。
       - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
+      # NFR, MSP:ADR-0029, IADR-0604, #1510: 上の照会を east-west gRPC（h2c）で呼ぶ場合の宛先。🔴 **既定は REST であり、このキーは意図的に置いていない**。
+      # 有効化するときだけ、このサービスの `grpcClients` へ `RiskManagement: true` を足す（前提: services.risk-management に `grpcPort: 8081`）。
+      # 宣言があれば上の BaseUrl より優先する。倒す向きは REST と同じ（失敗は不明＝新規建てを送らない）。deadline は RiskManagement__GrpcTimeoutSeconds（既定 3 秒）。
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret
@@ -896,6 +899,9 @@ services:
       # 定時・価格変動の両方の判断を LLM の前で見送る。情報収集と同じ GET /costs/state・同じ s2s（下の ServiceAuth__*）。
       # 空にすると未結線（NoOp＝常に停止していない＝価格変動の判断は上限の後も LLM を呼ぶ）。
       - { name: CostControl__BaseUrl, value: "http://cost-control-service:8080" }
+      # NFR, MSP:ADR-0029, IADR-0604, #1510: 上の照会を east-west gRPC（h2c）で呼ぶ場合の宛先。🔴 **既定は REST であり、このキーは意図的に置いていない**。
+      # 有効化するときだけ、このサービスの `grpcClients` へ `CostControl: true` を足す（前提: services.cost-control に `grpcPort: 8081`）。
+      # 宣言があれば上の BaseUrl より優先する。倒す向きは REST と同じ（失敗は停止していない）。deadline は CostControl__GrpcTimeoutSeconds（既定 3 秒）。
       # FR-04, FR-15, ADR-0033 決定3, ADR-0037 決定2, #632, #1295: 記録側の学習カットオフ日（5.5 系の割当・Jun 2026 → 2026-06-30）。
       # 🔴 **バックテスト側（Backtest__Stage0__LlmTrainingCutoff）と必ず同値にする** —— 食い違うと
       # 記録再生の評価は `RecordingMismatch` で fail-closed し、原因が構成の不一致だと読み取りにくい。

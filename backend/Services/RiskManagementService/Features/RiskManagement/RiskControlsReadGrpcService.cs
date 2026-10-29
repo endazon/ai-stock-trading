@@ -9,6 +9,7 @@ using RiskManagementService.Features.RiskManagement.GetEntryBlockers;
 using RiskManagementService.Features.RiskManagement.GetFills;
 using RiskManagementService.Features.RiskManagement.GetOpenPositions;
 using RiskManagementService.Features.RiskManagement.GetOpeningInventory;
+using RiskManagementService.Features.RiskManagement.GetTradingHalt;
 using RiskManagementService.Features.RiskManagement.GetSizingContext;
 using RiskManagementService.Features.RiskManagement.GetWorkingEntryOrders;
 using Proto = AiStockTrading.Shared.Grpc.RiskManagement.V1;
@@ -48,9 +49,16 @@ public sealed class RiskControlsReadGrpcService(
     IPositionObservationArrivalStore arrivals,
     IBusinessCalendar calendar,
     IStage1TradingDayObservationStore uptimeObservations,
-    ILoggerFactory loggerFactory)
+    ILoggerFactory loggerFactory,
+    TradingHaltService tradingHalt)
     : Proto.RiskControlsRead.RiskControlsReadBase
 {
+    // 🔴 NFR, FR-10, ADR-0009, IADR-0284 決定 5（段 5 の追補 3）, IADR-0567, IADR-0604, #1510 (#753): 停止の状態。
+    // REST の GET /risk-controls/trading-halt と同じ組み立て（TradingHaltService.Build）を通る（評価器を 2 つにしない）。
+    public override Task<Proto.GetTradingHaltResponse> GetTradingHalt(
+        Proto.GetTradingHaltRequest request, ServerCallContext context) =>
+        Reply(() => RiskReadWireMapping.ToProto(tradingHalt.Build()));
+
     public override Task<Proto.GetOpenPositionsResponse> GetOpenPositions(
         Proto.GetOpenPositionsRequest request, ServerCallContext context) =>
         Reply(() =>

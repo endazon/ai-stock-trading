@@ -62,6 +62,9 @@ service RiskControlsRead {
   // GET /risk-controls/opening-inventory?market&before（期間開始時点の在庫。#1181 / IADR-0493）。
   // market・before の欠落・未指定は INVALID_ARGUMENT。
   rpc GetOpeningInventory(GetOpeningInventoryRequest) returns (GetOpeningInventoryResponse);
+  // GET /risk-controls/trading-halt（kill switch・一時停止の成立の有無。発注執行が新規建てを送る直前に読む。#1427 / IADR-0567）。
+  // 段 5 の追補 3（#1510 / IADR-0604）で追加した（追加のみ＝非破壊）。
+  rpc GetTradingHalt(GetTradingHaltRequest) returns (GetTradingHaltResponse);
 }
 
 // ---- 列挙（C# の列挙とは名前で写す。未指定・未知は「不明」） ----
@@ -528,4 +531,14 @@ message GetSessionUptimeResponse {
   SessionUptimeDays days = 1;
   // 累計の算入日数（発注先の許可制まで含む権威判定）。欠落は「未供給」。
   optional int32 stage1_cumulative_counted_days = 2;
+}
+
+// ---- 停止の状態（段 5 の追補 3。#1510 / IADR-0604） ----
+
+message GetTradingHaltRequest {}
+
+message GetTradingHaltResponse {
+  // 🔴 欠落は「不明」（受け手は新規建てを送らない）。false（停止していない）として読まない。
+  optional bool kill_switch_engaged = 1;
+  optional bool trading_paused = 2;
 }
