@@ -151,6 +151,41 @@ test.describe('SC-01 §2 の廃止（#423）', () => {
   });
 });
 
+// #1513（#1410 の網羅表 A-023 の型の部分）, SC-01, FR-17: 前提条件の欄が空欄・数値でなければ保存できない。
+// 黙って 0 を送らない（安全既定）。範囲の検証は後段の 400（A-021）、内訳の合計と総額の整合は #1514 で扱う。
+test.describe('SC-01 前提条件の型の検証（#1513）', () => {
+  // 欄は `type=number` であり、ブラウザは数値でない文字を受け付けない（実ブラウザで打てる「型の誤り」は空欄だけ）。
+  // 数値でない値の判定（invalidFieldLabels）は単体テストが持つ。
+  for (const label of ['月次費用上限 総額', '月次費用上限 LLM', '譲渡益税率'] as const) {
+    test(`A-023 「${label}」が空欄なら保存できず、欄の名前を alert に出して PUT を送らない`, async ({ page }) => {
+      let putCount = 0;
+      await installBff(page, {
+        ...defaultBff(),
+        'PUT /assumptions': () => {
+          putCount++;
+          return { status: 200, body: ASSUMPTIONS };
+        },
+      });
+      await page.goto(pathWithRoles('/settings', ['trading-owner']));
+      await expect(page.getByRole('heading', { name: '設定' })).toBeVisible();
+
+      await page.getByLabel('変更理由', { exact: true }).fill('型の検証');
+      const field = page.getByLabel(label, { exact: true });
+      await field.fill('');
+
+      await expect(page.getByRole('alert').filter({ hasText: '未入力または数値でない項目があります' })).toContainText(label);
+      const save = page.getByRole('button', { name: '保存', exact: true });
+      await expect(save).toBeDisabled();
+      // フォームの送信（Enter）でも送らない。
+      await field.press('Enter');
+      await expect(page.getByText('保存しました。')).toHaveCount(0);
+      expect(putCount).toBe(0);
+
+      // 数値へ直せば保存できる（検証が欄の値に追随している）。
+      await field.fill('1000');
+      await expect(save).toBeEnabled();
+    });
+  }
 // #1514（#1410 の網羅表 A-023 の合計の整合・A-024）, SC-01, FR-17, 05_trading-assumptions §6, IADR-0605:
 // 月次費用上限は「総額 ＝ LLM＋インフラ＋データ」・各欄 0 以上。画面は同じ規則で保存を無効にし（正は後段の 400）、
 // 金額の単位「円」を明示する（費用上限は円建て。判定の基準通貨 USD はリスク統制の側だけ）。
