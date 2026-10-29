@@ -11,7 +11,7 @@ using Xunit;
 namespace ConfigurationService.Tests;
 
 // 🔴 SC-01, FR-17, 05_trading-assumptions §6, IADR-0605, #1514（#1410 の網羅表 A-023）:
-// 月次費用上限は「総額 ＝ LLM＋インフラ＋データ」（§6 が総額を内訳の合計として定義する）。各欄は 0 以上（データ 0 が既定）。
+// 月次費用上限は「総額 ＝ LLM＋インフラ＋データ」（§6 が総額を内訳の合計として定義する）。各欄は 0 以上の円単位の整数（データ 0 が既定）。
 // **後段が正（権威）**: 矛盾する値・負の欄は 400（利用者へ見せる理由つき）で拒否し、保存も履歴も残さない。読み取りは変えない。
 public class CostLimitsConsistencyTests
 {
@@ -38,7 +38,6 @@ public class CostLimitsConsistencyTests
     [InlineData(20_000, 15_000, 5_000, 0)]
     [InlineData(50_000, 30_000, 15_000, 5_000)]
     [InlineData(0, 0, 0, 0)]
-    [InlineData(15_000.5, 10_000.25, 5_000.25, 0)]
     public void 合計が総額と一致し全欄が0以上なら保存できる(decimal total, decimal llm, decimal infra, decimal data)
     {
         var svc = NewService(out var log);
@@ -55,6 +54,9 @@ public class CostLimitsConsistencyTests
     [InlineData(20_000, 15_000, 5_000, 1_000, "一致しません")] // 合計 21,000 > 総額
     [InlineData(20_000, 25_000, -5_000, 0, "0 以上")] // 合計は一致するが負の欄がある
     [InlineData(-1, 0, 0, -1, "0 以上")]
+    // 円は整数（計画 §6 は円/月の整数）。小数は合計が一致していても拒否する（画面の浮動小数の誤差で後段だけが落ちる食い違いを作らない）。
+    [InlineData(15_000.5, 10_000.25, 5_000.25, 0, "整数")]
+    [InlineData(20_000, 15_000, 4_999.9999, 0.0001, "整数")]
     public void 合計が総額と一致しないか負の欄があれば拒否し保存も履歴も残さない(
         decimal total, decimal llm, decimal infra, decimal data, string expected)
     {

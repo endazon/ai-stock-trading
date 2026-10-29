@@ -74,6 +74,25 @@ describe('SettingsPage 月次費用上限の整合と通貨（#1514）', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('月次費用上限は 0 以上で指定してください（負の値: インフラ）。');
   });
 
+  // 円は整数（後段と同じ規則）。小数は合計が一致していても保存を無効にする（後段だけが 400 になる食い違いを作らない）。
+  it('小数の欄があれば保存を無効にし、整数で指定する旨を alert に出す', async () => {
+    const { user, save } = await ready();
+    await user.clear(screen.getByLabelText('月次費用上限 LLM'));
+    await user.type(screen.getByLabelText('月次費用上限 LLM'), '14999.5');
+    await user.clear(screen.getByLabelText('月次費用上限 データ'));
+    await user.type(screen.getByLabelText('月次費用上限 データ'), '0.5');
+
+    expect(save).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent('月次費用上限は円単位の整数で指定してください（小数: LLM、データ）。');
+  });
+
+  it('月次費用上限の 4 欄は整数の刻み（step=1）で入力させる', async () => {
+    await ready();
+    for (const label of ['月次費用上限 総額', '月次費用上限 LLM', '月次費用上限 インフラ', '月次費用上限 データ']) {
+      expect(screen.getByLabelText(label)).toHaveAttribute('step', '1');
+    }
+  });
+
   it('矛盾したまま送信しても PUT を送らない', async () => {
     const { user } = await ready();
     await user.clear(screen.getByLabelText('月次費用上限 LLM'));

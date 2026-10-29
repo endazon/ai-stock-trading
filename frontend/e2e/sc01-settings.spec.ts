@@ -225,6 +225,30 @@ test.describe('SC-01 月次費用上限の整合と通貨（#1514）', () => {
     expect(putCount).toBe(1);
   });
 
+  test('A-023 円は整数: 小数の欄があれば保存できず、整数で指定する旨を alert に出す', async ({ page }) => {
+    let putCount = 0;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /assumptions': () => {
+        putCount++;
+        return { status: 200, body: ASSUMPTIONS };
+      },
+    });
+    await page.goto(pathWithRoles('/settings', ['trading-owner']));
+    await expect(page.getByRole('heading', { name: '設定' })).toBeVisible();
+
+    await page.getByLabel('変更理由', { exact: true }).fill('費用上限の見直し');
+    // 合計は一致する（29,999.5＋15,000＋5,000.5 ＝ 50,000）が、小数なので拒否する（後段の 400 と同じ規則）。
+    await page.getByLabel('月次費用上限 LLM', { exact: true }).fill('29999.5');
+    await page.getByLabel('月次費用上限 データ', { exact: true }).fill('5000.5');
+
+    await expect(page.getByRole('alert').filter({ hasText: '整数' })).toContainText(
+      '月次費用上限は円単位の整数で指定してください（小数: LLM、データ）。',
+    );
+    await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled();
+    expect(putCount).toBe(0);
+  });
+
   test('A-024 月次費用上限の 4 欄に単位「円」を明示する', async ({ page }) => {
     await installBff(page, defaultBff());
     await page.goto(pathWithRoles('/settings', ['trading-owner']));

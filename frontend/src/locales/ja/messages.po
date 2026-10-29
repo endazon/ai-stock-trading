@@ -1454,6 +1454,11 @@ msgstr "月次費用上限の内訳の合計（LLM＋インフラ＋データ �
 msgid "月次費用上限は 0 以上で指定してください（負の値: {0}）。"
 msgstr "月次費用上限は 0 以上で指定してください（負の値: {0}）。"
 
+#. placeholder {0}: fractional.join('、')
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "月次費用上限は円単位の整数で指定してください（小数: {0}）。"
+msgstr "月次費用上限は円単位の整数で指定してください（小数: {0}）。"
+
 #: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "有効"

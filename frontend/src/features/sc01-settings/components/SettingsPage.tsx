@@ -124,23 +124,26 @@ function invalidFieldLabels(f: FormModel): string[] {
 // 正（権威）は後段（ConfigurationService の 400）であり、画面は同じ規則で保存を無効にして理由を先に見せる（API の直叩きは後段が止める）。
 // 型の誤り（空欄・数値でない）があるときは判定しない（そちらの理由を先に出す）。文言は後段と同じ。
 function costLimitsViolation(f: FormModel): string | null {
-  const keys = ['costTotal', 'costLlm', 'costInfra', 'costData'] as const;
-  if (keys.some((k) => !isValidNumber(f[k]))) return null;
-  const [total, llm, infra, data] = keys.map((k) => Number(f[k]));
-  const negative = [
-    [total, i18n._(msg`総額`)],
-    [llm, 'LLM'],
-    [infra, i18n._(msg`インフラ`)],
-    [data, i18n._(msg`データ`)],
-  ]
-    .filter(([v]) => (v as number) < 0)
-    .map(([, name]) => name as string);
+  const fields: ReadonlyArray<{ key: keyof FormModel; name: string }> = [
+    { key: 'costTotal', name: i18n._(msg`総額`) },
+    { key: 'costLlm', name: 'LLM' },
+    { key: 'costInfra', name: i18n._(msg`インフラ`) },
+    { key: 'costData', name: i18n._(msg`データ`) },
+  ];
+  if (fields.some(({ key }) => !isValidNumber(f[key]))) return null;
+  const values = fields.map(({ key, name }) => ({ name, value: Number(f[key]) }));
+  const negative = values.filter(({ value }) => value < 0).map(({ name }) => name);
   if (negative.length > 0) {
     return i18n._(msg`月次費用上限は 0 以上で指定してください（負の値: ${negative.join('、')}）。`);
   }
+  // 円は整数（後段と同じ規則）。整数どうしの足し算は誤差なく完全一致で比べられる（後段の decimal の一致と揃う）。
+  const fractional = values.filter(({ value }) => !Number.isInteger(value)).map(({ name }) => name);
+  if (fractional.length > 0) {
+    return i18n._(msg`月次費用上限は円単位の整数で指定してください（小数: ${fractional.join('、')}）。`);
+  }
+  const [total, llm, infra, data] = values.map(({ value }) => value);
   const sum = llm + infra + data;
-  // 浮動小数の足し算の誤差だけを許す（円の小数第 4 位より細かい差は同じ値とみなす）。
-  if (Math.abs(sum - total) > 1e-4) {
+  if (sum !== total) {
     return i18n._(
       msg`月次費用上限の内訳の合計（LLM＋インフラ＋データ ＝ ${String(sum)} 円）が総額（${String(total)} 円）と一致しません。`,
     );
@@ -543,7 +546,8 @@ function Field({
         <Input
           id={id}
           type="number"
-          step="any"
+          // SC-01, FR-17, IADR-0605, #1514: 円の欄は整数の刻み（円単位の整数。後段も小数を 400 にする）。
+          step={unit === undefined ? 'any' : '1'}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           aria-describedby={unitId}
