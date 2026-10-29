@@ -23,6 +23,8 @@ public sealed class AssumptionsService(
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         // NFR-06, IADR-0509, #1230: 理由は利用者（画面）が入力する欄。空欄の文言を 400 へ載せる印を付ける（actor は認証から入るので印なし＝固定文言）。
         ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason, "理由");
+        // SC-01, FR-17, IADR-0605, #1514: 月次費用上限の内訳の合計 ＝ 総額・各欄 0 以上（保存のときだけ。読み取りは変えない）。
+        CostLimitsConsistency.ThrowIfViolated(assumptions.CostLimits);
 
         var before = store.GetCurrent().Assumptions;
         var newVersion = store.Save(assumptions, expectedVersion);

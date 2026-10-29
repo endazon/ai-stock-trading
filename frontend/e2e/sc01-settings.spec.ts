@@ -150,3 +150,51 @@ test.describe('SC-01 §2 の廃止（#423）', () => {
     await expect(page.getByText(/市場監視パラメータ（変動閾値・クールダウン）/)).toBeVisible();
   });
 });
+
+// #1514（#1410 の網羅表 A-023 の合計の整合・A-024）, SC-01, FR-17, 05_trading-assumptions §6, IADR-0605:
+// 月次費用上限は「総額 ＝ LLM＋インフラ＋データ」・各欄 0 以上。画面は同じ規則で保存を無効にし（正は後段の 400）、
+// 金額の単位「円」を明示する（費用上限は円建て。判定の基準通貨 USD はリスク統制の側だけ）。
+test.describe('SC-01 月次費用上限の整合と通貨（#1514）', () => {
+  test('A-023 内訳の合計が総額と一致しなければ保存できず、理由を alert に出して PUT を送らない', async ({ page }) => {
+    let putCount = 0;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /assumptions': () => {
+        putCount++;
+        return { status: 200, body: ASSUMPTIONS };
+      },
+    });
+    await page.goto(pathWithRoles('/settings', ['trading-owner']));
+    await expect(page.getByRole('heading', { name: '設定' })).toBeVisible();
+
+    await page.getByLabel('変更理由', { exact: true }).fill('費用上限の見直し');
+    // フィクスチャは 50,000 ＝ 30,000＋15,000＋5,000。LLM だけを 1 円増やす。
+    await page.getByLabel('月次費用上限 LLM', { exact: true }).fill('30001');
+
+    await expect(page.getByRole('alert').filter({ hasText: '一致しません' })).toContainText(
+      '内訳の合計（LLM＋インフラ＋データ ＝ 50001 円）が総額（50000 円）と一致しません。',
+    );
+    const save = page.getByRole('button', { name: '保存', exact: true });
+    await expect(save).toBeDisabled();
+    await page.getByLabel('月次費用上限 LLM', { exact: true }).press('Enter');
+    expect(putCount).toBe(0);
+
+    // 総額を合わせれば保存できる。
+    await page.getByLabel('月次費用上限 総額', { exact: true }).fill('50001');
+    await expect(save).toBeEnabled();
+    await save.click();
+    await expect(page.getByText('保存しました。')).toBeVisible();
+    expect(putCount).toBe(1);
+  });
+
+  test('A-024 月次費用上限の 4 欄に単位「円」を明示する', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/settings', ['trading-owner']));
+    await expect(page.getByRole('heading', { name: '設定' })).toBeVisible();
+
+    for (const label of ['月次費用上限 総額', '月次費用上限 LLM', '月次費用上限 インフラ', '月次費用上限 データ']) {
+      await expect(page.getByLabel(label, { exact: true })).toHaveAccessibleDescription('円');
+    }
+    await expect(page.getByText('月次費用上限（円／月。総額 ＝ LLM＋インフラ＋データ）')).toBeVisible();
+  });
+});

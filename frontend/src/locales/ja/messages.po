@@ -332,6 +332,10 @@ msgstr "いま OpenD は入力を待っていないため、送信できませ�
 msgid "いま OpenD は入力を待っていません"
 msgstr "いま OpenD は入力を待っていません"
 
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "インフラ"
+msgstr "インフラ"
+
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/WatchlistForm.tsx
 msgid "キャンセル"
@@ -461,6 +465,10 @@ msgstr "ショート"
 #: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
 msgid "だけを記録します。"
 msgstr "だけを記録します。"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "データ"
+msgstr "データ"
 
 #: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
 msgid "テーマ"
@@ -847,6 +855,10 @@ msgstr "全体前提条件を"
 #: src/components/PaperModeBanner.tsx
 msgid "内蔵 paper 稼働中の警告"
 msgstr "内蔵 paper 稼働中の警告"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "円"
+msgstr "円"
 
 #: src/components/QueryPhase.tsx
 msgid "再試行"
@@ -1428,8 +1440,19 @@ msgid "暫定値・算定根拠が無く実測待ち"
 msgstr "暫定値・算定根拠が無く実測待ち"
 
 #: src/features/sc01-settings/components/SettingsPage.tsx
-msgid "月次費用上限"
-msgstr "月次費用上限"
+msgid "月次費用上限（円／月。総額 ＝ LLM＋インフラ＋データ）"
+msgstr "月次費用上限（円／月。総額 ＝ LLM＋インフラ＋データ）"
+
+#. placeholder {0}: String(sum)
+#. placeholder {1}: String(total)
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "月次費用上限の内訳の合計（LLM＋インフラ＋データ ＝ {0} 円）が総額（{1} 円）と一致しません。"
+msgstr "月次費用上限の内訳の合計（LLM＋インフラ＋データ ＝ {0} 円）が総額（{1} 円）と一致しません。"
+
+#. placeholder {0}: negative.join('、')
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "月次費用上限は 0 以上で指定してください（負の値: {0}）。"
+msgstr "月次費用上限は 0 以上で指定してください（負の値: {0}）。"
 
 #: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
@@ -2034,6 +2057,10 @@ msgstr "綴りと市場を確かめた（監視銘柄に無い銘柄として指
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "緊急停止（kill switch）"
 msgstr "緊急停止（kill switch）"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "総額"
+msgstr "総額"
 
 #: src/features/sc02-risk-settings/components/PreCloseControlsForm.tsx
 msgid "締め切り N（閉場の何分前から新規建てを拒否するか）"

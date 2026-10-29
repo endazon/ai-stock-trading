@@ -120,6 +120,34 @@ function invalidFieldLabels(f: FormModel): string[] {
     .map((k) => FIELD_LABELS[k]);
 }
 
+// 🔴 SC-01, FR-17, 05_trading-assumptions §6, IADR-0605, #1514: 月次費用上限の整合（総額 ＝ LLM＋インフラ＋データ・各欄 0 以上）。
+// 正（権威）は後段（ConfigurationService の 400）であり、画面は同じ規則で保存を無効にして理由を先に見せる（API の直叩きは後段が止める）。
+// 型の誤り（空欄・数値でない）があるときは判定しない（そちらの理由を先に出す）。文言は後段と同じ。
+function costLimitsViolation(f: FormModel): string | null {
+  const keys = ['costTotal', 'costLlm', 'costInfra', 'costData'] as const;
+  if (keys.some((k) => !isValidNumber(f[k]))) return null;
+  const [total, llm, infra, data] = keys.map((k) => Number(f[k]));
+  const negative = [
+    [total, i18n._(msg`総額`)],
+    [llm, 'LLM'],
+    [infra, i18n._(msg`インフラ`)],
+    [data, i18n._(msg`データ`)],
+  ]
+    .filter(([v]) => (v as number) < 0)
+    .map(([, name]) => name as string);
+  if (negative.length > 0) {
+    return i18n._(msg`月次費用上限は 0 以上で指定してください（負の値: ${negative.join('、')}）。`);
+  }
+  const sum = llm + infra + data;
+  // 浮動小数の足し算の誤差だけを許す（円の小数第 4 位より細かい差は同じ値とみなす）。
+  if (Math.abs(sum - total) > 1e-4) {
+    return i18n._(
+      msg`月次費用上限の内訳の合計（LLM＋インフラ＋データ ＝ ${String(sum)} 円）が総額（${String(total)} 円）と一致しません。`,
+    );
+  }
+  return null;
+}
+
 // 数値化。呼び出し前に isValidNumber で有効性を担保する（無効時は保存ボタンが無効なため到達しない）。
 function num(s: string): number {
   const n = Number(s);
@@ -210,7 +238,14 @@ export function SettingsPage() {
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     // 理由必須・全フィールド有効を送信の前提とする（安全既定。ボタン無効化と二重の防御）。
-    if (!current || !form || reason.trim() === '' || invalidFieldLabels(form).length > 0) return;
+    if (
+      !current ||
+      !form ||
+      reason.trim() === '' ||
+      invalidFieldLabels(form).length > 0 ||
+      costLimitsViolation(form) !== null
+    )
+      return;
     setSaveError(null);
     setSavedNotice(null);
     try {
@@ -231,6 +266,7 @@ export function SettingsPage() {
   // 404 は不在/秘匿を区別しない（IADR-0009）。BFF 未登録も安全側へ縮退させ、再試行は出さない。
   const notFound = assumptionsQuery.isError && isNotFound(assumptionsQuery.error);
   const invalid = form === null ? [] : invalidFieldLabels(form);
+  const costViolation = form === null ? null : costLimitsViolation(form);
 
   return (
     <section>
@@ -377,7 +413,7 @@ export function SettingsPage() {
 
                   <fieldset className="mt-3 border-0 p-0">
                     <legend className="mb-1 text-[10.5px] tracking-[0.05em] text-fg-muted">
-                      {i18n._(msg`月次費用上限`)}
+                      {i18n._(msg`月次費用上限（円／月。総額 ＝ LLM＋インフラ＋データ）`)}
                     </legend>
                     <Kv columns={4}>
                       <Field
@@ -385,24 +421,28 @@ export function SettingsPage() {
                         label={FIELD_LABELS.costTotal}
                         value={form.costTotal}
                         onChange={(v) => setForm({ ...form, costTotal: v })}
+                        unit={i18n._(msg`円`)}
                       />
                       <Field
                         id="costLlm"
                         label={FIELD_LABELS.costLlm}
                         value={form.costLlm}
                         onChange={(v) => setForm({ ...form, costLlm: v })}
+                        unit={i18n._(msg`円`)}
                       />
                       <Field
                         id="costInfra"
                         label={FIELD_LABELS.costInfra}
                         value={form.costInfra}
                         onChange={(v) => setForm({ ...form, costInfra: v })}
+                        unit={i18n._(msg`円`)}
                       />
                       <Field
                         id="costData"
                         label={FIELD_LABELS.costData}
                         value={form.costData}
                         onChange={(v) => setForm({ ...form, costData: v })}
+                        unit={i18n._(msg`円`)}
                       />
                     </Kv>
                   </fieldset>
@@ -429,12 +469,19 @@ export function SettingsPage() {
                       {`${i18n._(msg`未入力または数値でない項目があります:`)} ${invalid.join('、')}`}
                     </p>
                   )}
+                  {costViolation !== null && (
+                    <p role="alert" className="mt-2 text-[11px] text-danger">
+                      {costViolation}
+                    </p>
+                  )}
 
                   <div className="mt-2 flex flex-wrap items-center gap-3">
                     <Button
                       type="submit"
                       variant="primary"
-                      disabled={reason.trim() === '' || saving || invalid.length > 0}
+                      disabled={
+                        reason.trim() === '' || saving || invalid.length > 0 || costViolation !== null
+                      }
                     >
                       {i18n._(msg`保存`)}
                     </Button>
@@ -480,22 +527,34 @@ function Field({
   label,
   value,
   onChange,
+  unit,
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (v: string) => void;
+  /** SC-01, FR-17, #1514（A-024）: 金額の単位（通貨）。アクセシブル名は変えず、説明として結び付ける。 */
+  unit?: string;
 }) {
+  const unitId = unit === undefined ? undefined : `${id}-unit`;
   return (
     <KvItem label={<Label htmlFor={id}>{label}</Label>}>
-      <Input
-        id={id}
-        type="number"
-        step="any"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full border-0 bg-transparent p-0"
-      />
+      <span className="flex items-baseline gap-1">
+        <Input
+          id={id}
+          type="number"
+          step="any"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          aria-describedby={unitId}
+          className="w-full border-0 bg-transparent p-0"
+        />
+        {unit !== undefined && (
+          <span id={unitId} className="shrink-0 text-[11px] text-fg-muted">
+            {unit}
+          </span>
+        )}
+      </span>
     </KvItem>
   );
 }
