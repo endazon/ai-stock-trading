@@ -49,6 +49,8 @@ public sealed class GrpcEntryBlockersProvider(
     // 名前で写す。未指定・未知の番号は null（不明）。
     internal static RejectionReason? Reason(Proto.EntryBlocker value) => value switch
     {
+        // #1483, IADR-0592 決定1: 基準資金の観測の欠け（ADR-0073）。
+        Proto.EntryBlocker.CapitalBaselineUnavailable => RejectionReason.CapitalBaselineUnavailable,
         Proto.EntryBlocker.KillSwitchActive => RejectionReason.KillSwitchActive,
         Proto.EntryBlocker.TradingPaused => RejectionReason.TradingPaused,
         Proto.EntryBlocker.StoppedOutSameDay => RejectionReason.StoppedOutSameDay,

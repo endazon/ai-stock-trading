@@ -1172,9 +1172,11 @@ public static class TradeDecisionPromptBuilder
     private static string AddOnBlockedLine(HeldPositionView view, IReadOnlyList<RejectionReason> reasons) =>
         $"本日は{view.AddWord}（{view.AddAction}）を選べません。{AddOnBlockedReasonLead}（理由: {string.Join("・", reasons.Select(EntryBlockerLabel))}）。";
 
-    // FR-10, #1130, IADR-0471 決定 2: 新規建ての可否の口が返す 7 理由（IADR-0463 決定 2。#1176 / IADR-0495 で 8 理由、#1433 / IADR-0572 で 10 理由）の日本語名。対象外の値は列挙子の名前のまま書く。
+    // FR-10, #1130, IADR-0471 決定 2: 新規建ての可否の口が返す 7 理由（IADR-0463 決定 2。#1176 / IADR-0495 で 8 理由、#1433 / IADR-0572 で 10 理由、#1483 / IADR-0592 で 11 理由）の日本語名。対象外の値は列挙子の名前のまま書く。
     internal static string EntryBlockerLabel(RejectionReason reason) => reason switch
     {
+        // #1483, IADR-0592 決定1: 基準資金の直前の暦日の観測の欠け（ADR-0073。口が 11 理由になった）。
+        RejectionReason.CapitalBaselineUnavailable => "基準資金（前日の口座照会）が無く新規建てを止めている",
         RejectionReason.KillSwitchActive => "全停止（kill switch）中",
         RejectionReason.TradingPaused => "取引の一時停止中",
         RejectionReason.StoppedOutSameDay => "本日この方向で損切り済み",

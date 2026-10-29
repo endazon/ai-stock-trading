@@ -287,6 +287,8 @@ enum EntryBlocker {
   // #1433 / IADR-0572 決定1: 閉場前の新規建ての締め切り（ADR-0070）・テーマの同時保有の上限（ADR-0071）。long_side / short_side に現れる。
   ENTRY_BLOCKER_PRE_CLOSE_ENTRY_CUTOFF = 11;
   ENTRY_BLOCKER_THEME_CONCENTRATION_EXCEEDED = 12;
+  // #1483 / IADR-0592 決定1: 基準資金の直前の米国東部暦日の観測の欠け・鮮度切れ（ADR-0073）。long_side / short_side に現れる。
+  ENTRY_BLOCKER_CAPITAL_BASELINE_UNAVAILABLE = 13;
 }
 
 // 1 方向の理由の一覧。🔴 入れ物の欠落は「不明」、空の入れ物は「確定する拒否は無い」。

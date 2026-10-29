@@ -262,6 +262,8 @@ public static class RiskReadWireMapping
     // 線上の値を持たないので**例外にする**（黙って落とすと「確定する拒否は無い」と読まれる）。全対象の写像は試験が固定する。
     public static Proto.EntryBlocker ToProto(RejectionReason reason) => reason switch
     {
+        // #1483, IADR-0592 決定1: 基準資金の観測の欠け（ADR-0073）。
+        RejectionReason.CapitalBaselineUnavailable => Proto.EntryBlocker.CapitalBaselineUnavailable,
         RejectionReason.KillSwitchActive => Proto.EntryBlocker.KillSwitchActive,
         RejectionReason.TradingPaused => Proto.EntryBlocker.TradingPaused,
         RejectionReason.StoppedOutSameDay => Proto.EntryBlocker.StoppedOutSameDay,

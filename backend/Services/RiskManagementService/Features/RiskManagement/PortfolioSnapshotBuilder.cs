@@ -41,13 +41,17 @@ public sealed class PortfolioSnapshotBuilder(
         var state = stateProvider.GetCurrent();
         var killSwitch = killSwitchStore.GetState();
         var pause = pauseStore.GetState();
+        var capital = capitalBaseline?.GetCurrent()?.EquityInBase;
 
         return new PortfolioSnapshot
         {
             // FR-10, #869, ADR-0041 決定2, IADR-0354: 基準資金は**ブローカーの口座照会**に由来する。
             // 台帳射影（IPortfolioStateProvider）はもう基準資金を持たない（PortfolioState.Capital は廃止）。
             // **未供給（null）はそのまま渡す**——判定コアが新規建てを止める（fail-closed）。ここで補わない。
-            Capital = capitalBaseline?.GetCurrent()?.EquityInBase,
+            Capital = capital,
+            // 🔴 #1483, ADR-0073, IADR-0592 決定1: 未供給のときだけ、その理由が観測の欠けかを読む（計器を動かさない Read）。
+            // 連言にするので、日付の境目で 2 回の読みが食い違っても「資金があるのに欠け」にはならない（口が審査より多く止めない）。
+            CapitalObservationMissing = capital is null && capitalBaseline?.Read().ObservationMissing == true,
             OpenPositionCount = state.OpenPositionCount,
             InvestedCapital = state.InvestedCapital,
             DailyOrderedAmount = state.DailyOrderedAmount,
