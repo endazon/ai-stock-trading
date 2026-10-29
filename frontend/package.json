@@ -14,6 +14,7 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "e2e:typecheck": "tsc -p e2e/tsconfig.json --noEmit",
+    "e2e:live": "node ../scripts/e2e-live-run.js",
     "e2e:serve": "vite --config e2e/vite.harness.config.ts",
     "e2e:install": "playwright install --with-deps chromium",
     "i18n:extract": "lingui extract --clean",

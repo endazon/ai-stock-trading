@@ -5228,4 +5228,40 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     const r = require('child_process').spawnSync(process.execPath, ['scripts/e2e-trading-restore.test.js'], { encoding: 'utf8' });
     assert.strictEqual(r.status, 0, `${r.stdout || ''}${r.stderr || ''}`.slice(-3000));
   });
+  // --- NFR, #1420（E-62）, IADR-0602: live の E2E を手元で流す口（scripts/e2e-live-run.js）---
+  {
+    const lr = require('./e2e-live-run.js');
+    ok('E-62 手元の口: 層の引数は ro / trading のカンマ区切りだけを受け、既定は ro', () => {
+      assert.deepStrictEqual(lr.parseArgs([]).layers, ['ro']);
+      assert.deepStrictEqual(lr.parseArgs(['--layer', 'ro,trading,ro']).layers, ['ro', 'trading']);
+      assert.throws(() => lr.parseArgs(['--layer', 'rw']), /値域外/);
+      assert.throws(() => lr.parseArgs(['--layer', '']), /空/);
+      assert.throws(() => lr.parseArgs(['--x']), /未知の引数/);
+    });
+    ok('E-62 手元の口: 🔴 前提未整備（Playwright の exit 2）は赤にしない（exit 0）。成功は 0、それ以外は 1', () => {
+      assert.deepStrictEqual(lr.verdictOf(0), { result: '成功', exit: 0 });
+      assert.deepStrictEqual(lr.verdictOf(2), { result: '前提未整備', exit: 0 });
+      assert.deepStrictEqual(lr.verdictOf(1), { result: '失敗', exit: 1 });
+      assert.deepStrictEqual(lr.verdictOf(null), { result: '失敗', exit: 1 }, 'シグナルで落ちた（status が null）も失敗');
+    });
+    ok('E-62 手元の口: 未復元一覧は残った差分の項目名と復元の失敗を並べ、ファイルが無ければ null（書き込みなし）', () => {
+      const report = JSON.stringify({ remaining: [{ key: 'limits' }], errors: ['watchlist: DELETE 0:E2EA: 500'] });
+      assert.deepStrictEqual(lr.remainingOf('x.json', () => report, () => true), ['limits', '復元の失敗: watchlist: DELETE 0:E2EA: 500']);
+      assert.deepStrictEqual(lr.remainingOf('x.json', () => '{"remaining":[],"errors":[]}', () => true), []);
+      assert.strictEqual(lr.remainingOf('x.json', () => '', () => false), null);
+    });
+    ok('E-62 手元の口: 実行記録の 1 行は E2E_LIVE.md の表と同じ 7 列（flaky とイメージの作成日時は人が書く）', () => {
+      const row = lr.recordRow({ date: '2026-10-30', runId: '20261030-010203', layers: ['ro', 'trading'], result: '成功', remaining: [] });
+      assert.strictEqual(row, '| 2026-10-30 | 20261030-010203 | ro,trading | 成功 | なし | （書く） | （書く） |');
+      assert.ok(lr.recordRow({ date: 'd', runId: 'r', layers: ['ro'], result: '前提未整備', remaining: null }).includes('—（書き込みなし）'));
+      const header = require('fs').readFileSync('docs/tests/E2E_LIVE.md', 'utf8').split('\n').find((l) => l.startsWith('| 日付 | runId |'));
+      assert.ok(header, 'E2E_LIVE.md に実行記録の表の見出しがある');
+      assert.strictEqual(header.split('|').length, row.split('|').length, '列の数が表と同じ');
+    });
+    ok('E-62 手元の口: 使い方の誤りは exit 64（Playwright を起動しない）', () => {
+      const r = require('child_process').spawnSync(process.execPath, ['scripts/e2e-live-run.js', '--layer', 'rw'], { encoding: 'utf8' });
+      assert.strictEqual(r.status, lr.USAGE, r.stderr);
+      assert.ok(r.stderr.includes('値域外'));
+    });
+  }
 };
