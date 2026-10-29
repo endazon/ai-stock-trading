@@ -928,6 +928,8 @@ jobs:
     # `paths:` でワークフローごと起動しない場合と違い、恒久 pending にはならない。
     # claude-code-review.yml が既に同型の除外条件を持っている（:69）。
     if: ${{ !startsWith(github.head_ref, 'automation/') }}
+    # NFR / #1421（E-72）/ IADR-0603: 上限を置く（既定の 360 分まで掛け続けない）。実測の所要は数分である。
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: frontend
@@ -953,12 +955,111 @@ jobs:
         run: npm run e2e:install
       - name: E2E typecheck
         run: npm run e2e:typecheck
+      # NFR / #1421（E-72）/ IADR-0603: html と同じ実行結果を JSON でも書き、下の flaky の集計が読む。
       - name: E2E (Playwright)
-        run: npm run e2e
-      - name: Upload Playwright report on failure
-        if: failure()
+        id: e2e
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/e2e-results.json
+        run: npm run e2e -- --reporter=list,html,json
+      # NFR / #1421 / IADR-0603: flaky（再試行で通った test）を数え、1 件でも在れば test ごとに `::warning::` を出し、
+      # 件数を step summary に表で出す。**flaky で PR は落とさない**（終了コード 0）。レポートを読めない・test が 0 件なら赤
+      # （0 件の集計を「flaky 0」と誤らない）。🔴 flaky を skip・fixme・quarantine で緑にする仕組みは持たない。
+      # 検査器は基盤リポジトリと同一の実装（scripts/check-e2e-flaky.js）。
+      - name: Tally flaky tests
+        id: tally
+        if: ${{ !cancelled() && (steps.e2e.outcome == 'success' || steps.e2e.outcome == 'failure') }}
+        working-directory: ${{ github.workspace }}
+        run: >
+          node scripts/check-e2e-flaky.js
+          --report "$RUNNER_TEMP/e2e-results.json"
+          --out "$RUNNER_TEMP/e2e-flaky/e2e-flaky-summary.json"
+      # 下の e2e-flaky-streak ジョブと、develop の後の実行が「連続して flaky か」を見るための履歴。
+      - name: Upload flaky summary
+        if: ${{ !cancelled() && steps.tally.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-flaky-summary
+          path: ${{ runner.temp }}/e2e-flaky/e2e-flaky-summary.json
+          if-no-files-found: error
+          retention-days: 14
+      # NFR / #1421 / IADR-0603: レポートは**失敗時だけでなく常に**残す（flaky の再試行の trace を後から読むため）。
+      - name: Upload Playwright report
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: frontend/playwright-report/
+          if-no-files-found: warn
           retention-days: 7
+
+  # NFR / #1421（E-72）/ IADR-0603: 同じ test が develop で 3 回連続して flaky なら赤にし、下の report-failure が
+  # ci-failure-issue.yml で起票する（重複はマーカーで 1 本へまとめる。自動ではクローズしない）。**develop への push だけで走る**
+  # （PR では起票しない）。履歴は直前の develop の CI が残した `e2e-flaky-summary`（14 日）。
+  # frontend-e2e が赤の実行では判定しない（その実行の要約は成果物に残るので、次の実行の判定には入る）。
+  e2e-flaky-streak:
+    needs: frontend-e2e
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' && needs.frontend-e2e.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Download this run's flaky summary
+        uses: actions/download-artifact@v8
+        with:
+          name: e2e-flaky-summary
+          path: ${{ runner.temp }}/e2e-flaky-current
+      # 直前の develop の push の CI（完了したもの）を新しい順に 2 つ見て、要約を取る。各実行を目録
+      # （manifest.tsv。`<runNumber> <runId> ok|missing`）へ 1 行ずつ書く。**要約の無い実行は飛ばさない** ——
+      # 打ち切りの判定は検査器（historyUntilGap）が目録の順に行い、要約の無い実行に当たったらそこで履歴を切る（連続を作らない側）。
+      - name: Download previous flaky summaries (develop)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HISTORY_DIR: ${{ runner.temp }}/e2e-flaky-history
+        run: |
+          mkdir -p "$HISTORY_DIR"
+          : > "$HISTORY_DIR/manifest.tsv"
+          seen=0
+          while read -r id num; do
+            [ "$id" = "$GITHUB_RUN_ID" ] && continue
+            if gh run download "$id" --repo "$GITHUB_REPOSITORY" -n e2e-flaky-summary -D "$HISTORY_DIR/$id" 2>/dev/null; then
+              echo "$num $id ok" >> "$HISTORY_DIR/manifest.tsv"
+            else
+              echo "$num $id missing" >> "$HISTORY_DIR/manifest.tsv"
+            fi
+            seen=$((seen + 1))
+            [ "$seen" -ge 2 ] && break
+          done < <(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch develop --event push \
+                     --status completed --limit 20 --json databaseId,number --jq '.[] | "\(.databaseId) \(.number)"')
+          echo "履歴の目録:"; cat "$HISTORY_DIR/manifest.tsv"
+      # 連続の判定（警告を出す）。起票は検査器ではなく report-failure（ci-failure-issue.yml）が行う
+      # （本リポジトリの後段の失敗の起票は ci-failure-issue.yml に一本化している）。連続があればここで赤にする。
+      - name: Fail when a test is flaky 3 times in a row
+        run: |
+          node scripts/check-e2e-flaky.js --summary "$RUNNER_TEMP/e2e-flaky-current/e2e-flaky-summary.json" --history "$RUNNER_TEMP/e2e-flaky-history"
+          node -e '
+            const f = require("./scripts/check-e2e-flaky.js");
+            const r = f.findStreaks(f.readSummary(process.argv[1]), f.readHistory(process.argv[2]));
+            if (r.judged && r.streaks.length > 0) {
+              for (const s of r.streaks) console.log(`::error::E2E の flaky が ${f.STREAK} 回連続: ${s.id}`);
+              process.exit(1);
+            }
+          ' "$RUNNER_TEMP/e2e-flaky-current/e2e-flaky-summary.json" "$RUNNER_TEMP/e2e-flaky-history"
+
+  # NFR / #1421 / IADR-0603: 連続の flaky を issue にする（PR では呼ばない。ci-failure-issue.yml の規約）。
+  report-failure:
+    needs: [e2e-flaky-streak]
+    if: always() && github.event_name != 'pull_request' && contains(needs.*.result, 'failure')
+    uses: ./.github/workflows/ci-failure-issue.yml
+    with:
+      marker_key: e2e-flaky
+    permissions:
+      contents: read
+      issues: write

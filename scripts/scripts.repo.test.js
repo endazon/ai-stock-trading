@@ -5228,4 +5228,45 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     const r = require('child_process').spawnSync(process.execPath, ['scripts/e2e-trading-restore.test.js'], { encoding: 'utf8' });
     assert.strictEqual(r.status, 0, `${r.stdout || ''}${r.stderr || ''}`.slice(-3000));
   });
+  // --- NFR, #1421（E-72）, IADR-0603: L1 の E2E の flaky 集計（scripts/check-e2e-flaky.js。基盤リポジトリと同一の実装）---
+  ok('E-72 flaky 集計: 検査器の自己試験が全件通る', () => {
+    const r = require('child_process').spawnSync(process.execPath, ['scripts/check-e2e-flaky.js', '--self-test'], { encoding: 'utf8' });
+    assert.strictEqual(r.status, 0, `${r.stdout || ''}${r.stderr || ''}`.slice(-3000));
+  });
+  ok('E-72 flaky 集計: 1 件でも flaky なら ::warning:: を出して exit 0（PR を落とさない）、test が 0 件なら exit 1（0 件を flaky 0 と誤らない）', () => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ast-e2e-flaky-'));
+    try {
+      const spec = (title, status) => ({ title, file: 'a.spec.ts', line: 1, tests: [{ projectName: 'chromium', status }] });
+      const report = (specs) => JSON.stringify({ suites: [{ title: 'a.spec.ts', file: 'a.spec.ts', specs, suites: [] }], stats: {} });
+      fs.writeFileSync(path.join(dir, 'r.json'), report([spec('ゆらぐ', 'flaky'), spec('安定', 'expected')]));
+      const run = (file) => require('child_process').spawnSync(process.execPath,
+        ['scripts/check-e2e-flaky.js', '--report', path.join(dir, file), '--out', path.join(dir, 'out', 'e2e-flaky-summary.json')],
+        { encoding: 'utf8', env: { ...process.env, GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: '' } });
+      const r = run('r.json');
+      assert.strictEqual(r.status, 0, r.stderr);
+      assert.ok(`${r.stdout}${r.stderr}`.includes('::warning::E2E の flaky'), r.stdout + r.stderr);
+      assert.ok(fs.existsSync(path.join(dir, 'out', 'e2e-flaky-summary.json')));
+      fs.writeFileSync(path.join(dir, 'empty.json'), report([]));
+      assert.strictEqual(run('empty.json').status, 1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  ok('E-72 ci.yml: frontend-e2e は上限の時間を持ち、レポートを失敗時以外も上げ、flaky の要約を残し、develop の 3 回連続で ci-failure-issue.yml へ起票する', () => {
+    const y = require('fs').readFileSync('.github/workflows/ci.yml', 'utf8');
+    const job = y.slice(y.indexOf('\n  frontend-e2e:'), y.indexOf('\n  e2e-flaky-streak:'));
+    assert.match(job, /\n    timeout-minutes: \d+\n/);
+    assert.match(job, /name: Upload Playwright report\n\s+if: \$\{\{ !cancelled\(\)/, 'レポートは failure() だけでなく常に上げる');
+    assert.ok(!/Upload Playwright report on failure/.test(job));
+    assert.match(job, /check-e2e-flaky\.js\s+--report/);
+    assert.match(job, /name: e2e-flaky-summary/);
+    const streak = y.slice(y.indexOf('\n  e2e-flaky-streak:'));
+    assert.match(streak, /github\.ref == 'refs\/heads\/develop'/, '起票の判定は develop の push だけ');
+    assert.match(streak, /uses: \.\/\.github\/workflows\/ci-failure-issue\.yml/);
+    assert.match(streak, /marker_key: e2e-flaky/);
+    assert.match(streak, /github\.event_name != 'pull_request'/, 'PR では起票しない');
+  });
 };
