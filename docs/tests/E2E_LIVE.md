@@ -9,8 +9,8 @@ updated: 2026-10-30
 <!-- trace:
 ids: [NFR, SC-01, SC-02, SC-03, SC-04]
 adrs: []
-iadrs: [IADR-0565, IADR-0588, IADR-0589, IADR-0599, IADR-0600, IADR-0602, MSP:IADR-0569]
-specs: [20261030_1420_e2e-live-local-run-and-record, 20261030_1418_e2e-trading-gate-snapshot-restore, README]
+iadrs: [IADR-0565, IADR-0588, IADR-0589, IADR-0599, IADR-0600, IADR-0601, IADR-0602, MSP:IADR-0569]
+specs: [20261030_1420_e2e-live-local-run-and-record, 20261030_1418_e2e-trading-gate-snapshot-restore, 20261030_1419_e2e-trading-settings-spec, README]
 issues: [#1410, #1416, #1417, #1418, #1419, #1420, #1502, #1506, MSP#2013]
 -->
 

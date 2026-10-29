@@ -50,5 +50,5 @@ plan_refs:
 
 ## 検証
 
-- `REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js`（E-62 の 5 件を含む）。
+- `REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js`（E-62 の 7 件を含む。レビュー対応で 2 件足した）。
 - 文書の検査（trace-blocks ほか）。
