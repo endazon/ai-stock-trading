@@ -45,7 +45,7 @@ related_specs:
 
 ### 決定 3: develop で同じ test が 3 回連続して flaky なら ci-failure-issue.yml で起票する
 
-- develop への push の CI だけで、新しいジョブ `e2e-flaky-streak` が、直前の develop の CI の要約 2 つと今回の要約を突き合わせる。要約の無い実行に当たったら履歴をそこで切る（連続を作らない側）。
+- develop への push の CI だけで、新しいジョブ `e2e-flaky-streak` が、直前の develop の CI の要約 2 つと今回の要約を突き合わせる。要約の無い実行に当たったら履歴をそこで切る（連続を作らない側）。履歴は**自分より前の run（run の番号が自分より小さいもの）だけ**から取る。develop に並行して走る新しい run が先に完了して 2 枠を食うのを防ぐ（レビュー対応）。
 - 連続があればこのジョブを赤にし、`report-failure` が `ci-failure-issue.yml`（marker `e2e-flaky`）で起票する。重複はマーカーで 1 本へまとめ、自動ではクローズしない。
 - 基盤は検査器の `--upsert-issue` で test ごとに issue を立てる。本リポジトリは、後段の失敗の起票を `ci-failure-issue.yml` に一本化している（integration・codeql・security と同じ）ので、そちらを使う。検査器は同一の実装のまま、起票の口だけを使わない。
 - PR では起票しない。frontend-e2e が赤の実行では判定しない（その実行の要約は残り、次の判定に入る）。

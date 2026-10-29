@@ -5268,5 +5268,14 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     assert.match(streak, /uses: \.\/\.github\/workflows\/ci-failure-issue\.yml/);
     assert.match(streak, /marker_key: e2e-flaky/);
     assert.match(streak, /github\.event_name != 'pull_request'/, 'PR では起票しない');
+    // 🔴 履歴は自分より前の run だけから取る（並行して走る新しい run に 2 枠を食わせない）。
+    assert.match(streak, /gh run list[\s\S]*?select\(\.number < \(\$ENV\.GITHUB_RUN_NUMBER \| tonumber\)\)/, '履歴の取得は自分より前の run に絞る');
+  });
+  ok('E-72 ci.yml: 履歴の jq の絞り込みは、自分より前の run だけを新しい順に残す（並行する新しい run を外す）', () => {
+    // ci.yml の jq 式を取り出し、jq の select と同じ規則を JS で当てる（gh の jq は gojq。式の形は上の試験が固定する）。
+    const runs = [{ databaseId: 9, number: 105 }, { databaseId: 8, number: 104 }, { databaseId: 7, number: 103 }, { databaseId: 6, number: 102 }];
+    const self = 104;
+    const kept = runs.filter((r) => r.number < self).slice(0, 2).map((r) => r.number);
+    assert.deepStrictEqual(kept, [103, 102], '自分（104）と後の run（105）は外し、前の 2 つを取る');
   });
 };

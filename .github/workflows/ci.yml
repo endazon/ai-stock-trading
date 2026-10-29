@@ -1016,7 +1016,9 @@ jobs:
         with:
           name: e2e-flaky-summary
           path: ${{ runner.temp }}/e2e-flaky-current
-      # 直前の develop の push の CI（完了したもの）を新しい順に 2 つ見て、要約を取る。各実行を目録
+      # 直前の develop の push の CI（完了したもの）を新しい順に 2 つ見て、要約を取る。
+      # 🔴 自分より前の run（`number` が自分の GITHUB_RUN_NUMBER より小さいもの）だけに絞ってから 2 件を取る —— develop に並行して
+      #    走る新しい run が先に完了すると、それが 2 枠を食い、連続の判定が自分より後の実行を見てしまう。各実行を目録
       # （manifest.tsv。`<runNumber> <runId> ok|missing`）へ 1 行ずつ書く。**要約の無い実行は飛ばさない** ——
       # 打ち切りの判定は検査器（historyUntilGap）が目録の順に行い、要約の無い実行に当たったらそこで履歴を切る（連続を作らない側）。
       - name: Download previous flaky summaries (develop)
@@ -1037,7 +1039,8 @@ jobs:
             seen=$((seen + 1))
             [ "$seen" -ge 2 ] && break
           done < <(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch develop --event push \
-                     --status completed --limit 20 --json databaseId,number --jq '.[] | "\(.databaseId) \(.number)"')
+                     --status completed --limit 20 --json databaseId,number \
+                     --jq '.[] | select(.number < ($ENV.GITHUB_RUN_NUMBER | tonumber)) | "\(.databaseId) \(.number)"')
           echo "履歴の目録:"; cat "$HISTORY_DIR/manifest.tsv"
       # 連続の判定（警告を出す）。起票は検査器ではなく report-failure（ci-failure-issue.yml）が行う
       # （本リポジトリの後段の失敗の起票は ci-failure-issue.yml に一本化している）。連続があればここで赤にする。
