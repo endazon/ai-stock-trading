@@ -19,10 +19,16 @@ namespace AiStockTrading.TestSupport.PlatformShim.Tests;
 // 次の試行で新しい接続を作る裏で、**捨てられた接続が回復の間隔ごとに繋ぎ直しを続け、ブローカの準備が整った時点で一斉に繋がる**。
 // Wolverine は接続の自動回復を必ず有効にする（RabbitMqTransport.configureDefaults）。7.2.x は開き損ねた接続を閉じて破棄する。
 //
-// 試験: AMQP のプロトコルヘッダを受けたら黙って切る偽のブローカへ、Wolverine と同じく自動回復を有効にして接続する。
-// 開くのは失敗する（期待どおり）。その後、回復の間隔の何倍待っても、偽のブローカへの接続の試みは最初の 1 回だけである。
+// 試験: AMQP のプロトコルヘッダを受けたら黙って切る偽のブローカへ、Wolverine と同じく自動回復を有効にして接続する。開くのは失敗する（期待どおり）。
+// 🔴 判定は「開き損ねの後、偽のブローカへの接続の試みが**増えない**こと」である（MSP#2302 と同じ形）。
+//   - 開いた直後の数 n は 1 か 2。負荷が高いと 7.2.2 でも開く処理の中で 2 回試みる（回復の巡回は開き損ねの shutdown で起動し、
+//     CreateAsync が自分を閉じて止めるまでの間に 1 回走る余地がある。CI と MSP の実測で 2 回）。その後は止まって増えない。
+//   - 7.1.2 は止める者がいないので、回復の間隔（100 ms）ごとに増え続ける（手元で 20 回とも、待つ間に 3 回以上増えた）。
 public class RabbitMqFailedOpenConnectionLeakTests
 {
+    private static readonly TimeSpan RecoveryInterval = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan Observation = TimeSpan.FromSeconds(3);
+
     [Fact]
     public async Task 開き損ねた接続は裏で繋ぎ直しを続けない()
     {
@@ -32,19 +38,22 @@ public class RabbitMqFailedOpenConnectionLeakTests
             Uri = new Uri($"amqp://guest:guest@127.0.0.1:{broker.Port}"),
             // Wolverine の RabbitMqTransport.configureDefaults と同じ（接続の自動回復は常に有効）。
             AutomaticRecoveryEnabled = true,
-            NetworkRecoveryInterval = TimeSpan.FromMilliseconds(100),
+            NetworkRecoveryInterval = RecoveryInterval,
             RequestedConnectionTimeout = TimeSpan.FromSeconds(5),
             HandshakeContinuationTimeout = TimeSpan.FromSeconds(5),
         };
+        var ct = TestContext.Current.CancellationToken;
 
-        var open = async () => await factory.CreateConnectionAsync(TestContext.Current.CancellationToken);
+        var open = async () => await factory.CreateConnectionAsync(ct);
         await open.Should().ThrowAsync<BrokerUnreachableException>("前提: 偽のブローカはハンドシェイクの途中で切る");
-        broker.Accepted.Should().Be(1, "前提: 開く試みは 1 回");
+        var n = broker.Accepted;
+        n.Should().BeInRange(1, 2, "前提: 開く処理の中の試みは 1 回（負荷が高いと回復の 1 回を含めて 2 回）");
 
-        // 回復の間隔（100 ms）の 15 倍待つ。是正前（7.1.2）はこの間に捨てられた接続が繋ぎ直しを続ける。
-        await Task.Delay(TimeSpan.FromMilliseconds(1_500), TestContext.Current.CancellationToken);
+        // 回復の間隔の 30 倍待つ。7.1.2 はこの間に捨てられた接続が繋ぎ直しを続ける。
+        await Task.Delay(Observation, ct);
 
-        broker.Accepted.Should().Be(1, "開き損ねた接続は閉じて破棄され、裏で自動回復を続けない（#1482）");
+        broker.Accepted.Should().Be(n, "開き損ねた接続は閉じて破棄され、裏で自動回復を続けない（#1482）");
+        broker.LoopFault.Should().BeNull("偽のブローカの受け口が止まっていない（止まると接続の試みを数え損ねる）");
     }
 
     // AMQP のプロトコルヘッダ（8 バイト）を読んだら何も返さずに切る TCP の受け口。受けた接続の数を数える。
@@ -64,6 +73,8 @@ public class RabbitMqFailedOpenConnectionLeakTests
 
         public int Accepted => Volatile.Read(ref _accepted);
 
+        public Exception? LoopFault { get; private set; }
+
         private async Task AcceptLoopAsync()
         {
             while (!_stop.IsCancellationRequested)
@@ -77,8 +88,10 @@ public class RabbitMqFailedOpenConnectionLeakTests
                 {
                     return;
                 }
-                catch (SocketException)
+                catch (Exception ex)
                 {
+                    // 停止の外で受け口が壊れたら記録する（黙って握りつぶすと、繋ぎ直しを数え損ねて試験が誤って緑になる）。
+                    LoopFault = ex;
                     return;
                 }
 

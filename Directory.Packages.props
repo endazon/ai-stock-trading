@@ -98,7 +98,7 @@
          🔴 推移ピン留めの理由は**不具合の是正**であり、脆弱性（CVE）ではない（上流の修正は 7.2.0 の
          rabbitmq-dotnet-client#1857「prevent possible connection leak in AutorecoveringConnection during creation」）。
          🔴 基盤（MSP）は WolverineFx.RabbitMQ 6.24.4 の推移で 7.1.2 のまま（2026-10-29 に dotnet list package で確認）であり、
-         **基盤と版が食い違う**。MSP 側が追随したら、この注記を外して基盤と揃っていることを確かめる。 -->
+         **基盤と版が食い違う**。MSP 側の追随は MSP#2301。MSP#2301 が追随したら、この注記を外して基盤と揃っていることを確かめる。 -->
     <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
   </ItemGroup>
 </Project>
