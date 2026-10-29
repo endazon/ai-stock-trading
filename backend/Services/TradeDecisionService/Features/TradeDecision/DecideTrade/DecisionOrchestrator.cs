@@ -47,6 +47,7 @@ public sealed class DecisionOrchestrator(
             // （Buy/Sell は価格・損切り幅が正）を一次に掛けると、数値を省いた Buy 候補が InvalidValues＝解析不能で
             // 打ち切られ、関心ありの銘柄が本判断に届かない（2026-09-16 開場中の実測）。価格・損切り幅は二次が改めて出す。
             var screen = TradeDecisionParser.ParseScreening(screenOutput);
+            LogClosingQuoteRepair(ScreeningLayer, screen.Repair);
 
             // 🔴 FR-04, FR-11, #1290, IADR-0525 決定 2/3: 一次の根拠文の文字化けの疑いを**受け取った地点で 1 回だけ**検出し、
             // 印（ScreeningRationaleGarbleSuspected）として運ぶ（転記先ごとに検出し直さない）。🔴 action は変えない（Hold に倒さない）。
@@ -106,6 +107,7 @@ public sealed class DecisionOrchestrator(
                 .ConfigureAwait(false);
             // #1187: 保有を決済する売買（ロング保有中の Sell・ショート保有中の Buy）では損切り幅を任意にする。
             var parsed = TradeDecisionParser.ParseDetailed(output, signedHeldQuantity);
+            LogClosingQuoteRepair(DecisionLayer, parsed.Repair);
             if (parsed.IsUnparseable)
             {
                 // #290, IADR-0248: 解析不能票は Hold として多数決へ入れる（安全側・従来挙動）が、
@@ -167,6 +169,23 @@ public sealed class DecisionOrchestrator(
     // - 本文はモデルの出力であり、見送りの根拠文（上の LogInformation）と同じ種類の情報である。秘密（資格情報）は入らない。
     // - 空応答（EmptyOutput）は残す本文が無いので出さない。解析できた応答（見送りを含む）も出さない（肥大化を避ける）。
     // - 1 行化（LogSanitizer）は 1 回だけ掛ける。改行は '_' に置き換わるため、元の改行数は指紋の newlines に残す。
+    // 🔴 FR-04, FR-11, #1332, IADR-0597: 文字列を日本語の閉じかぎで閉じ、閉じの '"' が欠けた出力を補って読んだことを WRN 1 行で残す
+    // （補修した事実と形だけ。応答の本文は書かない。補修が増えたら出力の形の退行の信号として監査で数える）。
+    private void LogClosingQuoteRepair(string layer, ClosingQuoteRepair repair)
+    {
+        if (repair == ClosingQuoteRepair.None)
+        {
+            return;
+        }
+
+        logger.LogWarning(
+            ClosingQuoteRepairMarker + "（文字列を閉じかぎで閉じ、閉じの引用符が欠けていた・#1332）: layer={Layer} shape={Shape}",
+            layer, repair);
+    }
+
+    /// <summary>#1332, IADR-0597: 閉じの '"' を補って読んだことを示す WRN の目印（PoC の監査が grep する）。</summary>
+    internal const string ClosingQuoteRepairMarker = "構造化出力の閉じの引用符を補って読みました";
+
     private void LogUnparseableRaw(string layer, TradeDecisionParseFailure failure, string? raw)
     {
         if (failure.Kind == TradeDecisionParseFailureKind.EmptyOutput)

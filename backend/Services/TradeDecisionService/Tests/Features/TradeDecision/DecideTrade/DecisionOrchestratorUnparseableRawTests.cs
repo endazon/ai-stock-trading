@@ -151,4 +151,29 @@ public class DecisionOrchestratorUnparseableRawTests
             Entries.Add(new LogEntry(logLevel, formatter(state, exception), values));
         }
     }
+
+    // 🔴 FR-04, #1332, IADR-0597: 文字列を閉じかぎで閉じ、閉じの '"' が欠けた一次の出力は補って読み、二次本判断へ進める
+    // （PoC 10/27 HOOD Sell: 解析不能で打ち切られ、決済が 6 分遅れた）。補修の WRN は事実と形だけで、本文は書かない。原本の行（解析不能）は出さない。
+    [Fact]
+    public async Task 一次の閉じかぎの補修は二次へ進め補修の事実と形だけをWRNで残す_1332()
+    {
+        const string repaired = "{\"action\":\"Sell\",\"rationale\":\"利確の水準に達した」,\"referencePrice\":1000,\"stopLossDistancePerShare\":30}";
+        const string sell = """{"action":"Sell","rationale":"利確","referencePrice":1000,"stopLossDistancePerShare":30}""";
+        var llm = new SequencedLlm(repaired, sell);
+        var logger = new CapturingLogger();
+        var orchestrator = new DecisionOrchestrator(
+            llm, DecisionOrchestrationOptions.Default with { EnableScreening = true }, logger);
+
+        var result = await orchestrator.DecideAsync(() => "screen", "decision", signedHeldQuantity: 10);
+
+        result.ScreenedOut.Should().BeFalse("補って読めたので関心ありとして二次へ進む");
+        result.ScreeningUnparseable.Should().BeFalse();
+        result.Decision.Action.Should().Be(TradeAction.Sell);
+        RawLines(logger).Should().BeEmpty("解析不能ではない");
+        var line = logger.Entries.Should().ContainSingle(
+            e => e.Message.StartsWith(DecisionOrchestrator.ClosingQuoteRepairMarker, StringComparison.Ordinal)).Which;
+        line.Level.Should().Be(LogLevel.Warning);
+        line.Message.Should().Contain("layer=screening").And.Contain("shape=BeforeKnownKey")
+            .And.NotContain("利確の水準", "応答の本文は書かない");
+    }
 }
