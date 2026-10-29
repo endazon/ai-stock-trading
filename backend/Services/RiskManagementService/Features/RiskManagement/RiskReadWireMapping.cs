@@ -7,6 +7,7 @@ using RiskManagementService.Features.RiskManagement.GetEntryBlockers;
 using RiskManagementService.Features.RiskManagement.GetOpenPositions;
 using RiskManagementService.Features.RiskManagement.GetOpeningInventory;
 using RiskManagementService.Features.RiskManagement.GetSizingContext;
+using RiskManagementService.Features.RiskManagement.GetTradingHalt;
 using RiskManagementService.Features.RiskManagement.GetWorkingEntryOrders;
 using Proto = AiStockTrading.Shared.Grpc.RiskManagement.V1;
 
@@ -28,6 +29,13 @@ public static class RiskReadWireMapping
 
     // 往復書式（`O`）。オフセットを保つ（REST の System.Text.Json と同じくオフセットごと運ぶ）。
     public static string ToWire(DateTimeOffset value) => value.ToString("O", CultureInfo.InvariantCulture);
+
+    // 🔴 NFR, FR-10, IADR-0567, IADR-0604, #1510: 停止の状態。どちらも在る値（false も設定する＝`Has*` が立つ）。
+    public static Proto.GetTradingHaltResponse ToProto(TradingHaltView view) => new()
+    {
+        KillSwitchEngaged = view.KillSwitchEngaged,
+        TradingPaused = view.TradingPaused,
+    };
 
     public static Proto.Market ToProto(Market value) => value switch
     {

@@ -168,7 +168,9 @@ jobs:
             'notification-service	Reports__Grpc	http://report-service:8081' \
             'notification-service	MarketMonitor__Grpc	http://market-monitor-service:8081' \
             'trade-decision-service	OrderExecution__Grpc	http://order-execution-service:8081' \
-            'backtest-service	OrderExecution__Grpc	http://order-execution-service:8081' | sort)"
+            'backtest-service	OrderExecution__Grpc	http://order-execution-service:8081' \
+            'order-execution-service	RiskManagement__Grpc	http://risk-management-service:8081' \
+            'trade-decision-service	CostControl__Grpc	http://cost-control-service:8081' | sort)"
           for profile in default local; do
             if [ "$profile" = local ]; then base=(-f "$CHART/values-local.yaml"); else base=(); fi
             before_out="$(helm template ast "$CHART" "${base[@]}")"
@@ -223,7 +225,7 @@ jobs:
           must_fail "未知の提供側" "grpcClients.Auditt は未知の提供側です" --set services.audit.grpcPort=8081 --set services.report.grpcClients.Auditt=true
           must_fail "真偽値でない" "grpcClients.Audit は true / false で指定してください" --set services.audit.grpcPort=8081 --set-string services.report.grpcClients.Audit=true
           must_fail "extraEnv と二重定義" "は extraEnv の Audit__Grpc と grpcClients.Audit を併用できません" -f "$O" --set services.report.grpcClients.Audit=true --set 'services.report.extraEnv[0].name=Audit__Grpc'
-          echo "ok: 計測 overlay は env を 1 本も消さず、段 1〜5 の宣言（呼び出し側 15〔#6・#17 は別窓〕・提供側 7）だけを足す"
+          echo "ok: 計測 overlay は env を 1 本も消さず、段 1〜5 の宣言（呼び出し側 17〔#6・#17 は別窓〕・提供側 7）だけを足す"
       - name: helm template (externalSecrets.enabled=true)
         run: helm template ast "$CHART" --set externalSecrets.enabled=true > /dev/null
       # #24 / IADR-0094: API 鍵群（ast-secrets）の Vault 同期 opt-in。既定描画では評価されないため

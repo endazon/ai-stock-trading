@@ -190,8 +190,15 @@ builder.Services.AddScoped<IProtectiveStopOrderStore, EfProtectiveStopOrderStore
 // 照会を省く構成の口は持たない。
 builder.Services.AddHttpClient("risk", c => c.Timeout = HttpTradingHaltSource.RequestTimeout)
     .AddAiStockTradingServiceToken(builder.Configuration);
+// NFR, MSP:ADR-0029, IADR-0284 決定 5（段 5 の追補 3）, IADR-0604, #1510 (#753): east-west gRPC（`RiskControlsRead/GetTradingHalt`）。
+// **`RiskManagement:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば停止状態の照会口が
+// gRPC 実装を選ぶ（RiskManagement:BaseUrl より優先）。不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingRiskManagementGrpc(builder.Configuration);
 builder.Services.AddScoped<ITradingHaltSource>(sp =>
 {
+    if (sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc)
+        return new GrpcTradingHaltSource(riskGrpc, sp.GetRequiredService<ILogger<GrpcTradingHaltSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl)
         || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)

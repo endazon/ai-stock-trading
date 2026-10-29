@@ -3,15 +3,15 @@ title: east-west gRPC（サービス間の同期呼び出し）通信仕様書
 type: api-spec
 status: draft
 created: 2026-09-11
-updated: 2026-10-17
+updated: 2026-10-30
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16, FR-01, FR-02, FR-07, FR-13, FR-15, FR-14, NFR-06]
 adrs: [ADR-0001, ADR-0047, ADR-0052, MSP:ADR-0029, MSP:ADR-0075]
-iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491, IADR-0493, IADR-0521, IADR-0522, IADR-0556, IADR-0557, IADR-0559, IADR-0425, IADR-0467, IADR-0528, IADR-0535]
-specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate, 20261006_1181_report-opening-inventory, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261017_1388_grpc-late-routes-held-symbols-asof-policy, 20261017_1391_grpc-order-execution-read-surface]
-issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181, #243, #1388, #1391]
+iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491, IADR-0493, IADR-0521, IADR-0522, IADR-0556, IADR-0557, IADR-0559, IADR-0425, IADR-0467, IADR-0528, IADR-0535, IADR-0567, IADR-0582, IADR-0604]
+specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate, 20261006_1181_report-opening-inventory, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261017_1388_grpc-late-routes-held-symbols-asof-policy, 20261017_1391_grpc-order-execution-read-surface, 20261030_1510_grpc-addendum-3-trading-halt-cost-halt]
+issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181, #243, #1388, #1391, #1510]
 -->
 
 # 通信仕様書: east-west gRPC（サービス間の同期呼び出し）
@@ -157,7 +157,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181,
 
 ## 6. 面: リスク管理の読み取り（`aistocktrading.riskmanagement.v1.RiskControlsRead`）
 
-- 概要: 報告書・取引判断・市場監視・情報収集の 4 サービスが、構成 `RiskManagement:Grpc`（例 `http://risk-management-service:8081`）が
+- 概要: 報告書・取引判断・市場監視・情報収集・発注執行の 5 サービスが、構成 `RiskManagement:Grpc`（例 `http://risk-management-service:8081`）が
   あるときだけ gRPC で照会し、無ければ REST `GET /risk-controls/*` で照会する。**並走中の正は REST。**
 - 認証・認可: 読み取りの面と同じ（サービス、または呼び出し元がボットの利用者のロール。§4）。REST の読み取り群の判定に呼び出し元の確認を足したポリシーを service のクラス属性で持つ。
 - 評価器: REST と**同じ**サービス・純関数を呼ぶ（評価器を 2 つにしない）。
@@ -175,6 +175,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181,
 | `GetBuyInInferences` | `GET /risk-controls/buy-in-inferences?from&to` | 報告書 | 未供給 |
 | `GetSessionUptime` | `GET /risk-controls/session-uptime?from&to` | 報告書 | 未供給 |
 | `GetOpeningInventory` | `GET /risk-controls/opening-inventory?market&before`（期間開始時点の在庫。指定した市場の現地取引日より前〔排他〕までの台帳行を畳み、銘柄ごとの数量・基準通貨の平均取得単価・認識時レートの加重平均を返す） | 報告書 | 未供給（取得原価を要する値は算出不能。必須の項目が欠けた行があれば応答全体を読めない） |
+| `GetTradingHalt` | `GET /risk-controls/trading-halt`（kill switch の作動・一時停止。新規建てを送る直前に読む） | 発注執行 | 不明（新規建てを送らない。決済・損切りは照会しない＝止まらない） |
 
 エラー:
 
@@ -205,7 +206,7 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 | 構成キー | 既定 | 意味 |
 | --- | --- | --- |
 | `RiskManagement:Grpc` | 未設定（＝REST） | gRPC の宛先。**宣言してあるのに使えない値は起動時に落とす**。宣言があれば `RiskManagement:BaseUrl` より優先 |
-| `RiskManagement:GrpcTimeoutSeconds` | 報告書 10・取引判断 5・市場監視 5・情報収集 5 | **試行ごとの** deadline。各サービスの REST の `HttpClient.Timeout` と同値 |
+| `RiskManagement:GrpcTimeoutSeconds` | 報告書 10・取引判断 5・市場監視 5・情報収集 5・発注執行 3 | **試行ごとの** deadline。各サービスの REST の `HttpClient.Timeout` と同値 |
 | `RiskManagement:GrpcMaxAttempts` | 1 | 試行回数。**既定は再試行しない** |
 
 - チャネルは呼び出し元の輸送が所有する（同じサービスの別の面が引く型と衝突させない）。
@@ -275,7 +276,7 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 | `aistocktrading.report.v1.DailyPolicyRead/GetConfirmedDailyPolicyAsOf` | `GET /reports/daily-policy/as-of?at=` | 取引判断（Stage 0 の記録） | 撃ち直してから記録を止める（無かったときは方針なしで記録する） |
 | `aistocktrading.marketmonitor.v1.WatchlistRead/GetWatchlist` | `GET /monitor/watchlist` | 取引判断（定時サイクル・判断のプロンプト）・情報収集 | 定時サイクルは構成の監視銘柄、プロンプトは不明、情報収集は不明（直前に読めた対象を使い続ける） |
 | `aistocktrading.marketmonitor.v1.WatchlistRead/GetWatchlistAsOf` | `GET /monitor/watchlist/as-of?at=` | 取引判断（Stage 0 の記録） | 再構成できない（理由つき・その記録は合否から外れる） |
-| `aistocktrading.costcontrol.v1.CostStateRead/GetCostState` | `GET /costs/state` | 情報収集 | 通常（停止せず・1 倍） |
+| `aistocktrading.costcontrol.v1.CostStateRead/GetCostState` | `GET /costs/state` | 情報収集・取引判断 | 情報収集は通常（停止せず・1 倍）、取引判断は停止していない（LLM を呼ぶ） |
 
 エラーは §6 と同じ（`UNAUTHENTICATED` / `PERMISSION_DENIED` は再試行しない、`UNAVAILABLE` / `DEADLINE_EXCEEDED` は再試行の対象）。
 当時の監視銘柄と当時の方針の時刻の欠落・オフセットの欠落・書式違いは `INVALID_ARGUMENT`（REST の 400 と同じ）。
@@ -299,8 +300,8 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 | --- | --- | --- | --- |
 | `Reports:Grpc` | 取引判断 | 未設定（＝REST） | 日報の方針の gRPC の宛先（Stage 0 の記録の当時の方針も。宣言があれば `Reports:BaseUrl` が無くても記録の入力を組む） |
 | `MarketMonitor:Grpc` | 取引判断・情報収集 | 未設定（＝REST） | 監視銘柄の gRPC の宛先（取引判断は当時の一覧も） |
-| `CostControl:Grpc` | 情報収集 | 未設定（＝REST） | 費用統制の判定の gRPC の宛先 |
-| `<上記>:GrpcTimeoutSeconds` | 〃 | 5 | **試行ごとの** deadline。REST の `HttpClient.Timeout` と同値 |
+| `CostControl:Grpc` | 情報収集・取引判断 | 未設定（＝REST） | 費用統制の判定の gRPC の宛先（取引判断は判断ごと LLM の前の停止の関所） |
+| `<上記>:GrpcTimeoutSeconds` | 〃 | 5（取引判断の `CostControl` だけ 3） | **試行ごとの** deadline。REST の `HttpClient.Timeout` と同値 |
 | `<上記>:GrpcMaxAttempts` | 〃 | 1 | 試行回数。**既定は再試行しない** |
 
 - 宣言してあるのに使えない値は起動時に落とす。宣言があれば同じ提供側の `*:BaseUrl` より優先する。チャネルは呼び出し元の輸送が所有する。

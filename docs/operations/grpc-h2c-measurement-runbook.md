@@ -4,14 +4,14 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-10-04
-updated: 2026-10-17
+updated: 2026-10-30
 ---
 <!-- trace:
 ids: [NFR]
 adrs: [MSP:ADR-0029, MSP:ADR-0075, ADR-0047]
-iadrs: [IADR-0489, IADR-0284, IADR-0328, IADR-0331, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0439, IADR-0283, IADR-0493, IADR-0522, IADR-0557, IADR-0559]
-specs: [20261004_753_grpc-h2c-measurement-runbook, 20261010_243_policy-revision-max-tokens, 20261017_1388_grpc-late-routes-held-symbols-asof-policy, 20261017_1391_grpc-order-execution-read-surface]
-issues: [#753, #626, #1178, #1181, #243, #1388, #1391]
+iadrs: [IADR-0489, IADR-0284, IADR-0328, IADR-0331, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0439, IADR-0283, IADR-0493, IADR-0522, IADR-0557, IADR-0559, IADR-0604]
+specs: [20261004_753_grpc-h2c-measurement-runbook, 20261010_243_policy-revision-max-tokens, 20261017_1388_grpc-late-routes-held-symbols-asof-policy, 20261017_1391_grpc-order-execution-read-surface, 20261030_1510_grpc-addendum-3-trading-halt-cost-halt]
+issues: [#753, #626, #1178, #1181, #243, #1388, #1391, #1510]
 -->
 <!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
@@ -59,11 +59,11 @@ values-local は 7 サービスの `extraEnv` を丸ごと持っているので�
 - 呼び出し側: `services.<name>.grpcClients.<提供側>: true` → env `<提供側>__Grpc` が描かれる。宛先は呼び先の `grpcPort` から `http://<呼び先>-service:8081` と導出される。
   呼び先に `grpcPort` が無い宣言・未知の提供側・`extraEnv` との二重定義は、**描画の時点で止まる**。
 
-CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps every env」）が、既定と values-local の両方で「overlay を重ねても消える env は 0 本、足されるのは gRPC の宣言だけ（呼び出し側 15〔#6・#17 は別窓〕・提供側 7）で、宣言の宛先が期待表と一致する」こと、overlay に `grpcPort` と `grpcClients` 以外を書いていないことを毎回検めている。
+CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps every env」）が、既定と values-local の両方で「overlay を重ねても消える env は 0 本、足されるのは gRPC の宣言だけ（呼び出し側 17〔#6・#17 は別窓〕・提供側 7）で、宣言の宛先が期待表と一致する」こと、overlay に `grpcPort` と `grpcClients` 以外を書いていないことを毎回検めている。
 
 ## 経路表（実測の対象）
 
-呼び出し側 17 宣言（overlay が既定で入れるのは #6・#17 を除く 15）・提供側 7 サービス。rpc の名前は提供側のメトリクスの `http.route`（`/<package>.<Service>/<Method>`）にそのまま現れる。
+呼び出し側 19 宣言（overlay が既定で入れるのは #6・#17 を除く 17）・提供側 7 サービス。rpc の名前は提供側のメトリクスの `http.route`（`/<package>.<Service>/<Method>`）にそのまま現れる。
 
 | # | 呼び出し側 | 宣言（env） | 呼び先:8081 | rpc（`aistocktrading.` を略す） | 段 | 発火のきっかけ | deadline（既定） |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -84,6 +84,8 @@ CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps ev
 | 15 | trade-decision | `OrderExecution__Grpc` | order-execution | `orderexecution.v1.OrderExecutionRead/GetInFlightCloses`・`GetDailyBars` | 5 の追補 2 | 処理中の決済: 取引サイクル（保有中の銘柄で LLM を呼ぶ前）。日足: 出来高・ATR(14) が有効なとき（既定は無効）と Stage 0 の記録 | 8 秒 |
 | 16 | backtest | `OrderExecution__Grpc` | order-execution | `orderexecution.v1.OrderExecutionRead/GetDailyBars` | 5 の追補 2 | Stage 0 判定の定時駆動（過去データ源 `order-execution` を明示した構成のとき） | 30 秒 |
 | 17 | risk-management | `OrderExecution__Grpc` | order-execution | `orderexecution.v1.OrderExecutionRead/GetShortPermit` | 5 の追補 2 | 新規の売り建ての審査。🔴 **overlay の既定では宣言しない**（別窓。下の注意） | 5 秒 |
+| 18 | order-execution | `RiskManagement__Grpc` | risk-management | `riskmanagement.v1.RiskControlsRead/GetTradingHalt` | 5 の追補 3 | 新規建てを送る直前（決済・損切りは照会しない） | 3 秒 |
+| 19 | trade-decision | `CostControl__Grpc` | cost-control | `costcontrol.v1.CostStateRead/GetCostState` | 5 の追補 3 | 判断ごと（定時・価格変動の両方で LLM を呼ぶ前） | 3 秒 |
 
 基盤のテキスト生成（呼び出し側の宣言 `LlmGateway__Grpc`）はこの表に入らない。呼び先がこのチャートの外にあり、段 1〜5 とは別の系列である。
 
@@ -104,6 +106,10 @@ CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps ev
 > 借株可否は常に「分からない」（新規の売り建ては拒否）である。宣言を入れると照会が新しく始まり、空売りの審査の入力が変わる
 > （SIMULATE の既定では照会が失敗するので結果は「分からない」のままだが、それは送り手の構成しだいである）。
 > overlay の既定は `OrderExecution: false` とし、#17 は**所有者の同意を得てから別の窓**で測る（手順 4 の 8）。REST の基準窓は無い。
+>
+> 🔴 **#18・#19 は失敗の倒し方が逆向きである（どちらも REST と同じ）。** #18 は照会の失敗・項目の欠落を「不明」とし、**新規建てを送らない**（fail-closed。
+> 実測の窓で #18 が落ちると、その間の新規建ては発注執行で止まる）。#19 は照会の失敗・項目の欠落を「停止していない」とし、判断は LLM を呼ぶ。
+> どちらも REST へは落とさない（宣言があれば gRPC だけを使う）。
 >
 > 🔴 **#16 はバックテストの失敗の扱いが他と違う。** 送り手が答えた失敗（`InvalidArgument` 等）はその銘柄の欠測、届かない・待ちきれない失敗
 > （`Unavailable`・`DeadlineExceeded`）は例外として送出され、定時駆動がその巡回を失敗として記録する（REST の通信例外と同じ）。
@@ -161,7 +167,7 @@ overlay はリリースの値の**後に**重ねて描かれる（次の手順�
 
 - 🔴 1 行目 `OpenD の Deployment（opend）:` が「変化なし」（または「どちらにも無い」）。**終了コード 3 なら適用しない。**
 - env のキーの差が**追加だけ**で、中身が `Grpc__Port`（configuration・risk-management・audit・report・market-monitor・cost-control・order-execution の 7）と
-  `*__Grpc`（上の経路表の 17 から #6・#17 を除いた 15）だけであること。**削除が 1 つでも出たら適用しない。**
+  `*__Grpc`（上の経路表の 19 から #6・#17 を除いた 17）だけであること。**削除が 1 つでも出たら適用しない。**
 - 変わる Deployment は 11（上の 7 ＋ trade-decision・backtest・information-collection・notification）。OpenD は変わらない。
 
 ### 2. 適用する
@@ -230,7 +236,7 @@ done
 3. **呼び出し側の失敗のログ**（輸送は**成功をログに出さない**。出るのは失敗だけである）:
 
    ```bash
-   for d in cost-control trade-decision market-monitor report information-collection notification risk-management backtest; do
+   for d in cost-control trade-decision market-monitor report information-collection notification risk-management backtest order-execution; do
      echo "== $d"
      kubectl -n ai-stock-trading logs deploy/$d-service --since="$W" \
        | grep -E 'gRPC (照会|呼び出し)(に失敗|がタイムアウト)|gRPC 応答(を読めません|が不正)|サービストークンを取得できないため' || echo '(0 件)'

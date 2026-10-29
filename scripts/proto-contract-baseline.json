@@ -2492,6 +2492,31 @@
             "names": []
           }
         },
+        "GetTradingHaltRequest": {
+          "fields": {},
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetTradingHaltResponse": {
+          "fields": {
+            "kill_switch_engaged": {
+              "number": 1,
+              "type": "bool",
+              "label": "optional"
+            },
+            "trading_paused": {
+              "number": 2,
+              "type": "bool",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
         "GetWorkingEntryOrdersRequest": {
           "fields": {},
           "reserved": {
@@ -3254,6 +3279,12 @@
             "GetStageGate": {
               "request": "GetStageGateRequest",
               "response": "GetStageGateResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetTradingHalt": {
+              "request": "GetTradingHaltRequest",
+              "response": "GetTradingHaltResponse",
               "clientStreaming": false,
               "serverStreaming": false
             },
