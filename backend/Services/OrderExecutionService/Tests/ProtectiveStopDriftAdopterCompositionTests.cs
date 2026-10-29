@@ -275,7 +275,7 @@ public class ProtectiveStopDriftAdopterCompositionTests
         // 🔴 OTel が 2 つ目の計上を集計するのを見届けるため、2 つの系列がそろうまで繰り返す（失敗を握りつぶす再試行ではない。
         // 期限切れはそのまま下の表明で赤になる。変異②はここで期限を使い切る）。exporter は累積で毎回同じ点を再び出すので、
         // 各回の前に sink を空にし、判定と表明は最後の Collect の点だけで行う（重複した点で表明を水増ししない）。
-        // 🔴 #1507, IADR-0395（2026-10-30 追記）: Collect の戻り値は表明しない。4 つ目の競走である。MetricReader.Collect は、同じ reader で
+        // 🔴 #1507, IADR-0395（2026-10-30 追記）: Collect の戻り値は表明しない。4 つ目の競走（相乗り）と読んでいる（CI でどの呼び出しと重なったかは未特定）。MetricReader.Collect は、同じ reader で
         // 収集が既に走っていれば**それに相乗りしてその結果を返す**（OTel 1.16 MetricReader.Collect の `!shouldRunCollect` の枝。
         // プロバイダの ForceFlush・Shutdown が合成の reader 越しに期限つきで回すと、期限切れの false が返る）。足した exporter が
         // 成功を返すかどうかとは別の事象で、CI で 1 回目の Collect が false になって赤になった（#1504・#1507 の 2 回）。
