@@ -339,4 +339,54 @@ public class TradeDecisionParserTests
         malformed.Failure!.Kind.Should().Be(TradeDecisionParseFailureKind.MalformedJson);
         malformed.Failure.Action.Should().BeNull();
     }
+
+    // 🔴 FR-04, #1332, IADR-0597: 文字列を日本語の閉じかぎ「」」で閉じ、JSON の閉じの '"' が無い出力（PoC 10/26 NVDA Buy・10/27 HOOD Sell。
+    // UnterminatedString）。閉じかぎの直後が既知のキー（,"<key>":）か閉じ括弧 '}' のときだけ、閉じかぎの直後に '"' を補って読む。
+    // 補ったことは結果に印を残す（呼び出し側が WRN を出す）。
+    public static TheoryData<string, TradeAction> KagikakkoClosed() => new()
+    {
+        { "{\"action\":\"Sell\",\"rationale\":\"利確の水準に達した」,\"referencePrice\":95.7,\"stopLossDistancePerShare\":2}", TradeAction.Sell },
+        { "{\"action\":\"Buy\",\"rationale\":\"条件 A が成立」, \"referencePrice\":100, \"stopLossDistancePerShare\":3}", TradeAction.Buy },
+        { "{\"action\":\"Hold\",\"rationale\":\"様子見」}", TradeAction.Hold },
+        { "前置き\n{\"action\":\"Sell\",\"rationale\":\"「上値が重い」と判断」,\n  \"referencePrice\":95.7,\"stopLossDistancePerShare\":2\n}", TradeAction.Sell },
+    };
+
+    [Theory]
+    [MemberData(nameof(KagikakkoClosed))]
+    public void 閉じかぎで閉じて引用符が欠けた文字列は補って読む_1332(string output, TradeAction expected)
+    {
+        var screening = TradeDecisionParser.ParseScreening(output);
+        screening.IsUnparseable.Should().BeFalse();
+        screening.Action.Should().Be(expected);
+        screening.RepairedClosingQuote.Should().BeTrue("補ったことを残す");
+
+        var decision = TradeDecisionParser.ParseDetailed(output, signedHeldQuantity: expected == TradeAction.Sell ? 10 : 0);
+        decision.IsUnparseable.Should().BeFalse();
+        decision.Decision.Action.Should().Be(expected);
+        decision.RepairedClosingQuote.Should().BeTrue();
+        if (expected != TradeAction.Hold)
+            decision.Decision.ReferencePrice.Should().BePositive("数値の項目は補修の前後で同じに読める");
+    }
+
+    // 否定形: 補修の形に当たらないものは従来どおり解析不能のまま（閉じかぎの後が未知のキー・閉じかぎの無い閉じない文字列・
+    // 素の '"' の混入）。正しい JSON の中の閉じかぎは補修しない（印も立たない）。
+    [Theory]
+    [InlineData("{\"action\":\"Sell\",\"rationale\":\"利確」,\"price\":95.7}")]
+    [InlineData("{\"action\":\"Hold\",\"rationale\":\"監視銘\"柄に材料なし\"}")]
+    [InlineData("{\"action\":\"Hold\",\"rationale\":\"様子見」 と書いたが閉じない")]
+    public void 補修の形に当たらない閉じない文字列は解析不能のまま_1332(string output)
+    {
+        TradeDecisionParser.ParseScreening(output).IsUnparseable.Should().BeTrue();
+        TradeDecisionParser.ParseDetailed(output).IsUnparseable.Should().BeTrue();
+    }
+
+    [Fact]
+    public void 正しいJSONの中の閉じかぎは補修しない_1332()
+    {
+        var parsed = TradeDecisionParser.ParseScreening("{\"action\":\"Hold\",\"rationale\":\"「様子見」\"}");
+
+        parsed.IsUnparseable.Should().BeFalse();
+        parsed.Rationale.Should().Be("「様子見」");
+        parsed.RepairedClosingQuote.Should().BeFalse();
+    }
 }

@@ -41,6 +41,11 @@ public static class TradeDecisionParser
             return ParsedTradeDecision.Failed(failure.Kind, failure.Detail);
         }
 
+        return ParseDetailedCore(envelope, signedHeldQuantity) with { Repair = envelope.Repair };
+    }
+
+    private static ParsedTradeDecision ParseDetailedCore(Envelope envelope, int? signedHeldQuantity)
+    {
         var dto = envelope.Dto!;
         var action = envelope.Action;
         if (action == TradeAction.Hold)
@@ -120,7 +125,7 @@ public static class TradeDecisionParser
         var rationale = action == TradeAction.Hold
             ? dto.Rationale ?? LlmDecision.Hold.Rationale
             : dto.Rationale ?? string.Empty;
-        return ParsedScreening.Ok(action, rationale);
+        return ParsedScreening.Ok(action, rationale) with { Repair = envelope.Repair };
     }
 
     // #806: 一次・二次で共通の前段（空出力／JSON 抽出／JSON 構文／action）。ここで付く Failure はすべて
@@ -133,6 +138,14 @@ public static class TradeDecisionParser
         }
 
         var json = ExtractJsonObject(llmOutput);
+        var repair = ClosingQuoteRepair.None;
+        if (json is null && ClosingQuoteRepairer.TryRepair(llmOutput, out var repaired, out var shape))
+        {
+            // 🔴 FR-04, #1332, IADR-0597: 文字列を日本語の閉じかぎで閉じ、閉じの '"' が欠けた出力だけを補う（狭い補修。条件は ClosingQuoteRepairer）。
+            json = ExtractJsonObject(repaired);
+            repair = shape;
+        }
+
         if (json is null)
         {
             return Envelope.Failed(TradeDecisionParseFailureKind.NoJsonObject, "JSON オブジェクトを抽出できない");
@@ -151,7 +164,7 @@ public static class TradeDecisionParser
                 return Envelope.Failed(TradeDecisionParseFailureKind.UnknownAction, $"action が不明: {dto.Action}");
             }
 
-            return new Envelope(dto, action, null);
+            return new Envelope(dto, action, null, repair);
         }
         catch (JsonException ex)
         {
@@ -160,7 +173,9 @@ public static class TradeDecisionParser
     }
 
     // 前段の読み取り結果。Failure が null のとき Dto は非 null で Action は Buy/Sell/Hold のいずれか。
-    private readonly record struct Envelope(DecisionDto? Dto, TradeAction Action, TradeDecisionParseFailure? Failure)
+    // #1332, IADR-0597: Repair は閉じの '"' を補って読んだときの形（補っていなければ None）。
+    private readonly record struct Envelope(
+        DecisionDto? Dto, TradeAction Action, TradeDecisionParseFailure? Failure, ClosingQuoteRepair Repair = ClosingQuoteRepair.None)
     {
         public static Envelope Failed(TradeDecisionParseFailureKind kind, string detail) =>
             new(null, TradeAction.Hold, new TradeDecisionParseFailure(kind, detail));
@@ -284,6 +299,107 @@ public static class TradeDecisionParser
     }
 
     /// <summary>
+    /// 🔴 FR-04, #1332, IADR-0597: 文字列を日本語の閉じかぎ「」」で閉じ、JSON の閉じの '"' が欠けた出力を補う。条件はすべて満たすときだけ:
+    /// (1) 抽出が失敗し、最初の '{' からの走査が**末尾で文字列の内側**に終わった（UnterminatedString）。
+    /// (2) 文字列の内側の「」」の直後（空白を除く）が、閉じ括弧 '}'（形 2）か、',' と既知のキー（<c>"action"</c> など出力形式の項目名）と ':'（形 1）である。
+    /// その「」」の直後に '"' を補い、文字列の外へ出たとみなして走査を続ける（1 つの出力で最大 3 か所）。
+    /// (3) 補った結果から JSON オブジェクトが抽出できる（読めなければ補わなかったことにし、従来どおり解析不能）。
+    /// 推測で閉じる位置を決めない（決定3 の懸念）: 閉じる位置は「」」と、その直後の構造（既知のキー・閉じ括弧）が一意に示す。
+    /// </summary>
+    private static class ClosingQuoteRepairer
+    {
+        private const int MaxRepairs = 3;
+
+        private static readonly string[] KnownKeys =
+        [
+            "action", "rationale", "referencePrice", "stopLossDistancePerShare", "expectedProfitPerShare",
+            "entryCondition", "entryReferencePrice",
+        ];
+
+        public static bool TryRepair(string text, out string repaired, out ClosingQuoteRepair shape)
+        {
+            repaired = text;
+            shape = ClosingQuoteRepair.None;
+            var scan = ScanFromFirstBrace(text);
+            if (scan.Start < 0 || scan.CloseIndex is not null || !scan.EndedInString)
+                return false;
+
+            var sb = new System.Text.StringBuilder(text.Length + MaxRepairs);
+            sb.Append(text, 0, scan.Start);
+            var inString = false;
+            var escaped = false;
+            var repairs = 0;
+            for (var i = scan.Start; i < text.Length; i++)
+            {
+                var c = text[i];
+                sb.Append(c);
+                if (!inString)
+                {
+                    if (c == '"') inString = true;
+                    continue;
+                }
+
+                if (escaped) { escaped = false; continue; }
+                if (c == '\\') { escaped = true; continue; }
+                if (c == '"') { inString = false; continue; }
+                if (c != '」' || repairs >= MaxRepairs)
+                    continue;
+
+                var next = FollowingShape(text, i + 1);
+                if (next == ClosingQuoteRepair.None)
+                    continue;
+
+                sb.Append('"');
+                inString = false;
+                repairs++;
+                shape |= next;
+            }
+
+            if (repairs == 0)
+                return false;
+
+            repaired = sb.ToString();
+            return true;
+        }
+
+        // 「」」の直後（空白を除く）の構造。'}' なら形 2、',' と既知のキーと ':' なら形 1、それ以外は None。
+        private static ClosingQuoteRepair FollowingShape(string text, int from)
+        {
+            var i = SkipWhitespace(text, from);
+            if (i >= text.Length)
+                return ClosingQuoteRepair.None;
+            if (text[i] == '}')
+                return ClosingQuoteRepair.BeforeClosingBrace;
+            if (text[i] != ',')
+                return ClosingQuoteRepair.None;
+
+            i = SkipWhitespace(text, i + 1);
+            if (i >= text.Length || text[i] != '"')
+                return ClosingQuoteRepair.None;
+            foreach (var key in KnownKeys)
+            {
+                var end = i + 1 + key.Length;
+                if (end < text.Length
+                    && string.CompareOrdinal(text, i + 1, key, 0, key.Length) == 0
+                    && text[end] == '"'
+                    && SkipWhitespace(text, end + 1) is var colon && colon < text.Length && text[colon] == ':')
+                {
+                    return ClosingQuoteRepair.BeforeKnownKey;
+                }
+            }
+
+            return ClosingQuoteRepair.None;
+        }
+
+        private static int SkipWhitespace(string text, int i)
+        {
+            while (i < text.Length && char.IsWhiteSpace(text[i]))
+                i++;
+            return i;
+        }
+    }
+
+    /// <summary>
     /// FR-04, FR-11, #1332, IADR-0531: 応答の**形の指紋**。解析不能の原本を保全するとき、本文の抜粋と併せて残し、
     /// <c>NoJsonObject</c> の原因の候補（散文だけ・全角の括弧・閉じない文字列・閉じない括弧）を本文を読まずに分ける。
     /// 走査は抽出（<c>ExtractJsonObject</c>）と同じ関数であり、抽出の挙動は変えない。
@@ -346,6 +462,12 @@ public sealed record ParsedTradeDecision(LlmDecision Decision, TradeDecisionPars
     /// <summary>解析不能（出力の形の問題）か。false のとき Decision は LLM の判断そのもの。</summary>
     public bool IsUnparseable => Failure is not null;
 
+    /// <summary>#1332, IADR-0597: 閉じの '"' を補って読んだときの形（補っていなければ None）。</summary>
+    public ClosingQuoteRepair Repair { get; init; }
+
+    /// <summary>#1332, IADR-0597: 閉じの '"' を補って読んだか（呼び出し側が WRN を出す）。</summary>
+    public bool RepairedClosingQuote => Repair != ClosingQuoteRepair.None;
+
     public static ParsedTradeDecision Ok(LlmDecision decision) => new(decision, null);
 
     public static ParsedTradeDecision Failed(
@@ -362,6 +484,12 @@ public sealed record ParsedScreening(TradeAction Action, string Rationale, Trade
     /// <summary>解析不能（出力の形の問題）か。false のとき Action は LLM の判断そのもの。</summary>
     public bool IsUnparseable => Failure is not null;
 
+    /// <summary>#1332, IADR-0597: 閉じの '"' を補って読んだときの形（補っていなければ None）。</summary>
+    public ClosingQuoteRepair Repair { get; init; }
+
+    /// <summary>#1332, IADR-0597: 閉じの '"' を補って読んだか（呼び出し側が WRN を出す）。</summary>
+    public bool RepairedClosingQuote => Repair != ClosingQuoteRepair.None;
+
     /// <summary>関心あり（Buy/Sell）＝二次本判断へ進める。Hold と解析不能はいずれも false（打ち切り）。</summary>
     public bool IsInterested => Failure is null && Action != TradeAction.Hold;
 
@@ -372,6 +500,22 @@ public sealed record ParsedScreening(TradeAction Action, string Rationale, Trade
 
     public static ParsedScreening Failed(TradeDecisionParseFailure failure) =>
         new(TradeAction.Hold, LlmDecision.Hold.Rationale, failure);
+}
+
+/// <summary>
+/// 🔴 FR-04, #1332, IADR-0597: 閉じの '"' を補った形（複数か所を補えば両方が立つ）。
+/// </summary>
+[Flags]
+public enum ClosingQuoteRepair
+{
+    /// <summary>補っていない。</summary>
+    None = 0,
+
+    /// <summary>形 1: 「」」の直後が ',' と既知のキー（後ろに項目が続く）。</summary>
+    BeforeKnownKey = 1,
+
+    /// <summary>形 2: 「」」の直後が閉じ括弧 '}'（最後の項目）。</summary>
+    BeforeClosingBrace = 2,
 }
 
 /// <summary>#290: 解析失敗の種別（FR-11 の記録用。挙動はいずれも Hold＝取引しない）。</summary>
