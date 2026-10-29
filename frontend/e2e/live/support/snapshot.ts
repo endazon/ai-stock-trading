@@ -158,7 +158,7 @@ export default async function tradingGlobalSetup(): Promise<void> {
     snapshot = await restoreCore.takeSnapshot(client, runId);
   } catch (e) {
     await failNotReady(
-      `[e2e-live] trading のスナップショットを取れない（exit ${NOT_READY_EXIT_CODE}）: ${e instanceof Error ? e.message : String(e)}\n`,
+      `[e2e-live] trading の前提未整備（exit ${NOT_READY_EXIT_CODE}）。スナップショットを取れない: ${e instanceof Error ? e.message : String(e)}\n`,
     );
   }
   await ctx.dispose();
