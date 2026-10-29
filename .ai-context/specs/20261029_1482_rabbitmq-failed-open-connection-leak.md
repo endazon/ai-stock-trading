@@ -69,14 +69,14 @@ git grep -n "RabbitMQ.Client" -- . ; git grep -n "7\.1\.2" -- . ':!*.json'
 - 7.2.0〜7.2.2 の変更履歴に破壊的変更は無い（公開 API の追加と不具合の是正）。nuspec の依存の組は同じ。アセンブリの版は 7.0.0.0 のまま。
   Wolverine.RabbitMQ 6.24.5 が参照する RabbitMQ.Client の型・メンバ 142 件を 7.2.2 に対して解決し、欠けは無い（検査用のコンソールで、
   ASP.NET の共有フレームワークにある System.Threading.RateLimiting を読めない 1 件を除く。7.1.2 も同じ依存を持つ）。
-- 基盤（MSP）は `dotnet list package --include-transitive` で RabbitMQ.Client 7.1.2（WolverineFx.RabbitMQ 6.24.4 の推移）。**基盤と食い違う**ので、
-  IADR-0595 で受容し、`Directory.Packages.props` に注記した。MSP も同じ欠陥を持つ。
+- 基盤（MSP）は起票時点で `dotnet list package --include-transitive` により RabbitMQ.Client 7.1.2（WolverineFx.RabbitMQ 6.24.4 の推移）で、同じ欠陥を持っていた。
+  ［2026-10-29 追記］MSP#2301 の是正（MSP#2302・`170aca7f`）で MSP も 7.2.2 になり、基盤と同じ版になった。
 - 推移ピン留めの理由は不具合の是正であり CVE ではない（`Directory.Packages.props` と IADR-0595 に記載）。
 - Integration E2E（実ブローカ）は CI で確かめる。
 
 ## 受け入れ基準（→ 試験）
 
-- [x] 開き損ねた接続は、裏で自動回復を続けない（偽のブローカへの接続の試みは 1 回）。是正前は赤。
+- [x] 開き損ねた接続は、裏で自動回復を続けない（偽のブローカへの接続の試みは、開いた直後の数 n が 1 か 2 で、その後 3 秒増えない）。是正前は赤。
 - [x] 全サービスの解決版が 7.2.2 になる（推移ピン留め。`project.assets.json` で確認）。全単体試験・Architecture が緑。
 - [ ] 実ブローカの遅れた起動での本数（平常 22 本）: CI の Integration E2E と PoC の再起動で確かめる（本 PR では実機の再現環境が無い）。
 
