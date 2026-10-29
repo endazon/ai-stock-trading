@@ -203,9 +203,10 @@ public class MinimumEntryNotionalDecisionTests
     }
 
     // T-10-2313: 同じ AAPL の 13 株でも、保有中（買い増し）・未約定ありでは LLM を呼ぶ（決済の判断を残す）。買いの結論は LLM の後に見送る。
+    // ［2026-10-29 / #1486・IADR-0594 決定2］保有 0 で未約定ありは LLM の前で見送るので、未約定ありは保有中の銘柄で試す（T-10-3078 が保有 0 を固定する）。
     [Theory]
     [InlineData(10, false)]
-    [InlineData(0, true)]
+    [InlineData(10, true)]
     public async Task T_10_2313_保有中や未約定ありではLLMを呼び買いはサイジングの後に見送る(int held, bool working)
     {
         var probe = Create(Context(PocEquity, 4_500m), new FakeHeld(held, working));

@@ -3,15 +3,15 @@ title: ログ・可観測性仕様書（AST）
 type: observability-spec
 status: draft
 created: 2026-07-19
-updated: 2026-10-24
+updated: 2026-10-29
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [NFR-01, NFR-02, NFR-03, NFR-07, NFR-09, FR-04, FR-09, FR-10, FR-02, FR-14, FR-06, FR-11, FR-08]
 adrs: [ADR-0075, ADR-0074, ADR-0006, ADR-0045, ADR-0003, ADR-0064]
-iadrs: [IADR-0583, IADR-0582, IADR-0573, IADR-0572, IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441, IADR-0444, IADR-0463, IADR-0471, IADR-0495, IADR-0500, IADR-0521, IADR-0104, IADR-0522, IADR-0525, IADR-0072, IADR-0555]
-specs: [20261023_1442_order-executed-republish, 20261023_1433_1434_llm-precheck-cutoff-theme-and-closed-position, 20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260930_1113_entry-blockers-before-llm, 20261001_1130_held-add-on-before-llm, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261010_1290_screening-rationale-garble, 20261015_1311_rag-search-degraded-mark, 20261017_1383_policy-revision-thinking-max-tokens]
-issues: [#1442, #1434, #1311, #24, #287, #689, #751, #891, #942, #856, #1051, #1113, #1130, #1176, #1174, #1286, #243, #1290, #1383]
+iadrs: [IADR-0594, IADR-0583, IADR-0582, IADR-0573, IADR-0572, IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441, IADR-0444, IADR-0463, IADR-0471, IADR-0495, IADR-0500, IADR-0521, IADR-0104, IADR-0522, IADR-0525, IADR-0072, IADR-0555]
+specs: [20261029_1486_entry-unfilled-cancel-and-pre-llm-skip, 20261023_1442_order-executed-republish, 20261023_1433_1434_llm-precheck-cutoff-theme-and-closed-position, 20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260930_1113_entry-blockers-before-llm, 20261001_1130_held-add-on-before-llm, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261010_1290_screening-rationale-garble, 20261015_1311_rag-search-degraded-mark, 20261017_1383_policy-revision-thinking-max-tokens]
+issues: [#1486, #1442, #1434, #1311, #24, #287, #689, #751, #891, #942, #856, #1051, #1113, #1130, #1176, #1174, #1286, #243, #1290, #1383, planning#852]
 -->
 
 
@@ -63,7 +63,7 @@ AST 10 Worker  --OTLP(gRPC :4317)-->  otel-collector  --export-->  Prometheus (m
 | --- | --- | --- | --- |
 | 取引サイクル | `ast_information_items_collected_total` | — | 収集件数。**空巡回も 0 として出す**（「回って 0 件」と「止まっている」を区別するため） |
 | 取引サイクル | `ast_trade_cycle_decisions_total` | `action` / `trigger` | 判断回数と buy / sell / 見送りの内訳 |
-| 取引サイクル | `ast_trade_cycle_decision_skips_total` | `reason` / `trigger` | 🔴 **見送りの理由**の内訳（方針なし・Hold・鮮度切れ・数量 0・裸の新規売り・保有不明・新規建てが審査で必ず拒否される〔`EntryBlockedByRiskControls`。LLM を呼ぶ前〕・保有中の買い増しが審査で必ず拒否される〔`AddOnBlockedByRiskControls`。LLM の後〕・新規建てに使える金額の上限が最小の名目額に届かない〔`EntryCapacityBelowMinimumNotional`。LLM の前〕・サイジングの名目額が最小に満たない〔`SizedBelowMinimumNotional`。LLM の後〕・残枠が現在値の 1 株に届かない〔`EntryCapacityBelowOneShare`。LLM の前。従来の数量 0 から移った分〕・監視銘柄の外の保有銘柄の出口専用の判断で新規建てが返った〔`ExitOnlyOpenOutsideWatchlist`。LLM の後〕・出口専用の判断で保有が 0 または不明〔`ExitOnlyWithoutHolding`。LLM の前〕・処理中の決済が建玉を覆いどの結論も発注にならない〔`InFlightCloseCoversPosition`。LLM の前〕・判断由来の決済の約定の直後でブローカーの建玉が 0〔`BrokerPositionClosed`。LLM の前。従来の裸の新規売りの見送りから移った分〕・月次 LLM 費用上限の 100% 到達で停止中〔`LlmCostCapHalted`。LLM の前。定時・価格変動の両方〕・日報の無応答時の停止〔`DailyReportNoResponseHalted`。LLM の前〕ほか 24 種）。上の `action=no-trade` は「何回見送ったか」しか語らず、**平常（Hold）と異常（保有照会が壊れて新規建てだけが静かに止まっている）が同じ 1 値に落ちる**。**置き換えではなく並置**であり、1 回の見送りで両方が 1 ずつ増える |
+| 取引サイクル | `ast_trade_cycle_decision_skips_total` | `reason` / `trigger` | 🔴 **見送りの理由**の内訳（方針なし・Hold・鮮度切れ・数量 0・裸の新規売り・保有不明・新規建てが審査で必ず拒否される〔`EntryBlockedByRiskControls`。LLM を呼ぶ前〕・保有中の買い増しが審査で必ず拒否される〔`AddOnBlockedByRiskControls`。LLM の後〕・新規建てに使える金額の上限が最小の名目額に届かない〔`EntryCapacityBelowMinimumNotional`。LLM の前〕・サイジングの名目額が最小に満たない〔`SizedBelowMinimumNotional`。LLM の後〕・残枠が現在値の 1 株に届かない〔`EntryCapacityBelowOneShare`。LLM の前。従来の数量 0 から移った分〕・監視銘柄の外の保有銘柄の出口専用の判断で新規建てが返った〔`ExitOnlyOpenOutsideWatchlist`。LLM の後〕・出口専用の判断で保有が 0 または不明〔`ExitOnlyWithoutHolding`。LLM の前〕・処理中の決済が建玉を覆いどの結論も発注にならない〔`InFlightCloseCoversPosition`。LLM の前〕・判断由来の決済の約定の直後でブローカーの建玉が 0〔`BrokerPositionClosed`。LLM の前。従来の裸の新規売りの見送りから移った分〕・月次 LLM 費用上限の 100% 到達で停止中〔`LlmCostCapHalted`。LLM の前。定時・価格変動の両方〕・日報の無応答時の停止〔`DailyReportNoResponseHalted`。LLM の前〕・保有 0 で未約定の新規建てがある〔`EntryOrderWorking`。LLM の前。従来の Hold から移った分〕ほか 25 種）。上の `action=no-trade` は「何回見送ったか」しか語らず、**平常（Hold）と異常（保有照会が壊れて新規建てだけが静かに止まっている）が同じ 1 値に落ちる**。**置き換えではなく並置**であり、1 回の見送りで両方が 1 ずつ増える |
 | 取引サイクル | `ast_trade_cycle_decision_duration_ms_*` | `trigger` | 判断レイテンシ（ヒストグラム）。**1 サービス内の判断 1 回**であり、端点間ではない |
 | 取引サイクル | `ast_trade_cycle_order_completion_latency_ms_*` | `trigger` | **起点イベント → 発注完了**の端点間所要（ヒストグラム）。価格変動検知起点は `trigger=price-movement` の系列で読む（目標 5 分＝300,000 ms） |
 | 取引サイクル | `ast_trade_cycle_record_completion_latency_ms_*` | `trigger` | **起点イベント → 記録完了**（監査台帳へ記録した時点）の端点間所要。定時サイクルは `trigger=scheduled` の系列で読む（目標 10 分＝600,000 ms） |

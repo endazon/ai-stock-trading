@@ -445,6 +445,14 @@ public class DecisionCloseUnfilledCancellerTests
             return _inner.FindUnfilledDecisionCloses(placedAtOrBefore, limit, excludedOrderIds, placedOnOrAfter);
         }
 
+        public IReadOnlyList<ExecutionRecord> FindUnfilledDecisionOrders(
+            PositionEffect effect, DateTimeOffset placedAtOrBefore, int limit, IReadOnlyCollection<string>? excludedOrderIds = null,
+            DateTimeOffset? placedOnOrAfter = null)
+        {
+            Reads++;
+            return _inner.FindUnfilledDecisionOrders(effect, placedAtOrBefore, limit, excludedOrderIds, placedOnOrAfter);
+        }
+
         public bool RenewTracking(string orderId, DateTimeOffset trackedFrom) => _inner.RenewTracking(orderId, trackedFrom);
 
         public bool UpdateOutcome(
