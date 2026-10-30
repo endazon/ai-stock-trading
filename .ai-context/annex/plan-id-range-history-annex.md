@@ -97,3 +97,6 @@ trace ブロック規約〔ADR-0029 決定4〕の値域検査が読む）。
 - **2026-10-30 に 0076 へ**〔ADR-0076 PoC の経路の発注先は moomoo-sim とし、PoC の構成（`values-local.yaml`）に `broker.tier: moomoo-sim` を書く（ADR-0072 の補完）。planning#821 の追加の裁定（planning#844 で追加）。Accepted。前回の実測（`a47c050`）以降、既存の AST 計画 ADR の状態の変更は 0 件（`07_adr/` の差分は ADR-0076 の追加のほか、ADR-0072 への日付つきの補完の注と README のみ。状態は Accepted のまま）。本リポの追随は #1481（週次監査の自動起票）。ADR-0076 決定 1 の構成の変更（`values-local.yaml` は 2026-10-30 の develop `3f9e1c9e` でも発注先を書かず、チャートの既定の paper に委ねている）は本 PR の対象外〕。
   **2026-10-30 実測**: 計画リポの `origin/main`（`b06dafe`。`git rev-parse --is-shallow-repository` → `true` のため `git worktree add --detach origin/main` で展開した木で実行。
   ファイルの実在の検査であり履歴は使わない）で `node tools/doc-checks/gen-plan-ranges.js --check` が exit 0、ai-stock-trading は ADR **[1, 76]・76 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。
+- **2026-10-30 に 0077 へ**〔ADR-0077 判断由来の新規建ての指値も、N 分未約定なら取り消すだけにする。PoC の経路で有効にし、本番の既定は無効のままとする（ADR-0067 決定 4 の部分改定）。planning#852（planning#859 で追加）〕。#1519（PoC の構成で新規建ての取消を有効にする PR）が ADR-0077 を引くため、同じ PR で引き直した。
+  **2026-10-30 実測**: 計画リポの `origin/main`（`2085b15`。`git rev-parse --is-shallow-repository` → `true` のため `git worktree add --detach origin/main` で展開した木で実行。
+  ファイルの実在の検査であり履歴は使わない）で `node tools/doc-checks/gen-plan-ranges.js --check` が exit 0、ai-stock-trading は ADR **[1, 77]・77 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。

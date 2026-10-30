@@ -1,19 +1,20 @@
 namespace AiStockTrading.Shared.Kernel.Trading;
 
-// 🔴 FR-10, FR-19, #1486, IADR-0594 決定1: 判断由来の**新規建て**の指値の未約定時の取消の既定（発注執行が読む）。
+// 🔴 FR-10, FR-19, 計画 ADR-0077, #1486, #1519, IADR-0594 決定1, IADR-0606: 判断由来の**新規建て**の指値の未約定時の取消の既定（発注執行が読む）。
 //
-// 🔴 **計画の裁定待ち**（planning#852）。計画 05_trading-assumptions §5 にある取消は判断由来の**決済**だけ（ADR-0067 の射程）で、
-// 新規建てには規則も値も無い。仕組みだけを置き、**既定は無効**にする。有効化は裁定の後とする（本番の values.yaml・PoC の values-local.yaml とも有効にしない）。
-// 有効にしたときの N・回数の上限は、新しい値を作らず決済側の定数を共用する（**暫定の初期値**。裁定で値が決まれば、ここを決まった値へ改める）。
-// 既定値はリスク管理の TradingDefaults が公開し、TradingDefaultsTests が固定する。
+// 計画 ADR-0077（利用者裁定 2026-10-30・planning#852）: N は 15 分・回数の上限は 1 建玉 1 日 1 回（05_trading-assumptions §5 の新規建ての 2 行）。
+// **既定は無効**のまま（本番の values.yaml も無効）。PoC の経路（values-local.yaml）だけが有効にする（決定 4）。
+// N・回数は決済側の定数を**共用したまま**にする（IADR-0606。裁定の値が決済と同じであり、決済と同じ条件で実績を比べるため）。
+// 🔴 共用でも、決済の値の変更が新規建てへ黙って及ばないよう、TradingDefaultsTests が新規建ての値を**字句で** 15・1 に固定する
+// （決済の値を変えるとその試験が赤になり、新規建ての値をどうするかを同じ変更で決めさせる。ADR-0077 決定 2 の注意）。
 public static class DecisionEntryUnfilledCancelDefaults
 {
-    /// <summary>既定は<b>無効</b>（裁定待ち。planning#852）。</summary>
+    /// <summary>既定は<b>無効</b>（計画 ADR-0077 決定 2・4。本番は無効のまま、PoC の経路だけが有効にする）。</summary>
     public const bool Enabled = false;
 
-    /// <summary>N の暫定の初期値（分）。決済側（§5・ADR-0067 決定2）の値を共用する。</summary>
+    /// <summary>N（分）。計画 ADR-0077 決定 2 の 15 分。決済側（§5・ADR-0067 決定2）の定数を共用する（IADR-0606）。</summary>
     public const int UnfilledMinutes = DecisionCloseUnfilledCancelDefaults.UnfilledMinutes;
 
-    /// <summary>回数の上限の暫定の初期値（1 建玉・1 市場の現地取引日あたり）。決済側の値を共用する。</summary>
+    /// <summary>回数の上限（1 建玉・1 市場の現地取引日あたり）。計画 ADR-0077 決定 2 の 1 回。決済側の定数を共用する（IADR-0606）。</summary>
     public const int MaxCancelsPerPositionPerDay = DecisionCloseUnfilledCancelDefaults.MaxCancelsPerPositionPerDay;
 }

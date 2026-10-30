@@ -161,6 +161,10 @@ services:
       - { name: Reconciliation__IntervalHours, value: "1" }
       - { name: Reconciliation__BatchSize, value: "50" }
       - { name: DecisionCloseUnfilledCancel__Enabled, value: "true" }  # ← 取消（既定 false＝本番既定）
+      # 🔴 FR-10, FR-19, 計画 ADR-0077 決定 4, #1519, IADR-0606: 判断由来の**新規建て**の指値も、N 分（15 分）未約定なら取り消すだけにする
+      #    （1 建玉 1 日 1 回。N・回数は既定値が裁定の値と同じなので書かない）。本番の values.yaml には置かない（既定は無効のまま）。
+      #    取消が効くのは発注先が moomoo-sim のときだけ（計画 ADR-0076。paper は即時に約定し、取り消す対象が残らない）。
+      - { name: DecisionEntryUnfilledCancel__Enabled, value: "true" }
       # NFR-06, IADR-0448, IADR-0559, #1391: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
