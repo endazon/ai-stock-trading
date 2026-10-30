@@ -3,15 +3,15 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-10-29
+updated: 2026-10-30
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-04, FR-07, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-09, NFR-10, NFR-11, NFR-13, FR-10, FR-02, FR-13, NFR-02, NFR-06]
-adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040, ADR-0050, ADR-0044, ADR-0064, ADR-0048, ADR-0051, ADR-0067]
-iadrs: [IADR-0594, IADR-0593, IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496, IADR-0210, IADR-0499, IADR-0505, IADR-0342, IADR-0524, IADR-0526, IADR-0538, IADR-0544, IADR-0357, IADR-0535, IADR-0536, IADR-0539, IADR-0551, IADR-0553, IADR-0560, IADR-0570, IADR-0573]
-specs: [20261029_1486_entry-unfilled-cancel-and-pre-llm-skip, 20261029_1485_scheduled-decision-immediate-publish, 20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production, 20261007_1202_cutover-runbook-adr0040-checks, 20261007_1197_llm-pricing-unset-guard, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261009_1228_planning741-ruling-records, 20261010_1295_claude-5-5-models, 20261010_1300_report-draft-knowledge-copy, 20261011_1296_remove-llm-migration-stage, 20261014_msp1919_host-memory-prereq, 20261015_856_held-warning-throttle-and-ghost-s1, 20261016_1365_daily-policy-self-contained-thresholds, 20261014_1339_close-limit-tif-and-release, 20261016_1339_decision-close-unfilled-cancel, 20261017_1339_operations-unfilled-decision-close, 20261017_1343_release-closes-entry-protection, 20261017_1305_unknown-model-price-setting, 20261020_1395_s1-yield-cancel-suppresses-abandon-notice, 20261023_GHSA-j4qv_mesh-injection-handover, 20261023_1442_order-executed-republish]
-issues: [#1339, #1493, #1494, #1495, #1486, #1485, #1423, #1442, #1395, #13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, #1192, #1202, #1214, #1197, #1228, #1275, #1295, #1296, #1300, #1365, #1339, #1343, #1305, MSP#266, MSP#635, planning#54, planning#676, planning#704, planning#741, planning#783, planning#784, MSP#1919, planning#852]
+adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040, ADR-0050, ADR-0044, ADR-0064, ADR-0048, ADR-0051, ADR-0067, ADR-0077, ADR-0076]
+iadrs: [IADR-0606, IADR-0594, IADR-0593, IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496, IADR-0210, IADR-0499, IADR-0505, IADR-0342, IADR-0524, IADR-0526, IADR-0538, IADR-0544, IADR-0357, IADR-0535, IADR-0536, IADR-0539, IADR-0551, IADR-0553, IADR-0560, IADR-0570, IADR-0573]
+specs: [20261030_1519_entry-unfilled-cancel-poc, 20261029_1486_entry-unfilled-cancel-and-pre-llm-skip, 20261029_1485_scheduled-decision-immediate-publish, 20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production, 20261007_1202_cutover-runbook-adr0040-checks, 20261007_1197_llm-pricing-unset-guard, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261009_1228_planning741-ruling-records, 20261010_1295_claude-5-5-models, 20261010_1300_report-draft-knowledge-copy, 20261011_1296_remove-llm-migration-stage, 20261014_msp1919_host-memory-prereq, 20261015_856_held-warning-throttle-and-ghost-s1, 20261016_1365_daily-policy-self-contained-thresholds, 20261014_1339_close-limit-tif-and-release, 20261016_1339_decision-close-unfilled-cancel, 20261017_1339_operations-unfilled-decision-close, 20261017_1343_release-closes-entry-protection, 20261017_1305_unknown-model-price-setting, 20261020_1395_s1-yield-cancel-suppresses-abandon-notice, 20261023_GHSA-j4qv_mesh-injection-handover, 20261023_1442_order-executed-republish]
+issues: [#1519, #1339, #1493, #1494, #1495, #1486, #1485, #1423, #1442, #1395, #13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, #1192, #1202, #1214, #1197, #1228, #1275, #1295, #1296, #1300, #1365, #1339, #1343, #1305, MSP#266, MSP#635, planning#54, planning#676, planning#704, planning#741, planning#783, planning#784, MSP#1919, planning#852]
 -->
 
 
@@ -757,16 +757,17 @@ DecisionCloseUnfilledCancel:
 
 取消は注文のライフサイクル台帳（`order_lifecycle_events`）に、理由が `判断由来の決済の指値が未約定のため系が取消` で始まる行として残る。
 
-#### 判断由来の新規建ての指値の未約定時の取消（既定は無効）
+#### 判断由来の新規建ての指値の未約定時の取消（既定は無効・PoC の経路は有効）
 
 同じ常駐が、取引判断由来の**新規建て**の指値にも同じ形の取消を持つ（構成の節は `DecisionEntryUnfilledCancel`。値・範囲・止め方は上と同じ）。
-🔴 **計画の裁定待ちのため、本番・PoC の経路のどちらでも有効にしない**（裁定の後に、上と同じ入れ方で `DecisionEntryUnfilledCancel__Enabled` を足す）。
+**計画の裁定（2026-10-30）により、PoC の経路（`values-local.yaml`）だけで有効にしている**。本番の `values.yaml` には置かず、既定の無効のままである。
+取消が実際に働くのは、発注先が moomoo-sim のときだけである（内蔵の paper は即時に約定し、取り消す対象が残らない）。
 
 ```yaml
 DecisionEntryUnfilledCancel:
-  Enabled: false # 既定。計画の裁定の後に true へ
-  UnfilledMinutes: 15 # 決済の取消と同じ暫定の初期値
-  MaxCancelsPerPositionPerDay: 1 # 1 建玉（銘柄・市場・新規建ての方向）・1 市場の現地取引日あたり
+  Enabled: false # 既定（本番）。PoC の経路は values-local で true
+  UnfilledMinutes: 15 # 計画 §5 の新規建ての N（決済の取消と同じ値。定数は共用している）
+  MaxCancelsPerPositionPerDay: 1 # 1 建玉（銘柄・市場・新規建ての方向）・1 市場の現地取引日あたり。決済の取消とは別に数える
 ```
 
 ログは上の表の「決済」が「新規建て」になる（例: WRN `判断由来の新規建ての指値を取り消しました…`）。ライフサイクル台帳の理由は `判断由来の新規建ての指値が未約定のため系が取消` で始まる。

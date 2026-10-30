@@ -600,6 +600,34 @@ jobs:
           assert_halt_query "moomoo-sim" "$(helm template ast "$CHART" --set broker.tier=moomoo-sim)"
           assert_halt_query "values-local" "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
           echo "ok: 発注執行は 3 描画とも停止状態の照会先と s2s の資格情報を持つ"
+      # 🔴 FR-10, FR-19, 計画 ADR-0072 決定 1・ADR-0077 決定 4, #1424, #1519, IADR-0606: 判断由来の指値の未約定時の取消（決済・新規建て）は
+      #    PoC の経路（values-local）だけで有効にし、本番の既定（values.yaml・moomoo-sim の切替だけ）には現れない。N・回数は既定値のまま
+      #    （裁定の値と同じ）なので、values-local にも N・回数のキーを書かない。order-execution の Deployment の env で固定する。
+      - name: Assert decision-limit unfilled cancels are local-only (計画 ADR-0072・ADR-0077)
+        run: |
+          set -eu
+          oe() { awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: order-execution-service/'; }
+          local_doc="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" | oe)"
+          [ -n "$local_doc" ] || { echo "::error::values-local で order-execution の Deployment が描画されない。"; exit 1; }
+          for key in DecisionCloseUnfilledCancel__Enabled DecisionEntryUnfilledCancel__Enabled; do
+            printf '%s' "$local_doc" | grep -A1 "name: ${key}$" | grep -q 'value: "true"' \
+              || { echo "::error::values-local の order-execution に ${key}=\"true\" が描画されない（PoC の経路で取消が有効にならない）。"; exit 1; }
+          done
+          # N・回数は既定値（裁定の値と同じ 15 分・1 回）。上書きのキーを書いていない。
+          if printf '%s' "$local_doc" | grep -Eq 'name: Decision(Close|Entry)UnfilledCancel__(UnfilledMinutes|MaxCancelsPerPositionPerDay)$'; then
+            echo "::error::values-local が取消の N・回数を上書きしている（計画 ADR-0067 決定 2・ADR-0077 決定 2 の値は既定値のまま）。"; exit 1
+          fi
+          for label in "既定描画" "moomoo-sim"; do
+            if [ "$label" = "既定描画" ]; then out="$(helm template ast "$CHART")"; else out="$(helm template ast "$CHART" --set broker.tier=moomoo-sim)"; fi
+            doc="$(printf '%s' "$out" | oe)"
+            [ -n "$doc" ] || { echo "::error::[$label] order-execution の Deployment が描画されない。"; exit 1; }
+            if printf '%s' "$doc" | grep -Eq 'name: Decision(Close|Entry)UnfilledCancel__'; then
+              echo "::error::[$label] 本番の既定に判断由来の取消の構成が現れた（計画 ADR-0072・ADR-0077 決定 4: 本番の既定は無効のまま）。"
+              printf '%s' "$doc" | grep -A1 -E 'name: Decision(Close|Entry)UnfilledCancel__' || true
+              exit 1
+            fi
+          done
+          echo "ok: 判断由来の取消（決済・新規建て）は values-local だけで有効で、本番の既定には現れない"
       # #842, IADR-0347 追記: moomoo の調整値は「空（""）・未設定（null）＝アダプタ既定＝env を注入しない」。
       #    `{{- with }}` は数値の 0 を空と同じに扱い、`--set moomoo.stopLimitOffsetRatio=0` が既定 1% へ黙って戻っていた
       #    （replyTimeoutSeconds=0 は起動時に停止するはずが 15 秒へ戻っていた）。0 が値として届き、空は届かないことを固定する。

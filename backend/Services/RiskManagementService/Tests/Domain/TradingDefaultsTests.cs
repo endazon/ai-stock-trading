@@ -223,12 +223,17 @@ public class TradingDefaultsTests
             "ADR-0067 決定2: 有効時の N は相場操縦の検知の窓より長い");
     }
 
-    // 🔴 T-10-3079, FR-10, FR-19, #1486, IADR-0594 決定1: 判断由来の**新規建て**の取消は既定で無効（計画の裁定待ち。planning#852）。
-    // 有効にしたときの暫定の初期値は決済側の値を共用する（新しい値を作らない）。裁定で値が決まったら、この試験と既定を一緒に改める。
+    // 🔴 T-10-3079, FR-10, FR-19, 計画 ADR-0077 決定 2・4, #1486, #1519, IADR-0594 決定1, IADR-0606: 判断由来の**新規建て**の取消は
+    // 既定で無効（本番は無効のまま。PoC の経路だけが values-local で有効にする）。N は 15 分・回数の上限は 1 回（05_trading-assumptions §5 の新規建ての行）。
+    // 🔴 値は決済側の定数を共用している（IADR-0606）。**新規建ての値は字句で固定する**——決済の値を見直すとこの試験が赤になり、
+    // 新規建ての値を同じ変更でどうするか（共用を続けるか切り離すか）を決めさせる（ADR-0077 決定 2「他方の値が意図せず動かないことを確かめる」）。
     [Fact]
-    public void 判断由来の新規建ての未約定時の取消は既定で無効で値は決済側を共用する()
+    public void 判断由来の新規建ての未約定時の取消は既定で無効でNは15分で回数は1回()
     {
-        TradingDefaults.DecisionEntryUnfilledCancelEnabled.Should().BeFalse("計画に規則が無い（planning#852 の裁定待ち）");
+        TradingDefaults.DecisionEntryUnfilledCancelEnabled.Should().BeFalse("計画 ADR-0077 決定 4: 本番の既定は無効");
+        TradingDefaults.DecisionEntryUnfilledCancelMinutes.Should().Be(15, "計画 ADR-0077 決定 2・§5 の新規建ての N");
+        TradingDefaults.DecisionEntryUnfilledCancelMaxPerPositionPerDay.Should().Be(1, "計画 ADR-0077 決定 2・§5 の新規建ての回数の上限");
+        // 共用していること自体は IADR-0606 の判断。値が同じ間だけ成り立つ（切り離したらこの行を外す）。
         TradingDefaults.DecisionEntryUnfilledCancelMinutes.Should().Be(TradingDefaults.DecisionCloseUnfilledCancelMinutes);
         TradingDefaults.DecisionEntryUnfilledCancelMaxPerPositionPerDay.Should().Be(TradingDefaults.DecisionCloseUnfilledCancelMaxPerPositionPerDay);
     }
