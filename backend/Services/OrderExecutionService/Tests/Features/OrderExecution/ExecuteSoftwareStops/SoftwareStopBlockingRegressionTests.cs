@@ -76,12 +76,22 @@ public class SoftwareStopBlockingRegressionTests
 
         // #820 の 11 巡目監査（BLK-11-1）: 建玉照会は OpenD への RPC であり、その**待ちのあいだ**に
         // OrderFillPollingService が発注記録を終端化し得る。その競合を決定的に再現するための差し込み口。
+        // 🔴 NFR, #1521: **一度だけ発火する**（発火の前に外す）。割り込みたいのは承認の建玉照会の最中の 1 回だけである。
+        // 繰り返し発火させると、差し込み口から呼んだ決済（TryCloseAsync）が直列化の中で行う建玉の再照会（#1447 / IADR-0575 決定 1）で
+        // もう一度発火し、同じ鍵を入れ子に取りに行って待ちの上限（2 分）まで止まる（IADR-0575「入れ子にしない」）。
         public Func<Task>? DuringGetPositions { get; set; }
+
+        // 🔴 NFR, #1521: 差し込み口が発火した回数（入れ子に呼ばれていないことを試験が表明する）。
+        public int DuringGetPositionsFired { get; private set; }
 
         public async Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default)
         {
             if (DuringGetPositions is { } hook)
+            {
+                DuringGetPositions = null;
+                DuringGetPositionsFired++;
                 await hook().ConfigureAwait(false);
+            }
             return Positions;
         }
     }
@@ -1129,6 +1139,8 @@ public class SoftwareStopBlockingRegressionTests
 
         // フックが発火し、終端の記録が現れたことを先に確かめる（現れていなければ、このテストは何も見ていない）。
         // ※ これは「交錯そのもの」を示すものではない——欠陥の検出は下の結果側の assert が担う。
+        // NFR, #1521: 差し込み口は建玉照会の最中に 1 回だけ割り込む（入れ子に発火していない）。
+        f.Broker.DuringGetPositionsFired.Should().Be(1, "差し込み口は承認の建玉照会の最中に 1 回だけ割り込む");
         var priorEntry = f.Store.FindByDecisionId(prior.EntryDecisionId);
         priorEntry.Should().NotBeNull("建玉照会の最中に発注記録が現れていなければ、窓そのものを置けていない");
         priorEntry!.Status.Should().Be(OrderStatus.Filled);
@@ -1177,6 +1189,10 @@ public class SoftwareStopBlockingRegressionTests
         var approved = Approved();
         var result = await f.Execution.ExecuteAsync(approved);
 
+        // 🔴 NFR, #1521, IADR-0575（入れ子にしない）: 差し込み口は承認の建玉照会の最中に 1 回だけ発火する。
+        // 決済（TryCloseAsync）は直列化の中で建玉を照会し直すので、そこで差し込み口がもう一度発火すると、同じ鍵を入れ子に取りに行き、
+        // 待ちの上限（2 分）を使い切ってから据え置きで戻る —— 緑のまま 2 分かかっていた（CI の ci-latency の赤）。
+        f.Broker.DuringGetPositionsFired.Should().Be(1, "差し込み口が入れ子に発火すると、決済の直列化を入れ子に取って待ちの上限まで止まる");
         // 窓の中で**実際に決済が走った**ことを確かめる（走っていなければ鏡像を再現できていない）。
         f.Broker.MarketCloses.Should().ContainSingle("本物の決済経路が窓の中で動いていなければ、このテストは何も見ていない");
         var closed = f.Stops.Find(a.EntryDecisionId)!;
