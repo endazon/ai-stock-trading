@@ -106,6 +106,7 @@ public class OrderFillPollingServiceTests
                 // FR-11, #633, IADR-0300: 約定を観測したら経費も記録する（既定は常に「取得できない」）。
                 opts.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
                 opts.Services.AddScoped<TradeExpenseRecordingService>();
+                opts.Services.AddSingleton(TestApprovalVerification.ReportOnly()); // #1527, IADR-0610
 
                 opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
                 opts.StubAllExternalTransports();

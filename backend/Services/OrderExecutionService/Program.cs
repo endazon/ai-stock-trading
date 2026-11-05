@@ -576,6 +576,8 @@ if (brokerSelection.IsMoomoo)
 // TimeProvider は既定では DI に登録されないため明示的に入れる（観測時刻の供給元）。moomoo 構成では上で登録済み。
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.AddHostedService<BrokerAvailabilityProbeService>();
+// 🔴 NFR, FR-10, #1527, IADR-0610: 注文の承認の発行元の検証。段 2 で鍵が無ければ起動で止まる。
+builder.Services.AddOrderApprovalVerifier(builder.Configuration);
 
 // ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。OrderApproved を購読し発注、OrderExecuted を発行する。
 // ハンドラは明示登録ではなくアセンブリ走査で発見されるため、ハンドラを持つアセンブリ（Infrastructure）を明示する。

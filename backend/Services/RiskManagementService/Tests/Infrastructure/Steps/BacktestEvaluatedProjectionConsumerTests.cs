@@ -26,6 +26,7 @@ public class BacktestEvaluatedProjectionConsumerTests
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                opts.Services.AddSingleton(TestApprovalPublishing.Unsigned()); // #1527, IADR-0610
                 opts.Services.AddSingleton(store);
                 opts.Discovery.DisableConventionalDiscovery()
                     .IncludeType<BacktestEvaluatedProjectionHandler>();

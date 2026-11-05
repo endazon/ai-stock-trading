@@ -50,6 +50,7 @@ public class BrokerPositionsObservedConsumerTests
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                opts.Services.AddSingleton(TestApprovalPublishing.Unsigned()); // #1527, IADR-0610
                 opts.Services.AddSingleton<IPortfolioLedgerStore>(ledger);
                 opts.Services.AddSingleton(tracker);
                 opts.Services.AddSingleton<IClock, FixedClock>();
