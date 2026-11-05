@@ -9,7 +9,8 @@ internal static class EngageKillSwitchEndpoint
     // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（RiskControlsOwnerWriteGrpcService）が共有する処理（2 箇所に書かない）。
     internal static IResult Handle(KillSwitchRequest req, KillSwitchService svc, HttpContext http)
     {
-        svc.Engage(RiskControlEndpoints.ActorOf(http), req.Reason);
+        // #1534, IADR-0620: 見た状態の版（任意）。本文の expectedVersion を優先し、無ければ If-Match を使う。
+        svc.Engage(RiskControlEndpoints.ActorOf(http), req.Reason, KillSwitchPrecondition.ExpectedVersionOf(req, http));
         return Results.Ok(svc.GetState());
     }
 }

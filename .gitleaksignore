@@ -71,3 +71,10 @@ c694d7531b8765751680810a07c054ecb310d645:.gitleaksignore:generic-api-key:65
 # #1529: helm.yml の描画試験の Discord ギルド ID は連番の作り物（実在しない）。--set を足した行が再検査されたため、当該コミットを無効化する。
 # 後続のコミットで値を規則に掛からないダミー（test-guild-id）へ改めた。
 b15f19bca62981bbd5ff85c5df640700e6257d52:.github/workflows/helm.yml:discord-client-id:1371
+#
+# #1542: 危険な操作の確認コード（TOTP）の試験が、RFC 6238 付録 B の公開の試験値の種（ASCII の "1234567890" の 2 回）の
+# base32 を文字列の定数で書いていたため、generic-api-key ルールが検知した。**本物の秘密ではない**（RFC の公開の試験値）。
+# 後続のコミットで実行時に組み立てる形へ替えた。gitleaks は commit 範囲（履歴）を走査するため、当該コミットの finding を無効化する。
+0d415e939336e55ce59e6808f850c4547799ff34:backend/Shared/AiStockTrading.Shared.Infrastructure.Tests/SecondFactor/OwnerSecondFactorGateTests.cs:generic-api-key:13
+0d415e939336e55ce59e6808f850c4547799ff34:backend/Services/RiskManagementService/Tests/Features/RiskManagement/OwnerSecondFactorWiringTests.cs:generic-api-key:14
+0d415e939336e55ce59e6808f850c4547799ff34:backend/Services/ReportService/Tests/Features/Reports/ReportConfirmSecondFactorTests.cs:generic-api-key:15

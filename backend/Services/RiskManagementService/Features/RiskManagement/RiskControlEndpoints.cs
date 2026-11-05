@@ -154,9 +154,20 @@ internal static class RiskControlEndpoints
     {
         ArgumentException => Results.BadRequest(new { error = ClientFacingErrors.MessageFor(e, logger) }),
         DbUpdateConcurrencyException => Results.Conflict(new { error = "設定が他の更新と競合しました。最新を取得して再試行してください。" }),
+        // 🔴 #1534, IADR-0620: kill switch の見た状態の版が違う（409）・段 2 で版が無い解除（428）。状態は変えていない。
+        // NFR, #1534, IADR-0620: code は同じ 409 の別の理由（保持の間の解除など）と呼び出し側が区別するための機械可読な印。文言は固定。
+        KillSwitchVersionConflictException => Results.Conflict(new { error = e.Message, code = KillSwitchVersionConflictException.Code }),
+        KillSwitchIfMatchUnsupportedException => Results.BadRequest(new { error = e.Message, code = KillSwitchIfMatchUnsupportedException.Code }),
+        KillSwitchPreconditionRequiredException => Results.Problem(
+            detail: e.Message,
+            statusCode: StatusCodes.Status428PreconditionRequired,
+            extensions: new Dictionary<string, object?> { ["code"] = KillSwitchPreconditionRequiredException.Code }),
         // NFR, #1530, IADR-0613: SSH の経路の保持の間の解除（REST は 409・gRPC は同じ写しで ABORTED）。文言は固定（入力を含まない）。
         // code は呼び出し側（ボット）が利用者向けの文言を出し分けるための機械可読な印。
         KillSwitchHeldByOperatorException held => Results.Conflict(new { error = held.Message, code = KillSwitchHeldByOperatorException.Code }),
+        // NFR-06, #1542, IADR-0615: 第 2 要素が通らない（Enforce の段だけ）。REST は 403・gRPC は同じ写しで PERMISSION_DENIED。文言は固定。
+        AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorRejectedException rejected =>
+            Results.Json(new { error = rejected.Message }, statusCode: StatusCodes.Status403Forbidden),
         _ => null,
     };
 

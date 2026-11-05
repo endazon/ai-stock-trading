@@ -249,10 +249,20 @@ builder.Services.AddScoped<WorkingEntryOrdersService>();
 builder.Services.AddScoped<InFlightOrdersService>();
 // FR-10, FR-04, #1113, IADR-0463 決定 3: 銘柄単位の新規建ての可否（審査と同じ述語・同じ入力。読み取り専用）。
 builder.Services.AddScoped<EntryBlockersService>();
+// 🔴 FR-10, FR-14, #1534, IADR-0620: 発動・解除の「見た状態」の前提条件の段（Report＝段 1・既定 / Require＝段 2）。知らない値は起動で止める。
+builder.Services.AddSingleton(KillSwitchPreconditionOptions.From(builder.Configuration[KillSwitchPreconditionOptions.ConfigKey]));
 // NFR, FR-10, UC-06, #1530, IADR-0613: Discord を経ない停止の保持（SSH の経路。既定は無効＝従来どおり）。
 // chart は Secret ast-operator-hold の optional の secretKeyRef で読む（Secret が無ければ env も無い）。
 builder.Services.AddSingleton(builder.Configuration.GetSection(OperatorKillSwitchHoldOptions.SectionName)
     .Get<OperatorKillSwitchHoldOptions>() ?? new OperatorKillSwitchHoldOptions());
+// NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）。既定は Off（段 1 = Audit・段 2 = Enforce は構成で選ぶ）。
+// シークレットは Secret ast-owner-totp の optional の参照（scripts/ast-owner-totp-enroll.sh が作る）。
+builder.Services.AddSingleton(sp => new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorGate(
+    builder.Configuration.GetSection(AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions.SectionName)
+        .Get<AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions>()
+        ?? new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions(),
+    TimeProvider.System,
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger("OwnerSecondFactor")));
 builder.Services.AddScoped<KillSwitchService>();
 // 🔴 FR-10, ADR-0009, IADR-0567 決定 2: 発注執行が送る直前に読む停止の状態（審査と同じストア）。
 builder.Services.AddScoped<TradingHaltService>();

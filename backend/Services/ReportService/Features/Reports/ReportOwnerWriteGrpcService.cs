@@ -51,7 +51,8 @@ public sealed class ReportOwnerWriteGrpcService(
     {
         var reply = await ReportWriteGrpcReplies.RunAsync(Logger, () => ConfirmReportEndpoint.HandleAsync(
             PeriodKeyOf(request.PeriodKey),
-            new ConfirmReportRequest(request.ExpectedVersion, request.HasOnBehalfOf ? request.OnBehalfOf : null),
+            new ConfirmReportRequest(request.ExpectedVersion, request.HasOnBehalfOf ? request.OnBehalfOf : null,
+                request.HasSecondFactorCode ? request.SecondFactorCode : null),
             reports, bus, kb, loggerFactory, delegated, ledger, context.GetHttpContext(), draftCopy));
         var confirmed = reply.ValueOrThrow<ConfirmReportResponse>();
         return new Proto.ReportConfirmationResponse { Transitioned = confirmed.Transitioned, Version = confirmed.Version };

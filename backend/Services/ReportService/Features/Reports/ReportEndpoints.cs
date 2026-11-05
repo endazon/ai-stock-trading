@@ -103,6 +103,8 @@ internal static class ReportEndpoints
         ReportAlreadyConfirmedException => Results.Conflict(new { error = e.Message }),
         // FR-07, ADR-0068 決定1, #1373, IADR-0549 決定2: 効いている日報が移った後の版 n+1 の確定・版を足すドラフトの作成（理由を返す）。
         ReportNoLongerEffectiveException => Results.Conflict(new { error = e.Message }),
+        // NFR-06, #1542, IADR-0615: 第 2 要素が通らない（Enforce の段だけ）。REST は 403・gRPC は同じ写しで PERMISSION_DENIED。文言は固定。
+        AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorRejectedException => Results.Json(new { error = e.Message }, statusCode: StatusCodes.Status403Forbidden),
         _ => null,
     };
 

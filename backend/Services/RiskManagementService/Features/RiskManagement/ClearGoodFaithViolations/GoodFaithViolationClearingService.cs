@@ -23,7 +23,7 @@ public sealed class GoodFaithViolationClearingService(IGoodFaithViolationStore s
     /// （決定2 の「どの記録に対して」）。
     /// </para>
     /// </summary>
-    public GoodFaithViolationClearingOutcome Clear(string actor, string reason)
+    public GoodFaithViolationClearingOutcome Clear(string actor, string reason, Action? beforeCommit = null)
     {
         // 誰が・なぜ解いたか不明な解除を作らない（監査の粒度が決定2 の要求そのものである）。
         if (string.IsNullOrWhiteSpace(actor))
@@ -43,6 +43,9 @@ public sealed class GoodFaithViolationClearingService(IGoodFaithViolationStore s
             // 操作が監査上の事実になる。停止していない状態で押された可能性が高く、利用者へその旨を返す。
             return GoodFaithViolationClearingOutcome.Rejected(GoodFaithViolationClearingRejection.NothingToClear);
         }
+
+        // NFR-06, #1542, IADR-0615 決定 9: beforeCommit（第 2 要素の門）は、入力の検証・冪等の判定の後、状態を変える直前にだけ呼ぶ。
+        beforeCommit?.Invoke();
 
         var clearedAt = clock.UtcNow;
         foreach (var target in targets)

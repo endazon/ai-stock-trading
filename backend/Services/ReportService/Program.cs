@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Infrastructure.Composable.Http;
 using ReportService.Common.Abstractions;
 using ReportService.Infrastructure.ExternalServices;
 using ReportService.Features.Reports;
@@ -62,6 +63,12 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 // 時刻はステートレスのため singleton。DbContext が scoped のため EF ストア・サービスも scoped。
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<IReportStore, EfReportStore>();
+// NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）。既定は Off（段 1 = Audit・段 2 = Enforce は構成で選ぶ）。
+builder.Services.AddSingleton(sp => new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorGate(
+    builder.Configuration.GetSection(AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions.SectionName).Get<AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions>()
+        ?? new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions(),
+    TimeProvider.System,
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger("OwnerSecondFactor")));
 builder.Services.AddScoped<AppSvc>();
 
 // FR-09, UC-03, ADR-0003, IADR-0240 決定11, #774: 確定要求の本文で運ばれる「代理される利用者」（OnBehalfOf）を
@@ -97,6 +104,11 @@ builder.Services.AddKeyedSingleton<IServiceAccessTokenProvider>(ReportLlmTokenPr
         sp, sp.GetRequiredService<IConfiguration>(), LlmGatewayAuth.SectionName, LlmGatewayAuth.TokenClientName));
 builder.Services.AddHttpClient("report-llm",
         c => c.Timeout = NarrativeTimeouts(builder.Configuration).Max)
+    // NFR, NFR-18, #1535, IADR-0621 決定5: https のゲートウェイは基盤の CA で検証する（名前の不一致・CA なしは拒む・平文へ戻らない）。
+    .ConfigurePrimaryHttpMessageHandler(sp =>
+        PlatformInfraCaTrust.CreateHandler(
+            sp.GetRequiredService<IConfiguration>()[PlatformInfraCaTrust.PathKey],
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(PlatformInfraCaTrust))))
     .AddReportDependencyGate(
         "report-llm",
         sp => sp.GetRequiredKeyedService<IServiceAccessTokenProvider>(ReportLlmTokenProviderKey),

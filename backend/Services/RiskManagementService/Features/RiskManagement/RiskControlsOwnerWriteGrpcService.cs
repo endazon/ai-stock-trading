@@ -54,7 +54,7 @@ public sealed class RiskControlsOwnerWriteGrpcService(
         Proto.KillSwitchChangeRequest request, ServerCallContext context)
     {
         var reply = await RiskWriteGrpcReplies.RunAsync(Logger, () =>
-            DisengageKillSwitchEndpoint.Handle(new KillSwitchRequest(request.Reason), killSwitch, context.GetHttpContext()));
+            DisengageKillSwitchEndpoint.Handle(new KillSwitchRequest(request.Reason, SecondFactorOf(request.HasSecondFactorCode, request.SecondFactorCode)), killSwitch, context.GetHttpContext()));
         return new Proto.KillSwitchChangeResponse { Engaged = reply.ValueOrThrow<KillSwitchState>().Engaged };
     }
 
@@ -70,7 +70,7 @@ public sealed class RiskControlsOwnerWriteGrpcService(
         Proto.TradingPauseChangeRequest request, ServerCallContext context)
     {
         var reply = await RiskWriteGrpcReplies.RunAsync(Logger, () =>
-            ResumeTradingEndpoint.Handle(new PauseRequest(request.Reason), pause, context.GetHttpContext()));
+            ResumeTradingEndpoint.Handle(new PauseRequest(request.Reason, SecondFactorOf(request.HasSecondFactorCode, request.SecondFactorCode)), pause, context.GetHttpContext()));
         return new Proto.TradingPauseChangeResponse { Paused = reply.ValueOrThrow<PauseState>().Paused };
     }
 
@@ -79,7 +79,7 @@ public sealed class RiskControlsOwnerWriteGrpcService(
     {
         var reply = await RiskWriteGrpcReplies.RunAsync(Logger, () =>
             ClearGoodFaithViolationsEndpoint.HandleAsync(
-                new GoodFaithViolationClearRequest(request.Reason), goodFaith, bus, context.GetHttpContext()));
+                new GoodFaithViolationClearRequest(request.Reason, SecondFactorOf(request.HasSecondFactorCode, request.SecondFactorCode)), goodFaith, bus, context.GetHttpContext()));
         var cleared = reply.ValueOrThrow<GoodFaithViolationClearResponse>();
 
         var response = new Proto.GoodFaithViolationClearanceResponse { RemainingCount = cleared.RemainingCount };
@@ -94,7 +94,8 @@ public sealed class RiskControlsOwnerWriteGrpcService(
     {
         var reply = await RiskWriteGrpcReplies.RunAsync(Logger, () =>
             RequestStageTransitionEndpoint.HandleAsync(
-                new StageTransitionRequest(ToStage(request.TargetStage), OnBehalfOf: request.HasOnBehalfOf ? request.OnBehalfOf : null),
+                new StageTransitionRequest(ToStage(request.TargetStage), OnBehalfOf: request.HasOnBehalfOf ? request.OnBehalfOf : null,
+                    SecondFactorCode: SecondFactorOf(request.HasSecondFactorCode, request.SecondFactorCode)),
                 stageGate, bus, delegated, loggerFactory, context.GetHttpContext()));
 
         // 🔴 受理不能（REST の 422）は結果の本文（拒否の理由・合格条件）を持つので、失敗ではなく応答（accepted=false）で返す。
@@ -120,10 +121,14 @@ public sealed class RiskControlsOwnerWriteGrpcService(
         var reply = await RiskWriteGrpcReplies.RunAsync(Logger, () =>
             AdoptPositionDriftEndpoint.HandleAsync(
                 new PositionDriftAdoptionRequest(
-                    request.Symbol, ToMarket(request.Market), request.Reason, request.HasOnBehalfOf ? request.OnBehalfOf : null),
+                    request.Symbol, ToMarket(request.Market), request.Reason, request.HasOnBehalfOf ? request.OnBehalfOf : null,
+                    SecondFactorOf(request.HasSecondFactorCode, request.SecondFactorCode)),
                 driftAdoption, bus, delegated, loggerFactory, context.GetHttpContext()));
         return RiskWriteWireMapping.ToProto(reply.ValueOrThrow<PositionDriftAdoptionResponse>());
     }
+
+    // NFR-06, #1542, IADR-0615: proto の任意の第 2 要素（未指定は null＝REST の項目の省略と同じ）。
+    internal static string? SecondFactorOf(bool has, string value) => has ? value : null;
 
     // 線上の列挙 → C#（**名前で**写す）。未指定・未知は null ＝ REST の項目の省略（処理関数が 400 にする）。
     internal static TradingStage? ToStage(Proto.TradingStage value) => value switch

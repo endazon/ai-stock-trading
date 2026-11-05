@@ -35,6 +35,19 @@
 {{- if not .Values.global.authAuthority }}
 {{- fail "global.authAuthority が未設定です。配備のレルム（例 http://keycloak:8080/realms/platform）を values で明示してください（#1529）。" }}
 {{- end }}
+{{- /* NFR, NFR-18, #1535, IADR-0621: 基盤（DB・ブローカ）への TLS。検証に使う CA（global.infraCa）を /etc/platform-infra-ca へ
+       読み取り専用・非 optional でマウントする（ConfigMap が無いクラスタでは Pod が立たない＝黙って平文へ戻らない）。
+       有効なのに CA の設定・TLS のポートが無ければ描画で止める。形は基盤の chart と同じ（基盤の IADR-0591 決定 4）。 */ -}}
+{{- $dbTls := and $g.db.tls $g.db.tls.enabled -}}
+{{- $mqTls := and $mq.tls $mq.tls.enabled -}}
+{{- $infraCa := $g.infraCa | default dict -}}
+{{- if and (or $dbTls $mqTls) (or (not $infraCa.configMap) (not $infraCa.caKey)) -}}
+{{- fail "global.infraCa.configMap / caKey が要ります（global.db.tls / global.rabbitmq.tls が有効なときはサーバ証明書を基盤の CA で検証する。IADR-0621）。" -}}
+{{- end -}}
+{{- if and $mqTls (not $mq.tls.port) -}}
+{{- fail "global.rabbitmq.tls.port が要ります（amqps の口。IADR-0621）。" -}}
+{{- end -}}
+{{- $infraCaMount := or $dbTls $mqTls -}}
 {{- range $name, $svc := .Values.services }}
 {{- /* FR-09/14, #245, IADR-0102: Discord Bot の環境固有 ID（非機密）を values（discord.bot.*）から与える設定点。
        env を**追加**せず extraEnv の**値を上書き**する（同名 env の二重定義を作らない）。空既定では 1 つも
@@ -282,8 +295,23 @@ spec:
                 secretKeyRef:
                   name: {{ $mq.credentialsSecretName }}
                   key: {{ printf "%s%s" $mq.usernamePrefix $name }}
+            {{- if $mqTls }}
+            {{- /* NFR, NFR-18, #1535, IADR-0621 決定2: amqps（TLS）。サーバ証明書の CA は信頼ストアへ足す（.NET は SSL_CERT_DIR の各
+                   ディレクトリの証明書を読む。既定の /etc/ssl/certs を先に残すので、外部の公開 CA の検証は変わらない）。名前の照合は
+                   UseAiStockTradingRabbitMq が外さない（決定 4）。 */}}
+            - name: RabbitMq__ConnectionString
+              value: {{ printf "amqps://%s%s:$(RABBITMQ_PASSWORD)@%s:%v" $mq.usernamePrefix $name $mq.host $mq.tls.port | quote }}
+            - name: SSL_CERT_DIR
+              value: "/etc/ssl/certs:/etc/platform-infra-ca"
+            {{- else }}
             - name: RabbitMq__ConnectionString
               value: {{ printf "amqp://%s%s:$(RABBITMQ_PASSWORD)@%s:%v" $mq.usernamePrefix $name $mq.host $mq.port | quote }}
+            {{- end }}
+            {{- if $infraCaMount }}
+            {{- /* NFR, NFR-18, #1535, IADR-0621 決定5: LLM ゲートウェイの HttpClient（llm・report-llm）が信頼する基盤の CA の場所。 */}}
+            - name: PlatformInfraCa__CertificatePath
+              value: {{ printf "/etc/platform-infra-ca/%s" $infraCa.caKey | quote }}
+            {{- end }}
             - name: Otlp__Endpoint
               value: {{ $g.otlpEndpoint | quote }}
             {{- /* ADR-0001, IADR-0077, #22: 宣言的バインディング（pipeline.json）のマウント先。
@@ -325,10 +353,12 @@ spec:
                   name: {{ required "global.db.passwordSecret.name が要ります（IADR-0608）" .name | quote }}
                   key: {{ required "global.db.passwordSecret.key が要ります（IADR-0608）" .key | quote }}
             - name: ConnectionStrings__DefaultConnection
-              value: "Host={{ $g.db.host }};Port={{ $g.db.port }};Database={{ $svc.db }};Username={{ $g.db.username }};Password=$(DB_PASSWORD)"
+              value: "Host={{ $g.db.host }};Port={{ $g.db.port }};Database={{ $svc.db }};Username={{ $g.db.username }};Password=$(DB_PASSWORD){{ if $dbTls }};SSL Mode=VerifyFull;Root Certificate=/etc/platform-infra-ca/{{ $infraCa.caKey }}{{ end }}"
             {{- else }}
             - name: ConnectionStrings__DefaultConnection
-              value: "Host={{ $g.db.host }};Port={{ $g.db.port }};Database={{ $svc.db }};Username={{ $g.db.username }};Password={{ $g.db.password }}"
+              {{- /* NFR, NFR-18, #1535, IADR-0621 決定2: TLS は VerifyFull（CA の検証と host の名前の照合）。CA は global.infraCa だけを信頼する。
+                     検証を緩める値（Require・Prefer・Trust Server Certificate）を与える口は持たない。 */}}
+              value: "Host={{ $g.db.host }};Port={{ $g.db.port }};Database={{ $svc.db }};Username={{ $g.db.username }};Password={{ $g.db.password }}{{ if $dbTls }};SSL Mode=VerifyFull;Root Certificate=/etc/platform-infra-ca/{{ $infraCa.caKey }}{{ end }}"
             {{- end }}
             {{- end }}
             {{- if $svc.auth }}
@@ -524,6 +554,12 @@ spec:
             - name: tmp
               mountPath: /tmp
             {{- end }}
+            {{- if $infraCaMount }}
+            {{- /* NFR, NFR-18, #1535, IADR-0621: 基盤の CA（公開してよい証明書だけ）。 */}}
+            - name: platform-infra-ca
+              mountPath: /etc/platform-infra-ca
+              readOnly: true
+            {{- end }}
       volumes:
         {{- /* ADR-0001, IADR-0077, #22: 宣言的バインディングの ConfigMap（configmap-pipeline.yaml）。全 Worker 共通。 */}}
         - name: pipeline-config
@@ -545,6 +581,15 @@ spec:
         - name: stage0-recording
           persistentVolumeClaim:
             claimName: trade-decision-stage0
+      {{- end }}
+      {{- if $infraCaMount }}
+        {{- /* NFR, NFR-18, #1535, IADR-0621: 非 optional（ConfigMap が無ければ Pod が立たない＝平文へ戻らない）。 */}}
+        - name: platform-infra-ca
+          configMap:
+            name: {{ $infraCa.configMap }}
+            items:
+              - key: {{ $infraCa.caKey }}
+                path: {{ $infraCa.caKey }}
       {{- end }}
       {{- if $readOnlyRoot }}
         - name: tmp

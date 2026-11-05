@@ -36,7 +36,7 @@ public sealed class PauseService(
         return next;
     }
 
-    public PauseState Resume(string actor, string reason)
+    public PauseState Resume(string actor, string reason, Action? beforeCommit = null)
     {
         RequireActorAndReason(actor, reason);
 
@@ -46,6 +46,9 @@ public sealed class PauseService(
             // 冪等: 非停止中なら現状態を返すのみ（副作用なし）。
             return current;
         }
+
+        // NFR-06, #1542, IADR-0615 決定 9: beforeCommit（第 2 要素の門）は、入力の検証・冪等の判定の後、状態を変える直前にだけ呼ぶ。
+        beforeCommit?.Invoke();
 
         var now = clock.UtcNow;
         var next = new PauseState(false, actor, reason, now);

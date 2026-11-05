@@ -1,0 +1,61 @@
+---
+title: kill switch の発動・解除に「見た状態」の版の前提条件を付け、古い状態を見た操作が上書きしないようにする（段で切り替える）
+type: spec
+status: accepted
+related_ids: [FR-10, FR-14, FR-13, ADR-0009, ADR-0003, IADR-0620, IADR-0012]
+author: claude (Claude Code)
+created: 2026-11-05
+updated: 2026-11-05
+plan_refs:
+  - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10 kill switch・FR-14 Discord からの kill switch 操作)
+  - planning:projects/ai-stock-trading/07_adr/ADR-0009_pause-resume-and-lockout-states.md
+---
+
+# 仕様書: kill switch の前提条件（#1534）
+
+## 起点
+
+- #1534。kill switch の発動・解除の要求は理由だけを持ち、操作した人が見た状態を前提にしない。後から別の操作が入っても、古い状態を見た操作がそのまま上書きする。
+
+## 実測（develop `26d0a18a7`）
+
+| # | 事実 | 確かめ方 |
+| --- | --- | --- |
+| 1 | 要求は `KillSwitchRequest(string Reason)` だけ | `KillSwitchRequest.cs` |
+| 2 | `KillSwitchService.Engage/Disengage` は現在の状態を見ずに `store.SetState` で上書きする | `KillSwitchService.cs` |
+| 3 | 永続（`EfKillSwitchStore`）は単一行。版の列は無い（`ChangedAt` は書くたびに変わる） | `EfKillSwitchStore.cs`・`KillSwitchRow` |
+| 4 | 呼び手: REST（利用者・BFF 経由）、gRPC（Discord ボット・`RiskControlsOwnerWrite`）、内部（撤退の自動発動 `StageGateService`） | `git grep "EngageKillSwitch\|DisengageKillSwitch\|killSwitch.Engage"` |
+
+## 決定（IADR-0620）
+
+1. 版 `KillSwitchState.Version` = 版の列 `kill_switch.Version`（`bigint`・書くたびに 1 つ進む・並行トークン。未操作と既存行は `"0"`）。照会 `GET /kill-switch` は本文の `version` と `ETag` で返す。移行は列の追加 1 本（`AddKillSwitchVersion`）。（レビューで時刻の tick から改めた。ABA を塞ぐため）
+1a. 競合（409）として扱うのは不一致・40001・40P01・楽観排他の失敗・初回の作成の主キー違反（23505）だけ。前提条件なしの書き込みは競合したら読み直して書き直す（5 回まで・最後が勝つ）。他の DB の失敗は再送出（5xx）。`If-Match` の `*`・複数の値は 400。409・428・400 の本文は `code` を持つ。
+2. 要求は `expectedVersion`（本文）か `If-Match`（ヘッダー）で前提条件を渡せる。渡されたら、ストアが比較と書き込みを原子的に行う（`TrySetState`。EF は直列化可能な取引・インメモリは錠）。違えば 409、状態は変えない。
+3. 段（構成 `RiskControls:KillSwitch:Precondition`）: `Report`（既定）は前提条件の無い要求も従前どおり受け、記録する。`Require` は前提条件の無い**解除**を 428 で拒否する。発動は安全側の操作のため段 2 でも求めない（撤退の自動発動も同じ口）。
+4. gRPC の口（Discord ボット）は版のフィールドを持たないため、段 1 では前提条件なしで従前どおり。段 2 へ上げる前に、ボットと画面が版を送るよう改める必要がある（残余）。
+
+## 母集合（規則 9）
+
+- 書く口: `KillSwitchService.Engage/Disengage` の呼び手 3 つ（REST 2 本・gRPC 2 本は同じ `Handle` を通る・撤退の自動発動）。
+- ストアの実装: `EfKillSwitchStore`・`InMemoryKillSwitchStore`（試験の偽物は既定の実装〔比較して書く〕を継ぐ）。
+- 例外の写し: `RiskControlEndpoints.MapException`（REST と gRPC で共用）。
+
+## 受け入れ基準
+
+- [x] 古い版を前提にした解除・発動は 409 になり、状態は変わらない
+- [x] 正しい版なら成功する
+- [x] 段 1 では前提条件の無い要求も通る
+- [x] 段 2 では前提条件の無い解除は拒否される（発動は通る）
+- [x] 同じ版での並行の書き込みは 1 つだけ通る
+- [x] 同じ時刻の 2 回の書き込みでも版は進み、古い版の操作は通らない（ABA にならない・`KillSwitchPreconditionRobustnessTests`）
+- [x] 409 にするのは版の競合（不一致・40001・40P01・楽観排他）だけで、他の DB の失敗は再送出する（同上）
+- [x] `If-Match` の `*`・複数の値は 400。409・428 の本文の `code` で理由を区別できる（同上）
+- [x] 実 PostgreSQL で、同じ版の 2 件の同時の書き込みは 1 件だけが通る（`KillSwitchVersionConcurrencyE2ETests`。手元の Testcontainers で合格・10 回の交錯）
+- [x] 実 PostgreSQL で、前提条件なしの同時の発動 2 件は両方とも成功し、最後は発動のまま。行の無い状態での同時の初回の書き込みは、前提条件なしなら 2 件とも成功し、前提条件ありなら 1 件だけが通り他方は 409（5xx にしない）（同上）
+- [x] 保持（#1530）の間の解除は、版が合っていても古くても無くても（段 2 でも）保持の 409（`operator_hold`）で拒否され、状態も版も変わらない。保持が無ければ古い版の 409 は `version_conflict` で区別できる。保持による起動は版を進める（`KillSwitchHoldAndPreconditionTests`）
+- [x] 前提条件で拒否される解除（版の不一致・段 2 の版なし）は第 2 要素の門を呼ばない。正しい版なら門を 1 回呼んでから書く（`KillSwitchPreconditionRobustnessTests`）
+
+## 範囲外（残余）
+
+- Discord ボット（gRPC）・画面（BFF）が版を送るようにする変更。段 2 の前提。
+- 一時停止（pause / resume）にも同じ形が当てはまる。必要なら同じ部品で広げる。
