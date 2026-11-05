@@ -342,6 +342,15 @@ spec:
             - name: ServiceAuth__TokenEndpoint
               value: {{ printf "%s/protocol/openid-connect/token" (trimSuffix "/" $g.authAuthority) | quote }}
             {{- end }}
+            {{- if $svc.auth }}
+            {{- /* 🔴 NFR, FR-10, #1528, IADR-0611: REST の所有者の判定で aud / azp を確かめる段（Report＝記録だけ・Enforce＝拒否）。 */}}
+            {{- $otb := $g.ownerTokenBinding | default dict }}
+            {{- if not (has ($otb.mode | default "Report") (list "Report" "Enforce")) }}
+            {{- fail (printf "global.ownerTokenBinding.mode は Report か Enforce です（値: %v）。" $otb.mode) }}
+            {{- end }}
+            - name: Auth__OwnerToken__Mode
+              value: {{ $otb.mode | default "Report" | quote }}
+            {{- end }}
             {{- range $e := $svc.extraEnv }}
             - name: {{ $e.name }}
               {{- $refKey := index $envSecretRefs $e.name }}
