@@ -154,6 +154,9 @@ internal static class RiskControlEndpoints
     {
         ArgumentException => Results.BadRequest(new { error = ClientFacingErrors.MessageFor(e, logger) }),
         DbUpdateConcurrencyException => Results.Conflict(new { error = "設定が他の更新と競合しました。最新を取得して再試行してください。" }),
+        // 🔴 #1534, IADR-0620: kill switch の見た状態の版が違う（409）・段 2 で版が無い解除（428）。状態は変えていない。
+        KillSwitchVersionConflictException => Results.Conflict(new { error = e.Message }),
+        KillSwitchPreconditionRequiredException => Results.Problem(detail: e.Message, statusCode: StatusCodes.Status428PreconditionRequired),
         _ => null,
     };
 

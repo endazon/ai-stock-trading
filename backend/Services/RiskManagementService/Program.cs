@@ -249,6 +249,8 @@ builder.Services.AddScoped<WorkingEntryOrdersService>();
 builder.Services.AddScoped<InFlightOrdersService>();
 // FR-10, FR-04, #1113, IADR-0463 決定 3: 銘柄単位の新規建ての可否（審査と同じ述語・同じ入力。読み取り専用）。
 builder.Services.AddScoped<EntryBlockersService>();
+// 🔴 FR-10, FR-14, #1534, IADR-0620: 発動・解除の「見た状態」の前提条件の段（Report＝段 1・既定 / Require＝段 2）。知らない値は起動で止める。
+builder.Services.AddSingleton(KillSwitchPreconditionOptions.From(builder.Configuration[KillSwitchPreconditionOptions.ConfigKey]));
 builder.Services.AddScoped<KillSwitchService>();
 // 🔴 FR-10, ADR-0009, IADR-0567 決定 2: 発注執行が送る直前に読む停止の状態（審査と同じストア）。
 builder.Services.AddScoped<TradingHaltService>();

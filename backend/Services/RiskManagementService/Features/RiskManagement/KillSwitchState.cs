@@ -10,4 +10,11 @@ public record KillSwitchState(
 {
     /// <summary>初期状態（未起動）。</summary>
     public static readonly KillSwitchState Disengaged = new(false);
+
+    /// <summary>
+    /// 🔴 FR-10, FR-14, #1534, IADR-0620: 「見た状態」の版。発動・解除の要求は、照会で受け取ったこの値を前提条件として渡す
+    /// （<see cref="KillSwitchRequest.ExpectedVersion"/>）。状態が書かれるたびに変わる（最後に変えた時刻の tick。未操作は "0"）。
+    /// 照会の応答（JSON）に載る。比較は序数一致の文字列で行い、値の意味を呼び手に読ませない。
+    /// </summary>
+    public string Version => ChangedAt is { } at ? at.UtcTicks.ToString(System.Globalization.CultureInfo.InvariantCulture) : "0";
 }

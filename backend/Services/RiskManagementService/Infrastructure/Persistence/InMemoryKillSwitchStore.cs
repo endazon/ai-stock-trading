@@ -24,4 +24,17 @@ public sealed class InMemoryKillSwitchStore : IKillSwitchStore
             _state = state;
         }
     }
+
+    // #1534, IADR-0620: 比較と書き込みを同じ錠の中で行う。
+    public bool TrySetState(KillSwitchState state, string expectedVersion)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        lock (_gate)
+        {
+            if (!string.Equals(_state.Version, expectedVersion, StringComparison.Ordinal))
+                return false;
+            _state = state;
+            return true;
+        }
+    }
 }
