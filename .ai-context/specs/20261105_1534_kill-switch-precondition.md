@@ -28,7 +28,8 @@ plan_refs:
 
 ## 決定（IADR-0620）
 
-1. 版 `KillSwitchState.Version` = 最後に変えた時刻の tick（未操作は `"0"`）。照会 `GET /kill-switch` は本文の `version` と `ETag` で返す。列を足さない（移行が要らない）。
+1. 版 `KillSwitchState.Version` = 版の列 `kill_switch.Version`（`bigint`・書くたびに 1 つ進む・並行トークン。未操作と既存行は `"0"`）。照会 `GET /kill-switch` は本文の `version` と `ETag` で返す。移行は列の追加 1 本（`AddKillSwitchVersion`）。（レビューで時刻の tick から改めた。ABA を塞ぐため）
+1a. 競合（409）として扱うのは不一致・40001・40P01・楽観排他の失敗だけ。他の DB の失敗は再送出（5xx）。`If-Match` の `*`・複数の値は 400。409・428・400 の本文は `code` を持つ。
 2. 要求は `expectedVersion`（本文）か `If-Match`（ヘッダー）で前提条件を渡せる。渡されたら、ストアが比較と書き込みを原子的に行う（`TrySetState`。EF は直列化可能な取引・インメモリは錠）。違えば 409、状態は変えない。
 3. 段（構成 `RiskControls:KillSwitch:Precondition`）: `Report`（既定）は前提条件の無い要求も従前どおり受け、記録する。`Require` は前提条件の無い**解除**を 428 で拒否する。発動は安全側の操作のため段 2 でも求めない（撤退の自動発動も同じ口）。
 4. gRPC の口（Discord ボット）は版のフィールドを持たないため、段 1 では前提条件なしで従前どおり。段 2 へ上げる前に、ボットと画面が版を送るよう改める必要がある（残余）。
@@ -46,6 +47,10 @@ plan_refs:
 - [x] 段 1 では前提条件の無い要求も通る
 - [x] 段 2 では前提条件の無い解除は拒否される（発動は通る）
 - [x] 同じ版での並行の書き込みは 1 つだけ通る
+- [x] 同じ時刻の 2 回の書き込みでも版は進み、古い版の操作は通らない（ABA にならない・`KillSwitchPreconditionRobustnessTests`）
+- [x] 409 にするのは版の競合（不一致・40001・40P01・楽観排他）だけで、他の DB の失敗は再送出する（同上）
+- [x] `If-Match` の `*`・複数の値は 400。409・428 の本文の `code` で理由を区別できる（同上）
+- [x] 実 PostgreSQL で、同じ版の 2 件の同時の書き込みは 1 件だけが通る（`KillSwitchVersionConcurrencyE2ETests`。手元の Testcontainers で合格・10 回の交錯）
 
 ## 範囲外（残余）
 

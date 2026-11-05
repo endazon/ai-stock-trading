@@ -3,6 +3,7 @@ using RiskManagementService.Features.RiskManagement;
 namespace RiskManagementService.Infrastructure.Persistence;
 
 // FR-10: kill switch 状態のインメモリ実装。初期は未起動。PostgreSQL 永続化は Slice B で差し替える。
+// #1534, IADR-0620: 版（Revision）は渡された値を使わず、書くたびにストアが 1 つ進める。
 public sealed class InMemoryKillSwitchStore : IKillSwitchStore
 {
     private readonly Lock _gate = new();
@@ -21,7 +22,7 @@ public sealed class InMemoryKillSwitchStore : IKillSwitchStore
         ArgumentNullException.ThrowIfNull(state);
         lock (_gate)
         {
-            _state = state;
+            _state = state with { Revision = _state.Revision + 1 };
         }
     }
 
@@ -33,7 +34,7 @@ public sealed class InMemoryKillSwitchStore : IKillSwitchStore
         {
             if (!string.Equals(_state.Version, expectedVersion, StringComparison.Ordinal))
                 return false;
-            _state = state;
+            _state = state with { Revision = _state.Revision + 1 };
             return true;
         }
     }

@@ -18,9 +18,15 @@ internal static class KillSwitchPrecondition
         if (string.IsNullOrWhiteSpace(ifMatch))
             return null;
 
+        // `*`・複数の値（カンマ区切り・ヘッダーの重複）は解釈しない（400）。
         var v = ifMatch.Trim();
+        if (http.Request.Headers.IfMatch.Count > 1 || v.Contains(',', StringComparison.Ordinal) || v == "*")
+            throw new KillSwitchIfMatchUnsupportedException();
         if (v.StartsWith("W/", StringComparison.Ordinal))
             v = v[2..];
-        return v.Trim('"');
+        v = v.Trim('"');
+        if (v.Length == 0 || v == "*")
+            throw new KillSwitchIfMatchUnsupportedException();
+        return v;
     }
 }

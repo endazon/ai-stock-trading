@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using AiStockTrading.Shared.Contracts.Errors;
 using RiskManagementService.Common.Abstractions;
 
@@ -49,10 +50,15 @@ public sealed class KillSwitchService(
             if (requiredInStage2 && _mode == KillSwitchPreconditionMode.Require)
                 throw new KillSwitchPreconditionRequiredException();
 
-            logger?.Log(
-                requiredInStage2 ? Microsoft.Extensions.Logging.LogLevel.Warning : Microsoft.Extensions.Logging.LogLevel.Information,
-                "kill switch の{Operation}を、見た状態の版（expectedVersion）なしで受けました（段 1 のため従前どおり書きます）。",
-                operation);
+            // ここへ来るのは、段 1 の発動・解除と、段に関わらない発動（安全側の操作）だけ。
+            if (requiredInStage2)
+                logger?.LogWarning(
+                    "kill switch の{Operation}を、見た状態の版（expectedVersion）なしで受けました。段 1 のため書きます（段 2 では拒否されます）。",
+                    operation);
+            else
+                logger?.LogInformation(
+                    "kill switch の{Operation}を、見た状態の版（expectedVersion）なしで受けました。発動は段に関わらず受けます。",
+                    operation);
             store.SetState(next);
             return;
         }
@@ -98,9 +104,24 @@ public sealed record KillSwitchPreconditionOptions(KillSwitchPreconditionMode Mo
 
 /// <summary>NFR, #1534, IADR-0620: 見た状態の版が現在の版と違う（409）。状態は変えていない。</summary>
 public sealed class KillSwitchVersionConflictException()
-    : InvalidOperationException("kill switch の状態は、見た後に変わっています。最新の状態を取得してから操作し直してください。");
+    : InvalidOperationException("kill switch の状態は、見た後に変わっています。最新の状態を取得してから操作し直してください。")
+{
+    /// <summary>REST の 409 の本文の <c>code</c>（同じ 409 の別の理由と呼び出し側が区別するための機械可読な印）。</summary>
+    public const string Code = "version_conflict";
+}
+
+/// <summary>NFR, #1534, IADR-0620: If-Match の <c>*</c> や複数の値は解釈しない（400）。版として比べて常に 409 にしない。</summary>
+public sealed class KillSwitchIfMatchUnsupportedException()
+    : InvalidOperationException("If-Match は、照会で受け取った版を 1 つだけ指定してください（* と複数の値は扱いません）。")
+{
+    /// <summary>REST の 400 の本文の <c>code</c>。</summary>
+    public const string Code = "if_match_unsupported";
+}
 
 /// <summary>NFR, #1534, IADR-0620: 段 2 で、解除に見た状態の版が無い（428）。</summary>
 public sealed class KillSwitchPreconditionRequiredException()
-    : InvalidOperationException("kill switch の解除には、見た状態の版（expectedVersion）が必要です。状態を取得してから操作してください。");
-
+    : InvalidOperationException("kill switch の解除には、見た状態の版（expectedVersion）が必要です。状態を取得してから操作してください。")
+{
+    /// <summary>REST の 428 の本文の <c>code</c>。</summary>
+    public const string Code = "precondition_required";
+}
