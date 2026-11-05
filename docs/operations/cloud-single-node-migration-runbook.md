@@ -146,6 +146,10 @@ issues: [#1525, #24, planning#868, MSP#2401, MSP#2402]
 - [ ] **場中に再認証が繰り返されたら、シンガポールで作り直す。** 無人の運用が成り立たないため。
   - 繰り返されたかの判断は、記録した回数と時刻でオーナーが行う。
 - [ ] 月曜の寄り付きで新規建てが拒否されていない（日曜の口座照会が成功している）。
+- [ ] Pod のセキュリティの段を上げる: 段 2（`podSecurity.stage: 2`・PSA の enforce は baseline）で 1 日以上、起動・判断・発注・日報が通ったら、段 3（非 root）へ上げる。
+  - 上げるときは `values-cloud.yaml` の `podSecurity.stage: 3` と `podSecurity.admission.enforce: restricted` を一緒に替える。
+  - OpenD は実機で確かめてから `opend.podSecurity.stage: 3` にする（chart の README「必須の前提」）。
+  - 戻すときは段を下げて helm を再実行する。
 
 ## 10. 戻し方（クラウドから自宅へ）
 

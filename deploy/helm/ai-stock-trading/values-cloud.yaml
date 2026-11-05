@@ -55,6 +55,14 @@ externalSecrets:
 reloader:
   enabled: false
 
+# Pod のセキュリティの段（IADR-0609 の推奨の順）。段 2 で始め、起動と取引の 1 日を確かめてから段 3（非 root）へ上げる（手順書）。
+# 段 2: root のまま seccomp RuntimeDefault・権限昇格なし・ケーパビリティを全て落とす。PSA の enforce は baseline（段 2 と OpenD の
+# 段 1 が満たす）。restricted は段 3 と OpenD の段 3 が要るので、上げるときに一緒に替える。メッシュの注入は使わない（貼れる）。
+podSecurity:
+  stage: 2
+  admission:
+    enforce: baseline
+
 stage0Recording:
   persistence:
     enabled: false

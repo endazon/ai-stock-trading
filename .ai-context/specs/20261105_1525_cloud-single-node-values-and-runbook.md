@@ -44,7 +44,11 @@ plan_refs:
    - 配布物の tar の sha256 を記録してから、ノードでイメージを作る。
    - 初回の SMS 認証は `kubectl attach` で利用者が行う。
    - 取引パスワードはクラスタに置かない。SIMULATE では解錠は要らない。実弾は別の判断である。
-7. **ArgoCD は最初の稼働では使わない**（`targetRevision: main` が空のブランチを指す）。手順書に書き、values-cloud を ArgoCD の valueFiles に入れないことを試験で固定する。
+7. **Pod のセキュリティは段 2 で始める**（develop の段の仕組み〔IADR-0609〕に合わせる。2026-11-06 追記）。
+   - `podSecurity.stage: 2`・PSA の enforce は baseline。
+   - 起動と取引の 1 日を確かめてから段 3（非 root）と restricted へ上げる（手順書 §9）。
+   - OpenD は段 1 のまま（実機で確かめてから段 3）。
+8. **ArgoCD は最初の稼働では使わない**（`targetRevision: main` が空のブランチを指す）。手順書に書き、values-cloud を ArgoCD の valueFiles に入れないことを試験で固定する。
 
 ## RAG を外したときの実測（決定 4 の根拠）
 

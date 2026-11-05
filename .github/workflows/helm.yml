@@ -314,6 +314,9 @@ jobs:
           grep -A1 'name: Broker__Provider' <<<"$out" | grep -q 'value: "moomoo"' || fail "values-cloud の発注先が moomoo（SIMULATE）でない。"
           grep -q '^  name: opend$' <<<"$out" || fail "values-cloud に OpenD が描画されない。"
           if grep -q 'name: opend-auth$' <<<"$out"; then fail "values-cloud に OpenD の認証サイドカー（画面の口）が描画された。"; fi
+          # NFR, IADR-0609: Pod のセキュリティは段 2（権限昇格なし）で始め、名前空間の PSA の enforce は baseline。
+          grep -q 'pod-security.kubernetes.io/enforce: "baseline"' <<<"$out" || fail "values-cloud の名前空間に PSA の enforce=baseline が無い。"
+          [ "$(grep -c 'allowPrivilegeEscalation: false' <<<"$out" || true)" -ge 11 ] || fail "values-cloud の Worker に権限昇格なし（段 2）が付いていない。"
           for prof in "" "-f $CHART/values-local.yaml"; do
             o="$(helm template ast "$CHART" $prof)"
             if grep -Eq '@sha256:|name: DB_PASSWORD$' <<<"$o"; then fail "既定または values-local の描画に digest か DB_PASSWORD が現れた（部品が漏れた）。"; fi
