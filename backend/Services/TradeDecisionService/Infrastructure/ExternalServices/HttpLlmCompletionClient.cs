@@ -100,9 +100,18 @@ public sealed class HttpLlmCompletionClient(
     // 監査台帳・月報に「割当モデルが利用できない」という誤った原因が残り、後から見た人が LLM 提供側を疑う。
     private const string HoldUnauthorized = """{"action":"Hold","rationale":"LLM ゲートウェイの認可が拒否されたため取引判断を見送り（資格情報・権限の不足）"}""";
 
+    public Task<string> CompleteAsync(
+        string prompt, string? model = null, string? purpose = null, CancellationToken cancellationToken = default) =>
+        CompleteAsync(new LlmPrompt(null, prompt), model, purpose, cancellationToken);
+
+    // FR-04, NFR（費用）, #1523, IADR-0607 決定3: 接頭辞を分けて送る（ゲートウェイの cacheablePrefix。MSP の IADR-0671）。
+    // モデルが読む全文は接頭辞＋残りで、max_tokens・model・purpose は従前のまま。ログには従前と同じ全文を出す。
     public async Task<string> CompleteAsync(
-        string prompt, string? model = null, string? purpose = null, CancellationToken cancellationToken = default)
+        LlmPrompt llmPrompt, string? model = null, string? purpose = null, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(llmPrompt);
+        var prompt = llmPrompt.FullText;
+
         // IADR-0212: 以降の判定（送信の purpose・割当照合・見送りの記録・費用の計上区分）はすべてこの 1 値を使う。
         var effectivePurpose = ResolvePurpose(purpose);
 
@@ -119,7 +128,8 @@ public sealed class HttpLlmCompletionClient(
             // 1024 のままだと思考が上限を食い本文が空になり、下の空応答判定で全判断が Hold に固定される。
             var exchange = await transport
                 .CompleteAsync(
-                    new LlmCompletionCall(prompt, MaxTokens: 4096, model, confidentiality, effectivePurpose),
+                    new LlmCompletionCall(
+                        llmPrompt.Rest, MaxTokens: 4096, model, confidentiality, effectivePurpose, llmPrompt.CacheablePrefix),
                     // 上限は輸送側が持つ（REST は HttpClient.Timeout、gRPC は構成の既定 deadline）。
                     // 取引判断は報告書と違い**種別による上限差が無い**ため、要求単位の指定はしない。
                     deadline: null,
@@ -220,7 +230,9 @@ public sealed class HttpLlmCompletionClient(
                 await usageReporter
                     .ReportAsync(
                         // NFR-13, ADR-0064 決定4, #1306, IADR-0550: 入力トークン数は 0 へ潰さない（取れない＝null は高い側の段で引く）。
-                        new LlmUsage(effectivePurpose, dto.InputTokens, dto.OutputTokens ?? 0, dto.Model),
+                        // #1523, IADR-0607: InputTokens は全体のまま。うちのキャッシュの書き・読みを併せて渡す（単価が違う）。
+                        new LlmUsage(effectivePurpose, dto.InputTokens, dto.OutputTokens ?? 0, dto.Model,
+                            dto.CacheCreationInputTokens, dto.CacheReadInputTokens),
                         cancellationToken)
                     .ConfigureAwait(false);
             }

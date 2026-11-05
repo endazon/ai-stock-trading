@@ -51,6 +51,8 @@ public sealed class GrpcLlmCompletionTransport(
                 Model = call.Model ?? string.Empty,
                 Confidentiality = call.Confidentiality ?? string.Empty,
                 Purpose = call.Purpose ?? string.Empty,
+                // FR-04, NFR, #1523, IADR-0607: 接頭辞（cacheable_prefix = 6）。null は空文字＝未指定（ゲートウェイは従前の形で送る）。
+                CacheablePrefix = call.CacheablePrefix ?? string.Empty,
             }, options).ConfigureAwait(false);
 
             return LlmCompletionExchange.Completed(new LlmCompletionPayload(
@@ -71,7 +73,10 @@ public sealed class GrpcLlmCompletionTransport(
                 // 解釈を分けると、同じ申告が経路によって別の記録になる。proto3 の既定（"" / 0。旧い基盤も同じ）は
                 // 「無い」＝null、未知の値・範囲外の状態コードも null（種別不明）。
                 LlmGatewayUnsent.ParseKind(response.FailureKind),
-                LlmGatewayUnsent.ParseStatusCode(response.UpstreamStatusCode)));
+                LlmGatewayUnsent.ParseStatusCode(response.UpstreamStatusCode),
+                // NFR（費用）, #1523, IADR-0607: キャッシュの書き・読み（11 / 12）。旧い基盤は 0（REST の欠落と同じ）。
+                response.CacheCreationInputTokens,
+                response.CacheReadInputTokens));
         }
         catch (RpcException ex) when (IsCancellation(ex))
         {

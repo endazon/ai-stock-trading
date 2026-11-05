@@ -1,4 +1,4 @@
-// NFR, FR-04, FR-06, FR-11, FR-16, MSP:ADR-0029, MSP:ADR-0075, IADR-0284, IADR-0323, IADR-0328, IADR-0332, IADR-0517, #746, #1269:
+// NFR, FR-04, FR-06, FR-11, FR-16, MSP:ADR-0029, MSP:ADR-0075, IADR-0284, IADR-0323, IADR-0328, IADR-0332, IADR-0517, IADR-0607, #746, #1269, #1523:
 // 基盤（microservices-platform）の LlmGateway が所有するテキスト生成の gRPC 契約の**写し**である。
 //
 // ■ 出所（provenance）—— 追随は人手である
@@ -9,6 +9,9 @@
 //   追随: 2026-10-09（#1269）—— 正本 develop 51633872（MSP#1824）の `CompleteResponse.failure_kind = 9` /
 //         `upstream_status_code = 10` と `CompletionStreamEvent.failure_kind = 10` / `upstream_status_code = 11` を写した。
 //         写した後のフィールドの名前・番号・型は正本と一致する（コメントの差だけ）。
+//   追随: 2026-11-05（#1523）—— 正本 develop b05b19b9（MSP#2397）の `CompleteRequest.cacheable_prefix = 6`、
+//         `CompleteResponse.cache_creation_input_tokens = 11` / `cache_read_input_tokens = 12`、
+//         `CompletionStreamEvent.cache_creation_input_tokens = 12` / `cache_read_input_tokens = 13` を写した。
 //   🔴 **本リポジトリは planning にも MSP にも依存しない**（ADR-0029 決定 2 / IADR-0328）。submodule も pin も無い。
 //   したがって**正本が変わっても機械は気付かない**。正本を変更する PR（MSP 側）と対で本ファイルを更新すること。
 //   契約の破れは実往復で `UNIMPLEMENTED` / 復号不能として現れる（黙って壊れはしないが、CI では捕まらない）。
@@ -73,6 +76,9 @@ message CompleteRequest {
   string confidentiality = 4;
   // 用途。空文字は "default"。値域は基盤の設定が閉じる（契約は閉じない）。
   string purpose = 5;
+  // MSP#2396（MSP の IADR-0671）: 呼び出しをまたいで変わらない接頭辞（任意）。モデルが読む全文は cacheable_prefix + prompt。
+  // ゲートウェイはこの末尾へキャッシュの区切り（5 分）を置いて送る。空文字は未指定＝従前と同じ形で送る（#1523, IADR-0607）。
+  string cacheable_prefix = 6;
 }
 
 // REST の CompletionApiResponse と同じ形。
@@ -92,6 +98,9 @@ message CompleteResponse {
   string failure_kind = 9;
   // MSP#1819: failure_kind=upstream_error で上流が HTTP 状態を返したときの状態コード。0 は「無い」（REST の null）。
   int32 upstream_status_code = 10;
+  // MSP#2396: input_tokens（プロンプト全体）のうち、キャッシュへ書いた分・キャッシュから読んだ分。
+  int32 cache_creation_input_tokens = 11;
+  int32 cache_read_input_tokens = 12;
 }
 
 // REST の CompletionStreamEvent（SSE の data: 行）と同じ形。
@@ -115,4 +124,7 @@ message CompletionStreamEvent {
   // MSP#1819: done=true / sent=false のメッセージにだけ載る（CompleteResponse の 9・10 と同じ意味）。
   string failure_kind = 10;
   int32 upstream_status_code = 11;
+  // MSP#2396: done=true のメッセージの input_tokens（プロンプト全体）のうちのキャッシュの書き・読み（CompleteResponse の 11・12 と同じ意味）。
+  int32 cache_creation_input_tokens = 12;
+  int32 cache_read_input_tokens = 13;
 }

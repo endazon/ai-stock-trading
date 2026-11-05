@@ -27,8 +27,10 @@ public sealed class RestLlmCompletionTransport(HttpClient httpClient) : ILlmComp
         // deadline は見ない。REST では呼び出し元が要求単位の CTS で打ち切っており（報告書の種別別上限・
         // IADR-0123 決定 1）、`HttpClient.Timeout` が多層防御の上限として残る。ここで二重に CTS を張ると
         // 「どちらで切られたか」がログから読めなくなる（IADR-0123 決定 5 が残した秒数の意味が壊れる）。
+        // #1523, IADR-0607: 接頭辞は空なら null（未指定）で送る（ゲートウェイは null・空を従前と同じ形で扱う）。
         var request = new CompletionRequest(
-            call.Prompt, call.MaxTokens, call.Model, call.Confidentiality, call.Purpose);
+            call.Prompt, call.MaxTokens, call.Model, call.Confidentiality, call.Purpose,
+            string.IsNullOrEmpty(call.CacheablePrefix) ? null : call.CacheablePrefix);
         using var response = await httpClient
             .PostAsJsonAsync(CompletePath, request, cancellationToken)
             .ConfigureAwait(false);
@@ -64,12 +66,16 @@ public sealed class RestLlmCompletionTransport(HttpClient httpClient) : ILlmComp
                 // （欠落〔旧い基盤〕・未知の値・想定外の型は null。応答全体を不正にしない）。
                 dto.RoutingReason,
                 LlmGatewayUnsent.ParseKind(dto.FailureKind),
-                LlmGatewayUnsent.ParseStatusCode(dto.UpstreamStatusCode)));
+                LlmGatewayUnsent.ParseStatusCode(dto.UpstreamStatusCode),
+                // NFR（費用）, #1523, IADR-0607: キャッシュの書き・読み（MSP#2396 が足した任意のフィールド。欠落は 0）。
+                dto.CacheCreationInputTokens ?? 0,
+                dto.CacheReadInputTokens ?? 0));
     }
 
     // POST /complete の要求（基盤 LlmGateway CompletionApiRequest 相当・camelCase JSON）。
+    // #1523, IADR-0607: CacheablePrefix は MSP#2396 の `cacheablePrefix`（任意・末尾追加）。
     private sealed record CompletionRequest(
-        string Prompt, int MaxTokens, string? Model, string? Confidentiality, string? Purpose);
+        string Prompt, int MaxTokens, string? Model, string? Confidentiality, string? Purpose, string? CacheablePrefix);
 
     // POST /complete の応答（CompletionApiResponse の必要部分）。**部分写像**であり、欠落しても
     // 既定値へ落ちるだけで安全側は崩れない（IADR-0104 / IADR-0219 の非破壊の扱いを踏襲）。
@@ -80,5 +86,6 @@ public sealed class RestLlmCompletionTransport(HttpClient httpClient) : ILlmComp
         string? Text, bool Sent, string? Model, string? StopReason = null,
         int? InputTokens = null, int? OutputTokens = null,
         string? RoutingReason = null, JsonElement? FailureKind = null,
-        JsonElement? UpstreamStatusCode = null);
+        JsonElement? UpstreamStatusCode = null,
+        int? CacheCreationInputTokens = null, int? CacheReadInputTokens = null);
 }

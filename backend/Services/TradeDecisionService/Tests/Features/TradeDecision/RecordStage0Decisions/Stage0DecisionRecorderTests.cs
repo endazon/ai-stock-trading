@@ -199,6 +199,30 @@ public class Stage0DecisionRecorderTests
     }
 
     // #1295, IADR-0524: 実費（`CostOf`）は**計測ごとの入力トークン数**で段を引く（要求ごとに決まる）。
+    // FR-04, FR-15, #1523, IADR-0607: 記録も本番と同じ接頭辞を分けて渡す（中継の包みで落とさない）。全文は従前と同じ。
+    [Fact]
+    public async Task 記録の一次と本判断にも本番と同じ接頭辞を分けて渡す()
+    {
+        var (recorder, llm, _, _) = Build([Decision("Buy")]);
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        llm.SplitPrompts.Should().NotBeEmpty();
+        foreach (var (purpose, prompt) in llm.SplitPrompts)
+        {
+            prompt.CacheablePrefix.Should().NotBeNullOrEmpty();
+            prompt.CacheablePrefix.Should().StartWith(purpose == LlmPurposes.TradeDecisionScreening
+                ? "あなたは取引候補の一次スクリーニング担当です。"
+                : "あなたは確定済み日報の方針とリスク制約の範囲内でのみ判断する取引アシスタントです。");
+            prompt.CacheablePrefix.Should().EndWith(Environment.NewLine + Environment.NewLine);
+        }
+
+        llm.SplitPrompts.Where(p => p.Purpose != LlmPurposes.TradeDecisionScreening).Select(p => p.Prompt.FullText)
+            .Should().Equal(llm.Prompts);
+        llm.SplitPrompts.Where(p => p.Purpose == LlmPurposes.TradeDecisionScreening).Select(p => p.Prompt.FullText)
+            .Should().Equal(llm.ScreeningPrompts);
+    }
+
     [Fact]
     public void 実費は計測ごとの入力トークン数でプロンプト長の段を引く()
     {
@@ -874,6 +898,17 @@ public class Stage0DecisionRecorderTests
         public List<string> Prompts { get; } = [];
 
         public List<string> ScreeningPrompts { get; } = [];
+
+        // #1523, IADR-0607: 分けて受け取った接頭辞と残り（用途と組で）。記録の中継が接頭辞を落とさないことを見る。
+        public List<(string? Purpose, LlmPrompt Prompt)> SplitPrompts { get; } = [];
+
+        public Task<string> CompleteAsync(
+            LlmPrompt prompt, string? model = null, string? purpose = null,
+            CancellationToken cancellationToken = default)
+        {
+            SplitPrompts.Add((purpose, prompt));
+            return CompleteAsync(prompt.FullText, model, purpose, cancellationToken);
+        }
 
         public async Task<string> CompleteAsync(
             string prompt, string? model = null, string? purpose = null,

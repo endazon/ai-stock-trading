@@ -353,6 +353,39 @@ public class TradeDecisionServiceTests
         decision.Intent.PositionEffect.Should().Be(PositionEffect.Open);
     }
 
+    // FR-04, NFR（費用）, #1523, IADR-0607 決定1: 本番の経路は、本判断の要求を「前文＋当日の日報方針」の接頭辞と残りに分けて渡す。
+    // 全文は組んだプロンプトのままで、接頭辞は銘柄・時刻を含まない。
+    private sealed class SplitCapturingLlm(string output) : ILlmCompletionClient
+    {
+        public List<LlmPrompt> Prompts { get; } = [];
+
+        public Task<string> CompleteAsync(
+            string prompt, string? model = null, string? purpose = null, CancellationToken ct = default) =>
+            CompleteAsync(new LlmPrompt(null, prompt), model, purpose, ct);
+
+        public Task<string> CompleteAsync(
+            LlmPrompt prompt, string? model = null, string? purpose = null, CancellationToken ct = default)
+        {
+            Prompts.Add(prompt);
+            return Task.FromResult(output);
+        }
+    }
+
+    [Fact]
+    public async Task 本判断の要求は前文と当日の日報方針を接頭辞として分けて渡す()
+    {
+        var llm = new SplitCapturingLlm(BuyJson);
+        var service = new AppSvc(llm, new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance);
+
+        await service.DecideAsync(Trigger());
+
+        var prompt = llm.Prompts.Should().ContainSingle().Subject;
+        prompt.CacheablePrefix.Should().Be(TradeDecisionPromptBuilder.DecisionCacheablePrefix(Policy));
+        prompt.CacheablePrefix.Should().Contain(Policy.Summary).And.NotContain(Trigger().Symbol);
+        prompt.Rest.Should().StartWith(TradeDecisionPromptBuilder.WatchlistSectionTitle);
+    }
+
     // FR-08, IADR-0072 決定1/4/5: 取得ポートが結果を返すと本判断プロンプトに参考情報として渡り、ポートが呼ばれる。
     // FR-04, #252, IADR-0169 決定2: **許可出所のタグを持つ**文脈だけが注入される（無タグは下のテストで固定）。
     [Fact]

@@ -46,8 +46,13 @@ public interface ILlmCompletionTransport
 /// <param name="Model">希望モデル。<c>null</c>＝未指定（ゲートウェイが用途で選ぶ）。</param>
 /// <param name="Confidentiality">入力の最高機密区分。未指定は安全側（restricted）。</param>
 /// <param name="Purpose">用途。費用の計上区分・割当モデルの照合はこの値で引かれる（IADR-0212）。</param>
+/// <param name="CacheablePrefix">
+/// FR-04, NFR, #1523, IADR-0607（MSP の IADR-0671）: 呼び出しをまたいで変わらない接頭辞（任意）。モデルが読む全文は
+/// <c>CacheablePrefix + Prompt</c>（区切りを足さない）。ゲートウェイはこの末尾にキャッシュの区切り（5 分）を置く。
+/// <c>null</c>・空は未指定＝従前と同じ形で送る。🔴 時刻・価格・銘柄など呼び出しごとに変わる値を入れない。
+/// </param>
 public sealed record LlmCompletionCall(
-    string Prompt, int MaxTokens, string? Model, string? Confidentiality, string? Purpose);
+    string Prompt, int MaxTokens, string? Model, string? Confidentiality, string? Purpose, string? CacheablePrefix = null);
 
 /// <summary>
 /// 輸送に依らない応答本体。REST の <c>CompletionApiResponse</c>／gRPC の <c>CompleteResponse</c> の
@@ -71,9 +76,14 @@ public sealed record LlmCompletionCall(
 /// NFR-13, ADR-0064 決定4, #1306, IADR-0550: その要求の入力トークン数。**取れないときは <c>null</c>**
 /// （輸送は <see cref="LlmReportedInputTokens.From"/> を通して詰める）。単価の段は取れないとき高い側で引く。
 /// </param>
+/// <param name="CacheCreationInputTokens">
+/// NFR（費用）, #1523, IADR-0607: <paramref name="InputTokens"/>（プロンプト全体）のうちキャッシュへ書いた分。未報告は 0。
+/// </param>
+/// <param name="CacheReadInputTokens">#1523, IADR-0607: 同じくキャッシュから読んだ分。未報告は 0。</param>
 public sealed record LlmCompletionPayload(
     string? Text, bool Sent, string? Model, string? StopReason, int? InputTokens, int? OutputTokens,
-    string? RoutingReason = null, LlmGatewayUnsentKind? FailureKind = null, int? UpstreamStatusCode = null);
+    string? RoutingReason = null, LlmGatewayUnsentKind? FailureKind = null, int? UpstreamStatusCode = null,
+    int CacheCreationInputTokens = 0, int CacheReadInputTokens = 0);
 
 /// <summary>
 /// NFR-13, FR-04, ADR-0064 決定4, #1306, IADR-0550: ゲートウェイが申告した入力トークン数の読み方（REST と gRPC で同じ）。

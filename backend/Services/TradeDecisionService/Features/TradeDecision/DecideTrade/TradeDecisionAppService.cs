@@ -679,7 +679,11 @@ public sealed class TradeDecisionAppService(
             // 使わない）。発注の建玉効果は下で LLM の後に引き直した保有で決める（IADR-0351 決定6）——ずれて新規建てになっても、
             // 新規建ての損切り幅の再検証（<= 0 → StopLossDistanceInvalid）が未使用の印 0 を必ず落とす。
             heldPosition?.SignedQuantity,
-            cancellationToken)
+            cancellationToken,
+            // FR-04, NFR（費用）, #1523, IADR-0607 決定1: 前文＋当日の日報方針の節だけをキャッシュできる接頭辞として分けて渡す
+            // （時刻・現在値・保有・銘柄・監視銘柄は残りの側。全文は変えない）。
+            screeningCacheablePrefix: TradeDecisionPromptBuilder.ScreeningCacheablePrefix(policy),
+            decisionCacheablePrefix: TradeDecisionPromptBuilder.DecisionCacheablePrefix(policy))
             .ConfigureAwait(false);
         var decision = orchestrated.Decision;
 
