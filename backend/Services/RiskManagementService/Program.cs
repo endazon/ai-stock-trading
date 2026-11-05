@@ -253,6 +253,14 @@ builder.Services.AddScoped<EntryBlockersService>();
 // chart は Secret ast-operator-hold の optional の secretKeyRef で読む（Secret が無ければ env も無い）。
 builder.Services.AddSingleton(builder.Configuration.GetSection(OperatorKillSwitchHoldOptions.SectionName)
     .Get<OperatorKillSwitchHoldOptions>() ?? new OperatorKillSwitchHoldOptions());
+// NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）。既定は Off（段 1 = Audit・段 2 = Enforce は構成で選ぶ）。
+// シークレットは Secret ast-owner-totp の optional の参照（scripts/ast-owner-totp-enroll.sh が作る）。
+builder.Services.AddSingleton(sp => new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorGate(
+    builder.Configuration.GetSection(AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions.SectionName)
+        .Get<AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions>()
+        ?? new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions(),
+    TimeProvider.System,
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger("OwnerSecondFactor")));
 builder.Services.AddScoped<KillSwitchService>();
 // 🔴 FR-10, ADR-0009, IADR-0567 決定 2: 発注執行が送る直前に読む停止の状態（審査と同じストア）。
 builder.Services.AddScoped<TradingHaltService>();

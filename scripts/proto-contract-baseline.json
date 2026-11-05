@@ -1379,6 +1379,11 @@
               "number": 1,
               "type": "string",
               "label": "singular"
+            },
+            "second_factor_code": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
             }
           },
           "reserved": {
@@ -1716,6 +1721,11 @@
               "type": "string",
               "label": "singular"
             },
+            "second_factor_code": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            },
             "symbol": {
               "number": 1,
               "type": "string",
@@ -1786,6 +1796,11 @@
               "number": 1,
               "type": "string",
               "label": "singular"
+            },
+            "second_factor_code": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
             }
           },
           "reserved": {
@@ -1822,6 +1837,11 @@
               "number": 1,
               "type": "string",
               "label": "singular"
+            },
+            "second_factor_code": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
             }
           },
           "reserved": {
@@ -1846,6 +1866,11 @@
           "fields": {
             "on_behalf_of": {
               "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "second_factor_code": {
+              "number": 3,
               "type": "string",
               "label": "optional"
             },
@@ -1894,6 +1919,11 @@
               "number": 1,
               "type": "string",
               "label": "singular"
+            },
+            "second_factor_code": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
             }
           },
           "reserved": {

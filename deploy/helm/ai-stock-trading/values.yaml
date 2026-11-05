@@ -849,6 +849,12 @@ services:
       # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）を提供側で確かめる。段 1 は Audit（記録だけ・操作を止めない）。
+      # 段 2 で Enforce にする（確かめられない操作を 403 で拒む）。シークレットは scripts/ast-owner-totp-enroll.sh が作る Secret ast-owner-totp
+      # （chart・ESO・ArgoCD の管理の外）を optional で読む。Secret が無ければ Audit は「未構成」と記録するだけ。
+      - { name: OwnerSecondFactor__Mode, value: "Audit" }
+      - name: OwnerSecondFactor__Secret
+        secretKeyRef: { name: ast-owner-totp, key: secret, optional: true }
   risk-management:
     image: ai-stock-trading/risk-management-service
     db: risk_management_svc
@@ -921,6 +927,12 @@ services:
         secretKeyRef: { name: ast-operator-hold, key: enabled, optional: true }
       - name: RiskManagement__OperatorKillSwitchHold__Reason
         secretKeyRef: { name: ast-operator-hold, key: reason, optional: true }
+      # NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）を提供側で確かめる。段 1 は Audit（記録だけ・操作を止めない）。
+      # 段 2 で Enforce にする（確かめられない操作を 403 で拒む）。シークレットは scripts/ast-owner-totp-enroll.sh が作る Secret ast-owner-totp
+      # （chart・ESO・ArgoCD の管理の外）を optional で読む。Secret が無ければ Audit は「未構成」と記録するだけ。
+      - { name: OwnerSecondFactor__Mode, value: "Audit" }
+      - name: OwnerSecondFactor__Secret
+        secretKeyRef: { name: ast-owner-totp, key: secret, optional: true }
   trade-decision:
     image: ai-stock-trading/trade-decision-service
     extraEnv:

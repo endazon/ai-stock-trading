@@ -9,6 +9,10 @@ internal static class ResumeTradingEndpoint
         owner.MapPost("/resume", (PauseRequest req, PauseService svc, HttpContext http) => Handle(req, svc, http));
 
     // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（RiskControlsOwnerWriteGrpcService）が共有する処理（2 箇所に書かない）。
-    internal static IResult Handle(PauseRequest req, PauseService svc, HttpContext http) =>
-        Results.Ok(svc.Resume(RiskControlEndpoints.ActorOf(http), req.Reason));
+    internal static IResult Handle(PauseRequest req, PauseService svc, HttpContext http)
+    {
+        // NFR-06, FR-14, #1542, IADR-0615: 再開は危険な操作（第 2 要素）。
+        return Results.Ok(svc.Resume(RiskControlEndpoints.ActorOf(http), req.Reason,
+            RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.TradingResume, req.SecondFactorCode)));
+    }
 }
