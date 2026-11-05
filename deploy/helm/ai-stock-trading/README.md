@@ -1046,6 +1046,67 @@ PersistentVolumeClaim `opend-persist` には `helm.sh/resource-policy: keep` を
 OpenD はデバイス信頼を `$HOME/.com.moomoo.OpenD` に書くため、非 root 化は **HOME の再調整とセット**で行う。
 イメージ側は uid/gid **10001** と `/home/opend` を用意済み（`USER` は切り替えていない＝既定 root）。
 
+[IADR-0609](../../../.ai-context/adr/IADR-0609_pod-security-context-staged.md) 以降は**段の値**で切り替えられる
+（下の「Pod のセキュリティ設定の段」。段 3 は uid 10001・fsGroup・0440・ケーパビリティなしを一度に描く）:
+
+```bash
+helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
+  --set opend.enabled=true \
+  --set opend.home=/home/opend \
+  --set opend.podSecurity.stage=3
+```
+
+従来の個別の `--set`（下）も引き続き効く（段の値の上に重なる）。
+
+#### 🔴 必須の前提: OpenD の seccomp を opt-in する前に（`opend.podSecurity.seccomp=true`。未検証）
+
+root で動く実 OpenD は、seccomp `RuntimeDefault` と権限昇格なし（no_new_privs）の下でまだ確かめていない。OpenD が落ちると発注経路が止まるので、
+**moomoo-sim の環境で次を通してから**本番の構成で有効にする。
+
+1. 事前に `helm history ast -n ai-stock-trading` で切り戻し先を控える。取引時間外で、処理中の発注が無いこと。
+2. `--set opend.podSecurity.seccomp=true` で upgrade する（OpenD は作り直される。PVC のデバイス信頼で無人の再ログインになる想定）。
+3. 確かめる項目（どれか 1 つでも満たさなければ切り戻す）:
+   - Pod が Ready（readiness の TCP 11111）で、再起動の回数が増えていない（`kubectl -n ai-stock-trading get pod -l app=opend`）。
+   - `kubectl logs deploy/opend -c opend` に `Operation not permitted`・`Bad system call`・異常終了が無い。
+   - ログインが完了する（有人の再検証が要ったかを記録する）。発注執行から OpenD への接続（moomoo-sim の照会）が通る。
+   - 半日以上（取引時間を含む）、OpenD が落ちない。
+4. 切り戻し: `helm rollback ast <控えたリビジョン> -n ai-stock-trading`（または `--set opend.podSecurity.seccomp=false` で upgrade）。
+
+#### 🔴 必須の前提: 段 3 に上げる前に実機で確かめる（未検証）
+
+段 3 は seccomp と権限昇格なしも常に付ける。**上の seccomp の確認を先に通してから**、次へ進む。
+
+
+段 3 は**実 OpenD で未検証**である。HOME が `/root` から `/home/opend` に変わるので、デバイス信頼の置き場（`$HOME/.com.moomoo.OpenD`。PVC の mount 先）も変わる。
+**次の手順を、本番の口座に繋がない環境（moomoo-sim）で先に通してから**本番の構成で上げる。
+
+事前に控えるもの:
+
+1. 現在のリビジョン: `helm history ast -n ai-stock-trading`（切り戻し先）。
+2. PVC の中身の所有者と一覧: `kubectl -n ai-stock-trading exec deploy/opend -c opend -- ls -la /root/.com.moomoo.OpenD`（root の所有のはず）。
+3. 取引時間外であること・処理中の発注が無いこと（OpenD は作り直される）。
+
+確かめる項目（上げた後。どれか 1 つでも満たさなければ切り戻す）:
+
+| # | 項目 | 確かめ方 |
+| --- | --- | --- |
+| 1 | OpenD が非 root で動く | `kubectl -n ai-stock-trading exec deploy/opend -c opend -- id` が `uid=10001` |
+| 2 | 起動して待ち受ける | Pod が Ready（readiness の TCP 11111）。`kubectl logs deploy/opend -c opend` に権限の失敗（`Permission denied`）が無い |
+| 3 | `OpenD.xml` を書けた | `kubectl exec deploy/opend -c opend -- ls -l /opt/opend/OpenD.xml` が uid 10001・600 |
+| 4 | 鍵を読めた | 起動ログに RSA 鍵の読み込み失敗が無い（mount は 0440・fsGroup 10001） |
+| 5 | デバイス信頼 | **有人の再検証（画像 / SMS）が要るか**を記録する。PVC の既存のファイルは root の所有なので、`fsGroup` で読めなければ再検証になる。無人の再ログインを保ちたければ、事前に PVC の中身を uid 10001 へ移す計画を別に立てる |
+| 6 | 発注経路 | 発注執行から OpenD への接続（moomoo-sim の照会）が通る |
+| 7 | 認証サイドカー | `kubectl exec deploy/opend -c opend-auth -- id` が `uid=10001`。画面の検証コードの入力（SC-04 の口）が 503 にならない |
+
+切り戻し:
+
+```bash
+helm rollback ast <事前に控えたリビジョン> -n ai-stock-trading   # または --set opend.podSecurity.stage=1 --set opend.home=/root で upgrade
+```
+
+- 段 1 に戻すと HOME は `/root` に戻り、PVC の元のデバイス信頼をそのまま使う（段 3 のあいだに `/home/opend` 側へ書かれたものは使わない）。
+- 段 3 のあいだに PVC へ uid 10001 の所有で書かれたファイルは、root の OpenD でも読める（root は所有者を問わず読める）。
+
 ```bash
 helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
   --set opend.enabled=true \
@@ -1067,6 +1128,37 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 > ⚠️ `rsaSecretDefaultMode` は **k8s のファイルモード（8 進を 10 進で表す整数）**。values ファイルでは `0400` / `0440`
 > と 8 進で書ける（YAML が解釈する）が、`--set` では **10 進**（`256` / `288`）で渡すこと。非 root では Secret の所有 uid が
 > root のままなので、`fsGroup` を付けたうえで**グループ読み（0440）**が要る。
+
+## Pod のセキュリティ設定の段（`podSecurity.stage` / `opend.podSecurity.stage`。[IADR-0609](../../../.ai-context/adr/IADR-0609_pod-security-context-staged.md)）
+
+Worker のイメージ（`backend/Dockerfile`）は aspnet の非特権ユーザー（`USER $APP_UID`＝1654）で動く。chart は起動を止め得る設定を
+**段で切り替える**（既定は段 1＝報告だけ）。戻すときは段を下げて `helm upgrade` する。
+
+| 段 | Worker 10 本・CronJob（`podSecurity.stage`） | OpenD（`opend.podSecurity.stage`） |
+| --- | --- | --- |
+| 1（既定） | 動作を変えない。Worker は `runAsUser: 0` を明示（イメージが非 root でも root のまま） | root のまま。認証サイドカーだけ `allowPrivilegeEscalation: false`・`capabilities.drop: [ALL]`。**OpenD 本体には何も足さない**（未検証の変更を既定にしない）。`opend.podSecurity.seccomp=true`（明示の opt-in）で Pod に seccomp `RuntimeDefault`・OpenD 本体に権限昇格なし |
+| 2 | root のまま seccomp `RuntimeDefault`・権限昇格なし・ケーパビリティを全て落とす | （受け付けない。段 1 へ繰り上げた） |
+| 3 | 非 root（Worker 1654:1654・fsGroup 1654、CronJob 100:101）。発注執行の鍵の mount は 0440 | 非 root（10001:10001・fsGroup）・ケーパビリティなし・鍵の mount 0440。`opend.home=/home/opend` が要る |
+
+- **全 Pod で段に依らず SA トークンを置かない**（`automountServiceAccountToken: false`。AST の Pod は k8s API を使わない）。
+- **認証サイドカーは段に依らず OpenD 本体と同じ uid** で動く（uid の指定が無ければ `runAsUser: 0` を明示する）。
+- OpenD の `opend.podSecurity.seccomp=true` は、上げる前に下の「必須の前提: OpenD の seccomp を opt-in する前に」を通す。
+- ⚠️ `opend.enabled=true` の構成では、本設定を含む最初の `helm upgrade` で OpenD の Pod テンプレートが変わり（トークンを置かない・サイドカーの設定）、**OpenD が 1 回作り直される**。取引時間外に配備する。
+- `podSecurity.readOnlyRootFilesystem=true`（段 2 以上）: Worker と CronJob のルートを読み取り専用にし、`/tmp` を emptyDir にする。
+- Namespace（`namespace.create=true`）には Pod Security Admission の **warn / audit = restricted** を常に貼る（段 1 の「報告」）。
+  `podSecurity.admission.enforce` は既定 空（貼らない）。`baseline` / `restricted` を選べるが、メッシュの注入が有効なら貼らない。
+  `restricted` は Worker が段 3（OpenD が有効なら OpenD も段 3）でないと描画で止まる。
+- 起動器（`scripts/k8s-local-deploy.sh`）は名前空間を作った直後に warn / audit = restricted を貼る（enforce は貼らない）。
+- CronJob の段 3 の uid / gid（100:101）は `tradingCycle.cronjob.uidVerifiedImage` の curl イメージで確かめた値である。`image` だけを替えて uid / gid が
+  既定のままなら描画で止まる。新しいイメージの `/etc/passwd`・`/etc/group` を確かめ、`runAsUser` / `runAsGroup` を直すか、同じ番号でよければ
+  `uidVerifiedImage` を同じ image に揃える（明示の上書き）。
+- ⚠️ 段 3 へ上げる前に、Stage 0 の記録の PVC（`stage0Recording.persistence`）に root で書いた既存ファイルが無いか確かめる
+  （hostPath 系の StorageClass では fsGroup が効かない）。
+
+```bash
+# 段 1 の報告（warn / audit）を見る: 段 3 で違反が消えることを dry-run で確かめる
+helm template ast deploy/helm/ai-stock-trading --set podSecurity.stage=3 | kubectl apply --dry-run=server -f - 2>&1 | grep -i 'would violate' || echo 'no warnings'
+```
 
 ## #132: 秘匿情報の External Secrets（Vault）受け口（`externalSecrets.enabled`）
 

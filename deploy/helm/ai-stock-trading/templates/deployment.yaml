@@ -28,6 +28,9 @@
 {{- if or (not $mq.host) (not $mq.port) (not $mq.credentialsSecretName) (not $mq.usernamePrefix) -}}
 {{- fail "global.rabbitmq.host / port / credentialsSecretName / usernamePrefix が要ります（ブローカのサービスごとの資格情報。IADR-0568）。" -}}
 {{- end -}}
+{{- /* NFR, IADR-0609, #1526: Pod のセキュリティ設定の段と水準の組み合わせを、描画のたびに検める（templates/_pod-security.tpl）。 */ -}}
+{{- include "ast.podSecurity.validate" . -}}
+{{- $readOnlyRoot := include "ast.podSecurity.readOnlyRoot" . -}}
 {{- range $name, $svc := .Values.services }}
 {{- /* FR-09/14, #245, IADR-0102: Discord Bot の環境固有 ID（非機密）を values（discord.bot.*）から与える設定点。
        env を**追加**せず extraEnv の**値を上書き**する（同名 env の二重定義を作らない）。空既定では 1 つも
@@ -148,11 +151,18 @@ spec:
                自己申告（有効な段）を更新する。全 Worker が同一 ConfigMap をマウントするため共通の checksum。 */}}
         checksum/pipeline: {{ $.Files.Get "files/pipeline.json" | sha256sum }}
     spec:
+      {{- /* NFR, IADR-0609, #1526: 段 1 は root を明示（イメージは USER $APP_UID）、段 2 は root のまま権限を絞る、段 3 は非 root。 */}}
+      {{- with (include "ast.pod.security" (dict "root" $ "uid" $.Values.podSecurity.dotnetRunAsUser "gid" $.Values.podSecurity.dotnetRunAsUser "fsGroup" true "pinRoot" true) | trim) }}
+      {{- . | nindent 6 }}
+      {{- end }}
       containers:
         - name: {{ $name }}-service
           {{- /* ADR-0006, #1525, IADR-0608 決定2: digest があれば固定（requireDigest のとき無ければ止める）。無い既定の描画は不変。 */}}
           image: "{{ include "ast.imageRef" (dict "registry" $g.image.registry "repository" $svc.image "tag" ($svc.tag | default $g.image.tag) "digest" $svc.digest "require" $g.image.requireDigest "what" (printf "services.%s" $name)) }}"
           imagePullPolicy: {{ $g.image.pullPolicy }}
+          {{- with (include "ast.container.security" $ | trim) }}
+          {{- . | nindent 10 }}
+          {{- end }}
           ports:
             - containerPort: 8080
             {{- if $svc.grpcPort }}
@@ -468,6 +478,11 @@ spec:
             - name: stage0-recording
               mountPath: {{ $s0.mountPath }}
             {{- end }}
+            {{- if $readOnlyRoot }}
+            {{- /* NFR, IADR-0609: ルートを読み取り専用にしたときの一時ファイルの置き場（.NET の一時ファイル・診断の IPC）。 */}}
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
       volumes:
         {{- /* ADR-0001, IADR-0077, #22: 宣言的バインディングの ConfigMap（configmap-pipeline.yaml）。全 Worker 共通。 */}}
         - name: pipeline-config
@@ -478,9 +493,9 @@ spec:
           secret:
             secretName: {{ $.Values.moomoo.opend.rsaSecretName }}
             {{- /* #132, IADR-0060 決定 3: 秘密鍵は所有者のみ読取（0400=10 進 256）。
-                   ⚠️ 本コンテナの実行 uid と一致していること（現行の Worker イメージは root 実行）。
-                   非 root 実行へ移す場合は fsGroup ＋ 0440 が要る（chart README 参照）。 */}}
-            defaultMode: {{ $.Values.moomoo.opend.rsaSecretDefaultMode }}
+                   ⚠️ 本コンテナの実行 uid と一致していること（podSecurity.stage が 1・2 の Worker は root で動く）。
+                   NFR, IADR-0609: podSecurity.stage=3（非 root）では fsGroup ＋ 0440（10 進 288）を描く。 */}}
+            defaultMode: {{ include "ast.podSecurity.secretMode" (dict "root" $ "mode" $.Values.moomoo.opend.rsaSecretDefaultMode) }}
             items:
               - key: {{ $.Values.moomoo.opend.rsaSecretKey }}
                 path: {{ $.Values.moomoo.opend.rsaSecretKey }}
@@ -489,5 +504,10 @@ spec:
         - name: stage0-recording
           persistentVolumeClaim:
             claimName: trade-decision-stage0
+      {{- end }}
+      {{- if $readOnlyRoot }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ $.Values.podSecurity.tmpSizeLimit | quote }}
       {{- end }}
 {{- end }}

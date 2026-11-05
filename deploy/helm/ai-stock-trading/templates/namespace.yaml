@@ -13,4 +13,13 @@ metadata:
     {{- if .Values.mesh.sidecarInjection.enabled }}
     istio-injection: enabled
     {{- end }}
+    {{- /* NFR, IADR-0609, #1526: Pod Security Admission。warn / audit はいつも貼る（違反が見える＝段 1 の報告）。
+           enforce は選んだときだけ、かつメッシュの注入が無いときだけ貼る（istio-init が baseline を満たさない）。
+           値域は templates/_pod-security.tpl の ast.podSecurity.validate が検める。 */}}
+    {{- $psa := .Values.podSecurity.admission }}
+    {{- if and $psa.enforce (not .Values.mesh.sidecarInjection.enabled) }}
+    pod-security.kubernetes.io/enforce: {{ $psa.enforce | quote }}
+    {{- end }}
+    pod-security.kubernetes.io/warn: {{ $psa.warn | quote }}
+    pod-security.kubernetes.io/audit: {{ $psa.audit | quote }}
 {{- end }}

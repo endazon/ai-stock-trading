@@ -23,6 +23,61 @@
 {{- if not $o.home }}
 {{- fail "opend.home が空です（OpenD はデバイス信頼を $HOME/.com.moomoo.OpenD に書くため必須）。既定は /root。" }}
 {{- end }}
+{{- /* NFR, IADR-0609, #1526: OpenD の Pod の段（opend.podSecurity.stage。Worker の podSecurity.stage とは別）。
+       段の値を組み、受け口 opend.securityContext / opend.podSecurityContext を**上に重ねる**（従来の --set の手順はそのまま効く。
+       1（既定）: root のまま。トークンを置かない。認証サイドカー（Worker と同じ .NET のイメージ）は権限昇格なし・ケーパビリティを全て落とす
+          （同じ uid の所有者として読み書きするだけ）。**OpenD 本体には何も足さない**（ADR-0024: 再起動を最小にする。root の実 OpenD で
+          確かめていない変更を既定にしない。OpenD が落ちると発注経路が止まる）。
+          opend.podSecurity.seccomp=true（明示の opt-in。chart README の必須の前提の手順で実機を確かめてから）: Pod に seccomp RuntimeDefault、
+          OpenD 本体に権限昇格なし。
+          段 1 で付けないもの: OpenD 本体のケーパビリティを落とすこと（root の OpenD は uid 10001 が所有する /opt/opend へ OpenD.xml を書く
+          ＝CAP_DAC_OVERRIDE に頼る）・非 root（HOME とデバイス信頼の置き場が変わる）・readOnlyRootFilesystem（/opt/opend へ書く）。
+       2: 受け付けない（描画で止める）。
+       3: 非 root（opend.runAsUser・fsGroup）・全コンテナでケーパビリティを全て落とす。HOME は /home/opend に限る。 */}}
+{{- $ostRaw := ($o.podSecurity | default dict).stage }}
+{{- if not (has (toString $ostRaw) (list "1" "3")) }}
+{{- fail (printf "opend.podSecurity.stage は 1 / 3 のどちらかです（受け取った値: %v。段 2 の中身は段 1 へ繰り上げた。IADR-0609）" $ostRaw) }}
+{{- end }}
+{{- $ost := int (toString $ostRaw) }}
+{{- $podSc := dict }}
+{{- $ctrSc := dict }}
+{{- $sideSc := dict }}
+{{- if or ($o.podSecurity | default dict).seccomp (ge $ost 3) }}
+{{- $_ := set $podSc "seccompProfile" (dict "type" "RuntimeDefault") }}
+{{- $_ := set $ctrSc "allowPrivilegeEscalation" false }}
+{{- end }}
+{{- if ge $ost 3 }}
+{{- if ne (toString $o.home) "/home/opend" }}
+{{- fail (printf "opend.podSecurity.stage=3（非 root）には opend.home=/home/opend が要ります（受け取った値: %s。deploy/opend/Dockerfile が uid 10001 用に用意した HOME。IADR-0609 / IADR-0060 決定 2）。" $o.home) }}
+{{- end }}
+{{- $uid := int (default 0 $o.runAsUser) }}
+{{- $_ := set $podSc "runAsNonRoot" true }}
+{{- $_ := set $podSc "runAsUser" $uid }}
+{{- $_ := set $podSc "runAsGroup" $uid }}
+{{- $_ := set $podSc "fsGroup" $uid }}
+{{- $_ := set $ctrSc "capabilities" (dict "drop" (list "ALL")) }}
+{{- end }}
+{{- $podSc = mustMergeOverwrite $podSc (deepCopy ($o.podSecurityContext | default dict)) }}
+{{- $ctrSc = mustMergeOverwrite $ctrSc (deepCopy ($o.securityContext | default dict)) }}
+{{- if ge $ost 3 }}
+{{- range $k := list "runAsUser" "runAsGroup" }}
+{{- if le (int (default 0 (index $podSc $k))) 0 }}
+{{- fail (printf "opend.podSecurity.stage=3 の Pod の %s は 1 以上の整数で与えてください（受け取った値: %v。IADR-0609）" $k (index $podSc $k)) }}
+{{- end }}
+{{- end }}
+{{- if and (hasKey $ctrSc "runAsUser") (le (int $ctrSc.runAsUser) 0) }}
+{{- fail (printf "opend.podSecurity.stage=3 で opend.securityContext.runAsUser が %v です（1 以上。IADR-0609）" $ctrSc.runAsUser) }}
+{{- end }}
+{{- end }}
+{{- /* 認証サイドカーは OpenD 本体と同じ uid で動く（共有 emptyDir のファイルは umask 077・FIFO は 600）。サイドカーのイメージは
+       Worker と同じ USER $APP_UID なので、Pod にもコンテナにも uid が無ければ root（0）を明示して OpenD 本体に揃える。 */}}
+{{- $sideSc = mustMergeOverwrite $sideSc (deepCopy $ctrSc) }}
+{{- $_ := set $sideSc "allowPrivilegeEscalation" false }}
+{{- $_ := set $sideSc "capabilities" (dict "drop" (list "ALL")) }}
+{{- if and (not (hasKey $sideSc "runAsUser")) (not (hasKey $podSc "runAsUser")) }}
+{{- $_ := set $sideSc "runAsUser" 0 }}
+{{- end }}
+{{- $rsaMode := ternary 288 $o.rsaSecretDefaultMode (ge $ost 3) }}
 {{- if $o.persistence.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -86,7 +141,9 @@ spec:
         sidecar.istio.io/inject: "false"
       {{- end }}
     spec:
-      {{- with $o.podSecurityContext }}
+      {{- /* NFR, IADR-0609: AST は k8s API を使わない。段に依らず、名前空間の default のトークンを置かない。 */}}
+      automountServiceAccountToken: false
+      {{- with $podSc }}
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -108,7 +165,7 @@ spec:
           {{- /* ADR-0006, #1525, IADR-0608 決定2: digest があれば固定（requireDigest のとき無ければ止める）。 */}}
           image: "{{ include "ast.imageRef" (dict "registry" .Values.global.image.registry "repository" $o.image.repository "tag" ($o.image.tag | default .Values.global.image.tag) "digest" $o.image.digest "require" .Values.global.image.requireDigest "what" "opend.image") }}"
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
-          {{- with $o.securityContext }}
+          {{- with $ctrSc }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -176,13 +233,14 @@ spec:
              2 段で絞る（IADR-0566）。書ける行は閉じた 3 コマンド（input_phone_verify_code / input_pic_verify_code /
              req_phone_verify_code）に限られる。
 
-          securityContext は OpenD 本体と**同じ値**を与える。共有 emptyDir 上のファイルは OpenD 本体が
+          securityContext は OpenD 本体と**同じ uid** を与える（$sideSc。上の段の組み立てを参照）。共有 emptyDir 上のファイルは OpenD 本体が
           umask 077 で作るため、uid がずれると読めなくなる（非 root 化したときに静かに壊れる）。
+          NFR, IADR-0609: サイドカーのイメージは USER $APP_UID（1654）なので、uid の指定が無ければ runAsUser: 0 を明示して root の OpenD に揃える。
         */}}
         - name: opend-auth
           image: "{{ include "ast.imageRef" (dict "registry" .Values.global.image.registry "repository" $o.authGateway.image.repository "tag" ($o.authGateway.image.tag | default .Values.global.image.tag) "digest" $o.authGateway.image.digest "require" .Values.global.image.requireDigest "what" "opend.authGateway.image") }}"
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
-          {{- with $o.securityContext }}
+          {{- with $sideSc }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -235,8 +293,9 @@ spec:
         - name: rsa
           secret:
             secretName: {{ $o.rsaSecretName }}
-            {{- /* #132, IADR-0060 決定 3: 秘密鍵は所有者のみ読取（0400=10 進 256）。非 root 化時は fsGroup ＋ 0440。 */}}
-            defaultMode: {{ $o.rsaSecretDefaultMode }}
+            {{- /* #132, IADR-0060 決定 3: 秘密鍵は所有者のみ読取（0400=10 進 256）。非 root 化時は fsGroup ＋ 0440。
+                   NFR, IADR-0609: opend.podSecurity.stage=3 では 0440（10 進 288）を描く。 */}}
+            defaultMode: {{ $rsaMode }}
             items:
               - { key: {{ $o.rsaSecretKey }}, path: {{ $o.rsaSecretKey }} }
 ---

@@ -5,6 +5,11 @@
 {{- if .Values.tradingCycle.cronjob.enabled }}
 {{- $c := .Values.tradingCycle.cronjob }}
 {{- $g := .Values.global }}
+{{- /* NFR, IADR-0609: 段 3 の uid / gid（既定 100:101）は uidVerifiedImage の curl イメージで確かめた値。image だけを替えると
+       その番号の利用者がいるとは限らない。uid / gid を直すか、uidVerifiedImage を同じ image に揃える（明示の上書き）まで止める。 */}}
+{{- if and (ge (int (include "ast.podSecurity.stage" .)) 3) (ne (toString $c.image) (toString $c.uidVerifiedImage)) (eq (int $c.runAsUser) 100) (eq (int $c.runAsGroup) 101) }}
+{{- fail (printf "podSecurity.stage=3 で tradingCycle.cronjob.image（%s）が uid / gid を確かめたイメージ（tradingCycle.cronjob.uidVerifiedImage: %s）と違い、runAsUser / runAsGroup が既定の 100:101 のままです。新しいイメージの /etc/passwd・/etc/group を確かめ、runAsUser / runAsGroup を直すか、同じ番号でよければ uidVerifiedImage を同じ image に揃えてください（IADR-0609）。" $c.image $c.uidVerifiedImage) }}
+{{- end }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -40,6 +45,11 @@ spec:
         {{- end }}
         spec:
           restartPolicy: Never
+          {{- /* NFR, IADR-0609, #1526: 段 1 は何も足さない（curl イメージは元から非 root の curl_user）。段 2 は seccomp・トークンなし、
+                 段 3 は runAsNonRoot と curl_user:curl_group（tradingCycle.cronjob.runAsUser / runAsGroup）。 */}}
+          {{- with (include "ast.pod.security" (dict "root" $ "uid" $c.runAsUser "gid" $c.runAsGroup "fsGroup" false "pinRoot" false) | trim) }}
+          {{- . | nindent 10 }}
+          {{- end }}
           containers:
             - name: trigger
               {{- /* ADR-0006, #1525, IADR-0608 決定2: requireDigest のときは digest つきの参照だけを受ける。 */}}
@@ -47,6 +57,9 @@ spec:
               {{- fail (printf "global.image.requireDigest=true なのに tradingCycle.cronjob.image（%s）が digest で固定されていません（IADR-0608）" $c.image) }}
               {{- end }}
               image: {{ $c.image | quote }}
+              {{- with (include "ast.container.security" $ | trim) }}
+              {{- . | nindent 14 }}
+              {{- end }}
               # NFR, #456, IADR-0176 決定2: run-once は OwnerOrService の認可を要する（無認証では 401）。
               # そこで **client_credentials でトークンを取り、Bearer を付けて叩く** 2 段にする。
               #
@@ -100,4 +113,13 @@ spec:
               resources:
                 requests: { cpu: 10m, memory: 32Mi }
                 limits: { cpu: 100m, memory: 64Mi }
+              {{- if include "ast.podSecurity.readOnlyRoot" $ }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: {{ $.Values.podSecurity.tmpSizeLimit | quote }}
+              {{- end }}
 {{- end }}
