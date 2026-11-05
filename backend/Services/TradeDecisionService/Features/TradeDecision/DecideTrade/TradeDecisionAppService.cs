@@ -606,9 +606,9 @@ public sealed class TradeDecisionAppService(
         // fail-safe: 取得は判断のクリティカルパス外。例外・遅延で判断を止めないよう、失敗は「文脈なし」に縮退する
         //（#18 アダプタ自体も fail-safe だが、独自アダプタ差し替え時の保険として判断境界でも握る）。
         // FR-08, FR-11, #1283: 取得の状態（成功・失敗・未構成）も受け取り、失敗は Warning、状態は判断の記録（下の「LLM 判断」）へ残す。
-        var (retrieved, ragContext, ragDegraded) = await RetrieveContextSafeAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
+        var (retrieved, ragContext, ragDegraded, retrievalStatus) = await RetrieveContextSafeAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
         // FR-04, FR-08, #1525, IADR-0608 決定4: 取得口が「未構成」を返したときだけ真（失敗・0 件は偽＝従来のプロンプト）。
-        var retrievalNotConfigured = ragContext == RagContextNotConfigured;
+        var retrievalNotConfigured = retrievalStatus == RetrievalStatus.NotConfigured;
 
         // 🔴 FR-04, FR-02, #1034, IADR-0440 決定 2/6: 判断時点の監視銘柄（権威源＝市場監視から読めた一覧）。null＝不明
         // （プロンプトは「不明」と明示し、「ウォッチリストなし」「この銘柄は対象外」とは書かない）。**読めないことでは見送らない**
@@ -1475,7 +1475,8 @@ public sealed class TradeDecisionAppService(
     // ragContext を retrieved-degraded / empty-degraded にし、ragDegraded（unknown / none / 理由の符号）を添え、1 判断 1 行の Warning を出す。
     // 🔴 empty-degraded（特に embed-failed の 0 件）は「該当なし」ではない可能性が高い（基盤は鍵が無い間 internal の報告書を索引しない。MSP#1908）。
     // 失敗は縮退より優先する（failed の Warning が 1 行出るので、縮退の Warning は重ねない）。印の無い旧い基盤は従来の値＋ragDegraded=unknown。
-    private async Task<(IReadOnlyList<RetrievedContext> Contexts, string RagContext, string RagDegraded)> RetrieveContextSafeAsync(
+    // #1525, IADR-0608 決定4: 取得口が返した状態（RetrievalStatus）も返す（プロンプトの「検索を使っていない」の行は状態の値で判定する）。
+    private async Task<(IReadOnlyList<RetrievedContext> Contexts, string RagContext, string RagDegraded, RetrievalStatus Status)> RetrieveContextSafeAsync(
         DecisionTrigger trigger, DailyPolicy policy, CancellationToken cancellationToken)
     {
         RetrievalResult result;
@@ -1488,7 +1489,7 @@ public sealed class TradeDecisionAppService(
             // 例外のメッセージは構造化の値へ載せない（原因は型名だけ）。スタックは従来どおり例外として添える。
             result = new RetrievalResult([], RetrievalStatus.Failed, $"exception:{ex.GetType().Name}");
             LogRetrievalFailure(trigger, result, ex);
-            return ([], RagContextFailed, RagDegradedUnknown);
+            return ([], RagContextFailed, RagDegradedUnknown, RetrievalStatus.Failed);
         }
 
         if (result.Status == RetrievalStatus.Failed)
@@ -1499,7 +1500,7 @@ public sealed class TradeDecisionAppService(
         var ragContext = result.Status switch
         {
             RetrievalStatus.Failed => RagContextFailed,
-            RetrievalStatus.NotConfigured => RagContextNotConfigured,
+            RetrievalStatus.NotConfigured => "not-configured",
             _ => (contexts.Count > 0 ? "retrieved" : "empty") + (degraded ? RagContextDegradedSuffix : string.Empty),
         };
         var ragDegraded = RagDegradedOf(result);
@@ -1512,13 +1513,11 @@ public sealed class TradeDecisionAppService(
                 trigger.Symbol, trigger.Market, trigger.MetricTrigger, ragDegraded, contexts.Count);
         }
 
-        return (contexts, ragContext, ragDegraded);
+        return (contexts, ragContext, ragDegraded, result.Status);
     }
 
     private const string RagContextFailed = "failed";
 
-    // FR-08, FR-11, #1283: 検索が未構成の状態の記録値。#1525, IADR-0608 決定4: プロンプトの「検索を使っていない」の行の判定にも使う。
-    private const string RagContextNotConfigured = "not-configured";
     private const string RagContextDegradedSuffix = "-degraded";
     private const string RagDegradedUnknown = "unknown";
 

@@ -99,6 +99,18 @@ public class RetrievalNotConfiguredInPromptTests
             Task.FromResult<IReadOnlyList<RetrievedContext>>([]);
     }
 
+    // 取得に失敗した取得口（状態 Failed）。未構成ではないので行は足さない。
+    private sealed class FailingRetrieval : IRetrievalContextProvider
+    {
+        public Task<IReadOnlyList<RetrievedContext>> GetContextAsync(
+            DecisionTrigger trigger, DailyPolicy policy, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<RetrievedContext>>([]);
+
+        public Task<RetrievalResult> GetContextWithStatusAsync(
+            DecisionTrigger trigger, DailyPolicy policy, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new RetrievalResult([], RetrievalStatus.Failed, "http-503", FailedSearches: 1));
+    }
+
     private static PriceMovementDetected Trigger() =>
         new(Guid.NewGuid(), "AAPL", Market.UnitedStates, 1_040m, 1_000m, 0.04m, DateTimeOffset.UtcNow);
 
@@ -123,6 +135,21 @@ public class RetrievalNotConfiguredInPromptTests
         llm.Calls.Should().OnlyContain(c => c.Prompt.Contains(TradeDecisionPromptBuilder.RetrievalNotConfiguredLine));
         llm.Calls.Select(c => (c.Model, c.Purpose)).Should().Equal(
             ("claude-haiku-5-5", LlmPurposes.TradeDecisionScreening), ("claude-sonnet-5-5", LlmPurposes.TradeDecision));
+    }
+
+    // #1525, IADR-0608 決定4（2026-11-06 の AI レビューの指摘で是正）: 判定は取得口の状態の値（RetrievalStatus.NotConfigured）で行う。
+    // 取得の失敗（Failed）は「検索を使っていない」ではないので、行は載らない。
+    [Fact]
+    public async Task 検索の取得に失敗した本番の経路では1行が載らない()
+    {
+        var llm = new RecordingLlm();
+        var service = new AppSvc(llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
+            new FailingRetrieval(), options: Options);
+
+        await service.DecideAsync(Trigger());
+
+        llm.Calls.Should().HaveCount(2);
+        llm.Calls.Should().OnlyContain(c => !c.Prompt.Contains(TradeDecisionPromptBuilder.RetrievalNotConfiguredLine));
     }
 
     [Fact]

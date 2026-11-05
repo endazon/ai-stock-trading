@@ -69,7 +69,10 @@ plan_refs:
    - `global.db.password` は描かない。values-cloud はこれを使う。
    - 与えないとき（既定・経路 B）の描画は変えない。
 4. **検索の取得口が未構成（no-op）のときだけ、判断のプロンプト（本判断・一次）のニュースの状態の行の直後に 1 行を足す**: `RetrievalNotConfiguredLine`。
-   - 判定は取得口の型で行う（`IRetrievalContextProvider.IsConfigured`。no-op は false）。
+   - 判定は、取得口が返した状態の値で行う（`IRetrievalContextProvider.GetContextWithStatusAsync` の `RetrievalStatus.NotConfigured`）。
+     - KB の検索の宛先が未構成なら、取得口（`KnowledgeBaseRetrievalContextProvider`・`NoOpRetrievalContextProvider`）はこの値を返す。
+     - 判断の記録の文字列（`ragContext`）では比べない。
+     - 失敗（`Failed`）と 0 件（`Succeeded`）では行を足さない（従来のプロンプト）。
    - model・effort・max_tokens・用途は変えない。
    - Stage 0 の記録のプロンプトには足さない（当時の参考情報を as-of 入力から渡すので、本番の検索の構成と無関係）。
 5. **秘密の供給方式は `externalSecrets.enabled` で切り替える。** values-cloud の既定は `false`（手で作る Secret）。MSP#2401 の決定（ESO か否か）が出たら、それに合わせて切り替える。

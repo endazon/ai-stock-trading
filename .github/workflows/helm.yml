@@ -298,7 +298,8 @@ jobs:
             fail "values-cloud の描画に KB（knowledge・retrieval・document-service）への宛先が現れた。"
           fi
           images="$(grep -E '^ +image: ' <<<"$out" || true)"
-          [ "$(grep -c . <<<"$images" || true)" -ge 12 ] || fail "values-cloud の描画のイメージが 12 未満（11 サービス＋OpenD）: $images"
+          # 11 サービス＋OpenD の 12 本ちょうど（認証サイドカー・CronJob は values-cloud では無効）。増減したらこの数と検査を見直す。
+          [ "$(grep -c . <<<"$images" || true)" -eq 12 ] || fail "values-cloud の描画のイメージが 12 本（11 サービス＋OpenD）でない: $images"
           bad="$(grep -Ev '@sha256:[0-9a-f]{64}"?$' <<<"$images" || true)"
           [ -z "$bad" ] || fail "digest で固定されていないイメージがある: $bad"
           policies="$(grep -E '^ +imagePullPolicy: ' <<<"$out" | sort -u)"

@@ -98,6 +98,7 @@ issues: [#1525, #24, planning#868, MSP#2401, MSP#2402]
   - `ast-db-credentials`（キー `password`）: 基盤の最小構成が作った AST 用の DB のパスワードを、**値を表示せずに**写す。
     - 例: 基盤の Secret を `kubectl get secret … -o jsonpath=…` で読み、`base64 -d` してそのまま `kubectl create secret generic ast-db-credentials --from-file=password=/dev/stdin` へ流す。
     - リポジトリの既定のパスワードは使わない（`values-cloud.yaml` は既定値を描かない）。
+    - 🔴 パスワードは接続文字列（`Password=…;`）へ埋め込まれる。`;`・`=`・引用符・空白を含まない値（16 進か英数字）に限る。基盤の最小構成の生成器は乱数の 16 進を作るので、この条件を満たす。手で作り直すときも 16 進か英数字にする。
   - `ast-rabbitmq-users`・`ast-secrets`・`moomoo-credentials`・`moomoo-rsa`: 経路 B と同じキー名で作る（[Vault 秘匿値 Runbook](vault-secrets-runbook.md) のキー一覧）。
 - 配備: `helm upgrade --install ast deploy/helm/ai-stock-trading -f deploy/helm/ai-stock-trading/values-cloud.yaml -f <§4 のファイル>`
   - Discord の環境固有 ID は `--set-string discord.bot.*` で与える。これらは秘密ではない。
