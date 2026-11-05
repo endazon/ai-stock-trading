@@ -36,6 +36,8 @@ const CHART = 'deploy/helm/ai-stock-trading';
 const HELM = process.env.HELM || 'helm';
 // values-local に重ねて使う overlay（単独では配備しない）。
 const OVERLAYS_ON_LOCAL = new Set(['values-grpc-measurement.yaml']);
+// ADR-0006, #1525, IADR-0608: digest を要するプロファイルへ重ねる検査用の digest（実在しない値。配備には使わない）。
+const DIGEST_FIXTURES = { 'values-cloud.yaml': `${CHART}/ci/values-cloud-digests.fixture.yaml` };
 // 有効にしないと描かれない Pod（OpenD・認証サイドカー・CronJob・発注執行の鍵の mount）を全て描く。
 const ENABLE_ALL = [
   '--set', 'opend.enabled=true',
@@ -84,7 +86,8 @@ function profiles() {
     if (OVERLAYS_ON_LOCAL.has(f)) {
       out.push({ label: `values-local.yaml + ${f}`, args: ['-f', `${CHART}/values-local.yaml`, '-f', `${CHART}/${f}`], files: ['values-local.yaml', f] });
     } else {
-      out.push({ label: f, args: ['-f', `${CHART}/${f}`], files: [f] });
+      const digests = DIGEST_FIXTURES[f] ? ['-f', DIGEST_FIXTURES[f]] : [];
+      out.push({ label: f, args: ['-f', `${CHART}/${f}`, ...digests], files: [f] });
     }
   }
   return out;
