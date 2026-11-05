@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using RiskManagementService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -24,6 +25,7 @@ public class StopLossTriggeredConsumerTests
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                opts.Services.AddSingleton(TestApprovalPublishing.Unsigned()); // #1527, IADR-0610
                 opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
                 opts.Discovery.DisableConventionalDiscovery()
                     .IncludeType<StopLossTriggeredHandler>();

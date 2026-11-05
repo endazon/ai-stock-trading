@@ -38,6 +38,7 @@ public class TradeDecisionMadeConsumerTests
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                opts.Services.AddSingleton(TestApprovalPublishing.Unsigned()); // #1527, IADR-0610
                 // #1396, IADR-0561: 実時刻が閉場前の締め切りに入っていても締め切りの外の時刻で審査する（結果を実行時刻に依らせない）。
                 opts.Services.AddSingleton<IClock, OutsidePreCloseCutoffClock>();
                 opts.Services.AddSingleton<IBusinessCalendar, WeekendBusinessCalendar>();
