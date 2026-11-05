@@ -312,6 +312,7 @@ jobs:
       #    認証サイドカーは載らない。
       # 3. 経路 B（values-local）・既定の描画には digest も DB_PASSWORD も現れない（部品が既定の描画へ漏れない）。
       # 4. ArgoCD の Application は values-cloud を参照しない（最初の稼働は helm を手で実行する。手順書）。
+      # 5. 基盤への接続は TLS（DB は VerifyFull＋基盤の CA・ブローカは amqps:5671・LLM ゲートウェイは https。#1535, IADR-0615）。
       - name: Assert values-cloud (単一ノードのクラウド)
         run: |
           set -eu  # pipefail は付けない（grep -q が先に閉じると printf の SIGPIPE で偽になる）。入力は here-string で渡す。
@@ -349,12 +350,21 @@ jobs:
           # NFR, IADR-0609: Pod のセキュリティは段 2（権限昇格なし）で始め、名前空間の PSA の enforce は baseline。
           grep -q 'pod-security.kubernetes.io/enforce: "baseline"' <<<"$out" || fail "values-cloud の名前空間に PSA の enforce=baseline が無い。"
           [ "$(grep -c 'allowPrivilegeEscalation: false' <<<"$out" || true)" -ge 11 ] || fail "values-cloud の Worker に権限昇格なし（段 2）が付いていない。"
+          # NFR-18, #1535, IADR-0615: 基盤への接続は TLS（DB は VerifyFull＋基盤の CA・ブローカは amqps:5671・LLM ゲートウェイは https）。
+          full="$(grep -cF ';SSL Mode=VerifyFull;Root Certificate=/etc/platform-infra-ca/ca.crt"' <<<"$out" || true)"
+          [ "$conns" = "$full" ] || fail "values-cloud の DB の接続文字列 $conns 件のうち VerifyFull＋基盤の CA は $full 件。"
+          mqs="$(grep -c 'name: RabbitMq__ConnectionString' <<<"$out" || true)"
+          amqps="$(grep -A1 'name: RabbitMq__ConnectionString' <<<"$out" | grep -cE 'value: "amqps://ast-[a-z-]+:\$\(RABBITMQ_PASSWORD\)@rabbitmq:5671"' || true)"
+          [ "$mqs" -ge 11 ] && [ "$mqs" = "$amqps" ] || fail "values-cloud のブローカの宛先 $mqs 件のうち amqps:5671 は $amqps 件。"
+          gws="$(grep -A1 'name: LlmGateway__BaseUrl' <<<"$out" | grep -c 'value: "https://llmgateway-service.microservices-platform:8080"' || true)"
+          [ "$gws" = 2 ] || fail "values-cloud の LLM ゲートウェイの宛先（取引判断・報告書）のうち https は $gws 件（2 件のはず）。"
+          if grep -q 'http://llmgateway-service' <<<"$out"; then fail "values-cloud の描画に LLM ゲートウェイの平文の宛先が現れた。"; fi
           for prof in "" "-f $CHART/values-local.yaml"; do
             o="$(helm template ast "$CHART" $prof)"
             if grep -Eq '@sha256:|name: DB_PASSWORD$' <<<"$o"; then fail "既定または values-local の描画に digest か DB_PASSWORD が現れた（部品が漏れた）。"; fi
           done
           if grep -q 'values-cloud' deploy/argocd/application.yaml; then fail "ArgoCD の Application が values-cloud を参照している（最初の稼働では使わない）。"; fi
-          echo "values-cloud: images=$(grep -c . <<<"$images") connections=$conns"
+          echo "values-cloud: images=$(grep -c . <<<"$images") connections=$conns tls-db=$full amqps=$amqps https-gateway=$gws"
       # 🔴 NFR-06, NFR-05, IADR-0496, #1192（T-10-2356・T-10-2357）: 全 Worker の ASPNETCORE_ENVIRONMENT は Production で、Development は
       # どのプロファイルでも描画されない（以前は固定値 Development で、例外時の開発者向けページが Authorization ヘッダーを応答へ載せた）。
       # 陰性対照: global／サービス単位の Development（大小無視）は描画が失敗し、Development 以外の上書きは効く（検査の空振りを作らない）。

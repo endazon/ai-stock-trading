@@ -2,7 +2,7 @@
 title: IADR-0615 基盤への接続は基盤の CA で検証する TLS（Postgres VerifyFull・RabbitMQ amqps＋名前の照合・LLM ゲートウェイは専用の検証で CA を信頼）へ値で切り替え、CA が無ければ描画で止める
 type: impl-adr
 status: Accepted
-related_ids: [NFR, NFR-18, ADR-0006, IADR-0568, IADR-0129, IADR-0323, IADR-0332]
+related_ids: [NFR, NFR-18, ADR-0006, IADR-0608, IADR-0568, IADR-0129, IADR-0323, IADR-0332]
 author: claude (Claude Code)
 created: 2026-11-06
 updated: 2026-11-06
@@ -61,6 +61,10 @@ plan_refs:
    - 名前の不一致・証明書なし・CA なしは拒む。
    - 検証の失敗は呼び出しの失敗であり、従来の失敗の経路（取引判断は Hold・報告書はプレースホルダ）を通る。http へは戻らない。
 6. ゲートウェイの URL を https にするのは、クラウドの構成（values-cloud）の側である。経路 B は http のまま。
+7. **クラウドの構成（values-cloud。IADR-0608）も同じスイッチを入れる**（DB の TLS・ブローカの TLS・ゲートウェイの https）。
+   - 接続の形は chart が持ち、values-cloud は値を写すだけにする（両方の構成で同じ形になる）。
+   - DB のパスワードを Secret から読む接続文字列（IADR-0608 決定 3）にも、同じ VerifyFull＋基盤の CA の接尾辞を付ける。
+   - CI（helm.yml の values-cloud の段）が、DB・ブローカ・ゲートウェイの全件が TLS であることを確かめる。
 
 ## 結果
 
@@ -75,4 +79,4 @@ plan_refs:
 
 1. gRPC（`LlmGateway:Grpc`。h2c）の経路には専用の検証を入れていない。クラウドでは基盤が h2c の受け口を外す。gRPC を TLS で使うなら、同じ検証を channel の handler へ足す。
 2. 基盤の側の段 4b-3（平文を閉じる）は基盤の作業である。基盤の IADR-0591 の段の表への本 PR の記録も、基盤の側で行う。
-3. クラウドの構成（values-cloud）への TLS の値の写しは、#1525 と本 PR がそろった後に行う。
+3. クラウドの名前空間 ai-stock-trading の CA の写しは、手で作る（クラウド移行の手順書の §5）。基盤が証明書の組を作り直したら、写しも差し替える。

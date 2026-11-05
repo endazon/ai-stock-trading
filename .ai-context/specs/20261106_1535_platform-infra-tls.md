@@ -44,6 +44,10 @@ plan_refs:
    - 🔴 平文や検証なしへは倒れない。https の URL で検証に失敗すれば、呼び出しは失敗として扱われる（取引判断は Hold・報告書はプレースホルダ。従来の失敗の経路）。
    - ほかの HttpClient（Finnhub・SEC・FRED・BOJ ほか）は既定のハンドラのまま（システムの信頼ストア）。
 6. LLM ゲートウェイの URL を https にするのはクラウドの構成（values-cloud。#1525）の側で行う。本 PR は経路 B の URL（http）を変えない。
+7. ［2026-11-06 追記 / #1535］#1525（values-cloud）が先にマージされたので、同じ PR でクラウドの構成へ値を写す（オーケストレーターの指示）。
+   - values-cloud: `global.db.tls.enabled`・`global.rabbitmq.tls.enabled` を true、取引判断・報告書の `LlmGateway__BaseUrl` を `https://llmgateway-service.microservices-platform:8080`（基盤の最小構成のゲートウェイは同じ口を TLS にする）。
+   - DB のパスワードを Secret から読む接続文字列（values-cloud だけが使う枝）にも VerifyFull＋基盤の CA の接尾辞を付ける（develop の取り込みで、この枝に接尾辞が無いことを CI の段で見つけた）。
+   - クラウド移行の手順書 §5 に、名前空間 ai-stock-trading への CA の写し方を書く（基盤の最小構成の手順書が、こちらの手順を指している）。
 
 ## 母集合（規則 9）
 
@@ -55,6 +59,7 @@ plan_refs:
   - OpenD の Pod（基盤へ繋がない）。
   - 取引サイクルの CronJob（クラスタ内の情報収集を叩くだけ）。
   - 基盤の側の段 4b-3（平文を閉じる）は基盤の作業。
+- **追記の母集合（values-cloud）**: `git grep -n 'LlmGateway__BaseUrl' -- deploy/helm/ai-stock-trading/values-cloud.yaml` で 2 件（報告書・取引判断）。DB の接続文字列の枝は `templates/deployment.yaml` の 2 枝（Secret 参照・既定）。
 
 ## 受け入れ基準
 
@@ -66,4 +71,5 @@ plan_refs:
 - [x] LLM ゲートウェイの https が、基盤の CA で検証を通る。名前の違う証明書・CA が無い・別の CA では失敗し、平文や検証なしへ倒れない（xUnit。ループバックの TLS の受け手）。
 - [x] 外部 API の HttpClient はシステムの信頼ストアのまま（専用の検証を使わない。DI で確かめる）。既定の検証で誤りが無い証明書は専用の検証でも受ける（xUnit）。
 - [x] 経路 B の切り替えの手順（順番と戻し方）を手順書に書く。
+- [x] values-cloud（＋検査用の digest）の描画で、DB の全件が VerifyFull＋基盤の CA、ブローカの全件が amqps:5671、LLM ゲートウェイの 2 件が https で、平文のゲートウェイの宛先が無い（helm.yml の values-cloud の段）。
 - [x] `/verify` が通る。

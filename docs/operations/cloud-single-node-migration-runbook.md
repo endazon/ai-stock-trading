@@ -4,14 +4,14 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-06
 ---
 <!-- trace:
 ids: [FR-04, FR-08, NFR, NFR-03]
 adrs: [ADR-0006, ADR-0024, ADR-0073, ADR-0076]
-iadrs: [IADR-0608, IADR-0053, IADR-0598, IADR-0341]
-specs: [20261105_1525_cloud-single-node-values-and-runbook]
-issues: [#1525, #24, planning#868, MSP#2401, MSP#2402]
+iadrs: [IADR-0615, IADR-0608, IADR-0053, IADR-0598, IADR-0341]
+specs: [20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
+issues: [#1535, #1525, #24, planning#868, MSP#2401, MSP#2402]
 -->
 
 # 運用 Runbook: 単一ノードのクラウドへの移行
@@ -100,6 +100,14 @@ issues: [#1525, #24, planning#868, MSP#2401, MSP#2402]
     - リポジトリの既定のパスワードは使わない（`values-cloud.yaml` は既定値を描かない）。
     - 🔴 パスワードは接続文字列（`Password=…;`）へ埋め込まれる。`;`・`=`・引用符・空白を含まない値（16 進か英数字）に限る。基盤の最小構成の生成器は乱数の 16 進を作るので、この条件を満たす。手で作り直すときも 16 進か英数字にする。
   - `ast-rabbitmq-users`・`ast-secrets`・`moomoo-credentials`・`moomoo-rsa`: 経路 B と同じキー名で作る（[Vault 秘匿値 Runbook](vault-secrets-runbook.md) のキー一覧）。
+- 基盤の CA の写し（名前空間 `ai-stock-trading` の ConfigMap `platform-infra-ca`・キー `ca.crt`）を、配備の前に作る。
+  - DB・ブローカ・LLM ゲートウェイへの接続は、この CA で検証する TLS である（`values-cloud.yaml` が有効にする）。
+  - 写しが無いと Pod は起動しない（平文の接続へは戻らない）。CA の証明書は公開してよい情報で、秘密ではない。
+  - 例: `kubectl -n platform-infra get configmap platform-infra-ca -o jsonpath='{.data.ca\.crt}' > ca.crt` で読み、
+    `kubectl -n ai-stock-trading create configmap platform-infra-ca --from-file=ca.crt=ca.crt --dry-run=client -o yaml | kubectl apply -f -` で写す。
+  - 写した後、両方の名前空間の `openssl x509 -noout -fingerprint -sha256` が同じことを確かめる。
+  - 基盤が証明書の組を作り直したら、写しを差し替えてから取引ユニットのサービスを作り直す（`kubectl -n ai-stock-trading rollout restart deploy`）。
+  - 切り替えの確かめ方と戻し方は [基盤の TLS 切り替え Runbook](platform-infra-tls-cutover-runbook.md)。
 - 配備: `helm upgrade --install ast deploy/helm/ai-stock-trading -f deploy/helm/ai-stock-trading/values-cloud.yaml -f <§4 のファイル>`
   - Discord の環境固有 ID は `--set-string discord.bot.*` で与える。これらは秘密ではない。
 
@@ -138,6 +146,7 @@ issues: [#1525, #24, planning#868, MSP#2401, MSP#2402]
   - 例: `scripts/measure-region-latency.sh`。日銀は `--host www.stat-search.boj.or.jp:443` を足す。
 - [ ] 遅延: `scripts/measure-region-latency.sh --count 10` の中央値を記録する。OpenD の接続先は `--host <ホスト>:<ポート> --tcp-only` で足す。
 - [ ] digest の参照で全 Pod が起動している（§4 の 5）。
+- [ ] 基盤への接続が TLS で通っている: DB・ブローカの接続の失敗と、LLM ゲートウェイの証明書の検証の失敗がログに無い。
 - [ ] 取引判断のログ（判断の記録）の `ragContext` が `not-configured` で、判断が失敗していない。
 
 ## 9. 初週の確認
