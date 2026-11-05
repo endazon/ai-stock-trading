@@ -70,6 +70,17 @@ public class MarketScheduleWiringTests
             .Should().Be(AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData.FinnhubHttpTimeouts.Quote);
     }
 
+    // NFR, #1532, IADR-0614: 外部の情報源・市場データ・為替を取る HttpClient は応答の本文に上限を持つ（既定はほぼ無制限）。
+    [Fact]
+    public void 巡回の現在値の照会は応答の大きさに上限を持つ()
+    {
+        using var factory = new Factory();
+        _ = factory.CreateClient();
+
+        factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata").MaxResponseContentBufferSize
+            .Should().Be(AiStockTrading.Shared.Infrastructure.Composable.ExternalHttpResponseLimits.MaxResponseBytes);
+    }
+
     private sealed class Factory(IDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>
     {
         private readonly string _dbName = Guid.NewGuid().ToString();
