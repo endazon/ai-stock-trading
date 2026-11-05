@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Infrastructure.Composable.Http;
 using ReportService.Common.Abstractions;
 using ReportService.Infrastructure.ExternalServices;
 using ReportService.Features.Reports;
@@ -103,6 +104,11 @@ builder.Services.AddKeyedSingleton<IServiceAccessTokenProvider>(ReportLlmTokenPr
         sp, sp.GetRequiredService<IConfiguration>(), LlmGatewayAuth.SectionName, LlmGatewayAuth.TokenClientName));
 builder.Services.AddHttpClient("report-llm",
         c => c.Timeout = NarrativeTimeouts(builder.Configuration).Max)
+    // NFR, NFR-18, #1535, IADR-0621 決定5: https のゲートウェイは基盤の CA で検証する（名前の不一致・CA なしは拒む・平文へ戻らない）。
+    .ConfigurePrimaryHttpMessageHandler(sp =>
+        PlatformInfraCaTrust.CreateHandler(
+            sp.GetRequiredService<IConfiguration>()[PlatformInfraCaTrust.PathKey],
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(PlatformInfraCaTrust))))
     .AddReportDependencyGate(
         "report-llm",
         sp => sp.GetRequiredKeyedService<IServiceAccessTokenProvider>(ReportLlmTokenProviderKey),

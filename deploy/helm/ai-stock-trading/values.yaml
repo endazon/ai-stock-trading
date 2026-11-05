@@ -23,6 +23,11 @@ global:
     port: 5672
     credentialsSecretName: ast-rabbitmq-users
     usernamePrefix: "ast-"
+    # NFR, NFR-18, #1535, IADR-0621: ブローカへの TLS（amqps）。有効にすると tls.port（5671）へ繋ぎ、サーバ証明書を基盤の CA
+    #   （global.infraCa）と名前（host）で検証する。既定 false（平文）。経路 B は values-local が有効にする。false は切り戻し専用。
+    tls:
+      enabled: false
+      port: 5671
   otlpEndpoint: http://otel-collector:4317
   authAuthority: http://keycloak:8080/realms/ai-stock-trading
   # #22 受け入れ基準③: 実効構成バージョン（適用中の構成の Git コミット等）。GitOps（ArgoCD）で注入する。
@@ -55,6 +60,16 @@ global:
     # 共有 Postgres 上の AST 用ユーザ（MSP infra init が作成: user=ai / owner of *_svc）。
     username: ai
     password: ai
+    # NFR, NFR-18, #1535, IADR-0621: DB への TLS。有効にすると `SSL Mode=VerifyFull;Root Certificate=…`（基盤の CA だけを信頼し、
+    #   host の名前も照合する）。検証を緩める値の口は持たない。既定 false（平文）。経路 B は values-local が有効にする。
+    tls:
+      enabled: false
+  # NFR, NFR-18, #1535, IADR-0621: 基盤（DB・ブローカ・LLM ゲートウェイ）のサーバ証明書を発行した CA の ConfigMap（キー caKey）。
+  #   基盤の起動器が AST の名前空間へ写す（基盤の IADR-0591 決定 6）。db.tls / rabbitmq.tls のどちらかが有効なとき、
+  #   /etc/platform-infra-ca へ読み取り専用・非 optional でマウントする（無ければ Pod が立たない）。
+  infraCa:
+    configMap: platform-infra-ca
+    caKey: ca.crt
 
 namespace:
   create: true

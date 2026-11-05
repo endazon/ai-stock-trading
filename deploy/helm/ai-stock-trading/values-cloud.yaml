@@ -17,8 +17,10 @@
 #   供給方式は externalSecrets.enabled で切り替える（既定 false＝手で作る Secret。基盤の最小構成の決定に合わせて変える）。
 #   🔴 移行の条件（手順書の最初の節）を満たすまで、本物の秘密をサーバーへ入れない。
 #
-# ★ 基盤との接続の暗号化（DB・ブローカ・LLM ゲートウェイ）は #1535 が入れる。このファイルはその値を参照するだけにし、
-#   ここで接続の形を独自に決めない（#1535 の後に、同じ値をここへ写す）。
+# ★ 基盤との接続の暗号化（DB・ブローカ・LLM ゲートウェイ。#1535, IADR-0621）: 接続の形は chart（deployment.yaml）が持ち、
+#   ここはスイッチを入れるだけにする。DB は VerifyFull＋基盤の CA、ブローカは amqps:5671、LLM ゲートウェイは https
+#   （基盤の CA で検証。外部 API は従来のシステムの信頼のまま）。CA は名前空間 ai-stock-trading の ConfigMap
+#   platform-infra-ca（キー ca.crt）から読む。無いと Pod は起動しない（平文へ戻らない）。写し方は手順書の §5。
 #
 # ★ イメージ: ノードでビルドして取り込み、digest で固定する（レジストリを持たない）。
 #   digest はノードで書き出したファイル（コミットしない）から重ねる。欠けたら描画で止まる（global.image.requireDigest）。
@@ -35,7 +37,13 @@ global:
   #   基盤の最小構成は KC_HOSTNAME=http://keycloak:8080・realm platform で、AST の名前空間からは ExternalName の keycloak で引く
   #   （infraAliases）。トークンの iss がこの値と一致しないと検証で落ちる。
   authAuthority: http://keycloak:8080/realms/platform
+  # NFR-18, #1535, IADR-0621: 基盤の DB・ブローカへの接続を TLS にする（経路 B の values-local と同じスイッチ）。
+  rabbitmq:
+    tls:
+      enabled: true
   db:
+    tls:
+      enabled: true
     # 🔴 リポジトリの既定のパスワードを使わない。パスワードは Secret から読み、接続文字列は env の参照で組む（IADR-0608 決定 3）。
     password: ""
     passwordSecret:
@@ -175,7 +183,8 @@ services:
       - { name: MarketData__Provider, value: "finnhub" }
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
-      - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }
+      # NFR-18, #1535, IADR-0621 決定 6: クラウドのゲートウェイはアプリで TLS（基盤の CA が発行。MSP の最小構成）。
+      - { name: LlmGateway__BaseUrl, value: "https://llmgateway-service.microservices-platform:8080" }
       - { name: LlmGateway__Auth__Authority, value: "" }
       - name: LlmGateway__Auth__ClientId
         secretKeyRef: { name: ast-secrets, key: llm-auth-client-id, optional: true }
@@ -232,7 +241,8 @@ services:
       - { name: OrderExecution__BaseUrl, value: "http://order-execution-service:8080" }
       - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
       - { name: CostControl__BaseUrl, value: "http://cost-control-service:8080" }
-      - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }
+      # NFR-18, #1535, IADR-0621 決定 6: クラウドのゲートウェイはアプリで TLS（基盤の CA が発行。MSP の最小構成）。
+      - { name: LlmGateway__BaseUrl, value: "https://llmgateway-service.microservices-platform:8080" }
       - { name: LlmGateway__Auth__Authority, value: "" }
       - name: LlmGateway__Auth__ClientId
         secretKeyRef: { name: ast-secrets, key: llm-auth-client-id, optional: true }
