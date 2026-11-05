@@ -105,7 +105,8 @@ spec:
       {{- end }}
       containers:
         - name: opend
-          image: "{{ .Values.global.image.registry }}/{{ $o.image.repository }}:{{ $o.image.tag | default .Values.global.image.tag }}"
+          {{- /* ADR-0006, #1525, IADR-0608 決定2: digest があれば固定（requireDigest のとき無ければ止める）。 */}}
+          image: "{{ include "ast.imageRef" (dict "registry" .Values.global.image.registry "repository" $o.image.repository "tag" ($o.image.tag | default .Values.global.image.tag) "digest" $o.image.digest "require" .Values.global.image.requireDigest "what" "opend.image") }}"
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           {{- with $o.securityContext }}
           securityContext:
@@ -179,7 +180,7 @@ spec:
           umask 077 で作るため、uid がずれると読めなくなる（非 root 化したときに静かに壊れる）。
         */}}
         - name: opend-auth
-          image: "{{ .Values.global.image.registry }}/{{ $o.authGateway.image.repository }}:{{ $o.authGateway.image.tag | default .Values.global.image.tag }}"
+          image: "{{ include "ast.imageRef" (dict "registry" .Values.global.image.registry "repository" $o.authGateway.image.repository "tag" ($o.authGateway.image.tag | default .Values.global.image.tag) "digest" $o.authGateway.image.digest "require" .Values.global.image.requireDigest "what" "opend.authGateway.image") }}"
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           {{- with $o.securityContext }}
           securityContext:

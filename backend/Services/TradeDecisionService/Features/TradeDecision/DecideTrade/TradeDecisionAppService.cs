@@ -607,6 +607,8 @@ public sealed class TradeDecisionAppService(
         //（#18 アダプタ自体も fail-safe だが、独自アダプタ差し替え時の保険として判断境界でも握る）。
         // FR-08, FR-11, #1283: 取得の状態（成功・失敗・未構成）も受け取り、失敗は Warning、状態は判断の記録（下の「LLM 判断」）へ残す。
         var (retrieved, ragContext, ragDegraded) = await RetrieveContextSafeAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
+        // FR-04, FR-08, #1525, IADR-0608 決定4: 取得口が「未構成」を返したときだけ真（失敗・0 件は偽＝従来のプロンプト）。
+        var retrievalNotConfigured = ragContext == RagContextNotConfigured;
 
         // 🔴 FR-04, FR-02, #1034, IADR-0440 決定 2/6: 判断時点の監視銘柄（権威源＝市場監視から読めた一覧）。null＝不明
         // （プロンプトは「不明」と明示し、「ウォッチリストなし」「この銘柄は対象外」とは書かない）。**読めないことでは見送らない**
@@ -651,7 +653,9 @@ public sealed class TradeDecisionAppService(
         var decisionPrompt = TradeDecisionPromptBuilder.Build(
             trigger, policy, context, retrieved, includeProfitability: _profitabilityOptions.Enabled,
             currentPrice: currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist, intraday: intraday,
-            news: news, volume: volume, addOnBlockers: addOnBlockers, stopFloor: stopFloor, marketClock: marketClock, portfolio: portfolio);
+            news: news, volume: volume, addOnBlockers: addOnBlockers, stopFloor: stopFloor, marketClock: marketClock, portfolio: portfolio,
+            // FR-04, FR-08, #1525, IADR-0608 決定4: 検索が未構成の環境（クラウド）ではその旨を 1 行書く。
+            retrievalNotConfigured: retrievalNotConfigured);
 
         // #337, IADR-0247: 縮退制御が有効（スクリーニング有効かつ予算設定）なときだけ、スクリーニング入力
         // （方針・市況＝保護、RAG・ニュース＝削減可）へ縮退順序 ①分割→②RAG→③ニュース を適用する。
@@ -669,10 +673,11 @@ public sealed class TradeDecisionAppService(
             () => screening is null
                 ? TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist,
-                    intraday: intraday, news: news, volume: volume, addOnBlockers: addOnBlockers, marketClock: marketClock, portfolio: portfolio)
+                    intraday: intraday, news: news, volume: volume, addOnBlockers: addOnBlockers, marketClock: marketClock, portfolio: portfolio,
+                    retrievalNotConfigured: retrievalNotConfigured)
                 : TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, screening.RetainedReferences, heldPosition, workingEntries,
-                    watchlist, intraday, news, volume, addOnBlockers, marketClock, portfolio),
+                    watchlist, intraday, news, volume, addOnBlockers, marketClock, portfolio, retrievalNotConfigured),
             decisionPrompt,
             // 🔴 FR-04, FR-10, #1187, IADR-0248: 二次本判断の解釈へ、プロンプトへ渡したのと同じ保有（null＝不明）を渡す。
             // 保有を決済する売買（ロング保有中の Sell・ショート保有中の Buy）では損切り幅を任意にする（決済は保有全量で損切り幅を
@@ -1494,7 +1499,7 @@ public sealed class TradeDecisionAppService(
         var ragContext = result.Status switch
         {
             RetrievalStatus.Failed => RagContextFailed,
-            RetrievalStatus.NotConfigured => "not-configured",
+            RetrievalStatus.NotConfigured => RagContextNotConfigured,
             _ => (contexts.Count > 0 ? "retrieved" : "empty") + (degraded ? RagContextDegradedSuffix : string.Empty),
         };
         var ragDegraded = RagDegradedOf(result);
@@ -1511,6 +1516,9 @@ public sealed class TradeDecisionAppService(
     }
 
     private const string RagContextFailed = "failed";
+
+    // FR-08, FR-11, #1283: 検索が未構成の状態の記録値。#1525, IADR-0608 決定4: プロンプトの「検索を使っていない」の行の判定にも使う。
+    private const string RagContextNotConfigured = "not-configured";
     private const string RagContextDegradedSuffix = "-degraded";
     private const string RagDegradedUnknown = "unknown";
 
