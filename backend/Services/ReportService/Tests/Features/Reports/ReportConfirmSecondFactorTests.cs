@@ -2,6 +2,14 @@ using System.Net;
 using System.Net.Http.Json;
 using AiStockTrading.Shared.Infrastructure.Composable.SecondFactor;
 using AwesomeAssertions;
+using Grpc.Core;
+using Grpc.Net.Client;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using ReportService.Features.Reports;
+using ReportService.Features.Reports.ConfirmReport;
+using Proto = AiStockTrading.Shared.Grpc.Report.V1;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
@@ -45,6 +53,115 @@ public class ReportConfirmSecondFactorTests
             $"/reports/{started.PeriodKey}/confirm", new { ExpectedVersion = started.Version, SecondFactorCode = code });
 
         res.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // 🔴 IADR-0615 決定 9: 確定済みの冪等な再送・存在しない対象はコードを消費せず、Enforce でも従来どおりの応答。
+    [Fact]
+    public async Task Enforceでも確定済みの再送はコードなしで従来どおり200()
+    {
+        await using var factory = Factory("Enforce");
+        var client = Owner(factory);
+        var started = await StartAsync(client);
+        (await client.PostAsJsonAsync($"/reports/{started.PeriodKey}/confirm", new { ExpectedVersion = started.Version, SecondFactorCode = CurrentCode() }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var resend = await client.PostAsJsonAsync($"/reports/{started.PeriodKey}/confirm", new { ExpectedVersion = started.Version });
+
+        resend.StatusCode.Should().Be(HttpStatusCode.OK, "再送は冪等（Transitioned=false）で、門を通らない");
+    }
+
+    [Fact]
+    public async Task Enforceでも存在しない対象は404でコードを消費しない()
+    {
+        await using var factory = Factory("Enforce");
+        var client = Owner(factory);
+        var code = CurrentCode();
+
+        (await client.PostAsJsonAsync("/reports/daily-2000-01-01/confirm", new { ExpectedVersion = 1, SecondFactorCode = code }))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var started = await StartAsync(client);
+        (await client.PostAsJsonAsync($"/reports/{started.PeriodKey}/confirm", new { ExpectedVersion = started.Version, SecondFactorCode = code }))
+            .StatusCode.Should().Be(HttpStatusCode.OK, "404 の要求でコードが消費されていない");
+    }
+
+    [Fact]
+    public void Offなら門のcallbackを作らず方針の台帳も読まない()
+    {
+        var ledger = new ThrowingLedger();
+        var http = Http(SecondFactorMode.Off);
+
+        ConfirmReportEndpoint.SecondFactorBeforeCommit(http, ledger, "daily-2026-11-05", new ConfirmReportRequest(1), NullLoggerFactory.Instance)
+            .Should().BeNull();
+        ledger.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public void Auditで方針の台帳が読めなくても確定を壊さない()
+    {
+        var ledger = new ThrowingLedger();
+        var callback = ConfirmReportEndpoint.SecondFactorBeforeCommit(
+            Http(SecondFactorMode.Audit), ledger, "daily-2026-11-05", new ConfirmReportRequest(1), NullLoggerFactory.Instance);
+
+        callback.Should().NotBeNull();
+        callback!.Invoking(c => c()).Should().NotThrow();
+        ledger.Calls.Should().Be(1);
+    }
+
+    // NFR-06, #1542, IADR-0615 決定 4: gRPC の面（ボットの段 5 の経路）でも Enforce の拒否は PERMISSION_DENIED。
+    [Fact]
+    public async Task EnforceのgRPCの確定はコードが無ければPERMISSION_DENIED()
+    {
+        await using var factory = Factory("Enforce");
+        var started = await StartAsync(Owner(factory));
+        var grpc = new Proto.ReportOwnerWrite.ReportOwnerWriteClient(GrpcChannel.ForAddress(factory.Server.BaseAddress,
+            new GrpcChannelOptions { HttpHandler = new BotHeaders(factory.Server.CreateHandler()) }));
+
+        var act = async () => await grpc.ConfirmReportAsync(new Proto.ReportConfirmationRequest { PeriodKey = started.PeriodKey, ExpectedVersion = started.Version });
+
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+    }
+
+    private static string CurrentCode()
+    {
+        Totp.TryDecodeBase32(Secret, out var key);
+        return Totp.Compute(key, Totp.StepOf(DateTimeOffset.UtcNow));
+    }
+
+    private static DefaultHttpContext Http(SecondFactorMode mode) => new()
+    {
+        RequestServices = new ServiceCollection()
+            .AddSingleton(new OwnerSecondFactorGate(new OwnerSecondFactorOptions { Mode = mode, Secret = Secret }, TimeProvider.System, NullLogger.Instance))
+            .BuildServiceProvider(),
+    };
+
+    private sealed class ThrowingLedger : IPolicyRevisionLedger
+    {
+        public int Calls { get; private set; }
+
+        public PolicyRevisionAttempt? FindProposed(string periodKey, int reportVersion)
+        {
+            Calls++;
+            throw new InvalidOperationException("台帳を読めない");
+        }
+
+        public int CountOn(DateOnly jstDate) => throw new NotSupportedException();
+        public Guid Begin(PolicyRevisionAttempt attempt) => throw new NotSupportedException();
+        public PolicyRevisionBeginResult TryBegin(PolicyRevisionAttempt attempt, int dailyLimit) => throw new NotSupportedException();
+        public void Complete(Guid id, PolicyRevisionAttemptOutcome outcome, int? reportVersion, string? watchlistChangesJson) => throw new NotSupportedException();
+        public PolicyRevisionAttempt? Find(Guid id) => throw new NotSupportedException();
+        public bool RecordWatchlistApply(Guid id, string resultJson, DateTimeOffset recordedAt) => throw new NotSupportedException();
+        public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt) => throw new NotSupportedException();
+    }
+
+    private sealed class BotHeaders(HttpMessageHandler inner) : DelegatingHandler(inner)
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            request.Headers.TryAddWithoutValidation(TestAuthHandler.RolesHeader, "trading-owner");
+            request.Headers.TryAddWithoutValidation(TestAuthHandler.NameHeader, "report-bot");
+            request.Headers.TryAddWithoutValidation(TestAuthHandler.AzpHeader, "ai-stock-trading-owner");
+            return base.SendAsync(request, cancellationToken);
+        }
     }
 
     private static WebApplicationFactory<Program> Factory(string? mode) =>

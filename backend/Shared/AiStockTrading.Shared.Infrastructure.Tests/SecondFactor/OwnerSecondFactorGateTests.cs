@@ -71,17 +71,25 @@ public class OwnerSecondFactorGateTests
     }
 
     [Theory]
-    [InlineData("000000")]
     [InlineData("12345")]
     [InlineData("１２３４５６")] // 全角
     [InlineData("12345a")]
-    public void 違うコードと書式の外は拒む(string code)
+    public void 書式の外は拒む(string code)
     {
-        var gate = Gate(SecondFactorMode.Enforce, out var clock);
-        if (code == "000000" && CodeAt(clock.Now) == "000000")
-            return;
+        var gate = Gate(SecondFactorMode.Enforce, out _);
 
         gate.Check(SecondFactorOperation.GoodFaithViolationClear, code).Should().Be(new SecondFactorDecision(SecondFactorOutcome.Invalid, false));
+    }
+
+    // 時刻は固定（ManualClock）なので、前後 1 段の 3 つのコードを除いた 6 桁を決めて外す（偶然一致で黙って通らない）。
+    [Fact]
+    public void 前後1段のどれにも当たらない6桁は拒む()
+    {
+        var gate = Gate(SecondFactorMode.Enforce, out var clock);
+        var wrong = Wrong(clock);
+        new[] { -30, 0, 30 }.Select(s => CodeAt(clock.Now.AddSeconds(s))).Should().NotContain(wrong);
+
+        gate.Check(SecondFactorOperation.GoodFaithViolationClear, wrong).Should().Be(new SecondFactorDecision(SecondFactorOutcome.Invalid, false));
     }
 
     [Fact]

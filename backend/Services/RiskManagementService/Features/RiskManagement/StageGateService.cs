@@ -151,7 +151,7 @@ public sealed class StageGateService(
 
     // FR-20, UC-06: 承認による段階遷移。承認者が空なら純ドメインが拒否する（承認なしに遷移しない）。
     // 受理時のみ台帳へ追記する。昇格は合格基準充足を要し、差し戻し（降格方向）は安全側のため承認のみで受理する。
-    public StageTransitionResult RequestTransition(TradingStage target, string approver)
+    public StageTransitionResult RequestTransition(TradingStage target, string approver, Action? beforePromotionCommit = null)
     {
         var ledger = ledgerStore.Load();
         var performance = CurrentPerformance();
@@ -163,6 +163,10 @@ public sealed class StageGateService(
 
         if (result is { Accepted: true, Transition: not null })
         {
+            // NFR-06, #1542, IADR-0615 決定 9: 受理された昇格だけ、台帳へ追記する直前に第 2 要素の門を呼ぶ（受理不能・差し戻しはコードを消費しない）。
+            if (result.Transition.Kind == StageTransitionKind.Promotion)
+                beforePromotionCommit?.Invoke();
+
             ledgerStore.Append(result.Transition);
 
             // FR-20, ADR-0008, IADR-0103, #164: 受理された差し戻し（降格）で実DD の観測窓を区切る。

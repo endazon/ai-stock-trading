@@ -9,9 +9,9 @@ internal static class DisengageKillSwitchEndpoint
     // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（RiskControlsOwnerWriteGrpcService）が共有する処理（2 箇所に書かない）。
     internal static IResult Handle(KillSwitchRequest req, KillSwitchService svc, HttpContext http)
     {
-        // NFR-06, FR-14, #1542, IADR-0615: 解除は危険な操作（第 2 要素）。
-        RiskSecondFactor.Require(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.KillSwitchDisengage, req.SecondFactorCode);
-        svc.Disengage(RiskControlEndpoints.ActorOf(http), req.Reason);
+        // NFR-06, FR-14, #1542, IADR-0615: 解除は危険な操作（第 2 要素。門は状態を変える直前にサービスが呼ぶ）。
+        svc.Disengage(RiskControlEndpoints.ActorOf(http), req.Reason,
+            RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.KillSwitchDisengage, req.SecondFactorCode));
         return Results.Ok(svc.GetState());
     }
 }

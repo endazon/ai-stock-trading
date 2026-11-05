@@ -25,6 +25,7 @@ plan_refs:
 4. 要求の欄: REST `secondFactorCode`（任意・末尾）、proto `optional string second_factor_code`（6 つの要求に末尾追加）。
 5. chart: risk-management と report に `OwnerSecondFactor__Mode=Audit` と `OwnerSecondFactor__Secret`（Secret `ast-owner-totp` の optional の参照）。values.yaml と values-local.yaml。
 6. 登録: `scripts/ast-owner-totp-enroll.sh`（`--live`・`--rotate`・`status`）。
+7. **門の位置（AI レビューの推奨を受けて段 1 のうちに直した）**: 入力の検証・冪等の判定の後、状態を変える直前（IADR-0615 決定 9）。`RiskSecondFactor.BeforeCommit` が callback を返し、`KillSwitchService.Disengage`（解除済みなら呼ばない）・`PauseService.Resume`（再開済みなら呼ばない）・`StageGateService.RequestTransition`（受理された昇格の台帳への追記の直前）・`GoodFaithViolationClearingService.Clear`（解除する記録がある時だけ）・`PositionDriftAdoptionService.Adopt`（台帳への追記の直前）・`ReportAppService.Confirm`（対象が在り・未確定・版が一致するときだけ）が呼ぶ。Off は callback を作らない。
 
 ## 母集合（規則 9）
 
@@ -40,6 +41,9 @@ plan_refs:
 - [x] 止める向きの操作は、Enforce でもコードなしで通る。
 - [x] Audit は記録だけで止めない。Off（既定）は従来どおり。
 - [x] 登録のスクリプトは値を引数・標準出力に出さない（`ast-owner-totp-enroll.test.sh` 19 件）。
+- [x] 受理できない要求・確定済みの再送・存在しない対象はコードを消費せず、失敗の数にも入らない。再送は従来どおり 200（`OwnerSecondFactorWiringTests`・`ReportConfirmSecondFactorTests`）。
+- [x] Off は方針の台帳を読まない。Audit で台帳が読めなくても確定を壊さない。
+- [x] gRPC の面でも Enforce の拒否は PERMISSION_DENIED（Risk・Report 1 本ずつ）。
 
 ## 範囲外
 

@@ -28,9 +28,9 @@ internal static class ClearGoodFaithViolationsEndpoint
     internal static async Task<IResult> HandleAsync(
         GoodFaithViolationClearRequest req, GoodFaithViolationClearingService svc, IMessageBus bus, HttpContext http)
     {
-        // NFR-06, FR-14, #1542, IADR-0615: GFV 停止の解除は危険な操作（第 2 要素）。
-        RiskSecondFactor.Require(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.GoodFaithViolationClear, req.SecondFactorCode);
-        var outcome = svc.Clear(RiskControlEndpoints.ActorOf(http), req.Reason ?? string.Empty);
+        // NFR-06, FR-14, #1542, IADR-0615: GFV 停止の解除は危険な操作（第 2 要素。門は状態を変える直前にサービスが呼ぶ）。
+        var outcome = svc.Clear(RiskControlEndpoints.ActorOf(http), req.Reason ?? string.Empty,
+            RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.GoodFaithViolationClear, req.SecondFactorCode));
 
         if (!outcome.Accepted)
         {

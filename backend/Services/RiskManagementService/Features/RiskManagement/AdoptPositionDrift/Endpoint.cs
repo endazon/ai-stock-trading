@@ -48,9 +48,6 @@ internal static class AdoptPositionDriftEndpoint
         }
 
         // FR-11, #871, IADR-0383, IADR-0423: 操作者の解決（代理は信頼するクライアントのトークンに限る）。
-        // NFR-06, FR-14, #1542, IADR-0615: 乖離の取り込み（台帳の書き換え）は危険な操作（第 2 要素）。
-        RiskSecondFactor.Require(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.PositionDriftAdopt, req.SecondFactorCode);
-
         var actor = DelegatedActorResolver.Resolve(http.User, req.OnBehalfOf, delegated.TrustedClientIds);
         var actorLogger = loggerFactory.CreateLogger("PositionDriftAdoptionActor");
 
@@ -83,7 +80,9 @@ internal static class AdoptPositionDriftEndpoint
                 LogSanitizer.Sanitize(actor.Actor));
         }
 
-        var outcome = svc.Adopt(new PositionDriftAdoptionCommand(req.Symbol, market, req.Reason), actor.Actor);
+        var outcome = svc.Adopt(new PositionDriftAdoptionCommand(req.Symbol, market, req.Reason), actor.Actor,
+            // NFR-06, FR-14, #1542, IADR-0615: 乖離の取り込み（台帳の書き換え）は危険な操作（第 2 要素。門は書き込みの直前にサービスが呼ぶ）。
+            RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.PositionDriftAdopt, req.SecondFactorCode));
 
         if (!outcome.Accepted)
         {
