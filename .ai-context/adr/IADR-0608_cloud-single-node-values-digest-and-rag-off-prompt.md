@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [ADR-0006, ADR-0024, ADR-0073, FR-04, FR-08, NFR, IADR-0053, IADR-0341, IADR-0455, IADR-0496, IADR-0598, IADR-0607]
 author: claude (Claude Code)
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-06
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0006_hosting-hetzner.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0024_opend-unattended-restart-conditional.md
@@ -100,3 +100,14 @@ plan_refs:
 2. digest の参照（`repository:tag@sha256:…`）で、ノードへ取り込んだイメージを kubelet が解決できることは、ノードの上で確かめる（手順書の初日の確認）。
 3. 基盤との接続の暗号化（Postgres の検証つき TLS・RabbitMQ の amqps・LLM ゲートウェイの https と基盤の CA の信頼）は本 IADR の範囲外で、#1535 が入れる。values-cloud はその値を参照するだけにし、#1535 の後に写す。
 4. MSP の最小構成の名前空間・ホスト名（`platform-infra` の postgres・rabbitmq・keycloak・otel-collector、`microservices-platform` の LlmGateway）は経路 B と同じと仮定した。MSP#2401 が変えるなら合わせる。
+
+## 追記
+
+［2026-11-06 追記 / #1548］決定 1（values.yaml に直接重ねる）の防御を CI に足した。Helm は `extraEnv` のリストを置き換えるので、
+values.yaml のサービスに足した env を values-cloud の同じサービスへ写し忘れると、クラウドの描画から黙って落ちる。
+
+- helm.yml の段「Assert values-cloud drops no env from prod default」が、Deployment ごとに、既定の描画の env の名前が
+  values-cloud（＋検査用の digest）の描画にも在ることを確かめる（経路 B の values-local の段と同じ形）。
+- クラウドで意図して外すもの（決定 1 の KB の宛先と資格情報・Stage 0 の記録の設定。16 件）は、同じ段の除外表に理由と一緒に書く。
+  表の行がクラウドの描画に現れた・既定の描画に無い・理由が空のときも落とす（表を腐らせない）。
+- 決定そのものは変えない。
