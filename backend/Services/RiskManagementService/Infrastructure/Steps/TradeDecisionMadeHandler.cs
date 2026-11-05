@@ -19,6 +19,7 @@ public sealed class TradeDecisionMadeHandler(
     OrderScreeningService screeningService,
     IControlViolationObservationStore violationStore,
     BusinessMetrics metrics,
+    OrderApprovalPublisher approvalPublisher,
     ILogger<TradeDecisionMadeHandler> logger)
 {
     public async Task Handle(TradeDecisionMade message, IMessageBus bus, CancellationToken cancellationToken)
@@ -60,7 +61,8 @@ public sealed class TradeDecisionMadeHandler(
             logger.LogWarning(
                 "予約済みで承認行が無い判断の再配送のため、再審査せず同じ承認を発行し直します: DecisionId={DecisionId} 数量={Quantity}",
                 message.DecisionId, outcome.Approved!.ApprovedQuantity);
-            await bus.PublishAsync(outcome.Approved!).ConfigureAwait(false);
+            // 🔴 #1527, IADR-0610: 承認は印を付ける口から出す。
+            await approvalPublisher.PublishAsync(bus, outcome.Approved!).ConfigureAwait(false);
             return;
         }
 
@@ -80,7 +82,8 @@ public sealed class TradeDecisionMadeHandler(
             logger.LogInformation(
                 "注文承認: DecisionId={DecisionId} 数量={Quantity}",
                 message.DecisionId, outcome.Approved!.ApprovedQuantity);
-            await bus.PublishAsync(outcome.Approved!).ConfigureAwait(false);
+            // 🔴 #1527, IADR-0610: 承認は印を付ける口から出す。
+            await approvalPublisher.PublishAsync(bus, outcome.Approved!).ConfigureAwait(false);
         }
         else
         {

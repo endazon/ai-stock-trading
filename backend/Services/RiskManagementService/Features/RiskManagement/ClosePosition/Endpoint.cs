@@ -11,7 +11,7 @@ internal static class ClosePositionEndpoint
 {
     public static void MapClosePosition(this IEndpointRouteBuilder owner) =>
         owner.MapPost("/positions/close",
-            async (PositionCloseRequest req, PositionCloseService svc, IMessageBus bus, HttpContext http) =>
+            async (PositionCloseRequest req, PositionCloseService svc, OrderApprovalPublisher approvalPublisher, IMessageBus bus, HttpContext http) =>
         {
             // market は Market?（非 nullable enum は省略時に暗黙 0＝日本市場へ束縛され、誤市場の決済を通してしまう）。
             if (string.IsNullOrWhiteSpace(req.Symbol))
@@ -42,7 +42,8 @@ internal static class ClosePositionEndpoint
             // 手仕舞いの操作者が監査台帳に残らない。順序の根拠は「起きた操作に監査が無い」より「監査があるのに操作が
             // 無い」ほうが安全（後者は同一 DecisionId の後続イベント不在で検知できる）。
             await bus.PublishAsync(outcome.Requested!);
-            await bus.PublishAsync(outcome.Approval!);
+            // 🔴 #1527, IADR-0610: 承認は印を付ける口から出す。
+            await approvalPublisher.PublishAsync(bus, outcome.Approval!);
 
             // 約定は後から非同期に成立するため 202（200 ではない）。以降は既存経路（発注執行 → OrderExecuted → 台帳 → 通知）。
             var intent = outcome.Approval!.Intent;

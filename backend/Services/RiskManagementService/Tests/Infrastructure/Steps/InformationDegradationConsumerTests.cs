@@ -27,6 +27,7 @@ public class InformationDegradationConsumerTests
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                opts.Services.AddSingleton(TestApprovalPublishing.Unsigned()); // #1527, IADR-0610
                 opts.Services.AddSingleton<IInformationDegradationStore>(store);
                 opts.Discovery.DisableConventionalDiscovery()
                     .IncludeType<InformationSourceDegradedRiskHandler>()
