@@ -239,6 +239,14 @@ builder.Services.AddScoped<WorkingEntryOrdersService>();
 builder.Services.AddScoped<InFlightOrdersService>();
 // FR-10, FR-04, #1113, IADR-0463 決定 3: 銘柄単位の新規建ての可否（審査と同じ述語・同じ入力。読み取り専用）。
 builder.Services.AddScoped<EntryBlockersService>();
+// NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）。既定は Off（段 1 = Audit・段 2 = Enforce は構成で選ぶ）。
+// シークレットは Secret ast-owner-totp の optional の参照（scripts/ast-owner-totp-enroll.sh が作る）。
+builder.Services.AddSingleton(sp => new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorGate(
+    builder.Configuration.GetSection(AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions.SectionName)
+        .Get<AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions>()
+        ?? new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions(),
+    TimeProvider.System,
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger("OwnerSecondFactor")));
 builder.Services.AddScoped<KillSwitchService>();
 // 🔴 FR-10, ADR-0009, IADR-0567 決定 2: 発注執行が送る直前に読む停止の状態（審査と同じストア）。
 builder.Services.AddScoped<TradingHaltService>();

@@ -154,6 +154,9 @@ internal static class RiskControlEndpoints
     {
         ArgumentException => Results.BadRequest(new { error = ClientFacingErrors.MessageFor(e, logger) }),
         DbUpdateConcurrencyException => Results.Conflict(new { error = "設定が他の更新と競合しました。最新を取得して再試行してください。" }),
+        // NFR-06, #1542, IADR-0615: 第 2 要素が通らない（Enforce の段だけ）。REST は 403・gRPC は同じ写しで PERMISSION_DENIED。文言は固定。
+        AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorRejectedException rejected =>
+            Results.Json(new { error = rejected.Message }, statusCode: StatusCodes.Status403Forbidden),
         _ => null,
     };
 

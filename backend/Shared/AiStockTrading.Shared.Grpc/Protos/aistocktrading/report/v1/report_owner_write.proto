@@ -53,6 +53,8 @@ message ReportConfirmationRequest {
   string period_key = 1;
   int32 expected_version = 2;
   optional string on_behalf_of = 3;
+  // NFR-06, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP の 6 桁）。末尾に追加（任意）。
+  optional string second_factor_code = 4;
 }
 
 message ReportConfirmationResponse {

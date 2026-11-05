@@ -49,6 +49,17 @@ internal static class ConfirmReportEndpoint
                 LogSanitizer.Sanitize(periodKey), LogSanitizer.Sanitize(confirming.Actor));
         }
 
+        // NFR-06, FR-14, #1542, IADR-0615: 確定は危険な操作（第 2 要素）。方針の改訂案の版の確定（監視銘柄の適用を伴い得る）は PolicyConfirm として記録を分ける。
+        if (http.RequestServices?.GetService<AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorGate>() is { } secondFactor)
+        {
+            var operation = policyLedger.FindProposed(periodKey, req.ExpectedVersion) is not null
+                ? AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.PolicyConfirm
+                : AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.ReportConfirm;
+            var decision = secondFactor.Check(operation, req.SecondFactorCode);
+            if (!decision.Allowed)
+                throw new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorRejectedException(decision.Outcome);
+        }
+
         var actor = confirming.Actor;
         // FR-07, FR-08, ADR-0068 決定6, #1373, IADR-0549 決定5: 確定の前に効いている日報を覚える（日報の確定で移ったら、
         // 移る前の日報に残った版 n+1 のドラフトの写しへ失効の印を付ける）。
@@ -173,7 +184,8 @@ internal static class ConfirmReportEndpoint
 // 確定の要求（版番号付き冪等）。
 // OnBehalfOf（任意・末尾に追加）: 呼び出し元が**代理している利用者**（Keycloak 利用者名）。Discord Bot が載せる。
 // 信頼するクライアントのトークン以外では無視される（ConfirmingActorResolver）。
-internal sealed record ConfirmReportRequest(int ExpectedVersion, string? OnBehalfOf = null);
+// NFR-06, #1542, IADR-0615: SecondFactorCode（任意・末尾に追加）は危険な操作の第 2 要素（TOTP の 6 桁）。
+internal sealed record ConfirmReportRequest(int ExpectedVersion, string? OnBehalfOf = null, string? SecondFactorCode = null);
 
 // FR-07, FR-13, #1025, IADR-0433 決定 7: 確定の応答（従来の TradingReport の項目＋ Transitioned ＋ Version）。
 // NFR, IADR-0420: 受け手（通知サービス）の契約テストが送り手の本物の型として参照するため public。

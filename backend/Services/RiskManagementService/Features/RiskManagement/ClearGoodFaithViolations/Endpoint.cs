@@ -28,6 +28,8 @@ internal static class ClearGoodFaithViolationsEndpoint
     internal static async Task<IResult> HandleAsync(
         GoodFaithViolationClearRequest req, GoodFaithViolationClearingService svc, IMessageBus bus, HttpContext http)
     {
+        // NFR-06, FR-14, #1542, IADR-0615: GFV 停止の解除は危険な操作（第 2 要素）。
+        RiskSecondFactor.Require(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.GoodFaithViolationClear, req.SecondFactorCode);
         var outcome = svc.Clear(RiskControlEndpoints.ActorOf(http), req.Reason ?? string.Empty);
 
         if (!outcome.Accepted)
@@ -66,7 +68,7 @@ internal static class ClearGoodFaithViolationsEndpoint
 // **理由は必須**（`string?` で受けて空を明示的に弾く——非 nullable で受けると本文省略時に空文字へ
 // 暗黙束縛され、「理由なしの解除」が通る）。**確認フレーズは Discord 側の閂であり本文には含めない**
 // （kill switch と同型。窓口は Discord Bot＝決定3）。
-internal sealed record GoodFaithViolationClearRequest(string? Reason);
+internal sealed record GoodFaithViolationClearRequest(string? Reason, string? SecondFactorCode = null);
 
 // #464, IADR-0182: 解除の応答（200）。NFR, IADR-0450: 以前は匿名型だった。gRPC 面が同じ値を読むため名前を付けた（JSON は同じ＝camelCase・同じ順）。
 internal sealed record GoodFaithViolationClearResponse(
