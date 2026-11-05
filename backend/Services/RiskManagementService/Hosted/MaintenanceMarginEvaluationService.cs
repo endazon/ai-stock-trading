@@ -91,8 +91,10 @@ public sealed class MaintenanceMarginEvaluationService(
         // 決済（実発注へ渡す承認）を先に発行する。記録イベント（MaintenanceMarginReductionExecuted）は
         // 4 記録先（監査・Discord・日報・月報）の単一情報源であり（IADR-0133 決定7）、承認には維持率の
         // 情報を持たせない（PositionCloseService/ClosePositionEndpoint と同じ役割分担）。
+        // 🔴 #1527, IADR-0610: 承認は印を付ける口から出す。
+        var approvalPublisher = scope.ServiceProvider.GetRequiredService<OrderApprovalPublisher>();
         foreach (var approval in outcome.Approvals)
-            await bus.PublishAsync(approval).ConfigureAwait(false);
+            await approvalPublisher.PublishAsync(bus, approval).ConfigureAwait(false);
 
         await bus.PublishAsync(outcome.Executed).ConfigureAwait(false);
 

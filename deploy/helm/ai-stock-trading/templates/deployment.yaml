@@ -95,6 +95,9 @@
 {{- if and (eq $name "order-execution") (eq $broker.provider "moomoo") }}{{- $reloadSecrets = append $reloadSecrets $.Values.moomoo.opend.rsaSecretName -}}{{- end }}
 {{- /* IADR-0568: ブローカの資格情報を回したら（基盤の reconcile-users.sh が合わせた後に ESO が同期）、作り直して新しい値で接続する。 */ -}}
 {{- $reloadSecrets = append $reloadSecrets $mq.credentialsSecretName -}}
+{{- /* #1527, IADR-0610: 承認の印の鍵を入れ替えたら作り直して新しい鍵を読む。 */ -}}
+{{- $oasReload := $.Values.global.orderApprovalSigning | default dict -}}
+{{- if has $name ($oasReload.services | default list) }}{{- $reloadSecrets = append $reloadSecrets $oasReload.secretName -}}{{- end }}
 {{- /* FR-15, NFR（費用）, ADR-0033 決定5, #1342, IADR-0537 決定5: Stage 0 の記録器の永続ボリューム（trade-decision だけ）。
        有効なら PVC（templates/pvc-stage0-recording.yaml）を mount し、状態の置き場 Stage0Recording__StateDirectory を
        <mountPath>/state として注入し、更新方式を Recreate にする。既定（無効）では何も描かない＝既定描画はバイト等価。
@@ -157,7 +160,8 @@ spec:
       {{- end }}
       containers:
         - name: {{ $name }}-service
-          image: "{{ $g.image.registry }}/{{ $svc.image }}:{{ $svc.tag | default $g.image.tag }}"
+          {{- /* ADR-0006, #1525, IADR-0608 決定2: digest があれば固定（requireDigest のとき無ければ止める）。無い既定の描画は不変。 */}}
+          image: "{{ include "ast.imageRef" (dict "registry" $g.image.registry "repository" $svc.image "tag" ($svc.tag | default $g.image.tag) "digest" $svc.digest "require" $g.image.requireDigest "what" (printf "services.%s" $name)) }}"
           imagePullPolicy: {{ $g.image.pullPolicy }}
           {{- with (include "ast.container.security" $ | trim) }}
           {{- . | nindent 10 }}
@@ -287,10 +291,41 @@ spec:
             - name: Introspection__ConfigVersion
               value: {{ . | quote }}
             {{- end }}
+            {{- /* 🔴 NFR, FR-10, #1527, IADR-0610: 注文の承認の発行元の印。発行元（risk-management）と受け手（order-execution）だけに描く。
+                   鍵は Secret（既定 ast-secrets の order-approval-signing-key）から読み、values に値を置かない。
+                   段 1（Report・既定）は鍵が無くても起動する（optional）。段 2（Enforce）は鍵の Secret を必須にする（無ければ Pod が起動しない）。 */}}
+            {{- $oas := $g.orderApprovalSigning | default dict }}
+            {{- if has $name ($oas.services | default list) }}
+            {{- if not (has $oas.mode (list "Report" "Enforce")) }}
+            {{- fail (printf "global.orderApprovalSigning.mode は Report か Enforce です（値: %v）。" $oas.mode) }}
+            {{- end }}
+            - name: OrderApprovalSigning__Mode
+              value: {{ $oas.mode | quote }}
+            - name: OrderApprovalSigning__Key
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $oas.secretName }}
+                  key: {{ $oas.secretKey }}
+                  {{- if eq $oas.mode "Report" }}
+                  optional: true
+                  {{- end }}
+            {{- end }}
             {{- if $svc.db }}
             # ADR-0001(DB per service): 共有 Postgres 上の専有 DB（user=ai, MSP infra init が作成）。
+            {{- with $g.db.passwordSecret }}
+            {{- /* NFR, ADR-0006, #1525, IADR-0608 決定3: パスワードは Secret から読み、接続文字列は env の参照で組む（値をチャートに書かない）。
+                   与えないとき（既定・経路 B）は従来どおり global.db.password を描く。 */}}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "global.db.passwordSecret.name が要ります（IADR-0608）" .name | quote }}
+                  key: {{ required "global.db.passwordSecret.key が要ります（IADR-0608）" .key | quote }}
+            - name: ConnectionStrings__DefaultConnection
+              value: "Host={{ $g.db.host }};Port={{ $g.db.port }};Database={{ $svc.db }};Username={{ $g.db.username }};Password=$(DB_PASSWORD)"
+            {{- else }}
             - name: ConnectionStrings__DefaultConnection
               value: "Host={{ $g.db.host }};Port={{ $g.db.port }};Database={{ $svc.db }};Username={{ $g.db.username }};Password={{ $g.db.password }}"
+            {{- end }}
             {{- end }}
             {{- if $svc.auth }}
             - name: Auth__Authority
@@ -306,6 +341,15 @@ spec:
             {{- if $hasServiceAuth }}
             - name: ServiceAuth__TokenEndpoint
               value: {{ printf "%s/protocol/openid-connect/token" (trimSuffix "/" $g.authAuthority) | quote }}
+            {{- end }}
+            {{- if $svc.auth }}
+            {{- /* 🔴 NFR, FR-10, #1528, IADR-0611: REST の所有者の判定で aud / azp を確かめる段（Report＝記録だけ・Enforce＝拒否）。 */}}
+            {{- $otb := $g.ownerTokenBinding | default dict }}
+            {{- if not (has ($otb.mode | default "Report") (list "Report" "Enforce")) }}
+            {{- fail (printf "global.ownerTokenBinding.mode は Report か Enforce です（値: %v）。" $otb.mode) }}
+            {{- end }}
+            - name: Auth__OwnerToken__Mode
+              value: {{ $otb.mode | default "Report" | quote }}
             {{- end }}
             {{- range $e := $svc.extraEnv }}
             - name: {{ $e.name }}

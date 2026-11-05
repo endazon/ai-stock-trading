@@ -243,6 +243,7 @@ public class OrderApprovedConsumerTests
                 // FR-11, #633, IADR-0300: 経費の記録もハンドラの必須依存である（既定は常に「取得できない」）。
                 opts.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
                 opts.Services.AddSingleton<TradeExpenseRecordingService>();
+                opts.Services.AddSingleton(TestApprovalVerification.ReportOnly()); // #1527, IADR-0610
 
                 opts.UseAiStockTradingRabbitMq(
                     ServiceName, "amqp://guest:guest@localhost:5672",
@@ -342,6 +343,7 @@ public class OrderApprovedConsumerTests
                 // FR-11, #633, IADR-0300: 経費の記録もハンドラの必須依存である（既定は常に「取得できない」）。
                 opts.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
                 opts.Services.AddSingleton<TradeExpenseRecordingService>();
+                opts.Services.AddSingleton(TestApprovalVerification.ReportOnly()); // #1527, IADR-0610
                 opts.UseAiStockTradingRabbitMq(
                     ServiceName, "amqp://guest:guest@localhost:5672", typeof(OrderApprovedHandler).Assembly);
                 opts.StubAllExternalTransports();
@@ -384,6 +386,7 @@ public class OrderApprovedConsumerTests
                 opts.Services.AddSingleton<AppSvc>();
                 opts.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
                 opts.Services.AddSingleton<TradeExpenseRecordingService>();
+                opts.Services.AddSingleton(TestApprovalVerification.ReportOnly()); // #1527, IADR-0610
                 opts.UseAiStockTradingRabbitMq(
                     ServiceName, "amqp://guest:guest@localhost:5672", typeof(OrderApprovedHandler).Assembly);
                 opts.StubAllExternalTransports();

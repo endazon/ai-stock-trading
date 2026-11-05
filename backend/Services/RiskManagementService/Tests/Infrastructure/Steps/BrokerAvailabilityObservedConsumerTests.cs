@@ -27,6 +27,7 @@ public class BrokerAvailabilityObservedConsumerTests
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                opts.Services.AddSingleton(TestApprovalPublishing.Unsigned()); // #1527, IADR-0610
                 opts.Services.AddSingleton<IStage1TradingDayObservationStore>(uptime);
                 opts.Discovery.DisableConventionalDiscovery()
                     .IncludeType<BrokerAvailabilityObservedHandler>();

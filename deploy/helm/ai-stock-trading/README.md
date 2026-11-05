@@ -193,6 +193,21 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
 - 検査器の自己試験は `node scripts/helm-release-drift.js --self-test`（同梱の fixture だけ・helm もクラスタも使わない。CI の
   `scripts-tests` が走らせる）。
 
+## 単一ノードのクラウド: `values-cloud.yaml`（#1525 / IADR-0608）
+
+自宅の PC から Hetzner の単一ノード（k3s）へ移すときのプロファイル。手順は
+[クラウド移行 Runbook](../../../docs/operations/cloud-single-node-migration-runbook.md)。
+
+- **重ね方**: `values.yaml` に直接重ねる（`-f values-cloud.yaml -f <digest のファイル>`）。`values-local.yaml` とは併用しない。
+- **持ち込まないもの**: KB の宛先（`KnowledgeBase__*`）・Stage 0 の記録・報告書の KB の写し・OpenD の認証サイドカー（画面の口）。
+  検索の取得口が未構成だと、取引判断のプロンプトに「この環境では検索を使っていない」の 1 行が出る。
+- **digest で固定する**: `global.image.requireDigest: true` のとき、自前のイメージ（`services.<名>.digest`・`opend.image.digest`・
+  `opend.authGateway.image.digest`）に digest が無ければ描画で止まる。digest はノードで書き出したファイルから重ね、コミットしない。
+  `pullPolicy` は `Never`。検査用の値は `ci/values-cloud-digests.fixture.yaml`（実在しない digest）。
+- **DB のパスワードは Secret から読む**: `global.db.passwordSecret`（`name` / `key`）を与えると、接続文字列のパスワードを
+  `$(DB_PASSWORD)` で組み、`global.db.password` を描かない。values-cloud は `ast-db-credentials` を使う。
+- 既定（本番）と `values-local.yaml` の描画は、これらの部品を入れる前と 1 バイトも変わらない（`helm.yml` が digest と DB_PASSWORD の不在を検査する）。
+
 ## 経路B（ローカル SIMULATE）の機能有効化: `values-local.yaml`
 
 > 起点: [IADR-0100](../../../.ai-context/adr/IADR-0100_route-b-values-local-standing-config.md) /
@@ -871,6 +886,19 @@ kubectl -n ai-stock-trading cp "$(kubectl -n ai-stock-trading get pod -l app=tra
   原因は Pod のログ（`traceId` で突き合わせる）で見る。
 - 一時的に詳しいログが要るときは、そのサービスの `extraEnv` へ `Serilog__MinimumLevel__Default` を足す（環境名は変えない）。
 
+## 注文の承認の発行元の印（`global.orderApprovalSigning`。#1527 / [IADR-0610](../../../.ai-context/adr/IADR-0610_order-approval-issuer-signature.md)）
+
+risk-management が発行する注文の承認に HMAC の印を付け、order-execution が発注の手前で確かめる。env は 2 サービス（`services`）にだけ描く。
+
+| 値 | 既定 | 意味 |
+| --- | --- | --- |
+| `mode` | `Report` | 段 1: 受け手は確かめて記録するだけで通す。`Enforce`（段 2）: 確かめられない承認を発注しない。他の値は描画で止まる |
+| `secretName` / `secretKey` | `ast-secrets` / `order-approval-signing-key` | 鍵（32 バイト以上の乱数・base64）の置き場。段 1 は `optional`、段 2 は必須 |
+
+- 鍵は `scripts/gen-order-approval-signing-key.sh --vault`（ESO 所有。Vault `ai-stock-trading/app-secrets` のプロパティ）か `--k8s`（従来経路）で作る。値は表示されない。既にあれば書かない（`--rotate` で作り直す）。
+- 段 2 へ上げる前に、段 1 のまま両サービスに鍵が載り、order-execution のログに「発行元を確かめられませんでした」が出ないこと、キューと DLQ に印のない承認が残っていないことを確かめる。
+- `--vault` は KV が在れば patch だけ（失敗したら止まる）。KV が無いと確定したときだけ put する（共有の KV の他のキーを消さない）。
+
 ## 外部連携（fail-safe 既定）
 
 `ast-secrets`（未設定=空=no-op）を明示設定した時のみ有効化する。
@@ -888,6 +916,14 @@ kubectl -n ai-stock-trading cp "$(kubectl -n ai-stock-trading get pod -l app=tra
 > **LLM プロバイダ鍵は AST では扱わない**。鍵は MSP の LlmGateway 側（`Llm:ApiKey`）が保持し、AST は
 > `LlmGateway__BaseUrl` 経由でゲートウェイを呼ぶだけである（ADR-0010 / IADR-0061 決定6）。
 > `ast-secrets` に LLM 鍵を足さないこと。
+
+## 所有者のトークンの宛先とクライアント（`global.ownerTokenBinding`。#1528 / [IADR-0611](../../../.ai-context/adr/IADR-0611_rest-owner-token-audience-and-client.md)）
+
+REST の所有者の判定で、ロールに加えてトークンの宛先（aud）と発行先のクライアント（azp）を確かめる。`mode` は auth のサービスへ `Auth__OwnerToken__Mode` で描く。
+
+- `Report`（既定・段 1）: 不一致を Warning で残して通す。`Enforce`（段 2）: 拒否する（403）。他の値は描画で止まる。
+- 許可集合の既定は aud `ai-stock-trading-api`（AST 専用。Keycloak の audience mapper で `bff` と `ai-stock-trading-owner` にだけ付ける。MSP 共通の `platform-api` は使わない）・azp `bff` と `ai-stock-trading-owner`。変えるときはサービスの `extraEnv` に配列（`Auth__OwnerToken__Audiences__0` … / `Auth__OwnerToken__Clients__0` …）で書く。
+- 段 2 へ上げる前に、段 1 のまま各サービスのログに「所有者のトークンの宛先またはクライアントが許可集合に無い」が出ないことを確かめる。
 
 ## #13, #267: ブローカ階層（`broker.tier`）と moomoo（OpenD）発注
 

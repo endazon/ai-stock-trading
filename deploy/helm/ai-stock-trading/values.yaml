@@ -28,11 +28,27 @@ global:
   # #22 受け入れ基準③: 実効構成バージョン（適用中の構成の Git コミット等）。GitOps（ArgoCD）で注入する。
   # 空既定 = 自己申告の configVersion は null（fail-safe）。
   configVersion: ""
+  # 🔴 NFR, FR-10, #1528, IADR-0611: REST の所有者の判定で、トークンの宛先（aud）と発行先のクライアント（azp）を確かめる段。
+  #   Report（段 1・既定）＝不一致を記録して通す／Enforce（段 2）＝拒否。許可集合の既定は aud ai-stock-trading-api・azp bff と ai-stock-trading-owner
+  #   （変えるときはサービスの extraEnv に Auth__OwnerToken__Audiences__0 / Auth__OwnerToken__Clients__0 … を書く。配列で書く）。
+  #   段 2 へ上げるのは、段 1 で各サービスのログに不一致が出ないことを確かめた後。
+  ownerTokenBinding:
+    mode: Report
   # NFR-06, NFR-05, IADR-0496, #1192: 全 Worker の ASPNETCORE_ENVIRONMENT（サービス単位は services.<name>.aspnetcoreEnvironment で上書き可）。
   # 🔴 Development は描画で止める（開発者向け例外ページが要求ヘッダー・スタックを応答へ載せるため）。
   aspnetcoreEnvironment: Production
   # IADR-0496: Serilog の既定の最小レベル（env Serilog__MinimumLevel__Default）。空＝描かない＝appsettings.json の Information。
   serilogMinimumLevel: ""
+  # 🔴 NFR, FR-10, #1527, IADR-0610: 注文の承認（OrderApproved）の発行元の印（HMAC）。発行元＝risk-management、受け手＝order-execution。
+  #   mode: Report（段 1・既定）＝受け手は確かめて記録するだけで通す／Enforce（段 2）＝確かめられない承認を発注しない。
+  #   鍵は乱数（32 バイト以上・base64）を Secret の secretKey に入れる。値は Git・values に置かない
+  #   （ESO 所有では Vault ai-stock-trading/app-secrets のプロパティ order-approval-signing-key。作り方は scripts/gen-order-approval-signing-key.sh）。
+  #   段 2 へ上げるのは、段 1 で両サービスに鍵が載り、受け手のログに「確かめられませんでした」が出ないことを確かめた後。
+  orderApprovalSigning:
+    mode: Report
+    secretName: ast-secrets
+    secretKey: order-approval-signing-key
+    services: [risk-management, order-execution]
   db:
     host: postgres
     port: 5432

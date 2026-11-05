@@ -26,12 +26,18 @@ public sealed class OrderApprovedHandler(
     AppSvc executionService,
     TradeExpenseRecordingService tradeExpenses,
     BusinessMetrics metrics,
+    OrderApprovalVerifier approvalVerifier,
     ILogger<OrderApprovedHandler> logger)
 {
-    public async Task Handle(OrderApproved message, IMessageBus bus, CancellationToken cancellationToken)
+    public async Task Handle(OrderApproved message, Envelope envelope, IMessageBus bus, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(message);
         ArgumentNullException.ThrowIfNull(bus);
+
+        // 🔴 NFR, FR-10, #1527, IADR-0610 決定2: 発行元の印を確かめる（段 2 では確かめられない承認を発注しない）。
+        // 発注・予約・ブローカーのどれにも触れる前に判定する。
+        if (!approvalVerifier.Admit(message, envelope))
+            return;
 
         var result = await executionService.ExecuteAsync(message, cancellationToken).ConfigureAwait(false);
 

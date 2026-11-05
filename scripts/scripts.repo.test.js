@@ -77,6 +77,12 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     assert.strictEqual(r.status, 0, `${r.stdout || ''}${r.stderr || ''}`.slice(-3000));
   });
 
+  // --- NFR, #1527, IADR-0610: 注文の承認の印の鍵の生成（scripts/gen-order-approval-signing-key.sh）の Bash 試験（vault / kubectl はスタブ） ---
+  ok('gen-order-approval-signing-key.test.sh（鍵を表示せず・引数に載せずに書く）が通る', () => {
+    const r = require('child_process').spawnSync('bash', ['scripts/gen-order-approval-signing-key.test.sh'], { encoding: 'utf8', env: { ...process.env } });
+    assert.strictEqual(r.status, 0, `${r.stdout || ''}${r.stderr || ''}`.slice(-3000));
+  });
+
   // --- check-doc-links.js: parseArgs（資料再編 ADR-0029 で docs/ ・ .ai-context/ の 2 系統走査へ） ---
   const fsDl = require('fs');
   const osDl = require('os');
@@ -5374,4 +5380,45 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     const kept = runs.filter((r) => r.number < self).slice(0, 2).map((r) => r.number);
     assert.deepStrictEqual(kept, [103, 102], '自分（104）と後の run（105）は外し、前の 2 つを取る');
   });
+
+  // --- ADR-0006, NFR, #1525, IADR-0608: 単一ノードのクラウドへの移行の手順書は必須の項目を持つ ----------------------------
+  // 二重ログインの禁止・切り替えの順番・戻し方・初日の確認ほか（issue の受け入れ基準）。移行の条件（5 段）は最初の節に置く。
+  // 描画（values-cloud）の検査は .github/workflows/helm.yml の Assert values-cloud が持つ。
+  {
+    const fs = require('fs');
+    const path = require('path');
+    const RUNBOOK = path.join(__dirname, '..', 'docs/operations/cloud-single-node-migration-runbook.md');
+    const REQUIRED = [
+      ['移行の条件', /^## 1\. 移行の条件/m],
+      ['5 段（監査で critical と high が 0 件）', /critical と high が 0 件/],
+      ['オーナー自身が秘密を入れる', /オーナー自身が\*\*秘密を入れる|オーナー自身が\*\*\s*秘密を入れる|\*\*オーナー自身が\*\*秘密を入れる/],
+      ['二重ログインの禁止', /二重にログインしない/],
+      ['自宅の OpenD を止めてからクラウドで認証', /自宅の OpenD を止める[\s\S]*初回の SMS 認証/],
+      ['場の時間外', /場の時間外/],
+      ['週末の期限（日曜の口座照会）', /日曜（米国東部）の暦日のうちに、クラウドで口座照会が 1 回以上成功/],
+      ['戻し方（クラウドの OpenD を先に止める）', /^## 10\. 戻し方[\s\S]*クラウドの OpenD を止める/m],
+      ['初日の確認（接続・到達・遅延）', /^## 8\. 初日の確認[\s\S]*moomoo への接続[\s\S]*Finnhub・SEC EDGAR・FRED・日銀[\s\S]*measure-region-latency\.sh/m],
+      ['初週の確認（再認証の回数と時刻・作り直しの基準）', /再認証[\s\S]*回数と時刻[\s\S]*シンガポールで作り直す/],
+      ['ArgoCD を使わない', /ArgoCD は使わない/],
+      ['OpenD の tar の sha256 を記録してからビルド', /ビルドの前に sha256 を記録する/],
+      ['初回の SMS 認証（kubectl attach）', /kubectl -n ai-stock-trading attach -it deploy\/opend/],
+      ['取引パスワードをクラスタに置かない', /取引パスワードはクラスタに置かない/],
+      ['秘密の値を表示しない・引数に書かない', /秘密の値を画面に表示しない・コマンドの引数に書かない/],
+    ];
+    const missing = (text) => REQUIRED.filter(([, re]) => !re.test(text)).map(([name]) => name);
+
+    ok('ADR-0006 #1525: クラウド移行の手順書は必須の項目をすべて持つ', () => {
+      const text = fs.readFileSync(RUNBOOK, 'utf8');
+      assert.deepStrictEqual(missing(text), []);
+      // 移行の条件は最初の節（H2 の 1 番目）である。
+      const firstH2 = (text.match(/^## .*$/m) || [''])[0];
+      assert.match(firstH2, /^## 1\. 移行の条件/, `最初の節が移行の条件でない: ${firstH2}`);
+    });
+
+    ok('ADR-0006 #1525: 変異 —— 二重ログインの禁止・戻し方を消すと検出する', () => {
+      const text = fs.readFileSync(RUNBOOK, 'utf8');
+      assert.deepStrictEqual(missing(text.replace(/二重にログインしない/g, '')), ['二重ログインの禁止']);
+      assert.ok(missing(text.replace(/^## 10\. 戻し方.*$/m, '## 10. 片付け')).includes('戻し方（クラウドの OpenD を先に止める）'));
+    });
+  }
 };
