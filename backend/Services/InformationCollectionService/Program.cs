@@ -83,7 +83,12 @@ builder.Services.AddSingleton(sp => InformationSourceFactory.ApplyDemotions(
 builder.Services.AddHttpClient();
 // FR-01, #1133, IADR-0469: 情報源の取得（Finnhub を含む）は 1 要求 15 秒で打ち切る（既定 100 秒のままにしない）。
 // 情報源は直列に走るため、応答が止まる相手が 1 つあると巡回全体が待つ。打ち切りは SourceFetchRunner がソース単位の欠測に写す。
-builder.Services.AddHttpClient("collection", c => c.Timeout = FinnhubHttpTimeouts.Collection);
+// NFR, #1532, IADR-0614: 外部を取るクライアントは応答の本文に上限を持つ（既定はほぼ無制限）。超えたら取得の失敗へ倒れる。
+builder.Services.AddHttpClient("collection", c =>
+{
+    c.Timeout = FinnhubHttpTimeouts.Collection;
+    c.MaxResponseContentBufferSize = AiStockTrading.Shared.Infrastructure.Composable.ExternalHttpResponseLimits.MaxResponseBytes;
+});
 builder.Services.AddSingleton<IClock, SystemClock>();
 // IADR-0068: レート制限の時刻源は共有物へ揃えるため TimeProvider（IClock は情報源の日付計算で引き続き使う）。
 builder.Services.AddSingleton(TimeProvider.System);

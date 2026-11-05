@@ -543,7 +543,12 @@ else
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<MarketDataOptions>(builder.Configuration.GetSection(MarketDataOptions.SectionName));
 // FR-02, FR-10, #1133, IADR-0469: Finnhub /quote の打ち切りは 5 秒（既定 100 秒のままにしない）。超えたら取得不可（null）。
-builder.Services.AddHttpClient("marketdata", c => c.Timeout = FinnhubHttpTimeouts.Quote);
+// NFR, #1532, IADR-0614: 外部を取るクライアントは応答の本文に上限を持つ（既定はほぼ無制限）。超えたら取得の失敗へ倒れる。
+builder.Services.AddHttpClient("marketdata", c =>
+{
+    c.Timeout = FinnhubHttpTimeouts.Quote;
+    c.MaxResponseContentBufferSize = AiStockTrading.Shared.Infrastructure.Composable.ExternalHttpResponseLimits.MaxResponseBytes;
+});
 builder.Services.AddSingleton<IMarketDataSource>(sp =>
 {
     var marketDataOptions = sp.GetRequiredService<IOptions<MarketDataOptions>>().Value;
@@ -575,7 +580,8 @@ builder.Services.AddScoped<ICurrentPriceProvider>(sp =>
 //（既定・空・未知・キー無しは no-op＝実接続しない）。基準通貨の市場（日本株）はレート 1 が定義から決まるため
 // レート源に依存せず従来どおり判断でき、非基準通貨（米国株）はレートが解決できなければ新規建てを見送る（安全側）。
 builder.Services.Configure<FxOptions>(builder.Configuration.GetSection(FxOptions.SectionName));
-builder.Services.AddHttpClient("fx");
+// NFR, #1532, IADR-0614: 外部を取るクライアントは応答の本文に上限を持つ（既定はほぼ無制限）。超えたら取得の失敗へ倒れる。
+builder.Services.AddHttpClient("fx", c => c.MaxResponseContentBufferSize = AiStockTrading.Shared.Infrastructure.Composable.ExternalHttpResponseLimits.MaxResponseBytes);
 
 // FR-10, FR-17, FR-09, FR-11, #381, ADR-0022 決定2・決定5, IADR-0196: 為替の情報源の劣化を 3 経路へ可視化する。
 // 監査・Discord は本ポートの publish が担い、日報は期間で引く（ReportService の供給ポート）。
@@ -634,7 +640,12 @@ builder.Services.AddScoped<TradeDecisionAppService>();
 // 連鎖の最も内側が基底の供給になる（Stage0AsOfComposition）。そろわなければ従来どおり「入力なし」。記録を走らせるかは Stage0Recording が決める。
 // ［2026-10-17 追記 / #1388・IADR-0557 決定 2］報告書の口は `Reports:Grpc`（上の AddAiStockTradingReportsGrpc）でも満たし、宣言があれば当時の方針も gRPC で読む。
 // ［2026-10-17 追記 / #1391・IADR-0559 決定 3］日足の口も同じく `OrderExecution:Grpc`（上の AddAiStockTradingOrderExecutionGrpc）で満たし、宣言があれば gRPC で読む。
-builder.Services.AddHttpClient(Stage0AsOfComposition.ExternalHttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30));
+// NFR, #1532, IADR-0614: 外部を取るクライアントは応答の本文に上限を持つ（既定はほぼ無制限）。超えたら取得の失敗へ倒れる。
+builder.Services.AddHttpClient(Stage0AsOfComposition.ExternalHttpClientName, c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(30);
+    c.MaxResponseContentBufferSize = AiStockTrading.Shared.Infrastructure.Composable.ExternalHttpResponseLimits.MaxResponseBytes;
+});
 builder.Services.Configure<Stage0RecordingOptions>(
     builder.Configuration.GetSection(Stage0RecordingOptions.SectionName));
 // FR-04, FR-15, ADR-0044 決定 3, ADR-0046 決定 1, #1049, IADR-0442 決定 4: 当時の監視銘柄（as-of の (e)）は市場監視の
