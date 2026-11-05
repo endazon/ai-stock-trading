@@ -110,7 +110,12 @@ builder.Services.Configure<MarketDataOptions>(builder.Configuration.GetSection(M
 // finnhub 指定＋API キーありのときだけ実市況になる。補充（QuoteRefreshService）は EnableMarkToMarket=false の
 // 既定では起動しないため、Provider を指定しても実際の取得はゲートを人手で ON にするまで起きない（IADR-0066 決定 4）。
 // FR-02, FR-10, #1133, IADR-0469: Finnhub /quote の打ち切りは 5 秒（既定 100 秒のままにしない）。超えたら取得不可（null）。
-builder.Services.AddHttpClient("marketdata", c => c.Timeout = FinnhubHttpTimeouts.Quote);
+// NFR, #1532, IADR-0614: 外部を取るクライアントは応答の本文に上限を持つ（既定はほぼ無制限）。超えたら取得の失敗へ倒れる。
+builder.Services.AddHttpClient("marketdata", c =>
+{
+    c.Timeout = FinnhubHttpTimeouts.Quote;
+    c.MaxResponseContentBufferSize = AiStockTrading.Shared.Infrastructure.Composable.ExternalHttpResponseLimits.MaxResponseBytes;
+});
 builder.Services.AddSingleton<IMarketDataSource>(sp =>
 {
     var marketDataOptions = sp.GetRequiredService<IOptions<MarketDataOptions>>().Value;
@@ -128,7 +133,12 @@ builder.Services.AddSingleton(TimeProvider.System);
 // 同じ構成キーで組む。**未設定/none/構成不備は no-op＝承認は未記録（null）のまま記録される**（承認を止めない・推定しない）。
 // 報告書はその期間の為替差損益を未供給とし、未記録の件数を明記する。
 builder.Services.Configure<FxOptions>(builder.Configuration.GetSection(FxOptions.SectionName));
-builder.Services.AddHttpClient("fx", c => c.Timeout = TimeSpan.FromSeconds(10));
+// NFR, #1532, IADR-0614: 外部を取るクライアントは応答の本文に上限を持つ（既定はほぼ無制限）。超えたら取得の失敗へ倒れる。
+builder.Services.AddHttpClient("fx", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(10);
+    c.MaxResponseContentBufferSize = AiStockTrading.Shared.Infrastructure.Composable.ExternalHttpResponseLimits.MaxResponseBytes;
+});
 builder.Services.AddSingleton<IFxRateSource>(sp => FxRateSourceFactory.Create(
     sp.GetRequiredService<IOptions<FxOptions>>().Value,
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("fx"),
