@@ -342,6 +342,7 @@ public class EntryStateBlockersTests
             [RejectionReason.DecisionExitSameDay] = (Gate.Entry, "状態だけで確定（方向別）"),
             [RejectionReason.PreCloseEntryCutoff] = (Gate.Entry, "時刻と暦だけで確定"),
             [RejectionReason.ThemeConcentrationExceeded] = (Gate.Entry, "保有の状態だけで確定"),
+            [RejectionReason.OrderIntentInvalid] = (Gate.Excluded, "注文の数値（数量・価格・換算率）に依存（#1533）"),
         };
 
     [Fact]

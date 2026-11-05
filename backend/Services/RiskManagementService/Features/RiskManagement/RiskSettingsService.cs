@@ -165,6 +165,11 @@ public sealed class RiskSettingsService(
             reason);
     }
 
+    // 🔴 FR-20, ADR-0008, #1533, IADR-0616 決定1・2: 段階の書き込みは段階ゲートの遷移の受理（StageGateService）からだけ呼ぶ。
+    // 設定の口（PUT /settings/stage）からは呼ばない（ゲートを経ずに段階を変えられる口を残さない）。
+    public void SyncStageFromGate(StageSettings stage, string actor, string reason) => UpdateStage(stage, actor, reason);
+
+    // 段階の検証と保存。本番の呼び手は SyncStageFromGate だけ（設定の口は呼ばない。UpdateStageCallersTests が固定する）。
     public void UpdateStage(StageSettings stage, string actor, string reason)
     {
         ArgumentNullException.ThrowIfNull(stage);

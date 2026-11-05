@@ -2,7 +2,7 @@
 title: 運用段階の正を段階ゲートの台帳 1 つにし、段階の変更はゲートの遷移だけで行う（審査の数値の値域の検査を併せる。段で切り替える）
 type: spec
 status: accepted
-related_ids: [FR-20, FR-10, FR-13, ADR-0008, ADR-0016, IADR-0619, IADR-0070, IADR-0140, IADR-0161, IADR-0163, IADR-0134]
+related_ids: [FR-20, FR-10, FR-13, ADR-0008, ADR-0016, IADR-0616, IADR-0070, IADR-0140, IADR-0161, IADR-0163, IADR-0134]
 author: claude (Claude Code)
 created: 2026-11-05
 updated: 2026-11-05
@@ -29,7 +29,7 @@ plan_refs:
 | 5 | `PUT /settings/stage` の呼び手はリポジトリにも基盤にも無い（試験を除く） | `git grep "settings/stage"`（AST・MSP） |
 | 6 | 審査は発注意図の数量・価格・換算率の値域を確かめない。換算率 0 は名目額（基準通貨）を 0 に見せ、金額の上限を素通りする | `RiskEvaluator.cs`（`NotionalInBase = Quantity × Price × FxRateToBase`） |
 
-## 決定（IADR-0619）
+## 決定（IADR-0616）
 
 1. **設定の口は段階を変えない。** `PUT /settings/stage` は 409（正しい口の案内）を返す。`RiskSettingsService.UpdateStage` の本番の呼び手は `SyncStageFromGate` だけ（試験がソースを走査して固定）。
 2. **遷移の受理で設定の段階をゲートの定義へそろえる。** `StageGateService.RequestTransition` は台帳へ追記した後、`RiskSettingsService.SyncStageFromGate(policy.SettingsFor(遷移先), 承認者, 理由)` を呼ぶ（変更履歴に「段階」を残す）。

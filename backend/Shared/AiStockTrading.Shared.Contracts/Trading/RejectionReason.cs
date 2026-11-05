@@ -290,4 +290,12 @@ public enum RejectionReason
     /// <para>**序数は 34（末尾追加）で不変**（IADR-0134 決定2）。</para>
     /// </summary>
     ThemeConcentrationExceeded,
+
+    /// <summary>
+    /// NFR, FR-10, #1533, IADR-0616 決定4: <b>発注意図の数値が値域の外</b> —— 数量が 0 以下（決済を含む）、または新規建てで価格・換算率が 0 以下・
+    /// 損切り価格が 0 以下・ATR が負・列挙が定義の外。金額の上限（数量 × 価格 × 換算率）を素通りさせないために審査の入口で止める。
+    /// <para>クラス分類は<b>クラス B</b>（系の入力の欠陥。統制違反 0 件には数えない）。</para>
+    /// <para>**序数は 35（末尾追加）で不変**（IADR-0134 決定2）。</para>
+    /// </summary>
+    OrderIntentInvalid,
 }

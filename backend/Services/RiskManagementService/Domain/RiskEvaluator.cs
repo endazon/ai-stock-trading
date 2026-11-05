@@ -26,6 +26,15 @@ public static class RiskEvaluator
         // エントリーを近似すると kill switch 含むエントリー専用制約をすり抜ける（Issue #25）。
         var isEntry = intent.PositionEffect == PositionEffect.Open;
 
+        // 🔴 FR-10, #1533, IADR-0616 決定4: 審査に入る数値の値域の検査。金額の上限は「数量 × 価格 × 換算率」で判定するため、
+        // 0 以下・定義の外の値（例: 換算率 0）は名目額を 0 以下に見せ、全ての金額の上限を素通りさせる。数量は決済でも正であること
+        // （0 以下の決済は送るものが無い）。価格・換算率・損切り価格・ATR は新規建てで確かめる（決済の数量は保有で決まり、
+        // 価格は指値の目安に留まる。手仕舞いは止めない＝FR-10）。
+        if (OrderIntentValidation.IsInvalid(intent, isEntry))
+        {
+            reasons.Add(RejectionReason.OrderIntentInvalid);
+        }
+
         // FR-19, FR-10, #375, ADR-0021 決定3, IADR-0153: **口座種別はブローカーへ照会した結果を正とする。**
         // 利用者の設定値（Guard.ConfiguredAccountType）は食い違いの検知にのみ使う。
         //
@@ -390,3 +399,26 @@ public static class RiskEvaluator
             : OrderScreeningResult.Approve(intent.Quantity);
     }
 }
+
+/// <summary>NFR, FR-10, #1533, IADR-0616 決定4: 審査に入る発注意図の数値の値域。</summary>
+public static class OrderIntentValidation
+{
+    public static bool IsInvalid(OrderIntent intent, bool isEntry)
+    {
+        ArgumentNullException.ThrowIfNull(intent);
+        if (intent.Quantity <= 0)
+            return true;
+        if (!isEntry)
+            return false;
+
+        return intent.Price <= 0m
+            || intent.FxRateToBase <= 0m
+            || intent.StopLossPrice is <= 0m
+            || intent.Atr14 is < 0m
+            || !Enum.IsDefined(intent.Side)
+            || !Enum.IsDefined(intent.Market)
+            || !Enum.IsDefined(intent.ProductType)
+            || !Enum.IsDefined(intent.Mode);
+    }
+}
+
