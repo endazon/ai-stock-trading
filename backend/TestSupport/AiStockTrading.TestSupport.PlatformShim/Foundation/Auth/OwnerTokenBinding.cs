@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.Shared.Contracts.Logging;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -109,7 +111,7 @@ public sealed class OwnerTokenBindingHandler(
     OwnerTokenBindingSettings settings, OwnerBotScopeSettings botScope, ILogger<OwnerTokenBindingHandler> logger)
     : AuthorizationHandler<OwnerTokenBindingRequirement>
 {
-    private const int MaxLoggedChars = 64;
+    internal const int MaxLoggedChars = 64;
 
     protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext context, OwnerTokenBindingRequirement requirement)
@@ -194,16 +196,18 @@ public sealed class OwnerTokenBindingHandler(
     // 記録に載せる経路（メソッドと雛形。値は載せない）。
     private static string RouteOf(object? resource)
     {
-        if (resource is not Microsoft.AspNetCore.Http.HttpContext http)
+        if (resource is not HttpContext http)
             return "-";
-        var pattern = (http.GetEndpoint() as Microsoft.AspNetCore.Routing.RouteEndpoint)?.RoutePattern.RawText ?? "-";
+        var pattern = (http.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? "-";
         return Shorten($"{http.Request.Method} {pattern}");
     }
 
-    // ログへ出す前に制御文字を落として切り詰める（トークンのクレームは外から来る値）。
-    private static string Shorten(string value)
+    // ログへ出す前に制御文字を落として切り詰め、行を割る文字を共通の無害化（LogSanitizer）に通す（トークンのクレームと経路は外から来る値。
+    // CWE-117。#1541 の aud / azp の記録と #1554 のボットの許可表の記録の両方がここを通る）。
+    internal static string Shorten(string value)
     {
         var cleaned = new string(value.Where(c => !char.IsControl(c)).ToArray());
-        return cleaned.Length <= MaxLoggedChars ? cleaned : cleaned[..MaxLoggedChars] + "…";
+        var cut = cleaned.Length <= MaxLoggedChars ? cleaned : cleaned[..MaxLoggedChars] + "…";
+        return LogSanitizer.Sanitize(cut, MaxLoggedChars + 1) ?? string.Empty;
     }
 }

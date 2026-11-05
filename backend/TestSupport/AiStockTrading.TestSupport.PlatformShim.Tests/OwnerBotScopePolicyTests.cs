@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace AiStockTrading.TestSupport.PlatformShim.Tests;
@@ -158,4 +159,54 @@ public class OwnerBotScopePolicyTests
     [Fact]
     public void 許可表は重複が無い() =>
         OwnerBotRoutes.All.Select(r => (r.Method, r.NormalizedTemplate)).Should().OnlyHaveUniqueItems();
+
+    // ---- 記録の無害化（CWE-117） ----
+
+    private sealed class CapturingProvider : Microsoft.Extensions.Logging.ILoggerProvider
+    {
+        public List<string> Lines { get; } = [];
+
+        public Microsoft.Extensions.Logging.ILogger CreateLogger(string categoryName) => new Capturing(Lines);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class Capturing(List<string> lines) : Microsoft.Extensions.Logging.ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+            public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state,
+                Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                lock (lines)
+                    lines.Add(formatter(state, exception));
+            }
+        }
+    }
+
+    // トークンの azp（外から来る値）に改行・行区切り・制御文字があっても、記録は 1 行のまま（偽の行を作れない）。
+    // ボットの許可表の記録（#1554）と aud / azp の記録（#1541）の両方を通す。
+    [Fact]
+    public async Task 記録に載る_azp_の改行と制御文字は無害化される()
+    {
+        var capture = new CapturingProvider();
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.AddProvider(capture));
+        services.AddAiStockTradingAuth(new ConfigurationBuilder().AddInMemoryCollection(Mode()).Build());
+        using var provider = services.BuildServiceProvider();
+        var auth = provider.GetRequiredService<IAuthorizationService>();
+        var http = new DefaultHttpContext();
+        http.SetEndpoint(Marked);
+        var hostile = "bff\r\nFAKE owner-bot: allowed\u2028\u001b[31m";
+
+        (await auth.AuthorizeAsync(Principal(hostile, BotRole), http, AiStockTradingAuthPolicies.OwnerOnly)).Succeeded.Should().BeFalse();
+        (await auth.AuthorizeAsync(Principal(hostile, OwnerRole), http, AiStockTradingAuthPolicies.OwnerOnly)).Succeeded.Should().BeTrue();
+
+        var lines = capture.Lines.Where(l => l.Contains("FAKE", StringComparison.Ordinal)).ToList();
+        lines.Should().HaveCountGreaterThanOrEqualTo(2, "ボットのロールの拒否と aud / azp の不一致の両方が azp を記録する");
+        lines.Should().OnlyContain(l => !l.Any(c => char.IsControl(c) || c == '\u2028' || c == '\u2029'));
+    }
 }
