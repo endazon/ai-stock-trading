@@ -1,8 +1,8 @@
 <!-- trace:
 ids: []
 adrs: [ADR-0006, MSP:ADR-0010]
-iadrs: [IADR-0048, IADR-0061, IADR-0128]
-specs: []
+iadrs: [IADR-0048, IADR-0061, IADR-0128, IADR-0617]
+specs: [20261105_1529_fail-closed-auth-price-policy]
 issues: []
 -->
 
@@ -20,6 +20,9 @@ ai-stock-trading を単独で起動して疎通を確認するための手順。
 > **moomoo（OpenD）へは 1 リクエストも出さない**。moomoo の模擬（SIMULATE）口座へ実際に発注する経路とは
 > 約定の主体・残高・注文履歴の所在が別である。区別と識別方法は
 > [発注経路の区別と識別 Runbook](../operations/broker-execution-paths-runbook.md)（#268）。
+>
+> **現在値の供給（実市況）が無いとき、取引判断は新規建てを見送る**（LLM の参照価格だけでは数量・損切りを決めない。手仕舞いは対象外）。
+> 実 LLM を有効にして実市況を入れずに新規建てまで試すときだけ、`.env` の `TRADEDECISION_ALLOWUNANCHOREDENTRYPRICE=true` で明示する。
 
 ## 前提
 

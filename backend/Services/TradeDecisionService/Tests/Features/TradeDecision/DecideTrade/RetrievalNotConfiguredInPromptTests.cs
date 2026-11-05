@@ -126,7 +126,7 @@ public class RetrievalNotConfiguredInPromptTests
     {
         var llm = new RecordingLlm();
         var service = new AppSvc(llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
-            options: Options);
+            options: Options, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         var decision = await service.DecideAsync(Trigger());
 
@@ -144,7 +144,7 @@ public class RetrievalNotConfiguredInPromptTests
     {
         var llm = new RecordingLlm();
         var service = new AppSvc(llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
-            new FailingRetrieval(), options: Options);
+            new FailingRetrieval(), options: Options, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         await service.DecideAsync(Trigger());
 
@@ -157,7 +157,7 @@ public class RetrievalNotConfiguredInPromptTests
     {
         var llm = new RecordingLlm();
         var service = new AppSvc(llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
-            new ConfiguredRetrieval(), options: Options);
+            new ConfiguredRetrieval(), options: Options, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         await service.DecideAsync(Trigger());
 

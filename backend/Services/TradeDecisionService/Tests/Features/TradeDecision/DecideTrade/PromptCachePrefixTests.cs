@@ -21,22 +21,30 @@ public class PromptCachePrefixTests
 
     private static readonly string Nl = Environment.NewLine;
 
-    // 従前の Build / BuildScreening が先頭に書いていた文言（#1523 の変更前の字句。全文を変えないことの固定点）。
+    // 従前の Build / BuildScreening が先頭に書いていた文言（#1523 の変更前の字句。全文を変えないことの固定点。方針の節は #1529 で符号化した）。
     private static string ExpectedDecisionPrefix(DailyPolicy policy) =>
         "あなたは確定済み日報の方針とリスク制約の範囲内でのみ判断する取引アシスタントです。" + Nl
         + "方針の範囲外・不確実な場合は必ず Hold（取引しない）を選びます。" + Nl
         + Nl
-        + $"# 確定済み日報の方針（{policy.Date:yyyy-MM-dd}）" + Nl
-        + policy.Summary + Nl
-        + Nl;
+        + PolicyBlock(policy);
 
     private static string ExpectedScreeningPrefix(DailyPolicy policy) =>
         "あなたは取引候補の一次スクリーニング担当です。詳細な本判断は行いません。" + Nl
         + "確定済み日報の方針に照らし、この銘柄が本判断に値する取引候補かを絞り込みます。" + Nl
         + "方針の範囲外・関心なし・不確実な場合は必ず Hold（見送り）を選びます。" + Nl
         + Nl
-        + $"# 確定済み日報の方針（{policy.Date:yyyy-MM-dd}）" + Nl
-        + policy.Summary + Nl
+        + PolicyBlock(policy);
+
+    // 🔴 FR-04, ADR-0003, #1529, IADR-0618: 方針の節は本文を 1 行 1 件の JSON 文字列でフェンスと境界語の中に置く（#1529 で字句が変わった）。
+    // 試験の方針は引用符・バックスラッシュ・制御文字を含まないので、各行は引用符で囲むだけで JSON 文字列になる。
+    private static string PolicyBlock(DailyPolicy policy) =>
+        $"# 確定済み日報の方針（{policy.Date:yyyy-MM-dd}）" + Nl
+        + TradeDecisionPromptBuilder.PolicyBoundaryNotice + Nl
+        + "```json" + Nl
+        + "<<<UNTRUSTED_DATA" + Nl
+        + string.Concat(policy.Summary.Split('\n').Select(line => "\"" + line + "\"" + Nl))
+        + "UNTRUSTED_DATA>>>" + Nl
+        + "```json" + Nl
         + Nl;
 
     // 同じ日の 2 回の呼び出し（銘柄・市場・時刻・現在値・保有・監視銘柄・トリガーの種別がすべて違う）。

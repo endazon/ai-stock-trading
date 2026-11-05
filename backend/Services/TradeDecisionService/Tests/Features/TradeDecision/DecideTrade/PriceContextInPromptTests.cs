@@ -187,7 +187,7 @@ public class PriceContextInPromptTests
         var service = new AppSvc(
             llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
             options: DecisionOrchestrationOptions.Default with { EnableScreening = true, ScreeningContextBudgetChars = budget },
-            currentPrice: new FakeCurrentPrice(new CurrentPriceReading(102m, Known)));
+            currentPrice: new FakeCurrentPrice(new CurrentPriceReading(102m, Known)), unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         var decision = await service.DecideAsync(ScheduledAapl());
 

@@ -72,7 +72,7 @@ public class Atr14StopWidthFloorTests
         RecordingLlm? llm = null,
         IHeldPositionProvider? held = null) =>
         new(llm ?? new RecordingLlm(llmOutput), new FakePolicy(), new FakeSizing(context ?? Context), new FakeClock(),
-            logger ?? new StateLogger(), heldPosition: held, stopWidthFloor: floor);
+            logger ?? new StateLogger(), heldPosition: held, stopWidthFloor: floor, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
     // ================================================================================================
     // 純関数（ATR(14)）

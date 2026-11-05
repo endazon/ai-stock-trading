@@ -1,5 +1,6 @@
 extern alias RiskManagementWorker;
 
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Features.TradeDecision;
@@ -158,7 +159,7 @@ public class DecisionHeldReportTests
         new(llm, new FakePolicy(withoutPolicy ? null : Policy), new FakeSizing(ctx ?? Context()),
             new FakeClock(), NullLogger<AppSvc>.Instance,
             options: options, profitabilityOptions: profitabilityOptions, currentPrice: currentPrice, fxRate: fxRate,
-            heldPosition: held, skipReporter: skipReporter, heldReporter: heldReporter);
+            heldPosition: held, skipReporter: skipReporter, heldReporter: heldReporter, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
     private static AppSvc Create(IDecisionHeldReporter heldReporter, string llmOutput, RecordingSkipReporter? skipReporter = null,
         bool withoutPolicy = false, SizingContext? ctx = null, ICurrentPriceProvider? currentPrice = null,

@@ -1,5 +1,6 @@
 extern alias RiskManagementWorker;
 
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Features.TradeDecision;
@@ -124,7 +125,7 @@ public class HighVolatilityOrderCapDecisionTests
         var service = new AppSvc(
             llm, new FakePolicy(), new FakeSizing(context), new FakeClock(), NullLogger<AppSvc>.Instance,
             currentPrice: new FakeCurrentPrice(Price), heldPosition: new FlatHeld(), forgoneReporter: forgone,
-            stopWidthFloor: atr, minimumEntryNotional: minimum);
+            stopWidthFloor: atr, minimumEntryNotional: minimum, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
         return new Probe(service, llm, forgone);
     }
 
