@@ -42,7 +42,8 @@ plan_refs:
    - **3**: 2 に加えて非 root（Worker は 1654:1654・fsGroup 1654、CronJob は curl イメージの 100:101）。発注執行の RSA 鍵の mount は 0440。
    - `podSecurity.readOnlyRootFilesystem: true`（段 2 以上でだけ受理）: コンテナのルートを読み取り専用にし `/tmp` を emptyDir にする。
 3. OpenD は別の段 `opend.podSecurity.stage`（1 / 3。［2026-11-05 追記 / 第 5 回監査］旧 段 2 の中身を段 1 へ繰り上げた）:
-   - 1（既定）: root のまま、壊さずに付けられるもの（Pod の seccomp RuntimeDefault・両コンテナの権限昇格なし・サイドカーの ALL を落とす・トークンなし）を常に付ける。
+   - 1（既定）: root のまま、トークンなし・サイドカーの権限昇格なしと ALL を落とす。OpenD 本体には何も足さない（［2026-11-05 追記 / 再レビュー］
+     OpenD 本体の seccomp と権限昇格なしは明示の opt-in `opend.podSecurity.seccomp=true` に戻した。ADR-0024・未検証）。
      OpenD 本体はケーパビリティを落とさない（root で /opt/opend へ書くため）。非 root・readOnlyRootFilesystem も段 1 では付けない（HOME と /opt/opend）。
    - 3: 非 root（10001:10001・fsGroup 10001）＋ケーパビリティを全て落とす。`opend.home=/home/opend` でなければ描画で止める。鍵の mount は 0440。
    - 認証サイドカーは**常に OpenD 本体と同じ uid** で動く（uid の指定が無ければ `runAsUser: 0` を明示する）。段に依らずケーパビリティを落とす。
@@ -55,15 +56,17 @@ plan_refs:
 ## 受け入れ基準
 
 1. 既定（values.yaml）と全プロファイル（`values*.yaml`。`values-cloud.yaml` が加わればそれも）の描画で:
-   - Worker は全て `runAsUser: 0` を明示し、seccomp・ケーパビリティ・トークンの設定を足さない（段 1 = 動作を変えない）。
-   - 認証サイドカーの実行 uid は OpenD 本体と一致する。
-2. 段 2 の描画で、Worker・CronJob・OpenD の全 Pod が seccomp RuntimeDefault・トークンなし、全コンテナが `allowPrivilegeEscalation: false`、
-   OpenD 本体以外の全コンテナが `capabilities.drop: [ALL]`。OpenD 本体は root のまま。
-3. 段 3（Worker と OpenD）の描画で、全 Pod が runAsNonRoot・runAsUser / runAsGroup が 1 以上・fsGroup（Worker / OpenD）、全コンテナが ALL を落とす。
+   - 全 Pod（Worker・CronJob・OpenD）が段に依らず `automountServiceAccountToken: false`。
+   - Worker は全て `runAsUser: 0` を明示し、seccomp・ケーパビリティの設定を足さない（段 1 = 動作を変えない）。
+   - OpenD 本体には何も足さない（seccomp と権限昇格なしは `opend.podSecurity.seccomp=true` の明示の opt-in）。
+   - 認証サイドカーは `allowPrivilegeEscalation: false`・`capabilities.drop: [ALL]`、実行 uid は OpenD 本体と一致する。
+2. Worker・CronJob の段 2 の描画で、全 Pod が seccomp RuntimeDefault、全コンテナが `allowPrivilegeEscalation: false`・`capabilities.drop: [ALL]`。root のまま。
+   OpenD の段は 1 / 3 だけで、2 は描画で止める。`opend.podSecurity.seccomp=true` で OpenD の Pod に seccomp RuntimeDefault・本体に権限昇格なし（ケーパビリティは落とさない）。
+3. 段 3（Worker と OpenD）の描画で、全 Pod が runAsNonRoot・runAsUser / runAsGroup が 1 以上・fsGroup（Worker / OpenD）・seccomp RuntimeDefault、全コンテナが ALL を落とす。
    発注執行と OpenD の RSA 鍵の mount は 0440（288）。サイドカーは OpenD と同じ uid。
 4. Namespace: warn / audit = restricted。enforce は既定で描かない。baseline を選べば描く。メッシュの注入が有効なら描かない。
-5. 描画で止まる: 段が 1〜3 の外・readOnlyRootFilesystem を段 1 で有効・enforce の値域の外・enforce=restricted で段 3 でない・OpenD 段 3 で home が /home/opend でない・
-   OpenD 段 3 で上書きの uid が 0。
+5. 描画で止まる: 段が値域の外（Worker 1〜3・OpenD 1 / 3）・readOnlyRootFilesystem を段 1 で有効・enforce の値域の外・enforce=restricted で段 3 でない・
+   OpenD 段 3 で home が /home/opend でない・OpenD 段 3 で上書きの uid が 0・段 3 で CronJob の image が uidVerifiedImage と違い uid / gid が既定のまま。
 6. 供給と一致: `backend/Dockerfile` の稼働段の最後の `USER` は `$APP_UID`、`podSecurity.dotnetRunAsUser` は 1654。基底イメージは digest つき。
    CronJob のイメージは digest つきで uid:gid は 100:101。起動器は warn / audit = restricted を貼る。
 7. 変異: 描画物から設定を 1 つ抜くと判定が赤になる。

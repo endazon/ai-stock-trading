@@ -25,12 +25,14 @@
 {{- end }}
 {{- /* NFR, IADR-0609, #1526: OpenD の Pod の段（opend.podSecurity.stage。Worker の podSecurity.stage とは別）。
        段の値を組み、受け口 opend.securityContext / opend.podSecurityContext を**上に重ねる**（従来の --set の手順はそのまま効く。
-       段 1 の値を外すときも受け口で上書きする。例: --set opend.podSecurityContext.seccompProfile.type=Unconfined）。
-       1（既定）: root のまま、OpenD を壊さずに付けられるものを常に付ける —— Pod に seccomp RuntimeDefault・トークンなし、
-          両コンテナに権限昇格なし、認証サイドカーはケーパビリティを全て落とす（同じ uid の所有者として読み書きするだけ）。
-          付けないもの: OpenD 本体のケーパビリティを落とすこと（root の OpenD は uid 10001 が所有する /opt/opend へ OpenD.xml を書く
+       1（既定）: root のまま。トークンを置かない。認証サイドカー（Worker と同じ .NET のイメージ）は権限昇格なし・ケーパビリティを全て落とす
+          （同じ uid の所有者として読み書きするだけ）。**OpenD 本体には何も足さない**（ADR-0024: 再起動を最小にする。root の実 OpenD で
+          確かめていない変更を既定にしない。OpenD が落ちると発注経路が止まる）。
+          opend.podSecurity.seccomp=true（明示の opt-in。chart README の必須の前提の手順で実機を確かめてから）: Pod に seccomp RuntimeDefault、
+          OpenD 本体に権限昇格なし。
+          段 1 で付けないもの: OpenD 本体のケーパビリティを落とすこと（root の OpenD は uid 10001 が所有する /opt/opend へ OpenD.xml を書く
           ＝CAP_DAC_OVERRIDE に頼る）・非 root（HOME とデバイス信頼の置き場が変わる）・readOnlyRootFilesystem（/opt/opend へ書く）。
-       2: 受け付けない（旧 段 2 の中身は段 1 へ繰り上げた）。
+       2: 受け付けない（描画で止める）。
        3: 非 root（opend.runAsUser・fsGroup）・全コンテナでケーパビリティを全て落とす。HOME は /home/opend に限る。 */}}
 {{- $ostRaw := ($o.podSecurity | default dict).stage }}
 {{- if not (has (toString $ostRaw) (list "1" "3")) }}
@@ -40,8 +42,10 @@
 {{- $podSc := dict }}
 {{- $ctrSc := dict }}
 {{- $sideSc := dict }}
+{{- if or ($o.podSecurity | default dict).seccomp (ge $ost 3) }}
 {{- $_ := set $podSc "seccompProfile" (dict "type" "RuntimeDefault") }}
 {{- $_ := set $ctrSc "allowPrivilegeEscalation" false }}
+{{- end }}
 {{- if ge $ost 3 }}
 {{- if ne (toString $o.home) "/home/opend" }}
 {{- fail (printf "opend.podSecurity.stage=3（非 root）には opend.home=/home/opend が要ります（受け取った値: %s。deploy/opend/Dockerfile が uid 10001 用に用意した HOME。IADR-0609 / IADR-0060 決定 2）。" $o.home) }}
@@ -68,6 +72,7 @@
 {{- /* 認証サイドカーは OpenD 本体と同じ uid で動く（共有 emptyDir のファイルは umask 077・FIFO は 600）。サイドカーのイメージは
        Worker と同じ USER $APP_UID なので、Pod にもコンテナにも uid が無ければ root（0）を明示して OpenD 本体に揃える。 */}}
 {{- $sideSc = mustMergeOverwrite $sideSc (deepCopy $ctrSc) }}
+{{- $_ := set $sideSc "allowPrivilegeEscalation" false }}
 {{- $_ := set $sideSc "capabilities" (dict "drop" (list "ALL")) }}
 {{- if and (not (hasKey $sideSc "runAsUser")) (not (hasKey $podSc "runAsUser")) }}
 {{- $_ := set $sideSc "runAsUser" 0 }}

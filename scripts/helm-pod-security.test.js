@@ -122,17 +122,21 @@ function readValue(text, dotted) {
 function declaredStages(profile) {
   let w = null;
   let o = null;
+  let seccomp = false;
   for (const f of profile.files) {
     const t = read(`${CHART}/${f}`);
     const ws = readValue(t, 'podSecurity.stage');
     const os = readValue(t, 'opend.podSecurity.stage');
+    const sc = readValue(t, 'opend.podSecurity.seccomp');
     if (ws !== null && ws !== '') w = Number(ws);
     if (os !== null && os !== '') o = Number(os);
+    if (sc !== null && sc !== '') seccomp = sc === 'true';
   }
   const base = read(`${CHART}/values.yaml`);
   return {
     w: w ?? Number(readValue(base, 'podSecurity.stage')),
     o: o ?? Number(readValue(base, 'opend.podSecurity.stage')),
+    seccomp,
   };
 }
 
@@ -214,8 +218,9 @@ function violations(text, stages, ro = false) {
     const automount = w.flat.get(`${w.prefix}automountServiceAccountToken`);
     // 段に依らず全 Pod でトークンを置かない（AST の Pod は k8s API を使わない）。
     if (automount !== 'false') v.push(`${tag}: automountServiceAccountToken: false が無い（段に依らず要る）`);
-    // OpenD は段 1 から seccomp・権限昇格なし（壊さずに付けられるもの）。Worker・CronJob の段 1 は動作を変えない。
-    const hardened = st >= 2 || r === 'opend';
+    // Worker・CronJob は段 2 から、OpenD は段 3 か明示の opt-in（opend.podSecurity.seccomp=true）で seccomp・権限昇格なし。
+    // 段 1 の OpenD 本体には何も足さない（root の実 OpenD で未検証。ADR-0024）。
+    const hardened = r === 'opend' ? (st >= 3 || stages.seccomp === true) : st >= 2;
     if (hardened) {
       if (p.get('seccompProfile.type') !== 'RuntimeDefault') v.push(`${tag}: 段 ${st} なのに Pod の seccompProfile が RuntimeDefault でない`);
     } else if (p.has('seccompProfile.type')) {
@@ -242,13 +247,15 @@ function violations(text, stages, ro = false) {
       const c = ctrSc(w, i);
       const ctag = `${tag}/${name}`;
       const isOpendMain = r === 'opend' && name === 'opend';
-      if (hardened) {
+      const isSidecar = r === 'opend' && name === 'opend-auth';
+      // 認証サイドカー（.NET のイメージ）は段に依らず権限昇格なし・ケーパビリティを全て落とす。
+      if (hardened || isSidecar) {
         if (c.get('allowPrivilegeEscalation') !== 'false') v.push(`${ctag}: 段 ${st} なのに allowPrivilegeEscalation: false が無い`);
         const mustDrop = st >= 3 || !isOpendMain;
         if (mustDrop && !dropsAll(c)) v.push(`${ctag}: 段 ${st} なのに capabilities.drop に ALL が無い`);
         if (!mustDrop && dropItem(c, 0) !== undefined) v.push(`${ctag}: 段 ${st} の OpenD 本体（root）がケーパビリティを落としている（/opt/opend へ書けなくなる）`);
       } else {
-        for (const k of c.keys()) v.push(`${ctag}: 段 1 なのにコンテナの securityContext.${k} がある`);
+        for (const k of c.keys()) v.push(`${ctag}: 段 ${st} なのにコンテナの securityContext.${k} がある（既定では足さない）`);
       }
       if (r !== 'opend') {
         const wantRo = ro && st >= 2;
@@ -332,7 +339,7 @@ function main() {
   process.stdout.write('helm-pod-security: 全プロファイル × 段\n');
   for (const prof of profiles()) {
     const declared = declaredStages(prof);
-    ok(`${prof.label}: 宣言どおりの段（Worker ${declared.w} / OpenD ${declared.o}）の形`, () => {
+    ok(`${prof.label}: 宣言どおりの段（Worker ${declared.w} / OpenD ${declared.o}${declared.seccomp ? ' ＋ seccomp' : ''}）の形`, () => {
       const extra = declared.o >= 3 ? OPEND_HOME_NONROOT : [];
       const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...extra]), declared);
       assert.deepStrictEqual(v, []);
@@ -347,6 +354,10 @@ function main() {
       const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...stageArgs(3, 3, true)]), { w: 3, o: 3 }, true);
       assert.deepStrictEqual(v, []);
     });
+    ok(`${prof.label}: Worker 段 2・OpenD 段 1 ＋ seccomp の opt-in の形`, () => {
+      const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...stageArgs(2, 1), '--set', 'opend.podSecurity.seccomp=true']), { w: 2, o: 1, seccomp: true });
+      assert.deepStrictEqual(v, []);
+    });
     ok(`${prof.label}: Worker 段 3・OpenD 段 1（別々に上げられる）でサイドカーは OpenD と同じ uid`, () => {
       const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...stageArgs(3, 1)]), { w: 3, o: 1 });
       assert.deepStrictEqual(v, []);
@@ -354,8 +365,9 @@ function main() {
   }
 
   process.stdout.write('helm-pod-security: 既定の描画\n');
-  ok('既定: 段は Worker 1 / OpenD 1（報告だけ）', () => {
+  ok('既定: 段は Worker 1 / OpenD 1（報告だけ）・OpenD の seccomp は opt-in（false）', () => {
     const base = read(`${CHART}/values.yaml`);
+    assert.strictEqual(readValue(base, 'opend.podSecurity.seccomp'), 'false');
     assert.strictEqual(readValue(base, 'podSecurity.stage'), '1');
     assert.strictEqual(readValue(base, 'opend.podSecurity.stage'), '1');
     assert.strictEqual(readValue(base, 'podSecurity.readOnlyRootFilesystem'), 'false');
@@ -508,6 +520,10 @@ function main() {
     assert.ok(o >= 0 && at > o, 'OpenD の Pod の行が見つからない');
     const m = s1.slice(0, at) + s1.slice(at + '      automountServiceAccountToken: false\n'.length);
     assert.ok(violations(m, { w: 1, o: 1 }).some((x) => x.includes('opend') && x.includes('automount')));
+  });
+  ok('変異: 段 1 の OpenD 本体に seccomp を既定で描いたら → 赤（未検証の変更を既定にしない）', () => {
+    const s1 = mustRender([...ENABLE_ALL, '--set', 'opend.podSecurity.seccomp=true']);
+    assert.ok(violations(s1, { w: 1, o: 1 }).some((x) => x.includes('opend') && x.includes('seccomp')));
   });
   ok('変異: 段 3 の描画を段 1 として判定 → 赤', () => assert.ok(violations(good, { w: 1, o: 1 }).length > 0));
   ok('変異: 段 1 の描画を段 2 として判定 → 赤', () => assert.ok(violations(mustRender(ENABLE_ALL), { w: 2, o: 2 }).length > 0));

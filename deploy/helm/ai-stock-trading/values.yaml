@@ -227,17 +227,18 @@ opend:
   podSecurityContext: {}
   # NFR, IADR-0609, #1526: OpenD の Pod の段（Worker の podSecurity.stage とは別に切り替える。上の securityContext /
   # podSecurityContext は段の値の**上に重なる**＝上の --set の手順はそのまま効く）。
-  #   1（既定）: root のまま、壊さずに付けられるものを常に付ける（seccomp RuntimeDefault・SA トークンなし・権限昇格なし、
-  #            認証サイドカーはケーパビリティを全て落とす）。OpenD 本体はケーパビリティを落とさない（root の OpenD は uid 10001 が
-  #            所有する /opt/opend へ OpenD.xml を書く）。外すときは上の受け口で上書きする
-  #            （例: --set opend.podSecurityContext.seccompProfile.type=Unconfined）。
-  #   2      : 受け付けない（中身は段 1 へ繰り上げた）。
+  #   1（既定）: root のまま。SA トークンを置かない。認証サイドカーは権限昇格なし・ケーパビリティを全て落とす。
+  #            **OpenD 本体には何も足さない**（ADR-0024: 再起動を最小にする。root の実 OpenD で確かめていない変更を既定にしない）。
+  #   2      : 受け付けない（描画で止める）。
   #   3      : 非 root（runAsUser＝下の値・fsGroup）・全コンテナでケーパビリティを全て落とす。**home=/home/opend が要る**
   #            （違えば描画で止める）。RSA 鍵の mount は 0440。**実 OpenD で未検証**（HOME が変わる＝デバイス信頼の置き場が変わる）。
   # 🔴 認証サイドカーは段に依らず OpenD 本体と同じ uid で動く（uid の指定が無ければ runAsUser: 0 を明示する。
   #    サイドカーのイメージは Worker と同じ USER $APP_UID で、OpenD 本体が umask 077 で作るファイルを読むため）。
   podSecurity:
     stage: 1
+    # 明示の opt-in（段 1）: Pod に seccomp RuntimeDefault、OpenD 本体に権限昇格なし。**実 OpenD で未検証**。
+    # chart README「必須の前提」の手順で実機を確かめてから true にする（段 3 では常に付く）。
+    seccomp: false
   # 段 3 の uid / gid / fsGroup（deploy/opend/Dockerfile が用意する opend:opend）。
   runAsUser: 10001
   resources:

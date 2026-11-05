@@ -1043,7 +1043,24 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 
 従来の個別の `--set`（下）も引き続き効く（段の値の上に重なる）。
 
+#### 🔴 必須の前提: OpenD の seccomp を opt-in する前に（`opend.podSecurity.seccomp=true`。未検証）
+
+root で動く実 OpenD は、seccomp `RuntimeDefault` と権限昇格なし（no_new_privs）の下でまだ確かめていない。OpenD が落ちると発注経路が止まるので、
+**moomoo-sim の環境で次を通してから**本番の構成で有効にする。
+
+1. 事前に `helm history ast -n ai-stock-trading` で切り戻し先を控える。取引時間外で、処理中の発注が無いこと。
+2. `--set opend.podSecurity.seccomp=true` で upgrade する（OpenD は作り直される。PVC のデバイス信頼で無人の再ログインになる想定）。
+3. 確かめる項目（どれか 1 つでも満たさなければ切り戻す）:
+   - Pod が Ready（readiness の TCP 11111）で、再起動の回数が増えていない（`kubectl -n ai-stock-trading get pod -l app=opend`）。
+   - `kubectl logs deploy/opend -c opend` に `Operation not permitted`・`Bad system call`・異常終了が無い。
+   - ログインが完了する（有人の再検証が要ったかを記録する）。発注執行から OpenD への接続（moomoo-sim の照会）が通る。
+   - 半日以上（取引時間を含む）、OpenD が落ちない。
+4. 切り戻し: `helm rollback ast <控えたリビジョン> -n ai-stock-trading`（または `--set opend.podSecurity.seccomp=false` で upgrade）。
+
 #### 🔴 必須の前提: 段 3 に上げる前に実機で確かめる（未検証）
+
+段 3 は seccomp と権限昇格なしも常に付ける。**上の seccomp の確認を先に通してから**、次へ進む。
+
 
 段 3 は**実 OpenD で未検証**である。HOME が `/root` から `/home/opend` に変わるので、デバイス信頼の置き場（`$HOME/.com.moomoo.OpenD`。PVC の mount 先）も変わる。
 **次の手順を、本番の口座に繋がない環境（moomoo-sim）で先に通してから**本番の構成で上げる。
@@ -1104,13 +1121,14 @@ Worker のイメージ（`backend/Dockerfile`）は aspnet の非特権ユーザ
 
 | 段 | Worker 10 本・CronJob（`podSecurity.stage`） | OpenD（`opend.podSecurity.stage`） |
 | --- | --- | --- |
-| 1（既定） | 動作を変えない。Worker は `runAsUser: 0` を明示（イメージが非 root でも root のまま） | root のまま、壊さずに付けられるものを常に付ける: Pod に seccomp RuntimeDefault、両コンテナに `allowPrivilegeEscalation: false`、認証サイドカーは `capabilities.drop: [ALL]`。**OpenD 本体はケーパビリティを落とさない**（root で `/opt/opend` へ書く） |
+| 1（既定） | 動作を変えない。Worker は `runAsUser: 0` を明示（イメージが非 root でも root のまま） | root のまま。認証サイドカーだけ `allowPrivilegeEscalation: false`・`capabilities.drop: [ALL]`。**OpenD 本体には何も足さない**（未検証の変更を既定にしない）。`opend.podSecurity.seccomp=true`（明示の opt-in）で Pod に seccomp `RuntimeDefault`・OpenD 本体に権限昇格なし |
 | 2 | root のまま seccomp `RuntimeDefault`・権限昇格なし・ケーパビリティを全て落とす | （受け付けない。段 1 へ繰り上げた） |
 | 3 | 非 root（Worker 1654:1654・fsGroup 1654、CronJob 100:101）。発注執行の鍵の mount は 0440 | 非 root（10001:10001・fsGroup）・ケーパビリティなし・鍵の mount 0440。`opend.home=/home/opend` が要る |
 
 - **全 Pod で段に依らず SA トークンを置かない**（`automountServiceAccountToken: false`。AST の Pod は k8s API を使わない）。
 - **認証サイドカーは段に依らず OpenD 本体と同じ uid** で動く（uid の指定が無ければ `runAsUser: 0` を明示する）。
-- OpenD の段 1 の値を外すときは受け口で上書きする（例: `--set opend.podSecurityContext.seccompProfile.type=Unconfined`）。
+- OpenD の `opend.podSecurity.seccomp=true` は、上げる前に下の「必須の前提: OpenD の seccomp を opt-in する前に」を通す。
+- ⚠️ `opend.enabled=true` の構成では、本設定を含む最初の `helm upgrade` で OpenD の Pod テンプレートが変わり（トークンを置かない・サイドカーの設定）、**OpenD が 1 回作り直される**。取引時間外に配備する。
 - `podSecurity.readOnlyRootFilesystem=true`（段 2 以上）: Worker と CronJob のルートを読み取り専用にし、`/tmp` を emptyDir にする。
 - Namespace（`namespace.create=true`）には Pod Security Admission の **warn / audit = restricted** を常に貼る（段 1 の「報告」）。
   `podSecurity.admission.enforce` は既定 空（貼らない）。`baseline` / `restricted` を選べるが、メッシュの注入が有効なら貼らない。

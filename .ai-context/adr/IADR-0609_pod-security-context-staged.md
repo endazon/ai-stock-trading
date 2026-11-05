@@ -63,13 +63,16 @@ plan_refs:
      段 3 で image がこれと違い uid / gid が 100:101 のままなら描画で止める。通すには uid / gid を直すか、uidVerifiedImage を同じ image に揃える（明示の上書き）。
    - `podSecurity.readOnlyRootFilesystem: true` は段 2 以上でだけ受理し、Worker と CronJob のコンテナのルートを読み取り専用にして `/tmp` を emptyDir にする。
 3. **OpenD の段 `opend.podSecurity.stage`**（1 / 3。［2026-11-05 追記 / 第 5 回監査］旧 段 2 の中身を段 1 へ繰り上げ、2 は受け付けない）:
-   - 1（既定）: root のまま、**OpenD を壊さずに付けられるものを常に付ける** —— Pod に seccomp RuntimeDefault・トークンなし、両コンテナに
-     `allowPrivilegeEscalation: false`、認証サイドカーは `capabilities.drop: [ALL]`。いずれも OpenD の既知の要件（root の所有者として
-     `/opt/opend`・`$HOME`・共有領域へ書く・setuid の実行ファイルを使わない・特権の syscall を使わない）と描画で確かめた。
+   - 1（既定）: root のまま。トークンを置かない。認証サイドカー（.NET のイメージ）は `allowPrivilegeEscalation: false`・`capabilities.drop: [ALL]`。
+     **OpenD 本体には何も足さない**。
+   - ［2026-11-05 追記 / 再レビュー］OpenD 本体の seccomp RuntimeDefault と `allowPrivilegeEscalation: false` は、いったん段 1 の既定にしたが、
+     **明示の opt-in（`opend.podSecurity.seccomp=true`）へ戻した**。根拠は **ADR-0024**（OpenD の再起動を最小にする。OpenD は SPOF で、落ちれば
+     発注経路が止まる）。root で動く実 OpenD ではまだ確かめておらず、既知の要件から「壊さない」と推すだけでは既定にする根拠にならない。
+     実機で確かめる手順（確かめる項目と切り戻し）は chart README の「必須の前提」に置いた。段 3 では常に付く。
+     サイドカーは Worker と同じ .NET のイメージで、権限昇格なし・ALL を落とすことは Worker の段 2・3 と同じ形なので既定に残した。
      段 1 で**付けないもの**と理由: OpenD 本体の `capabilities.drop: [ALL]`（root の OpenD は uid 10001 が所有する `/opt/opend` へ `OpenD.xml` を書く
      ＝CAP_DAC_OVERRIDE に頼る。`deploy/opend/Dockerfile` の chown と `entrypoint.sh` の書き込み）・`runAsNonRoot`（HOME が変わりデバイス信頼の置き場が変わる。
-     IADR-0060 決定 2）・`readOnlyRootFilesystem`（起動時に `/opt/opend/OpenD.xml` を書く）。seccomp は実 OpenD で未実測のため、
-     外すときは受け口で上書きする（`opend.podSecurityContext.seccompProfile.type=Unconfined`）。
+     IADR-0060 決定 2）・`readOnlyRootFilesystem`（起動時に `/opt/opend/OpenD.xml` を書く）・seccomp と権限昇格なし（上の追記。opt-in）。
    - ［2026-11-05 追記 / AI レビュー］段 3 は実機で未検証のため、上げる前の確かめる項目（uid・起動・OpenD.xml・鍵・デバイス信頼の再検証の要否・
      発注経路・サイドカー）と切り戻しを chart README に「必須の前提」として置く。
    - 3: 非 root（`opend.runAsUser`＝10001。Dockerfile が用意済みの uid/gid）・`fsGroup`・全コンテナでケーパビリティを全て落とす。`opend.home` が `/home/opend` でなければ
@@ -90,7 +93,8 @@ plan_refs:
 
 ## 残る制約
 
-- 🔴 **認証サイドカーを有効にした描画（values-local ＋ OpenD 有効）では、OpenD の Pod テンプレートが 1 回だけ変わる**（サイドカーへ `runAsUser: 0` を足すため）。
+- 🔴 **`opend.enabled=true` の描画では、サイドカーの有無に依らず OpenD の Pod テンプレートが 1 回だけ変わる**（`automountServiceAccountToken: false`。
+  サイドカーを有効にした構成ではサイドカーの `runAsUser: 0`・権限昇格なし・ALL も）。
   本変更を含む最初の `helm upgrade` で OpenD が作り直される（起動器の rollout restart の除外では止まらない）。デバイス信頼は PVC に残るが、
   配備の時機はオーナーが選ぶ（`scripts/helm-release-drift.js` が「OpenD の Deployment が変わる」を終了コード 3 で示す）。
   足さないとイメージを作り直した時点でサイドカーが 1654 で動き、OpenD 本体の 600 のファイルを読めなくなる。
