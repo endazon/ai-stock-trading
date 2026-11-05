@@ -88,11 +88,11 @@ public sealed class FinnhubQuoteClient(
             return null;
 
         // NFR, FR-10, #1532, IADR-0614: 時刻は表せる範囲の内で、未来へ許容を超えないこと。外れたら取得不可（例外を呼び出し側へ抜けさせない）。
-        // 0（欠け）は従来どおり受信の時刻で埋める。
+        // 0（欠け）は従来どおり受信の時刻で埋める（時計の源は未来の判定と同じ _time に揃える）。
         DateTimeOffset asOf;
         if (quote.T == 0)
         {
-            asOf = DateTimeOffset.UtcNow;
+            asOf = _time.GetUtcNow();
         }
         else if (!UnixTime.TryFromSeconds(quote.T, out asOf) || asOf > _time.GetUtcNow() + FutureTimestampTolerance)
         {
