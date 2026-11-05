@@ -333,7 +333,8 @@ jobs:
           grep -q 'pod-security.kubernetes.io/enforce: "baseline"' <<<"$out" || fail "values-cloud の名前空間に PSA の enforce=baseline が無い。"
           [ "$(grep -c 'allowPrivilegeEscalation: false' <<<"$out" || true)" -ge 11 ] || fail "values-cloud の Worker に権限昇格なし（段 2）が付いていない。"
           for prof in "" "-f $CHART/values-local.yaml"; do
-            o="$(helm template ast "$CHART" $prof)"
+            # NFR, #1529, IADR-0612: 既定の authAuthority は空で描画が止まるため、配備の値を与えて描く（values-local は明示済み）。
+            o="$(helm template ast "$CHART" $prof --set global.authAuthority="$CI_AUTH_AUTHORITY")"
             if grep -Eq '@sha256:|name: DB_PASSWORD$' <<<"$o"; then fail "既定または values-local の描画に digest か DB_PASSWORD が現れた（部品が漏れた）。"; fi
           done
           if grep -q 'values-cloud' deploy/argocd/application.yaml; then fail "ArgoCD の Application が values-cloud を参照している（最初の稼働では使わない）。"; fi
