@@ -29,6 +29,9 @@ global:
     pullPolicy: Never
     # 自前のイメージに digest が無ければ描画で止める（IADR-0608 決定 2）。
     requireDigest: true
+  # 🔴 明示する（chart の既定は空になり、未設定なら描画で止まる）。クラウドの基盤の Keycloak の issuer と同じ値:
+  #   基盤の最小構成は KC_HOSTNAME=http://keycloak:8080・realm platform で、AST の名前空間からは ExternalName の keycloak で引く
+  #   （infraAliases）。トークンの iss がこの値と一致しないと検証で落ちる。
   authAuthority: http://keycloak:8080/realms/platform
   db:
     # 🔴 リポジトリの既定のパスワードを使わない。パスワードは Secret から読み、接続文字列は env の参照で組む（IADR-0608 決定 3）。
