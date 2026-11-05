@@ -15,6 +15,38 @@ const { execSync } = require('child_process');
 // `skip` は受け口（scripts.test.js）が渡す（#888）。古い受け口から読まれても壊れないよう
 // **既定を「黙らない no-op」ではなく ok 相当の記録**にはせず、最低限の出力を出すスタブにする。
 module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${name}（${reason}）\n`), assert }) => {
+  // --- NFR / #1540: guard-secrets.js が Anthropic の API キーの形（sk-ant-<種別><2 桁>-…）を止める ------------------------
+  //   既存の `sk-[A-Za-z0-9]{20,}` は `sk-` の直後に `-` を含む形に掛からない。見張り値は実行時に連結で組む
+  //   （本ファイル自体がフックや秘密の走査に掛からないように）。
+  {
+    const { spawnSync } = require('child_process');
+    const path = require('path');
+    const HOOK = path.join(__dirname, '..', '.claude', 'hooks', 'guard-secrets.js');
+    const runHook = (file, content) => spawnSync(process.execPath, [HOOK], {
+      input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: file, content } }), encoding: 'utf8',
+    });
+    const fake = (kind) => ['sk', 'ant', kind].join('-') + '-' + 'Ab9_-'.repeat(18) + 'xAA';
+    ok('NFR / #1540: guard-secrets.js は Anthropic の API キー・OAuth トークンの形をブロックする', () => {
+      for (const kind of ['api03', 'admin01', 'oat01']) {
+        const r = runHook('src/a.ts', `const k = "${fake(kind)}";`);
+        assert.strictEqual(r.status, 2, `${kind} の形を止めない: exit ${r.status}`);
+        assert.match(r.stderr, /Anthropic/);
+      }
+    });
+    ok('NFR / #1540: guard-secrets.js は接頭辞への言及・短い値・語の途中は誤検知しない', () => {
+      for (const content of [
+        `キーの形は ${['sk', 'ant', 'api03'].join('-')}- で始まる`,
+        `x = "${['sk', 'ant', 'api03'].join('-')}-short"`,
+        `task${fake('api03').slice(2)}`,
+      ]) {
+        const r = runHook('src/a.ts', content);
+        assert.strictEqual(r.status, 0, `誤検知した: ${content.slice(0, 40)}…（exit ${r.status}）`);
+      }
+      // 例示・文書は従来どおり警告に緩める（ブロックしない）。
+      assert.strictEqual(runHook('docs/x.md', fake('api03')).status, 0);
+    });
+  }
+
 
   // --- NFR, #1092: 夜間の台帳の要約（scripts/nightly-ledger-summary.sh）の Bash 試験をここから起動する ---
   // ci.yml の `run: bash <path>` へ足すと、AI のワークフローとローカルの許可リスト（.claude/settings.json）の 3 系統を
