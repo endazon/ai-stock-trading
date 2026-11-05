@@ -241,7 +241,7 @@ public static class WolverineExtensions
             options.Discovery.IncludeAssembly(assembly);
         }
 
-        // NFR, NFR-18, #1535, IADR-0615 決定4: amqps のときは、サーバ証明書の CA に加えて**名前**も照合する。
+        // NFR, NFR-18, #1535, IADR-0621 決定4: amqps のときは、サーバ証明書の CA に加えて**名前**も照合する。
         // RabbitMQ.Client は amqps の URI を受けると名前の不一致を既定で受け入れる（基盤の IADR-0591 決定 5 の実測）。
         // 受け入れてよい誤りを空に戻し、ServerName を URI の host にする（基盤の UsePlatformRabbitMq と同じ）。平文のときは何も変えない。
         var uri = new Uri(connectionString ?? DefaultRabbitMqConnectionString);

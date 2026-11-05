@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Shared.Infrastructure.Composable.Http;
 
-// NFR, NFR-18, ADR-0006, #1535, IADR-0615 決定5: 基盤（MSP）の CA が発行した証明書で TLS を受ける相手（LLM ゲートウェイ）へ繋ぐ
+// NFR, NFR-18, ADR-0006, #1535, IADR-0621 決定5: 基盤（MSP）の CA が発行した証明書で TLS を受ける相手（LLM ゲートウェイ）へ繋ぐ
 // HttpClient の主ハンドラ。CA は ConfigMap `platform-infra-ca` の `ca.crt`（chart が /etc/platform-infra-ca へマウントし、
 // `PlatformInfraCa__CertificatePath` で場所を渡す）。
 //

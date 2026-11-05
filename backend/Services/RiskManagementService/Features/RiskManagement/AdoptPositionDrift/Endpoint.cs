@@ -80,7 +80,9 @@ internal static class AdoptPositionDriftEndpoint
                 LogSanitizer.Sanitize(actor.Actor));
         }
 
-        var outcome = svc.Adopt(new PositionDriftAdoptionCommand(req.Symbol, market, req.Reason), actor.Actor);
+        var outcome = svc.Adopt(new PositionDriftAdoptionCommand(req.Symbol, market, req.Reason), actor.Actor,
+            // NFR-06, FR-14, #1542, IADR-0615: 乖離の取り込み（台帳の書き換え）は危険な操作（第 2 要素。門は書き込みの直前にサービスが呼ぶ）。
+            RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.PositionDriftAdopt, req.SecondFactorCode));
 
         if (!outcome.Accepted)
         {
@@ -129,7 +131,7 @@ internal static class AdoptPositionDriftEndpoint
 // （Keycloak 利用者名）。Discord Bot が多層認証で解決した操作者を載せる。
 // 🔴 **信頼するクライアントのトークン以外では無視される**（DelegatedActorResolver）。
 // 公開型にしているのは、送り手（Discord Bot）の契約テスト（T-10-989）が本物の型で本文を読み戻すため（IADR-0423）。
-public sealed record PositionDriftAdoptionRequest(string? Symbol, Market? Market, string? Reason, string? OnBehalfOf = null);
+public sealed record PositionDriftAdoptionRequest(string? Symbol, Market? Market, string? Reason, string? OnBehalfOf = null, string? SecondFactorCode = null);
 
 /// <summary>
 /// FR-10, FR-11, #849, #871, IADR-0350, IADR-0408 決定3, IADR-0423: 取り込みの受理の応答（200）。

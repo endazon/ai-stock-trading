@@ -2,7 +2,7 @@
 title: 基盤（Postgres・RabbitMQ・LLM ゲートウェイ）への接続を、基盤の CA で検証する TLS へ切り替えられるようにする（段の切り替えは values・CA が無ければ描画で止める）
 type: spec
 status: accepted
-related_ids: [NFR, NFR-18, ADR-0006, IADR-0615, IADR-0568, IADR-0129, IADR-0323, IADR-0332]
+related_ids: [NFR, NFR-18, ADR-0006, IADR-0621, IADR-0568, IADR-0129, IADR-0323, IADR-0332]
 author: claude (Claude Code)
 created: 2026-11-06
 updated: 2026-11-06
@@ -21,7 +21,7 @@ plan_refs:
 - 基盤の起動器は、CA を ConfigMap `platform-infra-ca`（キー `ca.crt`）として AST の名前空間へ写している（MSP の IADR-0591 決定 6）。
 - LLM ゲートウェイは、クラウドの構成で https（アプリの TLS・同じ CA が発行）になる（MSP#2409）。経路 B では http のままである。
 
-## 決定（IADR-0615）
+## 決定（IADR-0621）
 
 1. **値で切り替える**（段を踏む）。既定（`values.yaml`）は従来どおり平文で、`values-local.yaml` が有効にする。
    - `global.db.tls.enabled`

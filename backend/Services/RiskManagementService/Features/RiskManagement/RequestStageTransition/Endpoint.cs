@@ -99,7 +99,10 @@ internal static class RequestStageTransitionEndpoint
                 return Results.BadRequest(new { error = "targetStage は有効な運用段階（Stage 0〜3）を指定してください。" });
             }
 
-            result = svc.RequestTransition(target, approver.Actor);
+            // NFR-06, FR-14, FR-20, #1542, IADR-0615: 昇格（実弾へ近づく向き）だけが危険な操作（第 2 要素）。差し戻しには課さない。
+            // 門は受理された昇格の台帳への追記の直前にサービスが呼ぶ（受理不能〔422〕はコードを消費しない）。
+            result = svc.RequestTransition(target, approver.Actor,
+                RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.StagePromote, req.SecondFactorCode));
         }
 
         // FR-11, #167, IADR-0082: 受理時のみ中央監査集約のため StageTransitioned を発行する（拒否時は非発行）。
@@ -136,7 +139,7 @@ internal static class RequestStageTransitionEndpoint
 // 🔴 **信頼するクライアントのトークン以外では無視される**（`DelegatedActorResolver`）——本文の名前をそのまま
 // 承認者にすると、利用者トークン直叩きで他人の名前を実資金ゲートの承認者にできてしまう。
 internal sealed record StageTransitionRequest(
-    TradingStage? TargetStage, StageApprovalKind? Approval = null, string? OnBehalfOf = null);
+    TradingStage? TargetStage, StageApprovalKind? Approval = null, string? OnBehalfOf = null, string? SecondFactorCode = null);
 
 // FR-20, ADR-0016 決定14, #388, IADR-0281 決定1: POST /stage-gate/transition が受け付ける承認の種別。
 // **序数は HTTP 経路で整数として往来する**ため、値を明示し追加は末尾へ行う。

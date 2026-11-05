@@ -9,7 +9,7 @@ updated: 2026-11-06
 <!-- trace:
 ids: [NFR, NFR-18]
 adrs: [ADR-0006]
-iadrs: [IADR-0615, MSP:IADR-0591]
+iadrs: [IADR-0621, MSP:IADR-0591]
 specs: [20261106_1535_platform-infra-tls]
 issues: [#1535, #1525]
 -->

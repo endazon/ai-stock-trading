@@ -9,7 +9,7 @@ using Xunit;
 
 namespace AiStockTrading.TestSupport.PlatformShim.Tests;
 
-// NFR, NFR-18, #1535, IADR-0615 決定4: ブローカへの amqps は、サーバ証明書の CA と**名前**の両方を検証する。
+// NFR, NFR-18, #1535, IADR-0621 決定4: ブローカへの amqps は、サーバ証明書の CA と**名前**の両方を検証する。
 // RabbitMQ.Client は amqps の URI を受けると、名前の不一致を既定で受け入れる（基盤の IADR-0591 決定 5 の実測）。
 // 共通の配線（UseAiStockTradingRabbitMq）がこれを空に戻し、ServerName を URI の host にすることを固定する。
 public class RabbitMqTlsNameVerificationTests

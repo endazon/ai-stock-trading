@@ -1,5 +1,5 @@
 ---
-title: IADR-0615 基盤への接続は基盤の CA で検証する TLS（Postgres VerifyFull・RabbitMQ amqps＋名前の照合・LLM ゲートウェイは専用の検証で CA を信頼）へ値で切り替え、CA が無ければ描画で止める
+title: IADR-0621 基盤への接続は基盤の CA で検証する TLS（Postgres VerifyFull・RabbitMQ amqps＋名前の照合・LLM ゲートウェイは専用の検証で CA を信頼）へ値で切り替え、CA が無ければ描画で止める
 type: impl-adr
 status: Accepted
 related_ids: [NFR, NFR-18, ADR-0006, IADR-0608, IADR-0568, IADR-0129, IADR-0323, IADR-0332]
@@ -10,7 +10,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0006_hosting-hetzner.md
 ---
 
-# IADR-0615: 基盤への接続の TLS（AST 側の段）
+# IADR-0621: 基盤への接続の TLS（AST 側の段）
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 > 計画リポジトリの ADR（`ADR-XXXX`）とは別系統（`IADR-XXXX`）とし、実装に閉じた決定を記録する。
@@ -21,6 +21,7 @@ plan_refs:
 
 ## 起点・関連
 
+- 採番: 起票時は IADR-0615。develop の IADR-0615（#1542）と衝突したため、取り込みの時点の最大番号（IADR-0620。開いている PR を含む）＋1 へ改番した（欠番の受容・IADR-0280）。
 - issue: #1535。基盤の段の表（MSP の IADR-0591 の 4b-2）の AST 側。LLM ゲートウェイの https は MSP#2409。
 - 実装仕様書: [`.ai-context/specs/20261106_1535_platform-infra-tls.md`](../specs/20261106_1535_platform-infra-tls.md)
 - 手順書: `docs/operations/platform-infra-tls-cutover-runbook.md`

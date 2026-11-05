@@ -11,7 +11,7 @@ using Xunit;
 
 namespace AiStockTrading.Shared.Infrastructure.Tests;
 
-// NFR, NFR-18, ADR-0006, #1535, IADR-0615 決定5: LLM ゲートウェイの https は、基盤の CA（ConfigMap platform-infra-ca の ca.crt）で検証する。
+// NFR, NFR-18, ADR-0006, #1535, IADR-0621 決定5: LLM ゲートウェイの https は、基盤の CA（ConfigMap platform-infra-ca の ca.crt）で検証する。
 // ループバックの TLS の受け手（試験の CA が発行した証明書）へ、本番と同じハンドラ（PlatformInfraCaTrust.CreateHandler）で繋ぐ。
 // 🔴 名前の違う証明書・CA が無い・別の CA のときは失敗し、平文や検証なしへ倒れない。
 public sealed class PlatformInfraCaTrustTests : IDisposable

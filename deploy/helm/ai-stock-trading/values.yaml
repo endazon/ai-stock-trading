@@ -23,7 +23,7 @@ global:
     port: 5672
     credentialsSecretName: ast-rabbitmq-users
     usernamePrefix: "ast-"
-    # NFR, NFR-18, #1535, IADR-0615: ブローカへの TLS（amqps）。有効にすると tls.port（5671）へ繋ぎ、サーバ証明書を基盤の CA
+    # NFR, NFR-18, #1535, IADR-0621: ブローカへの TLS（amqps）。有効にすると tls.port（5671）へ繋ぎ、サーバ証明書を基盤の CA
     #   （global.infraCa）と名前（host）で検証する。既定 false（平文）。経路 B は values-local が有効にする。false は切り戻し専用。
     tls:
       enabled: false
@@ -60,11 +60,11 @@ global:
     # 共有 Postgres 上の AST 用ユーザ（MSP infra init が作成: user=ai / owner of *_svc）。
     username: ai
     password: ai
-    # NFR, NFR-18, #1535, IADR-0615: DB への TLS。有効にすると `SSL Mode=VerifyFull;Root Certificate=…`（基盤の CA だけを信頼し、
+    # NFR, NFR-18, #1535, IADR-0621: DB への TLS。有効にすると `SSL Mode=VerifyFull;Root Certificate=…`（基盤の CA だけを信頼し、
     #   host の名前も照合する）。検証を緩める値の口は持たない。既定 false（平文）。経路 B は values-local が有効にする。
     tls:
       enabled: false
-  # NFR, NFR-18, #1535, IADR-0615: 基盤（DB・ブローカ・LLM ゲートウェイ）のサーバ証明書を発行した CA の ConfigMap（キー caKey）。
+  # NFR, NFR-18, #1535, IADR-0621: 基盤（DB・ブローカ・LLM ゲートウェイ）のサーバ証明書を発行した CA の ConfigMap（キー caKey）。
   #   基盤の起動器が AST の名前空間へ写す（基盤の IADR-0591 決定 6）。db.tls / rabbitmq.tls のどちらかが有効なとき、
   #   /etc/platform-infra-ca へ読み取り専用・非 optional でマウントする（無ければ Pod が立たない）。
   infraCa:
@@ -864,6 +864,12 @@ services:
       # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）を提供側で確かめる。段 1 は Audit（記録だけ・操作を止めない）。
+      # 段 2 で Enforce にする（確かめられない操作を 403 で拒む）。シークレットは scripts/ast-owner-totp-enroll.sh が作る Secret ast-owner-totp
+      # （chart・ESO・ArgoCD の管理の外）を optional で読む。Secret が無ければ Audit は「未構成」と記録するだけ。
+      - { name: OwnerSecondFactor__Mode, value: "Audit" }
+      - name: OwnerSecondFactor__Secret
+        secretKeyRef: { name: ast-owner-totp, key: secret, optional: true }
   risk-management:
     image: ai-stock-trading/risk-management-service
     db: risk_management_svc
@@ -936,6 +942,12 @@ services:
         secretKeyRef: { name: ast-operator-hold, key: enabled, optional: true }
       - name: RiskManagement__OperatorKillSwitchHold__Reason
         secretKeyRef: { name: ast-operator-hold, key: reason, optional: true }
+      # NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）を提供側で確かめる。段 1 は Audit（記録だけ・操作を止めない）。
+      # 段 2 で Enforce にする（確かめられない操作を 403 で拒む）。シークレットは scripts/ast-owner-totp-enroll.sh が作る Secret ast-owner-totp
+      # （chart・ESO・ArgoCD の管理の外）を optional で読む。Secret が無ければ Audit は「未構成」と記録するだけ。
+      - { name: OwnerSecondFactor__Mode, value: "Audit" }
+      - name: OwnerSecondFactor__Secret
+        secretKeyRef: { name: ast-owner-totp, key: secret, optional: true }
   trade-decision:
     image: ai-stock-trading/trade-decision-service
     extraEnv:

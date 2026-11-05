@@ -7,7 +7,7 @@ using Xunit;
 
 namespace ReportService.Tests;
 
-// NFR, NFR-18, #1535, IADR-0615 決定5: 報告書の LLM ゲートウェイの HttpClient（report-llm）だけが基盤の CA を信頼する専用の検証を持つ。
+// NFR, NFR-18, #1535, IADR-0621 決定5: 報告書の LLM ゲートウェイの HttpClient（report-llm）だけが基盤の CA を信頼する専用の検証を持つ。
 // 外部 API（Finnhub・為替）の HttpClient は既定のハンドラのまま（システムの信頼ストア）。
 public class LlmGatewayInfraCaTrustWiringTests
 {

@@ -35,10 +35,22 @@ public sealed class ReportAppService(
     }
 
     /// <summary>確定する（Draft→Confirmed）。利用者のみ。既に確定済みは冪等（Transitioned=false）。対象が無ければ null。</summary>
-    public ConfirmResult? Confirm(string periodKey, int expectedVersion, string actor)
+    /// <remarks>
+    /// NFR-06, #1542, IADR-0615 決定 9: <paramref name="beforeCommit"/>（第 2 要素の門）は、対象が在り・未確定で・版が一致する
+    /// （＝確定へ遷移し得る）ときだけ、書き込みの直前に呼ぶ。存在しない対象・確定済みの冪等な再送・版の食い違いはコードを消費しない。
+    /// </remarks>
+    public ConfirmResult? Confirm(string periodKey, int expectedVersion, string actor, Action? beforeCommit = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(periodKey);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+
+        if (beforeCommit is not null
+            && store.Get(periodKey) is { } current
+            && current.Report.State != ReportState.Confirmed
+            && current.Version == expectedVersion)
+        {
+            beforeCommit();
+        }
 
         return store.Confirm(periodKey, expectedVersion, clock.UtcNow);
     }
