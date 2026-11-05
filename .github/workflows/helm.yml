@@ -315,7 +315,7 @@ jobs:
             if helm template ast "$CHART" -f "$CHART/values-local.yaml" --set "$v" > /dev/null 2>&1; then fail "CA の設定（$v）が無いのに描画が通った。"; fi
           done
           if helm template ast "$CHART" -f "$CHART/values-local.yaml" --set global.rabbitmq.tls.port= > /dev/null 2>&1; then fail "amqps のポートが無いのに描画が通った。"; fi
-          def="$(helm template ast "$CHART")"
+          def="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY")"  # NFR, #1529: 既定の authAuthority は空で描画が止まる
           if grep -Eq 'amqps://|VerifyFull|platform-infra-ca|SSL_CERT_DIR' <<<"$def"; then fail "既定の描画に TLS の部品が現れた（既定は平文のまま）。"; fi
           echo "platform-infra TLS: db=$full/$conns mq=$amqps/$mqs"
       # ADR-0006, NFR, #1525, IADR-0608: 単一ノードのクラウドのプロファイル（values-cloud.yaml）。
