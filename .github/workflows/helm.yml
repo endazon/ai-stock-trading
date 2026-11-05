@@ -1362,13 +1362,13 @@ jobs:
           # 非 ESO（AST_ESO=0）では従来の values 経路へ戻る。
           noeso="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" \
             --set externalSecrets.enabled=false --set externalSecrets.appSecrets.enabled=false \
-            --set-string discord.bot.guildId=123456789012345678)"
+            --set-string discord.bot.guildId=test-guild-id)"
           if printf '%s' "$noeso" | grep -q 'kind: ExternalSecret'; then fail "AST_ESO=0 相当の描画に ExternalSecret が現れた。"; fi
-          printf '%s' "$noeso" | grep -A1 'name: Notifications__Discord__Bot__GuildId$' | grep -q 'value: "123456789012345678"' \
+          printf '%s' "$noeso" | grep -A1 'name: Notifications__Discord__Bot__GuildId$' | grep -q 'value: "test-guild-id"' \
             || fail "AST_ESO=0 相当の描画で discord.bot.guildId が env へ入らない（values 経路が壊れた）。"
 
           # ④ appSecrets 有効のまま discord.bot.* を与えたら描画を止める。
-          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" --set-string discord.bot.guildId=123456789012345678 >/dev/null 2>&1; then
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" --set-string discord.bot.guildId=test-guild-id >/dev/null 2>&1; then
             fail "appSecrets 有効で discord.bot.* を与えても描画が通った（どちらの値が効くか読めない構成を許した）。"
           fi
 

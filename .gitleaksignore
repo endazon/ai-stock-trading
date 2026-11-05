@@ -68,3 +68,6 @@ c255bfeb7667d54763ee1332b1785e5b2c2d4a0c:.github/workflows/helm.yml:discord-clie
 14cc91031112de27e367225c49de45eb2e36ebef:backend/Services/TradeDecisionService/Tests/TradeDecisionFailureReporterRegistrationTests.cs:generic-api-key:49
 # 上の説明の初版（c694d753）がその偽値をコメントへ引用したため同じルールが再び検知した。引用は次のコミットで除いた。
 c694d7531b8765751680810a07c054ecb310d645:.gitleaksignore:generic-api-key:65
+# #1529: helm.yml の描画試験の Discord ギルド ID は連番の作り物（実在しない）。--set を足した行が再検査されたため、当該コミットを無効化する。
+# 後続のコミットで値を規則に掛からないダミー（test-guild-id）へ改めた。
+b15f19bca62981bbd5ff85c5df640700e6257d52:.github/workflows/helm.yml:discord-client-id:1371
