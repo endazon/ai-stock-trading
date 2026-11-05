@@ -60,6 +60,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CHART: deploy/helm/ai-stock-trading
+      # 🔴 NFR, #1529, IADR-0612: chart の既定の global.authAuthority は空で、未設定なら描画で止まる。
+      # 既定の値の描画を見る検査は、配備のレルムを明示して描く（下の「未設定なら止まる」の検査だけは渡さない）。
+      CI_AUTH_AUTHORITY: http://keycloak:8080/realms/platform
     steps:
       - uses: actions/checkout@v7
       # バージョンを固定する（ランナー同梱の helm に依存すると、更新で挙動が変わっても気づけない）。
@@ -68,23 +71,34 @@ jobs:
         with:
           version: v4.2.1
       - name: helm lint (strict)
-        run: helm lint --strict "$CHART"
+        run: helm lint --strict "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY"
       # 描画の派生。既定 disabled のフラグを ON にした系も描画し、有効化時に初めて壊れる
       # テンプレート（#121 CronJob / #13 moomoo）を CI で捕まえる（IADR-0058 の核心）。
+      # 🔴 NFR, #1529, IADR-0612: 認証のレルムが未設定なら描画で止まる（既定を単体実行向けのレルムにしない）。明示すれば通る。
+      - name: helm template (global.authAuthority 未設定なら止まる・明示すれば通る)
+        run: |
+          if out="$(helm template ast "$CHART" 2>&1)"; then
+            echo "::error::global.authAuthority が未設定でも描画が通った（既定の空で止まるはず）。"; exit 1
+          fi
+          printf '%s' "$out" | grep -q 'global.authAuthority が未設定です' \
+            || { echo "::error::未設定の描画が別の理由で止まった: $out"; exit 1; }
+          helm template ast "$CHART" --set global.authAuthority=http://keycloak:8080/realms/platform > /dev/null
+          helm template ast "$CHART" -f "$CHART/values-local.yaml" > /dev/null
+          echo "ok: 未設定は描画で止まり、明示（--set・values-local）は通る"
       - name: helm template (default values / fail-safe 既定)
-        run: helm template ast "$CHART" > /dev/null
+        run: helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" > /dev/null
       - name: helm template (tradingCycle.cronjob.enabled=true)
-        run: helm template ast "$CHART" --set tradingCycle.cronjob.enabled=true > /dev/null
+        run: helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set tradingCycle.cronjob.enabled=true > /dev/null
       - name: helm template (moomoo.enabled=true)
-        run: helm template ast "$CHART" --set moomoo.enabled=true > /dev/null
+        run: helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set moomoo.enabled=true > /dev/null
       # #132 / IADR-0060: OpenD の本番配備（opend.enabled）と秘匿の受け口（externalSecrets）も同様に描画する。
       - name: helm template (opend.enabled=true)
-        run: helm template ast "$CHART" --set opend.enabled=true > /dev/null
+        run: helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set opend.enabled=true > /dev/null
       # #132: 非 root 化（securityContext ＋ HOME 再調整）のオプトイン経路。**実 OpenD での動作確認は実基盤が要り
       # CI 対象外**（#132 の実測フェーズ）。ここでは描画が壊れないことだけを守る。
       - name: helm template (opend.enabled=true / 非 root オプトイン)
         run: |
-          helm template ast "$CHART" \
+          helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" \
             --set opend.enabled=true \
             --set opend.home=/home/opend \
             --set opend.securityContext.runAsNonRoot=true \
@@ -94,7 +108,7 @@ jobs:
       # ON にした派生を描画し、有効化時に初めて壊れるテンプレートを CI で捕まえる（IADR-0058 の核心）。
       - name: helm template (opend.authGateway.enabled=true)
         run: |
-          helm template ast "$CHART" \
+          helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" \
             --set opend.enabled=true \
             --set opend.authGateway.enabled=true > /dev/null
       # NFR, IADR-0609, #1526: Pod とコンテナのセキュリティ設定を**実際に描いて**固定する —— 全プロファイル（values*.yaml）× 段
@@ -108,7 +122,7 @@ jobs:
       - name: Assert grpcPort opt-in (h2c 第 2 ポート)
         run: |
           # ① 既定描画は追加前とバイト等価（gRPC の痕跡が 1 つも無い）。
-          out="$(helm template ast "$CHART")"
+          out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY")"
           for forbidden in 'Grpc__Port' 'appProtocol: grpc' 'name: grpc'; do
             if printf '%s' "$out" | grep -q "$forbidden"; then
               echo "::error::既定描画に「$forbidden」が現れた（grpcPort は宣言したサービスにだけ描く・#584）。"
@@ -116,7 +130,7 @@ jobs:
             fi
           done
           # ② 宣言したサービスにだけ 3 点（containerPort・Service ポート・env）が描かれる。
-          out="$(helm template ast "$CHART" --set services.configuration.grpcPort=8081)"
+          out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set services.configuration.grpcPort=8081)"
           printf '%s' "$out" | grep -A1 'name: Grpc__Port' | grep -q 'value: "8081"' \
             || { echo "::error::grpcPort を宣言しても env Grpc__Port が描画されない。"; exit 1; }
           printf '%s' "$out" | grep -q 'appProtocol: grpc' \
@@ -188,8 +202,8 @@ jobs:
             'trade-decision-service	CostControl__Grpc	http://cost-control-service:8081' | sort)"
           for profile in default local; do
             if [ "$profile" = local ]; then base=(-f "$CHART/values-local.yaml"); else base=(); fi
-            before_out="$(helm template ast "$CHART" "${base[@]}")"
-            after_out="$(helm template ast "$CHART" "${base[@]}" -f "$O")"
+            before_out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "${base[@]}")"
+            after_out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "${base[@]}" -f "$O")"
             before="$(envs <<<"$before_out")"
             after="$(envs <<<"$after_out")"
             # ② overlay なしには gRPC の宣言が 1 つも無い（既定は REST）。
@@ -217,23 +231,23 @@ jobs:
             fi
           done
           # ⑥ --set …=false で 1 経路だけ外れ、=true で別窓の #6 が足される。
-          off="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -f "$O" --set services.trade-decision.grpcClients.Configuration=false | grpc_urls)"
+          off="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" -f "$O" --set services.trade-decision.grpcClients.Configuration=false | grpc_urls)"
           if grep -q $'^trade-decision-service\tConfiguration__Grpc\t' <<<"$off"; then
             echo "::error::grpcClients.Configuration=false でも trade-decision に Configuration__Grpc が描かれた。"; exit 1
           fi
           grep -q $'^cost-control-service\tConfiguration__Grpc\t' <<<"$off" \
             || { echo "::error::trade-decision の宣言を外したら cost-control の宣言まで消えた。"; exit 1; }
-          on="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -f "$O" --set services.report.grpcClients.Audit=true | grpc_urls)"
+          on="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" -f "$O" --set services.report.grpcClients.Audit=true | grpc_urls)"
           grep -qx $'report-service\tAudit__Grpc\thttp://audit-service:8081' <<<"$on" \
             || { echo "::error::grpcClients.Audit=true で report に Audit__Grpc（http://audit-service:8081）が描かれない。"; exit 1; }
-          on17="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -f "$O" --set services.risk-management.grpcClients.OrderExecution=true | grpc_urls)"
+          on17="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" -f "$O" --set services.risk-management.grpcClients.OrderExecution=true | grpc_urls)"
           grep -qx $'risk-management-service\tOrderExecution__Grpc\thttp://order-execution-service:8081' <<<"$on17" \
             || { echo "::error::grpcClients.OrderExecution=true で risk-management に OrderExecution__Grpc（http://order-execution-service:8081）が描かれない（#1391）。"; exit 1; }
           # ⑦ 片方だけの宣言・未知の提供側・真偽値でない値・extraEnv との二重定義は、**その理由で**描画が止まる。
           must_fail() {
             local label="$1" want="$2"; shift 2
             local out
-            if out="$(helm template ast "$CHART" "$@" 2>&1)"; then echo "::error::描画が通ってしまった: $label"; exit 1; fi
+            if out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" 2>&1)"; then echo "::error::描画が通ってしまった: $label"; exit 1; fi
             grep -qF "$want" <<<"$out" || { echo "::error::$label: 期待した理由（$want）で止まっていない:"; printf '%s\n' "$out" | tail -3; exit 1; }
           }
           must_fail "呼び先に grpcPort が無い" "には呼び先 services.audit.grpcPort の宣言が要ります" --set services.report.grpcClients.Audit=true
@@ -242,17 +256,17 @@ jobs:
           must_fail "extraEnv と二重定義" "は extraEnv の Audit__Grpc と grpcClients.Audit を併用できません" -f "$O" --set services.report.grpcClients.Audit=true --set 'services.report.extraEnv[0].name=Audit__Grpc'
           echo "ok: 計測 overlay は env を 1 本も消さず、段 1〜5 の宣言（呼び出し側 17〔#6・#17 は別窓〕・提供側 7）だけを足す"
       - name: helm template (externalSecrets.enabled=true)
-        run: helm template ast "$CHART" --set externalSecrets.enabled=true > /dev/null
+        run: helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set externalSecrets.enabled=true > /dev/null
       # #24 / IADR-0094: API 鍵群（ast-secrets）の Vault 同期 opt-in。既定描画では評価されないため
       # ON にした派生を描画し、有効化時に初めて壊れるテンプレートを CI で捕まえる（IADR-0058 の核心）。
       - name: helm template (externalSecrets.appSecrets.enabled=true)
         run: |
-          helm template ast "$CHART" \
+          helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" \
             --set externalSecrets.enabled=true \
             --set externalSecrets.appSecrets.enabled=true > /dev/null
       - name: helm template (all feature flags on)
         run: |
-          helm template ast "$CHART" \
+          helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" \
             --set tradingCycle.cronjob.enabled=true \
             --set moomoo.enabled=true \
             --set opend.enabled=true \
@@ -262,12 +276,12 @@ jobs:
       # 既定 no-op のキー（MarketData/LlmGateway/KnowledgeBase/Discord）を ON にした派生であり、有効化時に
       # 初めて壊れるテンプレートを CI で捕まえる（IADR-0058 の核心）。
       - name: helm template (values-local / 経路B 有効化)
-        run: helm template ast "$CHART" -f "$CHART/values-local.yaml" > /dev/null
+        run: helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" > /dev/null
       # 描画結果が空（テンプレート消失・条件の取り違え）でも上記は exit 0 になり得るため、
       # 既定値の描画が実際にリソースを産んでいることを確認する（無検査の緑を作らない）。
       - name: Assert default render is non-empty
         run: |
-          count="$(helm template ast "$CHART" | grep -c '^kind:' || true)"
+          count="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" | grep -c '^kind:' || true)"
           echo "rendered resources: $count"
           if [ "$count" -eq 0 ]; then
             echo "::error::既定値の描画でリソースが 1 件も生成されなかった（chart またはテンプレート条件の破綻）。"
@@ -282,7 +296,7 @@ jobs:
         run: |
           fail() { echo "::error::$*"; exit 1; }
           env_rows() {
-            helm template ast "$CHART" "$@" -s templates/deployment.yaml | awk 'BEGIN{RS="---"} /\nkind: Deployment\n/ {
+            helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" -s templates/deployment.yaml | awk 'BEGIN{RS="---"} /\nkind: Deployment\n/ {
               d=""; if (match($0, /\n  name: [a-z-]+/)) d=substr($0, RSTART+9, RLENGTH-9)
               v="<none>"; n=split($0, L, "\n")
               for (i=1; i<n; i++) if (L[i] ~ /^ *- name: ASPNETCORE_ENVIRONMENT$/) { v=L[i+1]; sub(/^ *value: /, "", v); gsub(/"/, "", v) }
@@ -302,8 +316,8 @@ jobs:
             echo "ok [$profile]: $count 件すべて Production"
           done
           for neg in "global.aspnetcoreEnvironment=Development" "global.aspnetcoreEnvironment=development" "services.audit.aspnetcoreEnvironment=Development"; do
-            if helm template ast "$CHART" --set "$neg" > /dev/null 2>&1; then fail "--set $neg が描画できてしまった（Development を止めていない）。"; fi
-            if helm template ast "$CHART" -f "$CHART/values-local.yaml" --set "$neg" > /dev/null 2>&1; then fail "values-local ＋ --set $neg が描画できてしまった。"; fi
+            if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set "$neg" > /dev/null 2>&1; then fail "--set $neg が描画できてしまった（Development を止めていない）。"; fi
+            if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" --set "$neg" > /dev/null 2>&1; then fail "values-local ＋ --set $neg が描画できてしまった。"; fi
           done
           # #1205 監査（T-10-2365）: extraEnv で環境名を与える抜け道（同名 env は後ろが勝つ）は、名前の大小・読み元（DOTNET_）・値に依らず**その理由で**止まる。
           for spec in "audit ASPNETCORE_ENVIRONMENT Development" "audit aspnetcore_environment Development" \
@@ -311,7 +325,7 @@ jobs:
             set -- $spec
             for base in default local; do
               if [ "$base" = local ]; then b=(-f "$CHART/values-local.yaml"); else b=(); fi
-              if out="$(helm template ast "$CHART" "${b[@]}" --set "services.$1.extraEnv[0].name=$2" --set "services.$1.extraEnv[0].value=$3" 2>&1)"; then
+              if out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "${b[@]}" --set "services.$1.extraEnv[0].name=$2" --set "services.$1.extraEnv[0].value=$3" 2>&1)"; then
                 fail "[$base] services.$1.extraEnv の $2=$3 が描画できてしまった（環境名の抜け道・#1205）。"
               fi
               grep -qF "services.$1 の extraEnv に $2 は書けません" <<<"$out" || fail "[$base] extraEnv の $2 が期待した理由で止まっていない: $(printf '%s' "$out" | tail -2)"
@@ -321,8 +335,8 @@ jobs:
           env_rows --set global.aspnetcoreEnvironment=Staging | awk -F'\t' '$2 != "Staging" {exit 1}' || fail "global.aspnetcoreEnvironment の上書きが効かない。"
           env_rows --set services.audit.aspnetcoreEnvironment=Staging | grep -qx "audit-service	Staging" || fail "サービス単位の上書きが効かない。"
           # T-10-2357: Development でしか読まれなかった値の明示（経路B は保持・本番は Serilog を描かない）。
-          local_out="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml)"
-          prod_out="$(helm template ast "$CHART" -s templates/deployment.yaml)"
+          local_out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" -s templates/deployment.yaml)"
+          prod_out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -s templates/deployment.yaml)"
           workers="$(printf '%s' "$local_out" | grep -c '^kind: Deployment' || true)"
           debug="$(printf '%s\n' "$local_out" | grep -A1 -E '^ *- name: Serilog__MinimumLevel__Default$' | grep -c 'value: "Debug"' || true)"
           [ "$debug" -eq "$workers" ] || fail "values-local の Serilog__MinimumLevel__Default=Debug が $debug / $workers 件（経路B のログ量が黙って変わる）。"
@@ -354,7 +368,7 @@ jobs:
           }
           check() {
             label="$1"; shift
-            names="$(helm template ast "$CHART" "$@" | env_names)"
+            names="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" | env_names)"
             total="$(printf '%s\n' "$names" | grep -c . || true)"
             bad="$(printf '%s\n' "$names" | grep -vE '^[A-Za-z_][A-Za-z0-9_]*$' || true)"
             echo "[$label] env names: $total"
@@ -378,7 +392,7 @@ jobs:
           check_timeout=3
           check() {
             label="$1"; shift
-            rows="$(helm template ast "$CHART" "$@" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /ASPNETCORE_URLS/ {
+            rows="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /ASPNETCORE_URLS/ {
                 n=""; if (match($0, /\n  name: [a-z-]+/)) n=substr($0, RSTART+9, RLENGTH-9)
                 t="none"; i=index($0, "readinessProbe:")
                 if (i > 0) { r=substr($0, i); j=index(r, "livenessProbe:"); if (j > 0) r=substr(r, 1, j-1)
@@ -402,7 +416,7 @@ jobs:
       # 「既定で外部へ触らない」保証であり、うっかり既定を反転させたら CI で落とす。
       - name: Assert fail-safe defaults (opend/ExternalSecret 不在・Broker=paper)
         run: |
-          out="$(helm template ast "$CHART")"
+          out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY")"
           # #778 / ADR-0006: 全 .NET サービス（ASPNETCORE_URLS を持つ Deployment）に Workstation GC が入っている。
           # Server GC 既定のまま 512Mi 容器へ置くと OOMKilled を繰り返す（実測）。1 つでも欠ければ赤。
           missing_gc="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /ASPNETCORE_URLS/ && !/name: DOTNET_gcServer/ { if (match($0, /  name: [a-z-]+/)) print substr($0, RSTART+8, RLENGTH-8) }')"
@@ -425,7 +439,7 @@ jobs:
           # #1348: 既定と values-local の両描画で、GC 設定の env（DOTNET_GC* / DOTNET_gc* / COMPlus_GC* / COMPlus_gc*）に 0x の無い
           # 10 以上の 10 進数が無い（一桁は 16 進数でも同じ値なので許す）。extraEnv での追加も拾う。
           for prof in default values-local; do
-            if [ "$prof" = default ]; then r="$out"; else r="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"; fi
+            if [ "$prof" = default ]; then r="$out"; else r="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml")"; fi
             bad_gc="$(gc_env "$r" | grep -E '=0*[1-9][0-9]+$' || true)"
             if [ -n "$bad_gc" ]; then echo "::error::$prof: GC 設定の env に 0x の無い 10 以上の値がある（16 進数で読まれる。#1348）: $bad_gc"; exit 1; fi
           done
@@ -448,7 +462,7 @@ jobs:
           # #1078 / IADR-0485（MSP#1696 の裁定 案 B）: KB の検索は読み手（kb-reader-auth-*）で名乗る。書き手（kb-auth-*）の資格情報を
           # 検索へ渡さない（最小権限）。取引判断は KB へ書かないので、取引判断の Deployment に kb-auth-* が在れば赤。既定・経路 B の両面で見る。
           for face in default local; do
-            if [ "$face" = local ]; then fo="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml)"; else fo="$(helm template ast "$CHART" -s templates/deployment.yaml)"; fi
+            if [ "$face" = local ]; then fo="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" -s templates/deployment.yaml)"; else fo="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -s templates/deployment.yaml)"; fi
             td="$(printf '%s' "$fo" | awk 'BEGIN{RS="---"} /\n  name: trade-decision-service\n/')"
             [ -n "$td" ] || { echo "::error::[$face] 描画に trade-decision-service の Deployment が無い（検査の空振り）。"; exit 1; }
             if printf '%s' "$td" | grep -q 'key: kb-auth-client-'; then
@@ -476,7 +490,7 @@ jobs:
       # report / risk-management / trade-decision の 3 サービス分あるため件数で数える。
       - name: Assert FX rate source is BOJ-first in prod default (計画 ADR-0022 決定1)
         run: |
-          out="$(helm template ast "$CHART")"
+          out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY")"
           fx_prod="$(printf '%s' "$out" | grep -A1 'name: Fx__Provider' | grep -c 'value: "boj"' || true)"
           if [ "$fx_prod" -ne 3 ]; then
             echo "::error::既定描画の Fx__Provider=boj が 3 件でない（実測 $fx_prod 件）。計画 ADR-0022 決定1（日銀第一）に違反する（#686）。"
@@ -494,10 +508,10 @@ jobs:
       #      （配列の写し忘れ・宛先の取り違え・他サービスへの誤配置を捕まえる）
       - name: Assert report → audit ledger wiring is local-only (#1178)
         run: |
-          if helm template ast "$CHART" | grep -q 'name: Audit__BaseUrl$'; then
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" | grep -q 'name: Audit__BaseUrl$'; then
             echo "::error::本番既定の描画に Audit__BaseUrl が現れた（結線は values-local だけ・#1178）。"; exit 1
           fi
-          got="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml | awk 'BEGIN{RS="---"}
+          got="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" -s templates/deployment.yaml | awk 'BEGIN{RS="---"}
             { d=""; if (match($0, /\n  name: [a-z-]+/)) d=substr($0, RSTART+9, RLENGTH-9)
               n=split($0, L, "\n"); for (i=1; i<n; i++) if (L[i] ~ /^ *- name: Audit__BaseUrl$/) { v=L[i+1]; sub(/^ *value: /, "", v); print d "\t" v } }')"
           if [ "$got" != $'report-service\t"http://audit-service:8080"' ]; then
@@ -510,10 +524,10 @@ jobs:
       #      🔴 12 を超えると「鮮度の上限 600 秒 ＋ サイクルの上限」が RabbitMQ の consumer_timeout 1,800 秒を超える（値の根拠は values-local の注記）。
       - name: Assert scheduled-cycle watched-symbol assumption is local-only (#1169)
         run: |
-          if helm template ast "$CHART" | grep -q 'name: TradeCycle__MaxWatchedSymbols$'; then
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" | grep -q 'name: TradeCycle__MaxWatchedSymbols$'; then
             echo "::error::本番既定の描画に TradeCycle__MaxWatchedSymbols が現れた（前提の引き上げは values-local だけ・#1169）。"; exit 1
           fi
-          got="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml | awk 'BEGIN{RS="---"}
+          got="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" -s templates/deployment.yaml | awk 'BEGIN{RS="---"}
             { d=""; if (match($0, /\n  name: [a-z-]+/)) d=substr($0, RSTART+9, RLENGTH-9)
               n=split($0, L, "\n"); for (i=1; i<n; i++) if (L[i] ~ /^ *- name: TradeCycle__MaxWatchedSymbols$/) { v=L[i+1]; sub(/^ *value: /, "", v); print d "\t" v } }')"
           if [ "$got" != $'trade-decision-service\t"12"' ]; then
@@ -527,12 +541,12 @@ jobs:
       - name: Assert broker tier switch (paper / moomoo-sim / moomoo-live)
         run: |
           # ① 既定は paper 階層＝取引環境の env を注入しない（本設定点の追加前とバイト等価）。
-          if helm template ast "$CHART" | grep -q 'name: Broker__Environment'; then
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" | grep -q 'name: Broker__Environment'; then
             echo "::error::既定描画に Broker__Environment が現れた（既定 paper のバイト等価に違反・IADR-0111）。"; exit 1
           fi
           # ② 新スイッチ（broker.tier）と非推奨エイリアス（moomoo.enabled）が同じ階層へ解決されること。
           for args in "--set broker.tier=moomoo-sim" "--set moomoo.enabled=true"; do
-            out="$(helm template ast "$CHART" $args)"
+            out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" $args)"
             printf '%s' "$out" | grep -A1 'name: Broker__Provider' | grep -q 'value: "moomoo"' \
               || { echo "::error::[$args] Broker__Provider が moomoo でない（tier 解決の破綻）。"; exit 1; }
             printf '%s' "$out" | grep -A1 'name: Broker__Environment' | grep -q 'value: "sim"' \
@@ -543,7 +557,7 @@ jobs:
           # ③ 実弾・矛盾・未知は描画時に止める。ここが通ってしまうと誤設定がクラスタへ届く。
           #    実弾（moomoo-live）はアプリ側の LiveTradingGate（閂 0）でも停止するが、外周でも塞ぐ。
           assert_render_fails() {
-            if helm template ast "$CHART" $1 >/dev/null 2>&1; then
+            if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" $1 >/dev/null 2>&1; then
               echo "::error::[$1] が描画に成功した（$2）。"; exit 1
             fi
           }
@@ -584,9 +598,9 @@ jobs:
               fi
             done
           }
-          assert_reconciliation "既定描画" "$(helm template ast "$CHART")"
-          assert_reconciliation "moomoo-sim" "$(helm template ast "$CHART" --set broker.tier=moomoo-sim)"
-          assert_reconciliation "values-local" "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          assert_reconciliation "既定描画" "$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY")"
+          assert_reconciliation "moomoo-sim" "$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set broker.tier=moomoo-sim)"
+          assert_reconciliation "values-local" "$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml")"
           echo "ok: 突合は 3 描画とも有効で、解放の門は閉じている（BatchSize も pin 済み）"
       # 🔴 T-10-2973, FR-10, ADR-0009, IADR-0567: 発注執行が新規建てを送る直前に kill switch・一時停止を照会する宛先と s2s の資格情報。
       #    これが描画されないと照会は常に「不明」になり、新規建てが全件見送られる（fail-closed。決済・損切りは止まらない）。
@@ -611,9 +625,9 @@ jobs:
             printf '%s' "$doc" | grep -q 'name: ServiceAuth__TokenEndpoint$' \
               || { echo "::error::[$label] order-execution に ServiceAuth__TokenEndpoint が描画されない（s2s トークンを取れない）。"; exit 1; }
           }
-          assert_halt_query "既定描画" "$(helm template ast "$CHART")"
-          assert_halt_query "moomoo-sim" "$(helm template ast "$CHART" --set broker.tier=moomoo-sim)"
-          assert_halt_query "values-local" "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          assert_halt_query "既定描画" "$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY")"
+          assert_halt_query "moomoo-sim" "$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set broker.tier=moomoo-sim)"
+          assert_halt_query "values-local" "$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml")"
           echo "ok: 発注執行は 3 描画とも停止状態の照会先と s2s の資格情報を持つ"
       # 🔴 FR-10, FR-19, 計画 ADR-0072 決定 1・ADR-0077 決定 4, #1424, #1519, IADR-0606: 判断由来の指値の未約定時の取消（決済・新規建て）は
       #    PoC の経路（values-local）だけで有効にし、本番の既定（values.yaml・moomoo-sim の切替だけ）には現れない。N・回数は既定値のまま
@@ -622,7 +636,7 @@ jobs:
         run: |
           set -eu
           oe() { awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: order-execution-service/'; }
-          local_doc="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" | oe)"
+          local_doc="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" | oe)"
           [ -n "$local_doc" ] || { echo "::error::values-local で order-execution の Deployment が描画されない。"; exit 1; }
           for key in DecisionCloseUnfilledCancel__Enabled DecisionEntryUnfilledCancel__Enabled; do
             printf '%s' "$local_doc" | grep -A1 "name: ${key}$" | grep -q 'value: "true"' \
@@ -633,7 +647,7 @@ jobs:
             echo "::error::values-local が取消の N・回数を上書きしている（計画 ADR-0067 決定 2・ADR-0077 決定 2 の値は既定値のまま）。"; exit 1
           fi
           for label in "既定描画" "moomoo-sim"; do
-            if [ "$label" = "既定描画" ]; then out="$(helm template ast "$CHART")"; else out="$(helm template ast "$CHART" --set broker.tier=moomoo-sim)"; fi
+            if [ "$label" = "既定描画" ]; then out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY")"; else out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set broker.tier=moomoo-sim)"; fi
             doc="$(printf '%s' "$out" | oe)"
             [ -n "$doc" ] || { echo "::error::[$label] order-execution の Deployment が描画されない。"; exit 1; }
             if printf '%s' "$doc" | grep -Eq 'name: Decision(Close|Entry)UnfilledCancel__'; then
@@ -650,7 +664,7 @@ jobs:
         run: |
           set -eu
           fail() { echo "::error::$1"; exit 1; }
-          render() { helm template ast "$CHART" --set broker.tier=moomoo-sim "$@"; }
+          render() { helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set broker.tier=moomoo-sim "$@"; }
           value_of() { printf '%s' "$1" | grep -A1 "name: $2\$" | sed -n 's/^ *value: //p'; }
           keys="moomoo.opend.replyTimeoutSeconds:Broker__Moomoo__OpenD__ReplyTimeoutSeconds moomoo.alternativeStopOrderType:Broker__Moomoo__AlternativeStopOrderType moomoo.stopLimitOffsetRatio:Broker__Moomoo__StopLimitOffsetRatio"
           # ① 空（既定）と null は注入しない（アダプタ既定・既定描画のバイト等価）。
@@ -677,7 +691,7 @@ jobs:
       # 有効化痕跡が現れたら、本番へ漏れたということなので落とす（fail-safe 既定の反転検出）。
       - name: Assert prod default excludes route-B activations (本番バイト等価)
         run: |
-          out="$(helm template ast "$CHART")"
+          out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY")"
           # ① 時価: 既定は EnableMarkToMarket=false・Provider 空（finnhub の実接続なし）。
           if ! printf '%s' "$out" | grep -A1 'name: MarketData__EnableMarkToMarket' | grep -q 'value: "false"'; then
             echo "::error::既定描画の MarketData__EnableMarkToMarket が false でない（本番へ①が漏れた）。"; exit 1
@@ -740,7 +754,7 @@ jobs:
       #    「Broker__Environment=sim であり、moomoo-live が描画で止まる」で検査する（IADR-0100 決定 7 の改定）。
       - name: Assert values-local activates route-B features (実弾/危険既定は OFF)
         run: |
-          out="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml")"
           need() { printf '%s' "$out" | grep -q "$2" || { echo "::error::values-local 描画に「$1」が無い（有効化の空振り）。"; exit 1; }; }
           # ① 時価（risk-management は EnableMarkToMarket=true・finnhub）。
           printf '%s' "$out" | grep -A1 'name: MarketData__EnableMarkToMarket' | grep -q 'value: "true"' \
@@ -794,11 +808,11 @@ jobs:
             echo "::error::values-local 描画の Broker__Environment に sim 以外がある（実弾 OFF 不変に違反）:"; printf '%s\n' "$envs"; exit 1
           fi
           # 実弾（moomoo-live）は values-local を重ねても描画で止まる（外周の閂・IADR-0111）。
-          if helm template ast "$CHART" -f "$CHART/values-local.yaml" --set broker.tier=moomoo-live > /dev/null 2>&1; then
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" --set broker.tier=moomoo-live > /dev/null 2>&1; then
             echo "::error::values-local ＋ broker.tier=moomoo-live が描画できてしまった（実弾 OFF 不変に違反）。"; exit 1
           fi
           # OpenD の無いクラスタの上書き（k8s-local-deploy.sh の BROKER_TIER=paper）は paper へ戻り、OpenD の要素も現れない。
-          pout="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set broker.tier=paper)"
+          pout="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" --set broker.tier=paper)"
           printf '%s' "$pout" | grep -A1 'name: Broker__Provider' | grep -q 'value: "paper"' \
             || { echo "::error::values-local ＋ broker.tier=paper で Broker__Provider が paper でない（上書きが効かない）。"; exit 1; }
           if printf '%s' "$pout" | grep -q 'name: opend'; then
@@ -935,15 +949,15 @@ jobs:
               }
               END{ if(seen<1){print "::error::" label ": ServiceAuth を持つ Deployment が 1 つも無い（検査の空振り）"; bad=1}; exit bad }'
           }
-          check "既定" "$(helm template ast "$CHART")"
-          out_local="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          check "既定" "$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY")"
+          out_local="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml")"
           check "values-local" "$out_local"
           # trade-decision（auth:true でない唯一の s2s 発信者）が MSP レルムの token エンドポイントを持つ
           printf '%s' "$out_local" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: trade-decision-service/' \
             | grep -A1 'name: ServiceAuth__TokenEndpoint' | grep -q 'realms/platform/protocol/openid-connect/token' \
             || { echo "::error::values-local で trade-decision の ServiceAuth__TokenEndpoint が MSP レルムでない。"; exit 1; }
           # --set で authAuthority を動かすと追随する（values にリテラルを置いていない）
-          if helm template ast "$CHART" --set global.authAuthority=http://kc:8080/realms/x/ \
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set global.authAuthority=http://kc:8080/realms/x/ \
             | grep -A1 'name: ServiceAuth__TokenEndpoint' | grep 'value:' | grep -qv 'realms/x/protocol/openid-connect/token'; then
             echo "::error::ServiceAuth__TokenEndpoint が global.authAuthority に追随しない。"; exit 1
           fi
@@ -1050,26 +1064,26 @@ jobs:
               echo "ok: $1 は KB / LLM の s2s Authority が $4 件とも埋まっている"
             fi
           }
-          check "既定（本番）" "$(helm template ast "$CHART")" "$(authority_of "$CHART/values.yaml")"
+          check "既定（本番）" "$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY")" "$CI_AUTH_AUTHORITY"
           check "values-local（経路B・連結配備）" \
-            "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")" \
+            "$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml")" \
             "$(authority_of "$CHART/values.yaml" "$CHART/values-local.yaml")" \
             5
           # 既定 false のフラグを ON にしないと CronJob は描画されない＝#456 で破れた当の経路が検査の外に落ちる。
           check "values-local + 全フラグ ON（CronJob を含む）" \
-            "$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set tradingCycle.cronjob.enabled=true --set opend.enabled=true --set moomoo.enabled=true)" \
+            "$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" --set tradingCycle.cronjob.enabled=true --set opend.enabled=true --set moomoo.enabled=true)" \
             "$(authority_of "$CHART/values.yaml" "$CHART/values-local.yaml")" \
             5
           # 本番描画にレルムのリテラルが 1 つも無いこと（--set に全経路が追随する）。
           check "既定 + --set global.authAuthority 差し替え" \
-            "$(helm template ast "$CHART" --set global.authAuthority=http://kc:8080/realms/zzsentinel)" \
+            "$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set global.authAuthority=http://kc:8080/realms/zzsentinel)" \
             "http://kc:8080/realms/zzsentinel"
           # #781: **values-local と --set の組み合わせ**。上の 4 面はどれもこの組み合わせを踏んでおらず、
           # values-local が置いていたレルムのリテラル 4 件（KnowledgeBase__Auth__Authority ×2 /
           # LlmGateway__Auth__Authority ×2）は**どの面からも見えていなかった** —— IADR-0324 の 2026-09-11 追記が
           # 「残った負債」と名指ししたのがこの隙間である。経路B の描画にもリテラルを残さない。
           check "values-local + --set global.authAuthority 差し替え" \
-            "$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set global.authAuthority=http://kc:8080/realms/zzsentinel)" \
+            "$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" --set global.authAuthority=http://kc:8080/realms/zzsentinel)" \
             "http://kc:8080/realms/zzsentinel" \
             5
           echo "ok: 配備される全経路（Deployment/CronJob/Job の env）が単一レルムを指す（ADR-0038 決定2）"
@@ -1078,7 +1092,7 @@ jobs:
       # 機能を落とす）。既定描画に在る env 名が values-local 描画から失われていないことを検査する。
       - name: Assert values-local drops no env from prod default (Helm リスト置換の防御)
         run: |
-          names() { helm template ast "$CHART" "$@" -s templates/deployment.yaml \
+          names() { helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" -s templates/deployment.yaml \
             | awk '/^  name: /{svc=$2} /^            - name: /{print svc" "$3}' | sort -u; }
           names > /tmp/env-prod.txt
           names -f "$CHART/values-local.yaml" > /tmp/env-local.txt
@@ -1110,13 +1124,13 @@ jobs:
             local label="$1"; shift
             local svcs envs url expected
             # 描画された Service から market-monitor の宛先を導く（namespace は同じ＝短名で届く）。
-            svcs="$(helm template ast "$CHART" "$@" -s templates/service.yaml \
+            svcs="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" -s templates/service.yaml \
               | awk '/^  name: /{n=$2} /^    - port: /{print n":"$3}')"
             expected="$(printf '%s\n' "$svcs" | awk -F: '$1=="market-monitor-service" && $2=="8080" {print "http://"$1":"$2}')"
             if [ -z "$expected" ]; then
               echo "::error::[$label] 描画に Service market-monitor-service:8080 が無い（宛先を導けない＝検査の空振り）。"; exit 1
             fi
-            envs="$(helm template ast "$CHART" "$@" -s templates/deployment.yaml \
+            envs="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" -s templates/deployment.yaml \
               | awk '/^  name: /{svc=$2} /^            - name: /{n=$3}
                      /^              value: /{v=$2; gsub(/"/, "", v); print svc" "n" value "v}
                      /^                  name: /{sn=$2} /^                  key: /{print svc" "n" secret "sn"/"$2}')"
@@ -1162,7 +1176,7 @@ jobs:
       # 陽性の描画は chart 全体を描く（-s で deployment.yaml に絞ると、CronJob 等の宣言外ワークロードが Finnhub の env を持っても見えない。#1225 監査）。
       - name: Assert Finnhub shared-key budget and market-monitor cycle fit (#1225)
         run: |
-          budget() { local label="$1"; shift; helm template ast "$CHART" "$@" \
+          budget() { local label="$1"; shift; helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" \
             | node scripts/check-finnhub-key-budget.js --label "$label" --claims "$CHART/README.md" ${CLAIMS:+--claims "$CLAIMS"}; }
           CLAIMS="$CHART/values.yaml" budget "既定" || exit 1
           CLAIMS="$CHART/values-local.yaml" budget "values-local" -f "$CHART/values-local.yaml" || exit 1
@@ -1171,7 +1185,7 @@ jobs:
           expect_red() {
             local label="$1" pattern="$2"; shift 2
             local log="$tmp/$label.log"
-            if helm template ast "$CHART" -s templates/deployment.yaml "$@" \
+            if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -s templates/deployment.yaml "$@" \
                 | node scripts/check-finnhub-key-budget.js --label "$label" --claims "$CHART/README.md" 2> "$log"; then
               echo "::error::陰性対照 $label が緑になった（検査の空振り）。"; exit 1
             fi
@@ -1197,7 +1211,7 @@ jobs:
       # （試験 T-10-2020〜T-10-2023 は scripts.repo.test.js）。
       - name: Assert DecisionVolume__Enabled matches between trade-decision and report (#1140)
         run: |
-          parity() { local label="$1"; shift; helm template ast "$CHART" "$@" -s templates/deployment.yaml \
+          parity() { local label="$1"; shift; helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" -s templates/deployment.yaml \
             | node scripts/check-decision-volume-parity.js --label "$label"; }
           parity "既定" || exit 1
           parity "values-local" -f "$CHART/values-local.yaml" || exit 1
@@ -1235,7 +1249,7 @@ jobs:
           USERS='111111111111111111\,222222222222222222'
           MAPPING='111111111111111111:owner\,222222222222222222:ops'
           render() {
-            helm template ast "$CHART" "$@" \
+            helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" \
               --set-string discord.bot.guildId="$GUILD" \
               --set-string discord.bot.channelId="$CHANNEL" \
               --set-string discord.bot.allowedUserIds="$USERS" \
@@ -1302,7 +1316,7 @@ jobs:
           CONTRACT_KEYS='GuildId:discord-bot-guild-id ChannelId:discord-bot-channel-id AllowedUserIds:discord-bot-allowed-user-ids UserMapping:discord-bot-user-mapping'
 
           # ① 既定（本番）描画。
-          prod="$(helm template ast "$CHART")"
+          prod="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY")"
           if printf '%s' "$prod" | grep -q 'kind: ExternalSecret'; then fail "既定描画に ExternalSecret が現れた（連結ローカルの ESO 所有が本番へ漏れた・#795）。"; fi
           if printf '%s' "$prod" | grep -q 'reloader.stakater.com'; then fail "既定描画に Reloader 注釈が現れた（本番既定で自動再起動が開いた・#795）。"; fi
           for pair in $CONTRACT_KEYS; do
@@ -1310,7 +1324,7 @@ jobs:
           done
 
           # ② values-local 描画の ExternalSecret（契約の表と 1 対 1）。
-          local_out="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          local_out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml")"
           names="$(printf '%s' "$local_out" | awk 'BEGIN{RS="---"} index($0, "\nkind: ExternalSecret\n") { if (match($0, /\n  name: [a-z-]+/)) print substr($0, RSTART+9, RLENGTH-9) }' | sort | tr '\n' ' ')"
           # IADR-0568: ast-rabbitmq-users（ブローカのサービスごとの資格情報）は画面の契約の外だが、ESO 所有では同じ形で同期する。
           [ "$names" = "ast-rabbitmq-users ast-secrets moomoo-credentials moomoo-rsa " ] || fail "values-local の ExternalSecret が契約の 3 件＋ブローカの資格情報でない（実測: 「$names」）。"
@@ -1346,7 +1360,7 @@ jobs:
             printf '%s' "$ref" | grep -q 'optional: true' || fail "$envn の secretKeyRef が optional でない（未設定で Pod が起動しなくなる。空＝全拒否の no-op であるべき）。"
           done
           # 非 ESO（AST_ESO=0）では従来の values 経路へ戻る。
-          noeso="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" \
+          noeso="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" \
             --set externalSecrets.enabled=false --set externalSecrets.appSecrets.enabled=false \
             --set-string discord.bot.guildId=123456789012345678)"
           if printf '%s' "$noeso" | grep -q 'kind: ExternalSecret'; then fail "AST_ESO=0 相当の描画に ExternalSecret が現れた。"; fi
@@ -1354,12 +1368,12 @@ jobs:
             || fail "AST_ESO=0 相当の描画で discord.bot.guildId が env へ入らない（values 経路が壊れた）。"
 
           # ④ appSecrets 有効のまま discord.bot.* を与えたら描画を止める。
-          if helm template ast "$CHART" -f "$CHART/values-local.yaml" --set-string discord.bot.guildId=123456789012345678 >/dev/null 2>&1; then
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" --set-string discord.bot.guildId=123456789012345678 >/dev/null 2>&1; then
             fail "appSecrets 有効で discord.bot.* を与えても描画が通った（どちらの値が効くか読めない構成を許した）。"
           fi
 
           # ⑤ Reloader 注釈（OpenD・moomoo-sim の order-execution を含む描画）。
-          all="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set opend.enabled=true --set broker.tier=moomoo-sim)"
+          all="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" --set opend.enabled=true --set broker.tier=moomoo-sim)"
           opend_doc="$(doc_of "$all" Deployment opend)"
           [ -n "$opend_doc" ] || fail "OpenD の Deployment が描画されない（検査の空振り）。"
           if printf '%s' "$opend_doc" | grep -Eq 'reloader\.stakater\.com/(reload|search|match)|reloader\.stakater\.com/auto: "true"'; then
@@ -1382,7 +1396,7 @@ jobs:
           printf '%s' "$(doc_of "$all" Deployment order-execution-service)" | grep -q 'secret.reloader.stakater.com/reload: ".*moomoo-rsa' \
             || fail "moomoo-sim の order-execution の Reloader 注釈に moomoo-rsa が無い（RSA 鍵を生成し直しても発注側が古い鍵のまま）。"
           # 非 ESO でも reloader.enabled=false なら注釈は描かない（設定点が効くこと）。
-          if helm template ast "$CHART" -f "$CHART/values-local.yaml" --set reloader.enabled=false | grep -q 'reloader.stakater.com'; then
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" --set reloader.enabled=false | grep -q 'reloader.stakater.com'; then
             fail "reloader.enabled=false でも Reloader 注釈が描画された。"
           fi
           echo "ok: 連結ローカルは契約どおり ESO 所有・Discord ID は ast-secrets・Reloader は OpenD を除く消費側だけ／本番描画は不変"
@@ -1391,13 +1405,13 @@ jobs:
           # 空指定（= k8s-local-deploy.sh で DISCORD_BOT_* 未設定の場合）が描画を 1 バイトも変えないこと。
           empty_args=(--set-string discord.bot.guildId="" --set-string discord.bot.channelId=""
                       --set-string discord.bot.allowedUserIds="" --set-string discord.bot.userMapping="")
-          diff <(helm template ast "$CHART") <(helm template ast "$CHART" "${empty_args[@]}") \
+          diff <(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY") <(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "${empty_args[@]}") \
             || { echo "::error::空の discord.bot.* 指定が既定描画を変えた（バイト等価に違反）。"; exit 1; }
-          diff <(helm template ast "$CHART" -f "$CHART/values-local.yaml") \
-               <(helm template ast "$CHART" -f "$CHART/values-local.yaml" "${empty_args[@]}") \
+          diff <(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml") \
+               <(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" "${empty_args[@]}") \
             || { echo "::error::空の discord.bot.* 指定が values-local 描画を変えた。"; exit 1; }
           # 既定描画では 4 ID が空のまま（IADR-0062 の安全既定＝全拒否）であること。
-          out="$(helm template ast "$CHART")"
+          out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY")"
           for key in GuildId ChannelId AllowedUserIds UserMapping; do
             printf '%s' "$out" | grep -A1 "name: Notifications__Discord__Bot__$key" | grep -q 'value: ""' \
               || { echo "::error::既定描画の Notifications__Discord__Bot__$key が空でない（安全既定の反転）。"; exit 1; }
@@ -1408,7 +1422,7 @@ jobs:
       # 生 manifest と**同等の不変条件**を満たすことを検査する（バイト等価ではない: chart は HOME 等を明示注入する）。
       - name: Assert opend default render keeps the resident-model invariants
         run: |
-          out="$(helm template ast "$CHART" --set opend.enabled=true -s templates/opend.yaml)"
+          out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set opend.enabled=true -s templates/opend.yaml)"
           fail() { echo "::error::opend の既定描画が常駐モデルの前提を満たさない: $1"; exit 1; }
           # 単一セッション前提。複数レプリカ・rolling は OpenD のログインを壊す。
           printf '%s' "$out" | grep -q 'replicas: 1' || fail "replicas: 1 でない"
@@ -1437,29 +1451,29 @@ jobs:
         run: |
           fail() { echo "::error::メッシュ参入の切り替えの前提を満たさない: $1"; exit 1; }
           common=(--set namespace.create=false --set opend.enabled=true -f "$CHART/values-local.yaml")
-          off="$(helm template ast "$CHART" "${common[@]}" -s templates/opend.yaml)"
-          on="$(helm template ast "$CHART" "${common[@]}" --set mesh.sidecarInjection.enabled=true --set mesh.sidecarInjection.excludeOpend=true -s templates/opend.yaml)"
+          off="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "${common[@]}" -s templates/opend.yaml)"
+          on="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "${common[@]}" --set mesh.sidecarInjection.enabled=true --set mesh.sidecarInjection.excludeOpend=true -s templates/opend.yaml)"
           [ "$off" = "$on" ] || { diff <(printf '%s\n' "$off") <(printf '%s\n' "$on") || true; fail "注入の有無で OpenD の描画が変わる（切り替えで OpenD が作り直される）"; }
           pod="$(printf '%s\n' "$off" | awk '/^kind: Deployment/,0' | awk '/^  template:/,/^    spec:/')"
           printf '%s' "$pod" | grep -q 'sidecar.istio.io/inject: "false"' || fail "OpenD の Pod に注入対象外の注釈が無い（無効のとき）"
           printf '%s' "$on" | awk '/^kind: Deployment/,0' | awk '/^  template:/,/^    spec:/' | grep -q 'sidecar.istio.io/inject: "false"' \
             || fail "OpenD の Pod に注入対象外の注釈が無い（有効のとき）"
           # 陰性対照: excludeOpend=false なら注釈を描かない（検査が注釈の有無を見分けている）
-          neg="$(helm template ast "$CHART" "${common[@]}" --set mesh.sidecarInjection.enabled=true --set mesh.sidecarInjection.excludeOpend=false -s templates/opend.yaml)"
+          neg="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "${common[@]}" --set mesh.sidecarInjection.enabled=true --set mesh.sidecarInjection.excludeOpend=false -s templates/opend.yaml)"
           if printf '%s' "$neg" | grep -q 'sidecar.istio.io/inject'; then fail "excludeOpend=false でも注釈が描かれる"; fi
           # 名前空間のラベル: 起動器の形（namespace.create=false）では描かない。chart が名前空間を持つときだけ描く。
-          if helm template ast "$CHART" --set namespace.create=false --set mesh.sidecarInjection.enabled=true | grep -q 'istio-injection'; then
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set namespace.create=false --set mesh.sidecarInjection.enabled=true | grep -q 'istio-injection'; then
             fail "namespace.create=false で名前空間のラベルを描いている"
           fi
-          helm template ast "$CHART" --set mesh.sidecarInjection.enabled=true -s templates/namespace.yaml | grep -q 'istio-injection: enabled' \
+          helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set mesh.sidecarInjection.enabled=true -s templates/namespace.yaml | grep -q 'istio-injection: enabled' \
             || fail "namespace.create=true かつ有効で名前空間のラベルが無い"
-          if helm template ast "$CHART" -s templates/namespace.yaml | grep -q 'istio-injection'; then fail "既定で名前空間のラベルを描いている"; fi
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -s templates/namespace.yaml | grep -q 'istio-injection'; then fail "既定で名前空間のラベルを描いている"; fi
           echo "ok: 注入の切り替えで OpenD の描画は変わらず、OpenD は常に注入対象外"
       # #722 / IADR-0322: サイドカーを有効にしたときの不変条件。**PVC を見せない**ことがいちばん重い
       # （PVC にはデバイス信頼の実体 Device.dat と OpenD.xml が入っている）。
       - name: Assert opend auth sidecar never mounts the PVC
         run: |
-          out="$(helm template ast "$CHART" --set opend.enabled=true --set opend.authGateway.enabled=true -s templates/opend.yaml)"
+          out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set opend.enabled=true --set opend.authGateway.enabled=true -s templates/opend.yaml)"
           fail() { echo "::error::opend-auth サイドカーの描画が前提を満たさない: $1"; exit 1; }
           printf '%s' "$out" | grep -q 'name: opend-auth' || fail "サイドカーが描画されていない（有効化が空振り）"
           # サイドカーの container ブロック（次の container / volumes まで）に persist が現れないこと。
@@ -1477,8 +1491,8 @@ jobs:
           fail() { echo "::error::OpenD の到達の制限・呼び出し元の検証（IADR-0566）: $1"; exit 1; }
           # NetworkPolicy の spec だけを取り出す（コメント行は落とす）。
           np_spec() { awk '/^kind: NetworkPolicy/{f=1} f&&/^spec:/{p=1} p&&/^---/{exit} p' | grep -v '^[[:space:]]*#'; }
-          if helm template ast "$CHART" | grep -q '^kind: NetworkPolicy'; then fail "既定（opend 無効）で NetworkPolicy が描かれた"; fi
-          if helm template ast "$CHART" -f "$CHART/values-local.yaml" | grep -q '^kind: NetworkPolicy'; then
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" | grep -q '^kind: NetworkPolicy'; then fail "既定（opend 無効）で NetworkPolicy が描かれた"; fi
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" | grep -q '^kind: NetworkPolicy'; then
             fail "values-local（opend は起動器が --set で有効化する）だけで NetworkPolicy が描かれた"
           fi
           want_api='spec:
@@ -1501,30 +1515,30 @@ jobs:
                         app: bff-service
                 ports:
                   - { protocol: TCP, port: 8080 }'
-          got="$(helm template ast "$CHART" --set opend.enabled=true -s templates/networkpolicy-opend.yaml | np_spec)"
+          got="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set opend.enabled=true -s templates/networkpolicy-opend.yaml | np_spec)"
           diff <(printf '%s\n' "$want_api") <(printf '%s\n' "$got") \
             || fail "opend.enabled=true の NetworkPolicy が期待（API は発注執行からだけ・サイドカーの口なし）と違う"
-          got="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set opend.enabled=true -s templates/networkpolicy-opend.yaml | np_spec)"
+          got="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" --set opend.enabled=true -s templates/networkpolicy-opend.yaml | np_spec)"
           diff <(printf '%s\n' "$want_auth") <(printf '%s\n' "$got") \
             || fail "経路B（authGateway 有効）の NetworkPolicy が期待（API は発注執行・サイドカーは基盤の BFF からだけ）と違う"
           # egress は絞らない（OpenD は moomoo と DNS へ出る）。ipBlock・空の from（＝全許可）も描かない。
-          all="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set opend.enabled=true -s templates/networkpolicy-opend.yaml)"
+          all="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" --set opend.enabled=true -s templates/networkpolicy-opend.yaml)"
           if grep -qE 'Egress|ipBlock|from: \[\]|- \{\}' <<<"$all"; then fail "Egress・ipBlock・空の from のどれかが描かれた"; fi
           # Service opend の全ポートが規則のどれかに入っている（口を足したのに規則を足し忘れると、その口は誰からも届かない）。
-          svc_ports="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set opend.enabled=true -s templates/opend.yaml \
+          svc_ports="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" --set opend.enabled=true -s templates/opend.yaml \
             | awk '/^kind: Service/{f=1} f' | sed -n 's/.*port: \([0-9]*\), targetPort.*/\1/p' | sort -u)"
           np_ports="$(grep -oE 'port: [0-9]+ }' <<<"$all" | grep -oE '[0-9]+' | sort -u)"
           [ -n "$svc_ports" ] || fail "Service opend のポートを読めない（検査の空振り）"
           [ -n "$np_ports" ] || fail "NetworkPolicy のポートを読めない（検査の空振り。規則の書式を変えたらここの抽出も直す）"
           [ "$svc_ports" = "$np_ports" ] || fail "Service opend のポート（$(echo $svc_ports)）と NetworkPolicy のポート（$(echo $np_ports)）が一致しない"
           # 無効化は明示の値でだけ（既定は閉じる）。
-          if helm template ast "$CHART" --set opend.enabled=true --set opend.networkPolicy.enabled=false | grep -q '^kind: NetworkPolicy'; then
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set opend.enabled=true --set opend.networkPolicy.enabled=false | grep -q '^kind: NetworkPolicy'; then
             fail "opend.networkPolicy.enabled=false でも描かれた"
           fi
           must_fail() {
             local label="$1" want="$2"; shift 2
             local out
-            if out="$(helm template ast "$CHART" "$@" 2>&1)"; then fail "描画が通ってしまった: $label"; fi
+            if out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" 2>&1)"; then fail "描画が通ってしまった: $label"; fi
             grep -qF "$want" <<<"$out" || { echo "::error::$label: 期待した理由（$want）で止まっていない:"; printf '%s\n' "$out" | tail -3; exit 1; }
           }
           must_fail "API の届く相手が空" "apiClientPodLabels" --set opend.enabled=true --set opend.networkPolicy.apiClientPodLabels=null
@@ -1533,7 +1547,7 @@ jobs:
           must_fail "呼び出し元検証の Secret 名が空" "callerSecret.secretName" \
             --set opend.enabled=true --set opend.authGateway.enabled=true --set opend.authGateway.callerSecret.secretName=""
           # 呼び出し元検証: Secret はサイドカーだけがマウントし（OpenD 本体は見ない）、optional（無くても Pod は起動する）。
-          od="$(helm template ast "$CHART" --set opend.enabled=true --set opend.authGateway.enabled=true -s templates/opend.yaml)"
+          od="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set opend.enabled=true --set opend.authGateway.enabled=true -s templates/opend.yaml)"
           main="$(printf '%s\n' "$od" | awk '/- name: opend$/,/- name: opend-auth$/')"
           side="$(printf '%s\n' "$od" | awk '/- name: opend-auth$/,/^      volumes:/')"
           vols="$(printf '%s\n' "$od" | awk '/^      volumes:/,0')"
@@ -1544,14 +1558,14 @@ jobs:
           if grep -q 'OpendAuth__CallerSecret$' <<<"$side"; then fail "値を env で渡している（回すたびに Pod を作り直すことになる）"; fi
           grep -A2 'name: caller-secret$' <<<"$vols" | grep -q 'secretName: opend-auth-caller-secret' || fail "Secret の volume が無い"
           grep -A4 'name: caller-secret$' <<<"$vols" | grep -q 'optional: true' || fail "Secret の volume が optional でない（無いと Pod が起動せず発注経路まで止まる）"
-          if helm template ast "$CHART" --set opend.enabled=true -s templates/opend.yaml | grep -q 'caller-secret'; then
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set opend.enabled=true -s templates/opend.yaml | grep -q 'caller-secret'; then
             fail "authGateway 無効でも呼び出し元検証の Secret を描いた"
           fi
           # ESO: opend と authGateway が有効なときだけ同期する。
-          es="$(helm template ast "$CHART" --set opend.enabled=true --set opend.authGateway.enabled=true --set externalSecrets.enabled=true -s templates/external-secrets.yaml)"
+          es="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set opend.enabled=true --set opend.authGateway.enabled=true --set externalSecrets.enabled=true -s templates/external-secrets.yaml)"
           grep -q 'name: opend-auth-caller-secret' <<<"$es" || fail "ExternalSecret opend-auth-caller-secret が描かれない"
           grep -q 'key: "ai-stock-trading/opend-auth"' <<<"$es" || fail "ExternalSecret の Vault のキーが違う"
-          if helm template ast "$CHART" --set opend.enabled=true --set externalSecrets.enabled=true -s templates/external-secrets.yaml | grep -q 'opend-auth-caller-secret'; then
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set opend.enabled=true --set externalSecrets.enabled=true -s templates/external-secrets.yaml | grep -q 'opend-auth-caller-secret'; then
             fail "authGateway 無効でも ExternalSecret を描いた"
           fi
           echo "ok: OpenD への到達は発注執行と基盤の BFF だけ・呼び出し元検証の Secret はサイドカーだけが optional でマウントする"
@@ -1560,7 +1574,7 @@ jobs:
         run: |
           fail() { echo "::error::ブローカのサービスごとの資格情報（IADR-0568）: $1"; exit 1; }
           for prof in default local; do
-            if [ "$prof" = local ]; then out="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"; else out="$(helm template ast "$CHART")"; fi
+            if [ "$prof" = local ]; then out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml")"; else out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY")"; fi
             if grep -q 'guest' <<<"$out"; then fail "$prof: 描画に guest が現れた"; fi
             n=0
             for d in $(awk 'BEGIN{RS="---"} index($0, "\nkind: Deployment\n") { if (match($0, /\n  name: [a-z0-9-]+-service\n/)) print substr($0, RSTART+9, RLENGTH-10) }' <<<"$out"); do
@@ -1579,14 +1593,14 @@ jobs:
             [ "$n" -ge 11 ] || fail "$prof: Worker を ${n} 件しか読めない（抽出の空振り）"
           done
           # Reloader の注釈（経路B）に ast-rabbitmq-users が入る（値を回したら作り直す）。
-          loc="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml)"
+          loc="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" -s templates/deployment.yaml)"
           c="$(grep -c 'secret.reloader.stakater.com/reload: ".*ast-rabbitmq-users' <<<"$loc" || true)"
           [ "$c" -ge 11 ] || fail "Reloader の注釈に ast-rabbitmq-users が入る Deployment が ${c} 件しかない"
           # 旧キーは描画で止める。設定点の欠落も止める。
           must_fail() {
             local label="$1" want="$2"; shift 2
             local out
-            if out="$(helm template ast "$CHART" "$@" 2>&1)"; then fail "描画が通ってしまった: $label"; fi
+            if out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" 2>&1)"; then fail "描画が通ってしまった: $label"; fi
             grep -qF "$want" <<<"$out" || { echo "::error::$label: 期待した理由（$want）で止まっていない:"; printf '%s\n' "$out" | tail -3; exit 1; }
           }
           must_fail "旧キー rabbitmqConnectionString" "global.rabbitmqConnectionString は廃止" --set global.rabbitmqConnectionString=amqp://x@rabbitmq:5672
@@ -1597,7 +1611,7 @@ jobs:
         run: |
           assert_fail() {
             desc="$1"; shift
-            if helm template ast "$CHART" "$@" > /dev/null 2>&1; then
+            if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" > /dev/null 2>&1; then
               echo "::error::$desc: 描画が通ってしまった（ゲートが機能していない）。"
               exit 1
             fi
@@ -1617,28 +1631,28 @@ jobs:
       - name: Assert stage0 recorder persistence (#1342)
         run: |
           fail() { echo "::error::Stage 0 の記録器の永続ボリューム: $1"; exit 1; }
-          def="$(helm template ast "$CHART")"
+          def="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY")"
           if grep -qE 'trade-decision-stage0|Stage0Recording__StateDirectory|type: Recreate' <<<"$def"; then
             fail "本番の既定で PVC・状態の置き場・Recreate のどれかが描かれた（既定は無効）"
           fi
-          loc="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          loc="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml")"
           grep -q 'name: trade-decision-stage0' <<<"$loc" || fail "経路B で PVC が描かれない"
-          grep -q 'helm.sh/resource-policy: keep' <<<"$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/pvc-stage0-recording.yaml)" \
+          grep -q 'helm.sh/resource-policy: keep' <<<"$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" -s templates/pvc-stage0-recording.yaml)" \
             || fail "PVC に keep が付いていない（uninstall で印と累計が消える）"
-          td="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml \
+          td="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" -s templates/deployment.yaml \
             | awk 'BEGIN{RS="---"} /\n  name: trade-decision-service\n/ {print}')"
           grep -q 'value: "/var/lib/ai-stock-trading/stage0/state"' <<<"$td" || fail "trade-decision に状態の置き場が注入されない"
           grep -q 'value: "/var/lib/ai-stock-trading/stage0/records.json"' <<<"$td" || fail "書き出し先が mount の下にない"
           grep -q 'mountPath: /var/lib/ai-stock-trading/stage0' <<<"$td" || fail "trade-decision に mount が無い"
           grep -q 'claimName: trade-decision-stage0' <<<"$td" || fail "trade-decision の volume が PVC を指していない"
           grep -q 'type: Recreate' <<<"$td" || fail "trade-decision の更新方式が Recreate でない"
-          others="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml \
+          others="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" -f "$CHART/values-local.yaml" -s templates/deployment.yaml \
             | awk 'BEGIN{RS="---"} /kind: Deployment/ && !/\n  name: trade-decision-service\n/ {print}')"
           if grep -qE 'stage0-recording|type: Recreate' <<<"$others"; then fail "trade-decision 以外に mount か Recreate が描かれた"; fi
           must_fail() {
             local label="$1" want="$2"; shift 2
             local out
-            if out="$(helm template ast "$CHART" "$@" 2>&1)"; then fail "描画が通ってしまった: $label"; fi
+            if out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" 2>&1)"; then fail "描画が通ってしまった: $label"; fi
             grep -qF "$want" <<<"$out" || { echo "::error::$label: 期待した理由（$want）で止まっていない:"; printf '%s\n' "$out" | tail -3; exit 1; }
           }
           sed 's#"/var/lib/ai-stock-trading/stage0/records.json"#"/tmp/stage0/records.json"#' "$CHART/values-local.yaml" > /tmp/vl-outside.yaml
@@ -1657,7 +1671,7 @@ jobs:
           fn="$(sed -n '/^ast_recreate_deployments() {/,/^}/p' scripts/k8s-local-deploy.sh)"
           [ -n "$fn" ] || fail "scripts/k8s-local-deploy.sh に ast_recreate_deployments が無い"
           eval "$fn"
-          got() { helm template ast "$CHART" "$@" | ast_recreate_deployments | sort | paste -sd, -; }
+          got() { helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" | ast_recreate_deployments | sort | paste -sd, -; }
           check() {
             local label="$1" want="$2"; shift 2
             local out; out="$(got "$@")"

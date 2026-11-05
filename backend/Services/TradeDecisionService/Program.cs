@@ -620,6 +620,10 @@ builder.Services.AddScoped<ILlmCostHaltGate>(sp =>
     http.BaseAddress = uri;
     return new HttpLlmCostHaltGate(http, sp.GetRequiredService<ILogger<HttpLlmCostHaltGate>>());
 });
+// 🔴 FR-04, FR-10, ADR-0003, #1529, IADR-0617: 現在値の供給が無い構成で、LLM の参照価格による新規建てを作らない（既定 false＝見送る）。
+// true は検証用の明示の opt-in（従前の挙動）。手仕舞いは止めない。
+builder.Services.AddSingleton(new UnanchoredEntryPriceOptions(
+    builder.Configuration.GetValue(UnanchoredEntryPriceOptions.ConfigKey, defaultValue: false)));
 builder.Services.AddScoped<TradeDecisionAppService>();
 
 // FR-04, FR-15, NFR（費用）, ADR-0033 決定2/決定4/決定5, #632, IADR-0318: Stage 0 の記録（AI 判断の記録・再生）。

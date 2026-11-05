@@ -24,7 +24,12 @@ global:
     credentialsSecretName: ast-rabbitmq-users
     usernamePrefix: "ast-"
   otlpEndpoint: http://otel-collector:4317
-  authAuthority: http://keycloak:8080/realms/ai-stock-trading
+  # 🔴 NFR, #1529, IADR-0612: 認証のレルム（Authority）。**既定は空で、未設定なら描画で止まる**（単体実行向けのレルムを既定にしない）。
+  #   配備の values で必ず明示する（values-local は platform。クラウドは values-cloud）。
+  authAuthority: ""
+  # 🔴 NFR, #1529, IADR-0612: ASPNETCORE_ENVIRONMENT=Production の認証を持つサービスは、単体実行向けのレルム（ai-stock-trading。
+  #   infra/keycloak/realm-export.json）を指す Authority では起動しない。意図して使うときだけ true にする（env Auth__AllowStandaloneRealm=true を描く）。
+  allowStandaloneRealm: false
   # #22 受け入れ基準③: 実効構成バージョン（適用中の構成の Git コミット等）。GitOps（ArgoCD）で注入する。
   # 空既定 = 自己申告の configVersion は null（fail-safe）。
   configVersion: ""

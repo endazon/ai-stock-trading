@@ -976,6 +976,10 @@ env を注入せず、**未知の値・範囲外は `order-execution` が起動�
 > 前提条件の充足が要る（[運用仕様書の本番切替チェックリスト](../../../docs/operations/operations.md#opend-の本番切替チェックリスト132)・
 > [実弾切替 Runbook](../../../docs/operations/live-trading-cutover-runbook.md)）。
 
+## 単体実行向けのレルムを Production で使わない（`global.allowStandaloneRealm`。#1529 / [IADR-0612](../../../.ai-context/adr/IADR-0612_production-rejects-standalone-realm-defaults.md)）
+
+chart の既定 `global.authAuthority` は**空**で、未設定なら**描画で止まる**。配備の values で配備のレルムを明示する（values-local は `platform`）。Production（chart の既定）で認証を持つサービスは、単体実行向けのレルム（`ai-stock-trading`・`infra/keycloak/realm-export.json`）を指す Authority では**起動しない**。意図して使うときだけ `global.allowStandaloneRealm=true`（`Auth__AllowStandaloneRealm=true` を描く）。
+
 ## #132: OpenD の本番配備（`opend.enabled`）
 
 既定 **無効**（何も描画しない＝fail-safe）。dev の現行経路は `deploy/opend/k8s` の生 manifest で、そちらは残してある

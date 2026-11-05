@@ -67,7 +67,8 @@ function ok(name, fn) {
 }
 
 function render(args) {
-  return spawnSync(HELM, ['template', 'ast', CHART, ...args], { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  // NFR, #1529, IADR-0612: chart の既定の global.authAuthority は空で、未設定なら描画で止まる。配備のレルムを明示して描く（後ろの args が勝つ）。
+  return spawnSync(HELM, ['template', 'ast', CHART, '--set', 'global.authAuthority=http://keycloak:8080/realms/platform', ...args], { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 }
 function mustRender(args) {
   const r = render(args);

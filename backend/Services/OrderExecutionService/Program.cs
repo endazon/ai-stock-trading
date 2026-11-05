@@ -97,7 +97,7 @@ builder.Services.AddAiStockTradingHealthChecks()
 
 // FR-10, #967, IADR-0425 決定1: 借株可否の照会の口（GET /order-execution/short-permit・OwnerOrService）を守る認証・認可。
 // それまで本サービスの HTTP 面はヘルスと自己申告（いずれも無認可・メッシュ内部限定）だけで、認証を登録していなかった。
-builder.Services.AddAiStockTradingAuth(builder.Configuration);
+builder.Services.AddAiStockTradingAuth(builder.Configuration, builder.Environment);
 
 // IADR-0016, IADR-0111, #13: ブローカ選択（構成 Broker:Provider × Broker:Environment・既定 paper/sim）。
 // 未知の provider / environment・paper と live の矛盾指定は起動時に安全停止（実弾防止・fail-safe は発注抑止側）。
