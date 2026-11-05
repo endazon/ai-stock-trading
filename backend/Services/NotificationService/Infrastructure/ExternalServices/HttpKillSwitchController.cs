@@ -42,6 +42,13 @@ public sealed class HttpKillSwitchController(
                 var hint = response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
                     ? "（Bot の owner クライアント設定・trading-owner ロール割当を確認してください）"
                     : string.Empty;
+                // NFR, #1530, IADR-0613: 保持（SSH の経路）の間の解除は 409＋code=operator_hold。利用者向けの文言で返す。
+                if (response.StatusCode == HttpStatusCode.Conflict && await IsOperatorHoldAsync(response, cancellationToken).ConfigureAwait(false))
+                {
+                    logger.LogWarning("kill switch の{Operation}は保持の間のため拒まれました（409）。", operation);
+                    return new KillSwitchResult(false, true, OperatorHoldMessage);
+                }
+
                 logger.LogWarning(
                     "kill switch の{Operation}に失敗しました（{Status}）。{Hint}", operation, (int)response.StatusCode, hint);
                 return new KillSwitchResult(false, false, $"kill switch の{operation}に失敗しました（HTTP {(int)response.StatusCode}）{hint}");
@@ -69,6 +76,27 @@ public sealed class HttpKillSwitchController(
         {
             logger.LogWarning(ex, "kill switch の{Operation}で例外が発生しました。", operation);
             return new KillSwitchResult(false, false, $"kill switch の{operation}に失敗しました（{ex.GetType().Name}）");
+        }
+    }
+
+    // NFR, #1530, IADR-0613: 保持の間の解除の文言（gRPC 実装と共有）。
+    internal const string OperatorHoldMessage =
+        "kill switch はノード側（SSH）の経路で保持されているため、Discord からは解除できません。保持を外してから解除してください。";
+
+    private static async Task<bool> IsOperatorHoldAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var doc = await System.Text.Json.JsonDocument.ParseAsync(
+                await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false), cancellationToken: cancellationToken).ConfigureAwait(false);
+            return doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("code", out var code)
+                && code.ValueKind == System.Text.Json.JsonValueKind.String
+                && code.GetString() == "operator_hold";
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return false;
         }
     }
 
