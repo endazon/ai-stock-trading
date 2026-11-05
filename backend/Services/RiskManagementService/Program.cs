@@ -251,6 +251,10 @@ builder.Services.AddScoped<InFlightOrdersService>();
 builder.Services.AddScoped<EntryBlockersService>();
 // 🔴 FR-10, FR-14, #1534, IADR-0620: 発動・解除の「見た状態」の前提条件の段（Report＝段 1・既定 / Require＝段 2）。知らない値は起動で止める。
 builder.Services.AddSingleton(KillSwitchPreconditionOptions.From(builder.Configuration[KillSwitchPreconditionOptions.ConfigKey]));
+// NFR, FR-10, UC-06, #1530, IADR-0613: Discord を経ない停止の保持（SSH の経路。既定は無効＝従来どおり）。
+// chart は Secret ast-operator-hold の optional の secretKeyRef で読む（Secret が無ければ env も無い）。
+builder.Services.AddSingleton(builder.Configuration.GetSection(OperatorKillSwitchHoldOptions.SectionName)
+    .Get<OperatorKillSwitchHoldOptions>() ?? new OperatorKillSwitchHoldOptions());
 builder.Services.AddScoped<KillSwitchService>();
 // 🔴 FR-10, ADR-0009, IADR-0567 決定 2: 発注執行が送る直前に読む停止の状態（審査と同じストア）。
 builder.Services.AddScoped<TradingHaltService>();
@@ -484,6 +488,16 @@ if (JasperFxCommandLine.IsHostRun(args))
     var db = scope.ServiceProvider.GetRequiredService<RiskManagementDbContext>();
     if (db.Database.IsRelational())
         await db.Database.MigrateAsync();
+
+    // NFR, FR-10, UC-06, #1530, IADR-0613: 保持が入っていれば、受け付けを始める前に既存の kill switch を起動する（変更履歴に残る）。
+    // 印の文字列（operator-kill-switch-hold:）は scripts/ast-trading-stop.sh がログから確かめる。変えるときは両方を直す。
+    var holdOutcome = scope.ServiceProvider.GetRequiredService<KillSwitchService>().ApplyOperatorHold();
+    if (holdOutcome != OperatorHoldOutcome.Inactive)
+    {
+        app.Logger.LogWarning(
+            "operator-kill-switch-hold: active (outcome={Outcome})。SSH の経路の保持により kill switch を起動したまま保ち、解除を拒みます。",
+            holdOutcome);
+    }
 }
 
 // 相関ID・認証・認可のミドルウェア。

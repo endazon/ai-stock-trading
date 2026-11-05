@@ -10,16 +10,35 @@ namespace RiskManagementService.Features.RiskManagement;
 // ストアで原子的に行い、違えば KillSwitchVersionConflictException（409）で何も変えない。渡されないときは段（options）に従う:
 // 段 1（Report・既定）は従前どおり受けて Warning を残す。段 2（Require）は解除だけ拒否する（KillSwitchPreconditionRequiredException・428）。
 // 発動は安全側の操作であり、段 2 でも前提条件を求めない（自動の安全側＝撤退の発動も同じ口を通る）。
+// NFR, #1530, IADR-0613: hold（SSH の経路の保持）は省略可。省略・無効なら従来と同じ振る舞い。
 public sealed class KillSwitchService(
     IKillSwitchStore store,
     ISettingsChangeLog changeLog,
     IClock clock,
+    OperatorKillSwitchHoldOptions? hold = null,
     KillSwitchPreconditionOptions? preconditions = null,
     Microsoft.Extensions.Logging.ILogger<KillSwitchService>? logger = null)
 {
     private readonly KillSwitchPreconditionMode _mode = preconditions?.Mode ?? KillSwitchPreconditionMode.Report;
 
     public KillSwitchState GetState() => store.GetState();
+
+    /// <summary>
+    /// NFR, FR-10, #1530, IADR-0613: 保持が入っていれば kill switch を起動する（起動時に 1 回呼ぶ）。
+    /// 既に起動していれば上書きしない（先の起動の主体・理由を保つ）。止める向きだけの操作であり、解除はしない。
+    /// </summary>
+    public OperatorHoldOutcome ApplyOperatorHold()
+    {
+        if (hold is not { Enabled: true })
+            return OperatorHoldOutcome.Inactive;
+
+        if (store.GetState().Engaged)
+            return OperatorHoldOutcome.AlreadyEngaged;
+
+        var reason = string.IsNullOrWhiteSpace(hold.Reason) ? OperatorKillSwitchHoldOptions.DefaultReason : hold.Reason.Trim();
+        Engage(OperatorKillSwitchHoldOptions.Actor, reason);
+        return OperatorHoldOutcome.Engaged;
+    }
 
     public void Engage(string actor, string reason, string? expectedVersion = null)
     {
@@ -35,6 +54,11 @@ public sealed class KillSwitchService(
     public void Disengage(string actor, string reason, string? expectedVersion = null)
     {
         RequireActorAndReason(actor, reason);
+
+        // NFR, #1530, IADR-0613: 保持の間は解除しない（止める窓口を Discord と独立させる）。外すのは SSH の側だけ。
+        // #1534, IADR-0620: 保持の拒否は版の前提条件（409 version_conflict・428）より先に効く（code は operator_hold）。
+        if (hold is { Enabled: true })
+            throw new KillSwitchHeldByOperatorException();
 
         var now = clock.UtcNow;
         Write(new KillSwitchState(false, actor, reason, now), expectedVersion, requiredInStage2: true, "解除");

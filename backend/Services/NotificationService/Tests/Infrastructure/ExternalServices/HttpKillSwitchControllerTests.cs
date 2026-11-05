@@ -63,6 +63,30 @@ public class HttpKillSwitchControllerTests
         result.Message.Should().Contain("owner");
     }
 
+    // NFR, #1530, IADR-0613: 保持（SSH の経路）の間の解除は 409＋code=operator_hold。HTTP の番号ではなく理由を利用者向けに返す。
+    [Fact]
+    public async Task 保持の間の解除の409は理由を利用者向けの文言で返す()
+    {
+        var handler = new FakeHandler(HttpStatusCode.Conflict, """{"error":"x","code":"operator_hold"}""");
+
+        var result = await Controller(handler).DisengageAsync("理由");
+
+        result.Succeeded.Should().BeFalse();
+        result.Engaged.Should().BeTrue("保持の間は起動のまま");
+        result.Message.Should().Contain("SSH").And.NotContain("HTTP 409");
+    }
+
+    [Fact]
+    public async Task 印の無い409は従来どおり番号つきの失敗()
+    {
+        var handler = new FakeHandler(HttpStatusCode.Conflict, """{"error":"x"}""");
+
+        var result = await Controller(handler).DisengageAsync("理由");
+
+        result.Succeeded.Should().BeFalse();
+        result.Message.Should().Contain("HTTP 409");
+    }
+
     [Fact]
     public async Task 非2xx_は失敗として返す()
     {

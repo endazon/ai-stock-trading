@@ -16,7 +16,7 @@ public class KillSwitchPreconditionTests
     {
         var store = new InMemoryKillSwitchStore();
         var clock = new FakeClock(T0, DateOnly.FromDateTime(T0.UtcDateTime));
-        return (new KillSwitchService(store, new InMemorySettingsChangeLog(), clock, new KillSwitchPreconditionOptions(mode)), store, clock);
+        return (new KillSwitchService(store, new InMemorySettingsChangeLog(), clock, preconditions: new KillSwitchPreconditionOptions(mode)), store, clock);
     }
 
     [Fact]

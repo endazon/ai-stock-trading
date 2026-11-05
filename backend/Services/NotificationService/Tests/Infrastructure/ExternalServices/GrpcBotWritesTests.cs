@@ -332,6 +332,28 @@ public class GrpcBotWritesTests
         behavior.Requests.Select(r => r.Request).OfType<ReportProto.WatchlistApplyRecordRequest>().Single().OnBehalfOf.Should().Be("owner-a");
     }
 
+    // NFR, #1530, IADR-0613: 保持（SSH の経路）の間の解除。gRPC の ABORTED は REST の 409＋code=operator_hold と同じ結果・同じ文言になる
+    // （HttpKillSwitchControllerTests の 2 件と対）。起動の ABORTED は保持の文言にしない。
+    [Fact]
+    public async Task 保持の間の解除のABORTEDは_REST_と同じ結果と利用者向けの文言()
+    {
+        var behavior = new BotReadStubBehavior
+        {
+            KillSwitch = BotReadStubBehavior.Fails<RiskProto.KillSwitchChangeResponse>(StatusCode.Aborted, "保持中"),
+        };
+        await using var host = await BotReadGrpcStubHost.StartAsync(behavior);
+        var c = All(host);
+
+        var grpc = await c.KillSwitch.DisengageAsync("再開");
+        var rest = await new HttpKillSwitchController(
+            new HttpClient(new StubHandler(HttpStatusCode.Conflict, """{"error":"保持中","code":"operator_hold"}""")) { BaseAddress = new Uri("http://risk") },
+            NullLogger<HttpKillSwitchController>.Instance).DisengageAsync("再開");
+
+        grpc.Should().Be(rest);
+        grpc.Should().Be(new KillSwitchResult(false, true, HttpKillSwitchController.OperatorHoldMessage));
+        (await c.KillSwitch.EngageAsync("止める")).Message.Should().NotBe(HttpKillSwitchController.OperatorHoldMessage);
+    }
+
     // ---- パリティ: 提供側が明確に拒否した（REST の非 2xx ＝ gRPC の明確な失敗）は同じ結果＝「実行していない」 ----
 
     [Fact]
