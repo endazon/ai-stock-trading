@@ -347,7 +347,8 @@ jobs:
         run: |
           set -eu  # pipefail は付けない（grep -q が先に閉じると前段の SIGPIPE で偽になる）。入力は here-string で渡す。
           fail() { echo "::error::$1"; exit 1; }
-          names() { helm template ast "$CHART" "$@" -s templates/deployment.yaml \
+          # NFR, #1529, IADR-0612: 既定の authAuthority は空で描画が止まるため、本番の既定の側にも配備の値を与えて描く（values-cloud は明示済みで同じ値）。
+          names() { helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" -s templates/deployment.yaml \
             | awk '/^  name: /{svc=$2} /^            - name: /{print svc" "$3}' | sort -u; }
           excluded="$(cat <<'TABLE'
           # ニュースの RAG（MSP の knowledge ユニット）を持ち込まない（オーナーの決定 2026-11-05・IADR-0608 決定 4）。KB の宛先が空＝no-op。
