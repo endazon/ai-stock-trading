@@ -26,6 +26,16 @@ public class BacktestWorkerWiringTests
             .Should().BeOfType<NoOpHistoricalBarSource>();
     }
 
+    // NFR, #1532, IADR-0614: 外部の情報源・市場データ・為替を取る HttpClient は応答の本文に上限を持つ（既定はほぼ無制限）。
+    [Fact]
+    public void 過去データの取得は応答の大きさに上限を持つ()
+    {
+        using var factory = new BacktestWorkerWebApplicationFactory();
+
+        factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient(Program.BarDataHttpClientName).MaxResponseContentBufferSize
+            .Should().Be(AiStockTrading.Shared.Infrastructure.Composable.ExternalHttpResponseLimits.MaxResponseBytes);
+    }
+
     [Fact]
     public void provider_stooq_の指定で実データ源が解決される()
     {

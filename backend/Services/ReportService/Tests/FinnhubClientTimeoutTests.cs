@@ -16,4 +16,14 @@ public class FinnhubClientTimeoutTests(ReportWorkerWebApplicationFactory factory
         factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata").Timeout
             .Should().Be(FinnhubHttpTimeouts.Quote);
     }
+
+    // NFR, #1532, IADR-0614: 外部の情報源・市場データ・為替を取る HttpClient は応答の本文に上限を持つ（既定はほぼ無制限）。
+    [Theory]
+    [InlineData("marketdata")]
+    [InlineData("fx")]
+    public void 報告書の現在値と為替の照会は応答の大きさに上限を持つ(string name)
+    {
+        factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient(name).MaxResponseContentBufferSize
+            .Should().Be(AiStockTrading.Shared.Infrastructure.Composable.ExternalHttpResponseLimits.MaxResponseBytes);
+    }
 }

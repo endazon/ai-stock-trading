@@ -120,6 +120,20 @@ public class OpendAuthEndpointsTests : IDisposable
             "入力待ちでないときに書くと、次のプロンプトで消費されて 1 回を食う");
     }
 
+    // NFR, FR-05, #1532, IADR-0614: 案内（Command Tips）の後にログインの成功が出ていれば、案内が最後の Command Tips 行のままでも
+    // 入力待ちではない。古い案内を「いま待っている」と読むと、ログイン後にコードを書いてしまう（入力の受け口が開いたままになる）。
+    [Fact]
+    public async Task 案内の後にログインが成功していれば409で何も書かない()
+    {
+        _factory.GivenConsole(WaitingForPhone + ">>>Login successful\n>>>moomoo OpenD is running\n");
+
+        var response = await PostAsync("""{"code":"123456"}""");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("not_waiting");
+        _factory.Writer.Lines.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task 状態を取得できなければ503で何も書かない()
     {
