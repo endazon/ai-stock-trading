@@ -18,6 +18,9 @@ public static partial class ConsoleTail
     /// <summary>伏せ字。値の長さも漏らさないよう固定長にする。</summary>
     private const string Redacted = "***";
 
+    /// <summary>NFR, #1532, IADR-0614: OpenD がログインの成功を告げる行の語（`deploy/opend/README.md` の確認手順と同じ語）。</summary>
+    private const string LoginSucceededMarker = "Login successful";
+
     /// <summary>ANSI CSI（<c>ESC [ … 終端</c>）。<c>script</c> の記録に必ず混ざる。</summary>
     [GeneratedRegex(@"\x1B\[[0-?]*[ -/]*[@-~]", RegexOptions.CultureInvariant)]
     private static partial Regex AnsiCsiPattern();
@@ -66,7 +69,7 @@ public static partial class ConsoleTail
     /// <summary>
     /// 整形済みのコンソール末尾から、<b>いま OpenD が待っているプロンプト</b>を読む。
     /// <para>
-    /// 判定は <c>Command Tips</c> を含む<b>最後の行</b>だけを見る。コンソールには過去の
+    /// 判定は <c>Command Tips</c> を含む<b>最後の行</b>だけを見る。その行より後に <c>Login successful</c> があれば待っていない（#1532）。コンソールには過去の
     /// <c>Command Tips</c> が何度も現れるため、<b>最後のもの以外は現在の状態を表さない</b>。
     /// 同じ行に複数のコマンドが並ぶ場合は「入力を求めるもの」を優先する
     /// （<c>pic</c> → <c>phone</c> → <c>resend</c>）。
@@ -81,6 +84,11 @@ public static partial class ConsoleTail
         for (var i = lines.Length - 1; i >= 0; i--)
         {
             var line = lines[i];
+
+            // NFR, FR-05, #1532, IADR-0614: 最後の案内より後にログインの成功があれば、もう入力を待っていない。
+            // 遡る途中で成功の行に当たったら打ち切る（その前の案内は終わった検証であり、受け口を開いたままにしない）。
+            if (line.Contains(LoginSucceededMarker, StringComparison.OrdinalIgnoreCase)) return null;
+
             if (!line.Contains("Command Tips", StringComparison.OrdinalIgnoreCase)) continue;
 
             if (line.Contains("input_pic_verify_code", StringComparison.Ordinal)) return VerifyKind.Pic;
