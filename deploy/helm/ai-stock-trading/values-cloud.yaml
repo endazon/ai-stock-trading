@@ -1,0 +1,301 @@
+# ai-stock-trading — 単一ノードのクラウド（Hetzner の k3s）のプロファイル。
+# ADR-0006, ADR-0024, NFR, #1525, IADR-0608。手順は docs/operations/cloud-single-node-migration-runbook.md。
+#
+# ★ 重ね方: `helm upgrade --install ast deploy/helm/ai-stock-trading -f values-cloud.yaml -f <digest のファイル>`
+#   - values.yaml に**直接**重ねる。values-local.yaml とは併用しない（経路 B の調整をクラウドへ流さない。IADR-0608 決定 1）。
+#   - Helm はリスト（extraEnv）を置き換える。下の各サービスの extraEnv は、そのサービスで使う全要素を持つ。
+#
+# ★ クラウドに持ち込まないもの（オーナーの決定 2026-11-05）:
+#   - ニュースの RAG（MSP の knowledge ユニット）: KB の宛先（KnowledgeBase__*）を書かない＝既定の空＝no-op。
+#     取引判断のプロンプトには「この環境では検索を使っていない」の 1 行が出る（IADR-0608 決定 4）。
+#   - Web の画面: OpenD の認証サイドカー（画面から検証コードを入れる口）は使わない。初回の SMS 認証は kubectl attach で行う。
+#   - Stage 0 の記録: 無効（記録の構成を書かない＝既定の Enabled=false）。
+#
+# ★ 秘密: 値は secretKeyRef だけで参照し、このファイルにも helm の引数にも書かない。
+#   供給方式は externalSecrets.enabled で切り替える（既定 false＝手で作る Secret。基盤の最小構成の決定に合わせて変える）。
+#   🔴 移行の条件（手順書の最初の節）を満たすまで、本物の秘密をサーバーへ入れない。
+#
+# ★ 基盤との接続の暗号化（DB・ブローカ・LLM ゲートウェイ）は #1535 が入れる。このファイルはその値を参照するだけにし、
+#   ここで接続の形を独自に決めない（#1535 の後に、同じ値をここへ写す）。
+#
+# ★ イメージ: ノードでビルドして取り込み、digest で固定する（レジストリを持たない）。
+#   digest はノードで書き出したファイル（コミットしない）から重ねる。欠けたら描画で止まる（global.image.requireDigest）。
+
+global:
+  image:
+    registry: k3d-local
+    tag: latest
+    # ノードへ取り込んだイメージだけを使う（レジストリから取りに行かない）。
+    pullPolicy: Never
+    # 自前のイメージに digest が無ければ描画で止める（IADR-0608 決定 2）。
+    requireDigest: true
+  # 🔴 明示する（chart の既定は空になり、未設定なら描画で止まる）。クラウドの基盤の Keycloak の issuer と同じ値:
+  #   基盤の最小構成は KC_HOSTNAME=http://keycloak:8080・realm platform で、AST の名前空間からは ExternalName の keycloak で引く
+  #   （infraAliases）。トークンの iss がこの値と一致しないと検証で落ちる。
+  authAuthority: http://keycloak:8080/realms/platform
+  db:
+    # 🔴 リポジトリの既定のパスワードを使わない。パスワードは Secret から読み、接続文字列は env の参照で組む（IADR-0608 決定 3）。
+    password: ""
+    passwordSecret:
+      name: ast-db-credentials
+      key: password
+
+# OpenD（SIMULATE）。配布物の tar の sha256 を記録してからノードでイメージを作る（手順書）。
+# 🔴 取引パスワードはクラスタに置かない（SIMULATE では解錠は要らない）。moomoo-credentials はログインの資格だけを持つ。
+opend:
+  enabled: true
+  authGateway:
+    enabled: false
+
+broker:
+  tier: moomoo-sim
+
+externalSecrets:
+  enabled: false
+  appSecrets:
+    enabled: false
+
+reloader:
+  enabled: false
+
+# Pod のセキュリティの段（IADR-0609 の推奨の順）。段 2 で始め、起動と取引の 1 日を確かめてから段 3（非 root）へ上げる（手順書）。
+# 段 2: root のまま seccomp RuntimeDefault・権限昇格なし・ケーパビリティを全て落とす。PSA の enforce は baseline（段 2 と OpenD の
+# 段 1 が満たす）。restricted は段 3 と OpenD の段 3 が要るので、上げるときに一緒に替える。メッシュの注入は使わない（貼れる）。
+podSecurity:
+  stage: 2
+  admission:
+    enforce: baseline
+
+stage0Recording:
+  persistence:
+    enabled: false
+
+services:
+  risk-management:
+    extraEnv:
+      - { name: MaintenanceMarginEvaluation__Enabled, value: "true" }
+      - { name: MaintenanceMarginEvaluation__IntervalSeconds, value: "300" }
+      - { name: Risk__SimulatorProfile__Enabled, value: "true" }
+      - { name: MarketData__EnableMarkToMarket, value: "true" }
+      - { name: MarketData__Provider, value: "finnhub" }
+      - name: MarketData__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      - { name: Finnhub__ProvisionalDailyLimit, value: "" }
+      - { name: ObservedDrawdownRefresh__Enabled, value: "true" }
+      - { name: WithdrawalEvaluation__Enabled, value: "true" }
+      - { name: Fx__Provider, value: "boj" }
+      - name: Fx__Fred__ApiKey
+        secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
+      - { name: OrderExecution__BaseUrl, value: "" }
+      - name: RiskControls__DelegatedActor__TrustedClientIds
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      - name: Auth__GrpcOwnerClients__0
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（values.yaml の同じ行の写し。extraEnv は配列で丸ごと置き換わるため、
+      # ここに無いとクラウドの profile では段も Secret ast-owner-totp も読まれず、門は Off のままになる）。
+      - { name: OwnerSecondFactor__Mode, value: "Audit" }
+      - name: OwnerSecondFactor__Secret
+        secretKeyRef: { name: ast-owner-totp, key: secret, optional: true }
+  order-execution:
+    extraEnv:
+      - { name: Reconciliation__Enabled, value: "true" }
+      - { name: Reconciliation__UseBrokerProbe, value: "true" }
+      - { name: Reconciliation__ReleaseOnNotPlaced__Simulate, value: "false" }
+      - { name: Reconciliation__ReleaseOnNotPlaced__Real, value: "false" }
+      - { name: Reconciliation__StallThresholdHours, value: "2" }
+      - { name: Reconciliation__IntervalHours, value: "1" }
+      - { name: Reconciliation__BatchSize, value: "50" }
+      - { name: DecisionCloseUnfilledCancel__Enabled, value: "true" }
+      - { name: DecisionEntryUnfilledCancel__Enabled, value: "true" }
+      - name: Auth__GrpcOwnerClients__0
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+  market-monitor:
+    extraEnv:
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+      - { name: MarketData__Provider, value: "finnhub" }
+      - name: MarketData__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      - { name: MarketData__Finnhub__RequestsPerMinute, value: "12" }
+      - { name: Finnhub__ProvisionalDailyLimit, value: "" }
+      - { name: Monitor__SeedSymbols__0__Symbol, value: "AAPL" }
+      - { name: Monitor__SeedSymbols__0__Market, value: "UnitedStates" }
+      - name: Monitor__DelegatedActor__TrustedClientIds
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      - name: Auth__GrpcOwnerClients__0
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+  information-collection:
+    extraEnv:
+      - { name: Collection__Source__Provider, value: "finnhub,finnhub-news,google-news,sec-edgar,fred" }
+      - { name: Collection__PollIntervalSeconds, value: "300" }
+      - name: Collection__Source__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
+      - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
+      - { name: Collection__Source__Finnhub__Symbols__0, value: "AAPL" }
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
+      - { name: Collection__Source__Finnhub__DailyRequestLimit, value: "" }
+      - { name: Finnhub__ProvisionalDailyLimit, value: "" }
+      - { name: Collection__Source__GoogleNews__Queries__0, value: "米国株" }
+      - name: Collection__Source__SecEdgar__UserAgent
+        secretKeyRef: { name: ast-secrets, key: sec-edgar-user-agent, optional: true }
+      - { name: Collection__Source__SecEdgar__Ciks__0, value: "" }
+      - name: Collection__Source__Edinet__SubscriptionKey
+        secretKeyRef: { name: ast-secrets, key: edinet-subscription-key, optional: true }
+      - { name: Collection__Source__Boj__Db, value: "" }
+      - { name: Collection__Source__Boj__SeriesCodes__0, value: "" }
+      - name: Collection__Source__Fred__ApiKey
+        secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
+      - { name: Collection__Source__Fred__SeriesIds__0, value: "DEXJPUS" }
+      - { name: Collection__Source__Fred__SeriesIds__1, value: "DGS10" }
+      - { name: CostControl__BaseUrl, value: "http://cost-control-service:8080" }
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+  report:
+    extraEnv:
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
+      - { name: Audit__BaseUrl, value: "http://audit-service:8080" }
+      - { name: MarketData__Provider, value: "finnhub" }
+      - name: MarketData__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }
+      - { name: LlmGateway__Auth__Authority, value: "" }
+      - name: LlmGateway__Auth__ClientId
+        secretKeyRef: { name: ast-secrets, key: llm-auth-client-id, optional: true }
+      - name: LlmGateway__Auth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: llm-auth-client-secret, optional: true }
+      - { name: LlmGateway__TimeoutSeconds, value: "" }
+      - { name: LlmGateway__TimeoutSecondsByKind__Daily, value: "30" }
+      - { name: LlmGateway__TimeoutSecondsByKind__Weekly, value: "120" }
+      - { name: LlmGateway__TimeoutSecondsByKind__Monthly, value: "120" }
+      - { name: LlmGateway__LogPrompts, value: "" }
+      - { name: LlmPricing__UnknownModel__InputPer1kTokens, value: "1.637" }
+      - { name: LlmPricing__UnknownModel__OutputPer1kTokens, value: "8.186" }
+      - { name: LlmPricing__PerModel__claude_opus_5_5__InputPer1kTokens, value: "0.655" }
+      - { name: LlmPricing__PerModel__claude_opus_5_5__OutputPer1kTokens, value: "3.274" }
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__InputPer1kTokens, value: "0.327" }
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__OutputPer1kTokens, value: "1.637" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__InputPer1kTokens, value: "0.0164" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__OutputPer1kTokens, value: "0.0819" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextThresholdTokens, value: "100000" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextInputPer1kTokens, value: "0.0819" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextOutputPer1kTokens, value: "0.409" }
+      - { name: LlmPricing__PerModel__claude_opus_5_5__CacheWritePer1kTokens, value: "0.819" }
+      - { name: LlmPricing__PerModel__claude_opus_5_5__CacheReadPer1kTokens, value: "0.0327" }
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__CacheWritePer1kTokens, value: "0.409" }
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__CacheReadPer1kTokens, value: "0.0164" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__CacheWritePer1kTokens, value: "0.0205" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__CacheReadPer1kTokens, value: "0.00164" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextCacheWritePer1kTokens, value: "0.102" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextCacheReadPer1kTokens, value: "0.00819" }
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+      - { name: ReportDraftKnowledge__Enabled, value: "false" }
+      - { name: Reports__NoResponseBehavior, value: "" }
+      - name: Reports__DelegatedActor__TrustedClientIds
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      - { name: Reports__AutoGeneration__Enabled, value: "true" }
+      - { name: Reports__AutoGeneration__Markets__0, value: "US" }
+      - { name: Fx__Provider, value: "boj" }
+      - name: Fx__Fred__ApiKey
+        secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
+      - name: Auth__GrpcOwnerClients__0
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（values.yaml の同じ行の写し。extraEnv は配列で丸ごと置き換わるため、
+      # ここに無いとクラウドの profile では段も Secret ast-owner-totp も読まれず、門は Off のままになる）。
+      - { name: OwnerSecondFactor__Mode, value: "Audit" }
+      - name: OwnerSecondFactor__Secret
+        secretKeyRef: { name: ast-owner-totp, key: secret, optional: true }
+  trade-decision:
+    extraEnv:
+      - { name: Reports__BaseUrl, value: "http://report-service:8080" }
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
+      - { name: OrderExecution__BaseUrl, value: "http://order-execution-service:8080" }
+      - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
+      - { name: CostControl__BaseUrl, value: "http://cost-control-service:8080" }
+      - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }
+      - { name: LlmGateway__Auth__Authority, value: "" }
+      - name: LlmGateway__Auth__ClientId
+        secretKeyRef: { name: ast-secrets, key: llm-auth-client-id, optional: true }
+      - name: LlmGateway__Auth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: llm-auth-client-secret, optional: true }
+      - { name: LlmGateway__TimeoutSeconds, value: "" }
+      - { name: LlmGateway__LogPrompts, value: "" }
+      - { name: Decision__EnableScreening, value: "true" }
+      - { name: Decision__ScreeningContextBudgetChars, value: "" }
+      - { name: LlmPricing__UnknownModel__InputPer1kTokens, value: "1.637" }
+      - { name: LlmPricing__UnknownModel__OutputPer1kTokens, value: "8.186" }
+      - { name: LlmPricing__PerModel__claude_opus_5_5__InputPer1kTokens, value: "0.655" }
+      - { name: LlmPricing__PerModel__claude_opus_5_5__OutputPer1kTokens, value: "3.274" }
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__InputPer1kTokens, value: "0.327" }
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__OutputPer1kTokens, value: "1.637" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__InputPer1kTokens, value: "0.0164" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__OutputPer1kTokens, value: "0.0819" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextThresholdTokens, value: "100000" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextInputPer1kTokens, value: "0.0819" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextOutputPer1kTokens, value: "0.409" }
+      - { name: LlmPricing__PerModel__claude_opus_5_5__CacheWritePer1kTokens, value: "0.819" }
+      - { name: LlmPricing__PerModel__claude_opus_5_5__CacheReadPer1kTokens, value: "0.0327" }
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__CacheWritePer1kTokens, value: "0.409" }
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__CacheReadPer1kTokens, value: "0.0164" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__CacheWritePer1kTokens, value: "0.0205" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__CacheReadPer1kTokens, value: "0.00164" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextCacheWritePer1kTokens, value: "0.102" }
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextCacheReadPer1kTokens, value: "0.00819" }
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+      - { name: TradeCycle__Watchlist__0__Symbol, value: "AAPL" }
+      - { name: TradeCycle__Watchlist__0__Market, value: "UnitedStates" }
+      - { name: TradeCycle__MaxWatchedSymbols, value: "12" }
+      - { name: MarketData__Provider, value: "finnhub" }
+      - name: MarketData__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      - { name: MarketData__MaxQuoteStalenessSeconds, value: "300" }
+      - { name: Fx__Provider, value: "boj" }
+      - name: Fx__Fred__ApiKey
+        secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
+  backtest:
+    extraEnv:
+      - { name: Backtest__BarData__Provider, value: "order-execution" }
+      - { name: Backtest__BarData__OrderExecution__BaseUrl, value: "http://order-execution-service:8080" }
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+      - { name: Backtest__Stage0__Enabled, value: "false" }
+      - { name: Backtest__Stage0__LlmTrainingCutoff, value: "2026-06-30" }
+      - { name: Backtest__Stage0__Strategy, value: "" }
+  notification:
+    extraEnv:
+      - { name: Notifications__Provider, value: "discord-webhook" }
+      - name: Notifications__Discord__WebhookUrl
+        secretKeyRef: { name: ast-secrets, key: discord-webhook-url, optional: true }
+      - { name: Notifications__Discord__Bot__Enabled, value: "true" }
+      - name: Notifications__Discord__Bot__Token
+        secretKeyRef: { name: ast-secrets, key: discord-bot-token, optional: true }
+      - { name: Notifications__Discord__Bot__GuildId, value: "" }
+      - { name: Notifications__Discord__Bot__ChannelId, value: "" }
+      - { name: Notifications__Discord__Bot__AllowedUserIds, value: "" }
+      - { name: Notifications__Discord__Bot__UserMapping, value: "" }
+      - name: Notifications__Discord__Bot__KillSwitchConfirmationPhrase
+        secretKeyRef: { name: ast-secrets, key: discord-bot-killswitch-phrase, optional: true }
+      - name: Notifications__Discord__OwnerAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      - name: Notifications__Discord__OwnerAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-secret, optional: true }
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
+      - { name: Reports__BaseUrl, value: "http://report-service:8080" }
+      - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }

@@ -69,10 +69,18 @@ check "status は 0" "$([ "$rc" = 0 ] && echo 0 || echo 1)"
 check "status は変える動詞を使わない" "$(grep -Eq '(^| )(create|apply|delete|label|scale|patch)( |$)' "$STATE/calls.log" && echo 1 || echo 0)"
 
 # chart は risk-management と report で同じ Secret を optional で読む（values.yaml・values-local.yaml）。
-for v in values.yaml values-local.yaml; do
+# values-local・values-cloud は 2 サービスの extraEnv を丸ごと置き換えるので、無いとその profile では門が Off のままになる。
+for v in values.yaml values-local.yaml values-cloud.yaml; do
 	check "$v: 2 サービスが ast-owner-totp を optional で読む" \
 		"$([ "$(grep -c 'secretKeyRef: { name: ast-owner-totp, key: secret, optional: true }' "$ROOT_DIR/deploy/helm/ai-stock-trading/$v")" = 2 ] && echo 0 || echo 1)"
 done
+# values-cloud の描画（helm があるときだけ）でも、risk-management と report が段と Secret の参照を持つ。
+if command -v helm >/dev/null 2>&1; then
+	chart="$ROOT_DIR/deploy/helm/ai-stock-trading"
+	rendered="$(helm template ast "$chart" -f "$chart/values-cloud.yaml" -f "$chart/ci/values-cloud-digests.fixture.yaml" 2>/dev/null)"
+	check "values-cloud の描画: ast-owner-totp の参照が 2 本" "$([ "$(printf '%s\n' "$rendered" | grep -c 'name: ast-owner-totp')" = 2 ] && echo 0 || echo 1)"
+	check "values-cloud の描画: OwnerSecondFactor__Mode が 2 本" "$([ "$(printf '%s\n' "$rendered" | grep -c 'name: OwnerSecondFactor__Mode')" = 2 ] && echo 0 || echo 1)"
+fi
 # 印はゲートのログと同じ。
 check "印が OwnerSecondFactorGate にある" \
 	"$(grep -Fq 'LogMarker = "owner-second-factor:"' "$ROOT_DIR/backend/Shared/AiStockTrading.Shared.Infrastructure/Composable/SecondFactor/OwnerSecondFactorGate.cs" && echo 0 || echo 1)"
