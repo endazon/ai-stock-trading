@@ -77,6 +77,53 @@ public class SingleStageSourceTests
         log.GetHistory().Should().Contain(e => e.ChangeType == SettingsChangeType.Stage && e.Actor == "owner");
     }
 
+    // 🔴 #1533, IADR-0616 決定 3（レビュー）: 段 2 の継ぎ目を挟んだまま遷移しても、変更履歴の Before は保存されていた段階（継ぎ目の内側）である。
+    // 継ぎ目の GetCurrent は台帳の新しい段階の定義を返すので、それを Before にすると Before と After が同じになり、旧い保存値が履歴から消える。
+    [Fact]
+    public void 段2の継ぎ目を挟んだ遷移でも履歴のBeforeは保存されていた段階()
+    {
+        var clock = new FakeClock(Now, DateOnly.FromDateTime(Now.DateTime));
+        var inner = new InMemoryRiskSettingsStore(SettingsAt(TradingStage.Stage1Simulate));
+        var ledger = new InMemoryStageGateStore(TradingStage.Stage1Simulate);
+        var bound = new StageGateBoundRiskSettingsStore(
+            inner, ledger, Policy, StageSourceMode.Enforce, NullLogger<StageGateBoundRiskSettingsStore>.Instance);
+        var log = new InMemorySettingsChangeLog();
+        var settings = new RiskSettingsService(bound, log, clock, FakeBrokerAccountObservations.NotObserved());
+        var svc = new StageGateService(
+            ledger, new InMemoryStagePerformanceStore(), new InMemoryControlViolationObservationStore(),
+            new InMemoryStage1FillObservationStore(), new InMemoryStage1TradingDayObservationStore(), Policy, bound,
+            new KillSwitchService(new InMemoryKillSwitchStore(), new InMemorySettingsChangeLog(), clock),
+            new ShortSellReleaseSourceInventory([]), clock, settings);
+
+        svc.RequestTransition(TradingStage.Stage0Verification, "owner").Accepted.Should().BeTrue();
+
+        var entry = log.GetHistory().Should().ContainSingle(e => e.ChangeType == SettingsChangeType.Stage).Subject;
+        entry.Before.Should().Be(Policy.SettingsFor(TradingStage.Stage1Simulate).ToString());
+        entry.After.Should().Be(Policy.SettingsFor(TradingStage.Stage0Verification).ToString());
+        inner.GetCurrent().Stage.Should().Be(Policy.SettingsFor(TradingStage.Stage0Verification), "保存値も遷移先の定義へそろう");
+    }
+
+    // 🔴 #1533, IADR-0616 決定 3（レビュー）: 段 2 では、段階以外の設定の保存（GetCurrent → Save）が、台帳の定義に置き換わった段階を
+    // 保存値へ書き込まない。保存値の段階を動かすのは段階の保存（遷移の受理）だけ（履歴の無い段階の変更を作らない）。
+    [Fact]
+    public void 段2で段階以外の設定を保存しても保存値の段階は動かない()
+    {
+        var clock = new FakeClock(Now, DateOnly.FromDateTime(Now.DateTime));
+        var inner = new InMemoryRiskSettingsStore(SettingsAt(TradingStage.Stage1Simulate));
+        var bound = new StageGateBoundRiskSettingsStore(
+            inner, new InMemoryStageGateStore(TradingStage.Stage0Verification), Policy, StageSourceMode.Enforce,
+            NullLogger<StageGateBoundRiskSettingsStore>.Instance);
+        var log = new InMemorySettingsChangeLog();
+        var settings = new RiskSettingsService(bound, log, clock, FakeBrokerAccountObservations.NotObserved());
+
+        settings.UpdateStage1MinimumTradeCount(77, "owner", "件数の見直し");
+
+        inner.GetCurrent().Stage.Should().Be(Policy.SettingsFor(TradingStage.Stage1Simulate), "保存値の段階は履歴なしに動かない");
+        inner.GetCurrent().Stage1MinimumTradeCount.Should().Be(77);
+        bound.GetCurrent().Stage.Should().Be(Policy.SettingsFor(TradingStage.Stage0Verification), "審査は台帳の定義で読む");
+        log.GetHistory().Should().NotContain(e => e.ChangeType == SettingsChangeType.Stage);
+    }
+
     [Fact]
     public void 拒否された遷移では設定の段階は変わらない()
     {
@@ -130,5 +177,19 @@ public class SingleStageSourceTests
             .ToList();
 
         callers.Select(c => c.File).Distinct().Should().BeEquivalentTo(["StageGateService.cs"]);
+
+        // 段階を書く保存（SaveWithStage）を呼ぶのは RiskSettingsService.UpdateStage だけ（ストアの素通しの実装を除く）。
+        Directory.EnumerateFiles(dir.FullName, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}Tests{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .SelectMany(f => File.ReadAllLines(f).Select(l => (File: Path.GetFileName(f), Line: l)))
+            .Where(x => x.Line.Contains("SaveWithStage", StringComparison.Ordinal)
+                && !x.Line.TrimStart().StartsWith("//", StringComparison.Ordinal)
+                && !x.Line.TrimStart().StartsWith("///", StringComparison.Ordinal)
+                && !x.Line.Contains("void SaveWithStage(", StringComparison.Ordinal)
+                && !x.Line.Contains("inner.SaveWithStage(", StringComparison.Ordinal))
+            .Select(x => x.File).Distinct()
+            .Should().BeEquivalentTo(["RiskSettingsService.cs"]);
     }
 }

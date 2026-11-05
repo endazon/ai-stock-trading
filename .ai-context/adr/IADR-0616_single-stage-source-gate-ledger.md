@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-20, FR-10, FR-13, ADR-0008, ADR-0016, IADR-0070, IADR-0140, IADR-0161, IADR-0163, IADR-0134]
 author: claude (Claude Code)
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-06
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-20)
   - planning:projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
@@ -42,6 +42,13 @@ plan_refs:
 1. `PUT /settings/stage` は 409（「段階は段階ゲートの遷移でだけ変えられる」）。`UpdateStage` の本番の呼び手は `SyncStageFromGate` だけ（ソースの走査で固定）。
 2. `StageGateService.RequestTransition` は受理の後に `SyncStageFromGate(policy.SettingsFor(遷移先), 承認者, 理由)` を呼ぶ。
 3. 構成 `RiskControls:StageSource`（`Report` 既定 / `Enforce`）。`StageGateBoundRiskSettingsStore` を `EfRiskSettingsStore` の外・`SimulatorProfileRiskSettingsStore` の内に挟む。`Report` は設定を返して食い違いを 1 回だけ Warning、`Enforce` は台帳の定義で置き換えて返す。知らない値は起動で止める。
+3a. **「1 回だけ」の意味**: 同じ組（設定の段階・台帳の定義）の食い違いは、続けて出る間は 1 回だけ Warning を残す。記憶はプロセス内で全スコープが共有する静的な値で、直前に残した組だけを覚える。組が変わると残し、元の組へ戻るとまた残す。再起動でも残し直す。審査のたびにログを埋めず、食い違いが続いていることは起動ごとと組の変化ごとに分かる。
+3b. **段 2 の継ぎ目と書き込み**（レビューで追記）:
+   - 段階の変更の Before は保存値（`IRiskSettingsStore.GetStored`）から取る。継ぎ目の `GetCurrent` は台帳の新しい段階の定義を返すため、それを Before にすると Before と After が同じになり、旧い保存値が履歴から消える。
+   - 段階を書く保存は `SaveWithStage`（本番の呼び手は `RiskSettingsService.UpdateStage`＝遷移の受理だけ。ソースの走査で固定）。
+   - 段 2 の継ぎ目の `Save` は、段階を保存値のまま戻して書く。段階以外の設定の保存（`UpdateGuard`・`UpdateBrokerProvider` などの GetCurrent → Save）が、置き換わった段階を履歴なしに保存値へ書き込まないため。
+   - 受容（保存値が台帳へ黙ってそろう）は採らない。台帳にそろう向きなので害は小さいが、「段階の保存値が変わったのに段階の履歴が無い」状態を作る。段 1 へ戻したときには、審査が読む段階が履歴の無い値になる。安全側（段階を書く口を 1 つに保つ）を選んだ。
+   - 段 1 の `Save` は素通し（`GetCurrent` が保存値を返すため、戻す必要が無い）。
 4. `OrderIntentValidation`: 数量 ≦ 0（全注文）、新規建ての価格 ≦ 0・換算率 ≦ 0・損切り価格 ≦ 0・ATR < 0・列挙の外 → `RejectionReason.OrderIntentInvalid`（序数 35・クラス B）。
 
 ## 結果

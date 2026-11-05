@@ -421,4 +421,3 @@ public static class OrderIntentValidation
             || !Enum.IsDefined(intent.Mode);
     }
 }
-
