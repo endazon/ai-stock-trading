@@ -284,6 +284,15 @@ public static class TradeDecisionPromptBuilder
     public const string NewsUnknownLine =
         "ニュース: 不明（情報収集からニュースの状態を受け取っていないか、最後の受信から有効期限が過ぎています。「材料となるニュースが無い」とは扱いません）";
 
+    // FR-04, FR-08, ADR-0006, #1525, IADR-0608 決定4: 検索（RAG）の取得口が未構成の環境（単一ノードのクラウド）で、ニュースの状態の行の
+    // 直後に出す 1 行。「取得済み」の行は「個々の記事は下の参考情報にあるものだけを渡します」と書くため、参考情報が**恒久的に**無いことを
+    // 別に伝える（検索の取りこぼし＝その回に当たりが無い、と区別させる）。検索を構成した環境では出さない（経路 B のプロンプトは不変）。
+    public const string RetrievalNotConfiguredLine =
+        "参考情報（ナレッジベースの検索）: この環境では検索を使っていません（記事の本文は渡しません。参考情報が無いことを「材料となるニュースが無い」とは扱いません）";
+
+    private static string RetrievalNotConfiguredText(bool retrievalNotConfigured) =>
+        retrievalNotConfigured ? $"- {RetrievalNotConfiguredLine}{Environment.NewLine}" : string.Empty;
+
     // retrieved は #18（IADR-0069）の RAG 取得結果（IADR-0072）。null/空は現行動作（参考情報節なし）。
     // FR-17, IADR-0076 決定5: includeProfitability=false（既定）なら採算節・expectedProfitPerShare を出さない＝
     // 採算ゲート無効時（既定）はプロンプト文言も現行動作と完全に一致させる（LLM の判断傾向も変えない）。有効時のみ注入する。
@@ -315,7 +324,8 @@ public static class TradeDecisionPromptBuilder
         IReadOnlyList<RejectionReason>? addOnBlockers = null,
         StopWidthFloorContext? stopFloor = null,
         MarketClockContext? marketClock = null,
-        PortfolioHoldingsContext? portfolio = null)
+        PortfolioHoldingsContext? portfolio = null,
+        bool retrievalNotConfigured = false)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -358,6 +368,8 @@ public static class TradeDecisionPromptBuilder
         sb.Append(MarketClockLine(marketClock));
         // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態（定時・急変の両方。現在値の有無に依らず無条件）。
         sb.Append(NewsStatusLine(news));
+        // FR-04, FR-08, #1525, IADR-0608 決定4: 検索を使わない環境では、その旨を 1 行書く（構成した環境では何も足さない）。
+        sb.Append(RetrievalNotConfiguredText(retrievalNotConfigured));
         sb.AppendLine();
         // FR-04, FR-10, ADR-0003, #854, IADR-0351: 保有状況（保有あり／保有なし／不明の 3 状態を必ず書き分ける）。
         // 含み損益の評価価格は、この節より上で LLM に見せた現在値と同じ値にする（別の値で評価すると節の間で食い違う）。
@@ -472,7 +484,8 @@ public static class TradeDecisionPromptBuilder
         DailyVolumeContext? volume = null,
         IReadOnlyList<RejectionReason>? addOnBlockers = null,
         MarketClockContext? marketClock = null,
-        PortfolioHoldingsContext? portfolio = null)
+        PortfolioHoldingsContext? portfolio = null,
+        bool retrievalNotConfigured = false)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -500,6 +513,8 @@ public static class TradeDecisionPromptBuilder
         sb.Append(MarketClockLine(marketClock));
         // FR-04, ADR-0020 決定2, #1081, IADR-0455: 本判断と同じニュースの状態の行（現在値の有無に依らず無条件・縮退の保護分）。
         sb.Append(NewsStatusLine(news));
+        // FR-04, FR-08, #1525, IADR-0608 決定4: 本判断と同じ「検索を使っていない」の行（構成した環境では何も足さない）。
+        sb.Append(RetrievalNotConfiguredText(retrievalNotConfigured));
         sb.AppendLine();
         // 🔴 FR-03, FR-04, ADR-0003, #1364: 急変が起点なら、本判断と同じ「# 価格変動トリガー」節（現在値・基準値・変動率）を出す。
         // 一次は門（Hold で本判断が走らない）であり、これが無いと方針の急変追随の条件を一次が判定できず全件を落とす（実測 2026-10-15）。
