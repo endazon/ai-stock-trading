@@ -44,4 +44,8 @@ public enum OperatorHoldOutcome
 /// NFR, #1530, IADR-0613: 保持の間の解除の拒否。REST・gRPC の解除は同じ処理関数を通るので、どちらも 409（gRPC は ABORTED）になる。
 /// </summary>
 public sealed class KillSwitchHeldByOperatorException()
-    : InvalidOperationException("kill switch は SSH の経路で保持されているため解除できません。保持を外してから解除してください。");
+    : InvalidOperationException("kill switch は SSH の経路で保持されているため解除できません。保持を外してから解除してください。")
+{
+    /// <summary>REST の 409 の本文の <c>code</c>（ボットが文言を出し分ける）。</summary>
+    public const string Code = "operator_hold";
+}

@@ -155,7 +155,8 @@ internal static class RiskControlEndpoints
         ArgumentException => Results.BadRequest(new { error = ClientFacingErrors.MessageFor(e, logger) }),
         DbUpdateConcurrencyException => Results.Conflict(new { error = "設定が他の更新と競合しました。最新を取得して再試行してください。" }),
         // NFR, #1530, IADR-0613: SSH の経路の保持の間の解除（REST は 409・gRPC は同じ写しで ABORTED）。文言は固定（入力を含まない）。
-        KillSwitchHeldByOperatorException held => Results.Conflict(new { error = held.Message }),
+        // code は呼び出し側（ボット）が利用者向けの文言を出し分けるための機械可読な印。
+        KillSwitchHeldByOperatorException held => Results.Conflict(new { error = held.Message, code = KillSwitchHeldByOperatorException.Code }),
         _ => null,
     };
 

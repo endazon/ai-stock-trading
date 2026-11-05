@@ -158,6 +158,8 @@ public class OperatorKillSwitchHoldWiringTests
 
         var disengage = await client.PostAsJsonAsync("/risk-controls/kill-switch/disengage", new KillSwitchRequest("再開"));
         disengage.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        // ボット（HttpKillSwitchController）はこの code で利用者向けの文言を出し分ける（綴りを変えるときは両方を直す）。
+        (await disengage.Content.ReadAsStringAsync()).Should().Contain("\"code\":\"operator_hold\"");
 
         (await client.GetFromJsonAsync<KillSwitchState>("/risk-controls/kill-switch"))!.Engaged.Should().BeTrue();
     }
