@@ -917,6 +917,14 @@ risk-management が発行する注文の承認に HMAC の印を付け、order-e
 > `LlmGateway__BaseUrl` 経由でゲートウェイを呼ぶだけである（ADR-0010 / IADR-0061 決定6）。
 > `ast-secrets` に LLM 鍵を足さないこと。
 
+## 所有者のトークンの宛先とクライアント（`global.ownerTokenBinding`。#1528 / [IADR-0611](../../../.ai-context/adr/IADR-0611_rest-owner-token-audience-and-client.md)）
+
+REST の所有者の判定で、ロールに加えてトークンの宛先（aud）と発行先のクライアント（azp）を確かめる。`mode` は auth のサービスへ `Auth__OwnerToken__Mode` で描く。
+
+- `Report`（既定・段 1）: 不一致を Warning で残して通す。`Enforce`（段 2）: 拒否する（403）。他の値は描画で止まる。
+- 許可集合の既定は aud `ai-stock-trading-api`（AST 専用。Keycloak の audience mapper で `bff` と `ai-stock-trading-owner` にだけ付ける。MSP 共通の `platform-api` は使わない）・azp `bff` と `ai-stock-trading-owner`。変えるときはサービスの `extraEnv` に配列（`Auth__OwnerToken__Audiences__0` … / `Auth__OwnerToken__Clients__0` …）で書く。
+- 段 2 へ上げる前に、段 1 のまま各サービスのログに「所有者のトークンの宛先またはクライアントが許可集合に無い」が出ないことを確かめる。
+
 ## #13, #267: ブローカ階層（`broker.tier`）と moomoo（OpenD）発注
 
 発注先は**単一スイッチ `broker.tier`** で選ぶ（IADR-0111）。運用の本番近接順は次の 3 階層である。
