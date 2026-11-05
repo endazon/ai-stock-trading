@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Infrastructure.Composable.Http;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Infrastructure.ExternalServices;
 using TradeDecisionService.Features.TradeDecision;
@@ -83,6 +84,10 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 // fail-safe: LlmGateway:Auth 未設定なら何も付けない＝本変更前とバイト等価。
 // リトライはゲートウェイ側が一元化する（MSP/ADR-0010）ため呼び出し側では重ねない。
 builder.Services.AddHttpClient("llm", c => c.Timeout = ParseTimeout(builder.Configuration["LlmGateway:TimeoutSeconds"]))
+    // NFR, NFR-18, #1535, IADR-0615 決定5: https のゲートウェイは基盤の CA で検証する（名前の不一致・CA なしは拒む・平文へ戻らない）。
+    // http の URL（経路 B）には何も効かない。外部 API の HttpClient には付けない。
+    .ConfigurePrimaryHttpMessageHandler(sp =>
+        PlatformInfraCaTrust.CreateHandler(sp.GetRequiredService<IConfiguration>()[PlatformInfraCaTrust.PathKey]))
     .AddAiStockTradingPlatformRealmToken(
         builder.Configuration, LlmGatewayAuth.SectionName, LlmGatewayAuth.TokenClientName);
 builder.Services.AddSingleton<PlaceholderLlmCompletionClient>();
