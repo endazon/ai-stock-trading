@@ -52,6 +52,10 @@ spec:
           {{- end }}
           containers:
             - name: trigger
+              {{- /* ADR-0006, #1525, IADR-0608 決定2: requireDigest のときは digest つきの参照だけを受ける。 */}}
+              {{- if and $g.image.requireDigest (not (regexMatch "@sha256:[0-9a-f]{64}$" (toString $c.image))) }}
+              {{- fail (printf "global.image.requireDigest=true なのに tradingCycle.cronjob.image（%s）が digest で固定されていません（IADR-0608）" $c.image) }}
+              {{- end }}
               image: {{ $c.image | quote }}
               {{- with (include "ast.container.security" $ | trim) }}
               {{- . | nindent 14 }}
