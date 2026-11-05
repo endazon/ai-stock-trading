@@ -79,6 +79,7 @@ public class OrderApprovedForgoneReplayHandlerTests
                 opts.Services.AddSingleton<AppSvc>();
                 opts.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
                 opts.Services.AddSingleton<TradeExpenseRecordingService>();
+                opts.Services.AddSingleton(TestApprovalVerification.ReportOnly()); // #1527, IADR-0610
                 opts.UseAiStockTradingRabbitMq(
                     ServiceName, "amqp://guest:guest@localhost:5672", typeof(OrderApprovedHandler).Assembly);
                 opts.StubAllExternalTransports();

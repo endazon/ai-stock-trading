@@ -83,6 +83,12 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     assert.strictEqual(r.status, 0, `${r.stdout || ''}${r.stderr || ''}`.slice(-3000));
   });
 
+  // --- NFR, #1527, IADR-0610: 注文の承認の印の鍵の生成（scripts/gen-order-approval-signing-key.sh）の Bash 試験（vault / kubectl はスタブ） ---
+  ok('gen-order-approval-signing-key.test.sh（鍵を表示せず・引数に載せずに書く）が通る', () => {
+    const r = require('child_process').spawnSync('bash', ['scripts/gen-order-approval-signing-key.test.sh'], { encoding: 'utf8', env: { ...process.env } });
+    assert.strictEqual(r.status, 0, `${r.stdout || ''}${r.stderr || ''}`.slice(-3000));
+  });
+
   // --- check-doc-links.js: parseArgs（資料再編 ADR-0029 で docs/ ・ .ai-context/ の 2 系統走査へ） ---
   const fsDl = require('fs');
   const osDl = require('os');

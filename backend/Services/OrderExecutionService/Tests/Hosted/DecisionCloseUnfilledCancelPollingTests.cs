@@ -87,6 +87,7 @@ public class DecisionCloseUnfilledCancelPollingTests
                 opts.Services.AddScoped<DecisionCloseUnfilledCanceller>();
                 opts.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
                 opts.Services.AddScoped<TradeExpenseRecordingService>();
+                opts.Services.AddSingleton(TestApprovalVerification.ReportOnly()); // #1527, IADR-0610
                 opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
                 opts.StubAllExternalTransports();
             })
