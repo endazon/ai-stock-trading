@@ -2,6 +2,7 @@ using System.Security.Claims;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -80,15 +81,23 @@ public static class AuthExtensions
         // 誤った構成は起動で止まる（構成の書き手に気付かせる向き。値そのものは gRPC 面を持つサービスでだけ効く）。
         var grpcOwnerClients = GrpcOwnerClientGate.EffectiveClients(config);
 
+        // 🔴 NFR, FR-10, #1528, IADR-0611: REST の所有者の判定で aud / azp も確かめる（段 1 は記録だけ）。設定は起動時に解決し、誤りはここで止める。
+        var ownerTokenBinding = OwnerTokenBinding.Resolve(config);
+        services.AddSingleton(ownerTokenBinding);
+        services.AddSingleton<IAuthorizationHandler, OwnerTokenBindingHandler>();
+
         // FR-10/FR-19/FR-20, ADR-0003/ADR-0007/ADR-0008: 利用者のみのエンドポイント用に OwnerOnly ポリシーを登録する。
         services.AddAuthorization(options =>
         {
-            options.AddPolicy(AiStockTradingAuthPolicies.OwnerOnly, policy =>
-                policy.RequireRole(AiStockTradingAuthPolicies.OwnerRole));
+            options.AddPolicy(AiStockTradingAuthPolicies.OwnerOnly, policy => policy
+                .RequireRole(AiStockTradingAuthPolicies.OwnerRole)
+                .AddRequirements(new OwnerTokenBindingRequirement(AllowService: false)));
 
             // IADR-0051: 読み取り系の同期照会は利用者（trading-owner）またはサービス（trading-service）が呼べる。
-            options.AddPolicy(AiStockTradingAuthPolicies.OwnerOrService, policy =>
-                policy.RequireRole(AiStockTradingAuthPolicies.OwnerRole, AiStockTradingAuthPolicies.ServiceRole));
+            // #1528, IADR-0611: 所有者の分岐は aud / azp も確かめる（サービスの分岐は従来どおり）。
+            options.AddPolicy(AiStockTradingAuthPolicies.OwnerOrService, policy => policy
+                .RequireRole(AiStockTradingAuthPolicies.OwnerRole, AiStockTradingAuthPolicies.ServiceRole)
+                .AddRequirements(new OwnerTokenBindingRequirement(AllowService: true)));
 
             // NFR-06, FR-14, ADR-0047 決定 3, IADR-0448 決定 1, #1067: gRPC 面の門。s2s の分岐は OwnerOrService と同じ、
             // 所有者の分岐は azp がボットの機密クライアントであることを併せて求める（GrpcOwnerClientGate.Allows）。
