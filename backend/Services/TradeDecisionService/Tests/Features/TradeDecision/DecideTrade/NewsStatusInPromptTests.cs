@@ -180,7 +180,7 @@ public class NewsStatusInPromptTests
         new(llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
             options: DecisionOrchestrationOptions.Default with { EnableScreening = true, ScreeningContextBudgetChars = budget },
             currentPrice: new FakeCurrentPrice(new CurrentPriceReading(102m, IntradayPriceContext.Unknown)),
-            newsStatus: store);
+            newsStatus: store, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
     private static string Section(string prompt, string heading)
     {

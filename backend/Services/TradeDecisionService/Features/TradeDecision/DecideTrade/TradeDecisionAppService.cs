@@ -53,9 +53,9 @@ public sealed class TradeDecisionAppService(
     UnanchoredEntryPriceOptions? unanchoredEntryPrice = null)
 {
     // 🔴 FR-04, FR-10, ADR-0003, #1529, IADR-0617: 権威ある現在値の供給が無い構成（no-op）で、新規建てを LLM が返した参照価格で
-    // サイジング・損切り・発注してよいか。**本番は Program.cs が構成 TradeDecision:AllowUnanchoredEntryPrice（既定 false＝見送る）から登録する。**
-    // 未指定（null）の既定「許す」は、現在値の供給を持たない既存の試験の前提（従前の挙動）を保つためだけのものである。手仕舞いは対象外（FR-10）。
-    private readonly bool _allowUnanchoredEntryPrice = unanchoredEntryPrice?.Allow ?? true;
+    // サイジング・損切り・発注してよいか。**本番は Program.cs が構成 TradeDecision:AllowUnanchoredEntryPrice（既定 false＝見送る）から登録する**
+    // （UnanchoredEntryPriceWiringTests が固定）。未指定（null）も「許さない」（fail-closed）。手仕舞いは対象外（FR-10）。
+    private readonly bool _allowUnanchoredEntryPrice = unanchoredEntryPrice?.Allow ?? false;
 
     // 🔴 NFR-13, UC-02, #1423 M-5, ADR-0074 決定1・2, IADR-0582: 月次 LLM 費用上限の 100% 到達（Halted）の照会口。
     // 未指定＝NoOp（常に停止していない＝従来どおり）。本番は Program.cs が CostControl:BaseUrl のときだけ Http を渡す。

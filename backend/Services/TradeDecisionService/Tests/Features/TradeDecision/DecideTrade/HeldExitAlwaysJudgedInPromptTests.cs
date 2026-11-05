@@ -132,7 +132,7 @@ public class HeldExitAlwaysJudgedInPromptTests
         var options = new DecisionOrchestrationOptions { EnableScreening = true, ScreeningContextBudgetChars = 150_000 };
         var service = new AppSvc(
             llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
-            options: options, heldPosition: new FakeHeld(10), watchlist: new FakeWatchlist());
+            options: options, heldPosition: new FakeHeld(10), watchlist: new FakeWatchlist(), unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         var decision = await service.DecideAsync(Trigger("GOOGL", exitOnly: true), TestContext.Current.CancellationToken);
 

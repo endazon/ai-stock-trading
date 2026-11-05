@@ -71,7 +71,7 @@ public class PortfolioInPromptTests
         var service = new AppSvc(llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
             options: DecisionOrchestrationOptions.Default with { EnableScreening = true },
             currentPrice: new FakeCurrentPrice(new CurrentPriceReading(300m, IntradayPriceContext.Unknown)),
-            holdings: new FakeHoldings([new HeldHolding("MARA", Market.UnitedStates, 150)]));
+            holdings: new FakeHoldings([new HeldHolding("MARA", Market.UnitedStates, 150)]), unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         await service.DecideAsync(DecisionTrigger.Scheduled("COIN", Market.UnitedStates, Now), TestContext.Current.CancellationToken);
 
@@ -85,7 +85,7 @@ public class PortfolioInPromptTests
         var llm = new RecordingLlm();
         var service = new AppSvc(llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
             currentPrice: new FakeCurrentPrice(new CurrentPriceReading(300m, IntradayPriceContext.Unknown)),
-            holdings: new FakeHoldings(null));
+            holdings: new FakeHoldings(null), unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         await service.DecideAsync(DecisionTrigger.Scheduled("COIN", Market.UnitedStates, Now), TestContext.Current.CancellationToken);
 

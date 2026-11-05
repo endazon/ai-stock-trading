@@ -157,6 +157,10 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
 
 運用者の手順:
 
+0. 🔴 **この chart（`global.authAuthority` の既定が空で、未設定なら描画で止まる版）へ上げる前に、稼働中のリリースの values に
+   `global.authAuthority` を明示する**（`helm get values ast -n ai-stock-trading` で有無を確かめ、無ければ配備の values か `--set` で
+   配備のレルムを与える。値を画面へ出すときは秘密に注意）。明示していないと、本スクリプトは描画の失敗を「`global.authAuthority` が
+   未設定」と理由つきで報告して止まり（exit 2）、`helm upgrade` も同じ理由で失敗する。
 1. **配備の前に走らせる。** 出た差が、この配備（`helm upgrade`）で稼働へ入るものである。意図した変更（今回の PR の values・
    テンプレート）だけが出ていることを確かめる。意図しない差（他人の未配備の変更・手で入れた設定）が出たら、配備の前に理由を確かめる。
 2. 🔴 **OpenD の Deployment は変わってはならない。** 出力の 1 行目 `OpenD の Deployment（opend）:` が **「変化なし」**

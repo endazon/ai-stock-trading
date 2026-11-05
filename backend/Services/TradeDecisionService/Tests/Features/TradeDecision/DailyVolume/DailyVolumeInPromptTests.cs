@@ -128,7 +128,7 @@ public class DailyVolumeInPromptTests
         var service = new AppSvc(
             new RecordingLlm(), new NoPolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
             options: DecisionOrchestrationOptions.Default with { EnableScreening = true },
-            currentPrice: new FakeCurrentPrice(), dailyBars: bars);
+            currentPrice: new FakeCurrentPrice(), dailyBars: bars, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         (await service.DecideAsync(ScheduledAapl())).Should().BeNull();
         bars.Calls.Should().Be(0);
@@ -167,7 +167,7 @@ public class DailyVolumeInPromptTests
     private static AppSvc Service(RecordingLlm llm, IDailyBarsProvider? dailyBars) =>
         new(llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
             options: DecisionOrchestrationOptions.Default with { EnableScreening = true },
-            currentPrice: new FakeCurrentPrice(), dailyBars: dailyBars);
+            currentPrice: new FakeCurrentPrice(), dailyBars: dailyBars, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
     private sealed class CountingProvider(bool enabled, Func<string, ConfirmedDailyBars?> answer) : IDailyBarsProvider
     {

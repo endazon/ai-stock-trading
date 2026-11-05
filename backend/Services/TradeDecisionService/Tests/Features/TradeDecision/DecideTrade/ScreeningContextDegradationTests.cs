@@ -1,5 +1,6 @@
 extern alias RiskManagementWorker;
 
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Domain;
@@ -101,7 +102,7 @@ public class ScreeningContextDegradationTests
                 EnableScreening = true,
                 ScreeningContextBudgetChars = budget,
             },
-            screeningReporter: reporter ?? recording);
+            screeningReporter: reporter ?? recording, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
         return (service, llm, recording);
     }
 

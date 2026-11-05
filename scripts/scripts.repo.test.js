@@ -4362,6 +4362,30 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     const docs = (...d) => d.map((x) => `---\n${x}`).join('\n');
     const opend = deployment('opend', ['- name: OPEND_API_PORT', '  value: "11111"']);
 
+    // NFR, #1529, IADR-0612: 旧 chart の既定に頼っていた（global.authAuthority を持たない）リリースは、描画の失敗を運用者の手順つきで返す。
+    ok('helm-release-drift: authAuthority の無いリリースは、明示を求める理由で止まる（描画の生の失敗にしない）', () => {
+      const chartFail = `helm template が失敗しました（exit 1）: Error: execution error at (deployment.yaml): ${drift.AUTH_AUTHORITY_MISSING_MARKER}。`;
+      const runner = (args) => {
+        if (args[1] === 'manifest') return '---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n';
+        if (args[1] === 'values') return 'sampleValue: 1\n';
+        throw new Error(chartFail);
+      };
+      let caught;
+      try {
+        drift.collectFromHelm({ release: 'ast', namespace: 'ns', chart: drift.DEFAULT_CHART }, runner);
+      } catch (e) {
+        caught = e;
+      }
+      assert.ok(caught && caught.authAuthorityMissing, '理由つきの失敗にならない');
+      assert.match(caught.message, /稼働中のリリースの values に global\.authAuthority/);
+      assert.match(caught.message, /--values/);
+    });
+
+    ok('helm-release-drift: authAuthority の目印は chart の fail の文言と一致する（片方だけ変えると理由つきで止まらない）', () => {
+      const tpl = require('fs').readFileSync(require('path').join(__dirname, '..', 'deploy', 'helm', 'ai-stock-trading', 'templates', 'deployment.yaml'), 'utf8');
+      assert.ok(tpl.includes(drift.AUTH_AUTHORITY_MISSING_MARKER));
+    });
+
     ok('helm-release-drift[T-10-1526]: チャートにだけ在る env を「追加」として値つきで出す', () => {
       const live = docs(deployment('order-execution-service', ['- name: A', '  value: "1"']), opend);
       const rendered = docs(deployment('order-execution-service', ['- name: A', '  value: "1"', '- name: Reconciliation__Enabled', '  value: "true"']), opend);

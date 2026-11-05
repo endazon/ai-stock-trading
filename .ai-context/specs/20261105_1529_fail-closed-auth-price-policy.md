@@ -85,6 +85,8 @@ plan_refs:
 - [x] 現在値の供給が無い構成で、新規建ては見送り、手仕舞いは従前どおり（`UnanchoredEntryPriceTests`）
 - [x] 方針の本文の行が `# ` で始まっても、プロンプトの節の見出しにならない（`PolicySectionUntrustedTests`）
 - [x] 全文は接頭辞の関数で始まる（`PromptCachePrefixTests`・`PolicySectionUntrustedTests`）
+- [x] chart は `global.authAuthority` が未設定なら描画で止まり、明示すれば描画できる（`helm.yml` の「未設定なら止まる・明示すれば通る」の段）。リリースの values に無いとき、`helm-release-drift.js` は理由つきで止まる（`scripts.repo.test.js`）
+- [x] 未指定（null）の `UnanchoredEntryPriceOptions` も新規建てを許さない（fail-closed）。Program.cs は構成の既定 false で登録する（`UnanchoredEntryPriceWiringTests`）
 
 ## 計画への環流（本 PR の外）
 

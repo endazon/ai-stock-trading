@@ -360,7 +360,7 @@ public class WatchlistInDecisionPromptTests
             llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
             // 二段（一次スクリーニング → 本判断）で両方のプロンプトを捕まえる。
             options: DecisionOrchestrationOptions.Default with { EnableScreening = true, ScreeningContextBudgetChars = budget },
-            watchlist: watchlist);
+            watchlist: watchlist, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
         return (service, llm);
     }
 

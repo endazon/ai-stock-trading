@@ -116,7 +116,7 @@ public class HeldOutsideWatchlistExitOnlyTests
         var forgone = new RecordingForgone();
         var service = new AppSvc(
             llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
-            heldPosition: new FakeHeld(held), skipReporter: skips, heldReporter: heldReporter, forgoneReporter: forgone);
+            heldPosition: new FakeHeld(held), skipReporter: skips, heldReporter: heldReporter, forgoneReporter: forgone, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
         return new Probe(service, llm, heldReporter, skips, forgone);
     }
 
