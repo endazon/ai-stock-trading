@@ -87,6 +87,26 @@ public class NewsInformationSourceTests
         item.PublishedAt.Should().Be(DateTimeOffset.FromUnixTimeSeconds(1787000000));
     }
 
+    // NFR, FR-01, #1532, IADR-0614: 発行時刻が範囲の外の記事は飛ばし、同じ銘柄の他の記事は残す（例外で銘柄ごと落とさない）。
+    [Theory]
+    [InlineData(253402300800L)]
+    [InlineData(-1L)]
+    [InlineData(0L)]
+    public async Task 発行時刻が不正な記事は飛ばし他の記事は残す(long datetime)
+    {
+        var json = $$"""
+            [
+              {"datetime": {{datetime}}, "headline": "不正な時刻の記事", "summary": "x", "url": "https://example.invalid/bad"},
+              {"datetime": 1787000000, "headline": "正しい記事", "summary": "y", "url": "https://example.invalid/ok"}
+            ]
+            """;
+        var source = FinnhubNews(new StubHandler(HttpStatusCode.OK, json), ["AAPL"]);
+
+        var items = await source.FetchAsync();
+
+        items.Should().ContainSingle().Which.Title.Should().Be("正しい記事");
+    }
+
     [Fact]
     public async Task 企業ニュースは銘柄ごとにレート制限を待つ()
     {

@@ -93,6 +93,22 @@ public class ConsoleTailTests
             "終わった検証を『いま待たれている入力』として返すと、画面が誤った入力欄を出す");
     }
 
+    // NFR, FR-05, #1532, IADR-0614: 検証コードの案内より後にログインの成功があれば、もう入力を待っていない（過去の案内を返さない）。
+    [Theory]
+    [InlineData("Command Tips: input_phone_verify_code -code=***\nLogin successful\n")]
+    [InlineData("Command Tips: input_pic_verify_code -code=***\n>>>Login successful\n>>>moomoo OpenD is running\n")]
+    public void 案内の後にログインが成功していればnullを返す(string console)
+        => ConsoleTail.DetectPrompt(console).Should().BeNull();
+
+    [Fact]
+    public void ログインの成功の後に新しい案内が出ればその案内を返す()
+    {
+        var console = "Login successful\n"
+                    + "Command Tips: input_phone_verify_code -code=***\n";
+
+        ConsoleTail.ToWireValue(ConsoleTail.DetectPrompt(console)).Should().Be("phone");
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("Login successful\n")]

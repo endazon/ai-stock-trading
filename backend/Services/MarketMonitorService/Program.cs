@@ -69,7 +69,12 @@ builder.Services.AddSingleton<IMarketSchedule>(_ => new MarketHoursSchedule(
 // 前回値フォールバックは発注を伴わない時価評価（リスク管理・報告書）にのみ適用する（IADR-0066 決定 2）。
 builder.Services.AddSingleton(TimeProvider.System);
 // FR-02, FR-10, #1133, IADR-0469: Finnhub /quote の打ち切りは 5 秒（既定 100 秒のままにしない）。超えたら取得不可（null）。
-builder.Services.AddHttpClient("marketdata", c => c.Timeout = FinnhubHttpTimeouts.Quote);
+// NFR, #1532, IADR-0614: 外部を取るクライアントは応答の本文に上限を持つ（既定はほぼ無制限）。超えたら取得の失敗へ倒れる。
+builder.Services.AddHttpClient("marketdata", c =>
+{
+    c.Timeout = FinnhubHttpTimeouts.Quote;
+    c.MaxResponseContentBufferSize = AiStockTrading.Shared.Infrastructure.Composable.ExternalHttpResponseLimits.MaxResponseBytes;
+});
 builder.Services.AddSingleton<IMarketDataSource>(sp =>
 {
     var marketDataOptions =
