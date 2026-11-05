@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using InformationCollectionService.Common.Abstractions;
 using InformationCollectionService.Features.InformationCollection;
 using InformationCollectionService.Domain;
+using AiStockTrading.Shared.Infrastructure.Composable;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
@@ -100,6 +101,10 @@ public sealed class FinnhubCompanyNewsSource(
             if (string.IsNullOrWhiteSpace(article.Headline))
                 continue;
 
+            // NFR, FR-01, #1532, IADR-0614: 発行時刻が欠け・範囲の外の記事は採らない（1 件の不正な値で銘柄の記事ごと落とさない）。
+            if (article.Datetime <= 0 || !UnixTime.TryFromSeconds(article.Datetime, out var publishedAt))
+                continue;
+
             yield return new RawInformationItem(
                 InformationKind.News,
                 SourceName,
@@ -107,7 +112,7 @@ public sealed class FinnhubCompanyNewsSource(
                 article.Headline,
                 // 要約が無い記事もあるため見出しへ倒す（本文を取りに行かない＝再配信の禁止に触れない）。
                 string.IsNullOrWhiteSpace(article.Summary) ? article.Headline : article.Summary,
-                DateTimeOffset.FromUnixTimeSeconds(article.Datetime),
+                publishedAt,
                 article.Url);
         }
     }

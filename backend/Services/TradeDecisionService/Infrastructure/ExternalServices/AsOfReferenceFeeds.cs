@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Infrastructure.Composable;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using AiStockTrading.Shared.Kernel.Trading;
 using Microsoft.Extensions.Logging;
@@ -80,7 +81,8 @@ public sealed class FinnhubAsOfCompanyNewsFeed(
                             string.IsNullOrWhiteSpace(a.Summary) ? a.Headline! : a.Summary!,
                             a.Url,
                             Tags: ["News", Name],
-                            PublishedAt: a.Datetime is { } seconds && seconds > 0 ? DateTimeOffset.FromUnixTimeSeconds(seconds) : null))];
+                            // NFR, #1532, IADR-0614: 範囲の外の時刻は「不明」（null）にする（例外で銘柄の全件を落とさない）。
+                            PublishedAt: a.Datetime is { } seconds && seconds > 0 && UnixTime.TryFromSeconds(seconds, out var published) ? published : null))];
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
