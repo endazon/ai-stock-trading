@@ -108,6 +108,9 @@
 {{- if and (eq $name "order-execution") (eq $broker.provider "moomoo") }}{{- $reloadSecrets = append $reloadSecrets $.Values.moomoo.opend.rsaSecretName -}}{{- end }}
 {{- /* IADR-0568: ブローカの資格情報を回したら（基盤の reconcile-users.sh が合わせた後に ESO が同期）、作り直して新しい値で接続する。 */ -}}
 {{- $reloadSecrets = append $reloadSecrets $mq.credentialsSecretName -}}
+{{- /* #1527, IADR-0610: 承認の印の鍵を入れ替えたら作り直して新しい鍵を読む。 */ -}}
+{{- $oasReload := $.Values.global.orderApprovalSigning | default dict -}}
+{{- if has $name ($oasReload.services | default list) }}{{- $reloadSecrets = append $reloadSecrets $oasReload.secretName -}}{{- end }}
 {{- /* FR-15, NFR（費用）, ADR-0033 決定5, #1342, IADR-0537 決定5: Stage 0 の記録器の永続ボリューム（trade-decision だけ）。
        有効なら PVC（templates/pvc-stage0-recording.yaml）を mount し、状態の置き場 Stage0Recording__StateDirectory を
        <mountPath>/state として注入し、更新方式を Recreate にする。既定（無効）では何も描かない＝既定描画はバイト等価。
@@ -314,6 +317,25 @@ spec:
             {{- with $g.configVersion }}
             - name: Introspection__ConfigVersion
               value: {{ . | quote }}
+            {{- end }}
+            {{- /* 🔴 NFR, FR-10, #1527, IADR-0610: 注文の承認の発行元の印。発行元（risk-management）と受け手（order-execution）だけに描く。
+                   鍵は Secret（既定 ast-secrets の order-approval-signing-key）から読み、values に値を置かない。
+                   段 1（Report・既定）は鍵が無くても起動する（optional）。段 2（Enforce）は鍵の Secret を必須にする（無ければ Pod が起動しない）。 */}}
+            {{- $oas := $g.orderApprovalSigning | default dict }}
+            {{- if has $name ($oas.services | default list) }}
+            {{- if not (has $oas.mode (list "Report" "Enforce")) }}
+            {{- fail (printf "global.orderApprovalSigning.mode は Report か Enforce です（値: %v）。" $oas.mode) }}
+            {{- end }}
+            - name: OrderApprovalSigning__Mode
+              value: {{ $oas.mode | quote }}
+            - name: OrderApprovalSigning__Key
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $oas.secretName }}
+                  key: {{ $oas.secretKey }}
+                  {{- if eq $oas.mode "Report" }}
+                  optional: true
+                  {{- end }}
             {{- end }}
             {{- if $svc.db }}
             # ADR-0001(DB per service): 共有 Postgres 上の専有 DB（user=ai, MSP infra init が作成）。

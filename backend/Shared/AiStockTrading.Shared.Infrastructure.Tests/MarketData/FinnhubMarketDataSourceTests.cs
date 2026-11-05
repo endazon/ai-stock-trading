@@ -98,6 +98,73 @@ public class FinnhubMarketDataSourceTests
         quote.Should().BeNull();
     }
 
+    // NFR, FR-10, #1532, IADR-0614: 応答の時刻（Unix 秒）が表せる範囲の外なら、例外を呼び出し側（巡回・判断）へ抜けさせず取得不可にする。
+    [Theory]
+    [InlineData(253402300800L)] // 9999-12-31T23:59:59Z の次の秒（DateTimeOffset で表せない）
+    [InlineData(9223372036854775807L)]
+    [InlineData(-62135596801L)] // 0001-01-01 より前
+    public async Task 範囲外の時刻の応答は取得不可として扱い例外を投げない(long t)
+    {
+        var source = Create(new StubHandler(HttpStatusCode.OK, $$"""{"c":150.25,"h":151.0,"l":149.0,"o":149.5,"pc":148.0,"t":{{t}}}"""));
+
+        var act = async () => await source.GetLatestQuoteAsync("AAPL", Market.UnitedStates);
+
+        (await act.Should().NotThrowAsync()).Subject.Should().BeNull();
+    }
+
+    // NFR, FR-10, #1532, IADR-0614: 未来の時刻の応答は鮮度の判定を素通りする（古い値が新しく見える）。許容（5 分）を超えたら取得不可。
+    [Fact]
+    public async Task 未来の時刻の応答は取得不可として扱う()
+    {
+        var clock = new FixedTime(DateTimeOffset.FromUnixTimeSeconds(1_780_000_000));
+        var future = clock.GetUtcNow().Add(FinnhubQuoteClient.FutureTimestampTolerance).AddSeconds(1).ToUnixTimeSeconds();
+        var source = Create(new StubHandler(HttpStatusCode.OK, $$"""{"c":150.25,"pc":148.0,"t":{{future}}}"""), timeProvider: clock);
+
+        (await source.GetLatestQuoteAsync("AAPL", Market.UnitedStates)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task 許容の内の未来の時刻はそのまま受け付ける_時計のずれを取得不可にしない()
+    {
+        var clock = new FixedTime(DateTimeOffset.FromUnixTimeSeconds(1_780_000_000));
+        var near = clock.GetUtcNow().Add(FinnhubQuoteClient.FutureTimestampTolerance).ToUnixTimeSeconds();
+        var source = Create(new StubHandler(HttpStatusCode.OK, $$"""{"c":150.25,"pc":148.0,"t":{{near}}}"""), timeProvider: clock);
+
+        var quote = await source.GetLatestQuoteAsync("AAPL", Market.UnitedStates);
+
+        quote.Should().NotBeNull();
+        quote!.AsOf.Should().Be(DateTimeOffset.FromUnixTimeSeconds(near));
+    }
+
+    // NFR, #1532, IADR-0614: レート制限の応答のヘッダの時刻が範囲の外でも、例外を抜けさせず従来どおりスキップ（null）にする。
+    [Fact]
+    public async Task レート制限のヘッダの時刻が範囲外でも例外を投げない()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests) { Content = new StringContent("{}") };
+        response.Headers.Add(FinnhubRateLimitClassifier.RemainingHeader, "0");
+        response.Headers.Add(FinnhubRateLimitClassifier.ResetHeader, "9223372036854775807");
+        var source = Create(new FixedResponseHandler(response));
+
+        var act = async () => await source.GetLatestQuoteAsync("AAPL", Market.UnitedStates);
+
+        (await act.Should().NotThrowAsync()).Subject.Should().BeNull();
+    }
+
+    // NFR, #1532, IADR-0614: 応答の本文が上限（ExternalHttpResponseLimits）を超えたら、その回の取得の失敗（null）にする。
+    [Fact]
+    public async Task 上限を超える応答は取得不可として扱う()
+    {
+        var http = new HttpClient(new StubHandler(HttpStatusCode.OK, OkBody.PadRight(4096)))
+        {
+            MaxResponseContentBufferSize = 1024,
+        };
+        var source = new FinnhubMarketDataSource(
+            new FinnhubQuoteClient(http, "key", new CountingRateLimiter(), NullLogger.Instance),
+            NullLogger<FinnhubMarketDataSource>.Instance);
+
+        (await source.GetLatestQuoteAsync("AAPL", Market.UnitedStates)).Should().BeNull();
+    }
+
     [Fact]
     public async Task 解析できない応答は取得不可として扱う()
     {
@@ -177,11 +244,24 @@ public class FinnhubMarketDataSourceTests
         limiter.Waits.Should().Be(0, "レート枠を消費しない");
     }
 
-    private static FinnhubMarketDataSource Create(HttpMessageHandler handler, IRateLimiter? limiter = null) =>
+    private static FinnhubMarketDataSource Create(
+        HttpMessageHandler handler, IRateLimiter? limiter = null, TimeProvider? timeProvider = null) =>
         new(
             new FinnhubQuoteClient(
-                new HttpClient(handler), "key", limiter ?? new CountingRateLimiter(), NullLogger.Instance),
+                new HttpClient(handler), "key", limiter ?? new CountingRateLimiter(), NullLogger.Instance,
+                timeProvider: timeProvider),
             NullLogger<FinnhubMarketDataSource>.Instance);
+
+    private sealed class FixedTime(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class FixedResponseHandler(HttpResponseMessage response) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken) => Task.FromResult(response);
+    }
 
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler
     {

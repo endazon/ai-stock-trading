@@ -225,7 +225,12 @@ builder.Services.Configure<MarketDataOptions>(builder.Configuration.GetSection(M
 builder.Services.AddSingleton<QuoteCache>();
 builder.Services.AddSingleton(TimeProvider.System);
 // FR-02, FR-10, #1133, IADR-0469: Finnhub /quote の打ち切りは 5 秒（既定 100 秒のままにしない）。超えたら取得不可（null）。
-builder.Services.AddHttpClient("marketdata", c => c.Timeout = FinnhubHttpTimeouts.Quote);
+// NFR, #1532, IADR-0614: 外部を取るクライアントは応答の本文に上限を持つ（既定はほぼ無制限）。超えたら取得の失敗へ倒れる。
+builder.Services.AddHttpClient("marketdata", c =>
+{
+    c.Timeout = FinnhubHttpTimeouts.Quote;
+    c.MaxResponseContentBufferSize = AiStockTrading.Shared.Infrastructure.Composable.ExternalHttpResponseLimits.MaxResponseBytes;
+});
 // FR-16, #158, IADR-0066/0068: 現在値ソースは構成 MarketData:Provider で選択（既定 no-op＝実接続しない）。報告書は
 // ゲートを持たず、実市況ソースへの差し替えがそのまま評価損益の有効化になる（発注判断を伴わないため・IADR-0066 決定 4）。
 builder.Services.AddSingleton<IMarketDataSource>(sp =>
@@ -336,7 +341,12 @@ builder.Services.AddSingleton<IOpeningInventorySource>(sp =>
 // 🔴 ここで 0 円へ倒さない。**USD 建ての建玉は本番で実際に存在し得る**ため、期末レート無しで 0 円と描けば
 // 「為替では損得が無かった」という端的な嘘になる。認識時レートは約定（period-fills）が運ぶ。
 builder.Services.Configure<FxOptions>(builder.Configuration.GetSection(FxOptions.SectionName));
-builder.Services.AddHttpClient("fx", c => c.Timeout = TimeSpan.FromSeconds(10));
+// NFR, #1532, IADR-0614: 外部を取るクライアントは応答の本文に上限を持つ（既定はほぼ無制限）。超えたら取得の失敗へ倒れる。
+builder.Services.AddHttpClient("fx", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(10);
+    c.MaxResponseContentBufferSize = AiStockTrading.Shared.Infrastructure.Composable.ExternalHttpResponseLimits.MaxResponseBytes;
+});
 builder.Services.AddSingleton<IFxRateSource>(sp => FxRateSourceFactory.Create(
     sp.GetRequiredService<IOptions<FxOptions>>().Value,
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("fx"),

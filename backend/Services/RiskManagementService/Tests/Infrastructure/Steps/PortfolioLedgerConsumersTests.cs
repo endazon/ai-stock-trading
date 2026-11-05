@@ -34,6 +34,7 @@ public class PortfolioLedgerConsumersTests
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                opts.Services.AddSingleton(TestApprovalPublishing.Unsigned()); // #1527, IADR-0610
                 opts.Services.AddSingleton<IPortfolioLedgerStore>(ledger);
                 opts.Services.AddSingleton<IRecognitionFxRateResolver>(new StubRecognitionFxRateResolver(recognitionRate));
                 opts.Discovery.DisableConventionalDiscovery()

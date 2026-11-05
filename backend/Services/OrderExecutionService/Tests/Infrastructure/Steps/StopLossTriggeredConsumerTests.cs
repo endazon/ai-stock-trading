@@ -90,6 +90,7 @@ public class StopLossTriggeredConsumerTests
                     sp.GetRequiredService<IProtectiveStopOrderStore>()));
                 opts.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
                 opts.Services.AddSingleton<TradeExpenseRecordingService>();
+                opts.Services.AddSingleton(TestApprovalVerification.ReportOnly()); // #1527, IADR-0610
                 opts.Services.AddSingleton(sp => new SoftwareStopExecutor(
                     sp.GetRequiredService<IBrokerAdapter>(), sp.GetRequiredService<IBrokerPositionSource>(),
                     sp.GetRequiredService<IProtectiveStopOrderStore>(), sp.GetRequiredService<IExecutedOrderStore>(),

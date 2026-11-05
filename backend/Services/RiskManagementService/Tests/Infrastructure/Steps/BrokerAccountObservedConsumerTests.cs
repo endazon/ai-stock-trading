@@ -35,6 +35,7 @@ public class BrokerAccountObservedConsumerTests
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                opts.Services.AddSingleton(TestApprovalPublishing.Unsigned()); // #1527, IADR-0610
                 opts.Services.AddSingleton(store);
                 // FR-10, #869, ADR-0041 決定2, IADR-0354: 同じ観測から基準資金（equity）も畳む経路を持つ。
                 opts.Services.AddSingleton(capitalBaseline ?? FakeCapitalBaseline.NotObserved());

@@ -40,6 +40,7 @@ public class PositionCloseAbandonedTests
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                opts.Services.AddSingleton(TestApprovalPublishing.Unsigned()); // #1527, IADR-0610
                 opts.Services.AddSingleton<IPortfolioLedgerStore>(ledger);
                 opts.Services.AddSingleton<IRecognitionFxRateResolver>(new StubRecognitionFxRateResolver(150m));
                 opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");

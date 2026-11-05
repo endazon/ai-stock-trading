@@ -871,6 +871,19 @@ kubectl -n ai-stock-trading cp "$(kubectl -n ai-stock-trading get pod -l app=tra
   原因は Pod のログ（`traceId` で突き合わせる）で見る。
 - 一時的に詳しいログが要るときは、そのサービスの `extraEnv` へ `Serilog__MinimumLevel__Default` を足す（環境名は変えない）。
 
+## 注文の承認の発行元の印（`global.orderApprovalSigning`。#1527 / [IADR-0610](../../../.ai-context/adr/IADR-0610_order-approval-issuer-signature.md)）
+
+risk-management が発行する注文の承認に HMAC の印を付け、order-execution が発注の手前で確かめる。env は 2 サービス（`services`）にだけ描く。
+
+| 値 | 既定 | 意味 |
+| --- | --- | --- |
+| `mode` | `Report` | 段 1: 受け手は確かめて記録するだけで通す。`Enforce`（段 2）: 確かめられない承認を発注しない。他の値は描画で止まる |
+| `secretName` / `secretKey` | `ast-secrets` / `order-approval-signing-key` | 鍵（32 バイト以上の乱数・base64）の置き場。段 1 は `optional`、段 2 は必須 |
+
+- 鍵は `scripts/gen-order-approval-signing-key.sh --vault`（ESO 所有。Vault `ai-stock-trading/app-secrets` のプロパティ）か `--k8s`（従来経路）で作る。値は表示されない。既にあれば書かない（`--rotate` で作り直す）。
+- 段 2 へ上げる前に、段 1 のまま両サービスに鍵が載り、order-execution のログに「発行元を確かめられませんでした」が出ないこと、キューと DLQ に印のない承認が残っていないことを確かめる。
+- `--vault` は KV が在れば patch だけ（失敗したら止まる）。KV が無いと確定したときだけ put する（共有の KV の他のキーを消さない）。
+
 ## 外部連携（fail-safe 既定）
 
 `ast-secrets`（未設定=空=no-op）を明示設定した時のみ有効化する。

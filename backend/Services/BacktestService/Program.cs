@@ -58,7 +58,8 @@ builder.Services.AddAuthorization();
 // （取得枠の単位と回復周期／前復権と ADR-0016 決定14 の費用モデルの整合）を本決定の前提としており、
 // いずれも実 OpenD を要して未了である）。moomoo は**明示的に構成したときだけ**使う。
 builder.Services.Configure<BarDataOptions>(builder.Configuration.GetSection(BarDataOptions.SectionName));
-builder.Services.AddHttpClient(BarDataHttpClientName);
+// NFR, #1532, IADR-0614: 外部を取るクライアントは応答の本文に上限を持つ（既定はほぼ無制限）。超えたら取得の失敗へ倒れる。
+builder.Services.AddHttpClient(BarDataHttpClientName, c => c.MaxResponseContentBufferSize = AiStockTrading.Shared.Infrastructure.Composable.ExternalHttpResponseLimits.MaxResponseBytes);
 
 // ADR-0023 決定5, IADR-0157: OpenD への接続は provider=moomoo のときだけ作る（それ以外では 1 本も張らない）。
 var barDataOptions = builder.Configuration.GetSection(BarDataOptions.SectionName).Get<BarDataOptions>();

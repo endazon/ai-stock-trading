@@ -37,6 +37,10 @@ public sealed class FinnhubQuoteClient(
     /// <summary>分次の窓では説明できない 429（日次上限の手がかり）のログのイベント。運用ログで拾う目印。</summary>
     public static readonly EventId DailyLimitClueEvent = new(4301, "FinnhubDailyLimitClue");
 
+    // NFR, FR-10, #1532, IADR-0614: 応答の時刻がこれより先の未来なら取得不可にする（未来の時刻は鮮度の判定を素通りする）。
+    // 時計のずれ（NTP の誤差・相手の時計）は数秒の桁であり、5 分は桁の余裕である。
+    public static readonly TimeSpan FutureTimestampTolerance = TimeSpan.FromMinutes(5);
+
     private readonly string _baseUrl = baseUrl.TrimEnd('/');
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
@@ -83,7 +87,19 @@ public sealed class FinnhubQuoteClient(
         if (quote is null)
             return null;
 
-        var asOf = quote.T > 0 ? DateTimeOffset.FromUnixTimeSeconds(quote.T) : DateTimeOffset.UtcNow;
+        // NFR, FR-10, #1532, IADR-0614: 時刻は表せる範囲の内で、未来へ許容を超えないこと。外れたら取得不可（例外を呼び出し側へ抜けさせない）。
+        // 0（欠け）は従来どおり受信の時刻で埋める（時計の源は未来の判定と同じ _time に揃える）。
+        DateTimeOffset asOf;
+        if (quote.T == 0)
+        {
+            asOf = _time.GetUtcNow();
+        }
+        else if (!UnixTime.TryFromSeconds(quote.T, out asOf) || asOf > _time.GetUtcNow() + FutureTimestampTolerance)
+        {
+            logger.LogWarning("Finnhub の応答の時刻が不正です（銘柄 {Symbol}・範囲の外か未来）。この銘柄をスキップします。", symbol);
+            return null;
+        }
+
         return new FinnhubQuoteSnapshot(symbol, quote.C, quote.H, quote.L, quote.Pc, asOf, quote.O);
     }
 
@@ -92,6 +108,9 @@ public sealed class FinnhubQuoteClient(
     {
         var remaining = ReadLong(response, FinnhubRateLimitClassifier.RemainingHeader);
         var resetUnix = ReadLong(response, FinnhubRateLimitClassifier.ResetHeader);
+        // NFR, #1532, IADR-0614: ヘッダの時刻も表せる範囲の内だけを使う（外れたら「無い」と同じ）。
+        if (resetUnix is { } r0 && !UnixTime.TryFromSeconds(r0, out _))
+            resetUnix = null;
         var reset = resetUnix is > 0 ? DateTimeOffset.FromUnixTimeSeconds(resetUnix.Value) : (DateTimeOffset?)null;
         var previousUnix = Interlocked.Exchange(ref _lastRejectedResetUnix, resetUnix is > 0 ? resetUnix.Value : 0);
         var previous = previousUnix > 0 ? DateTimeOffset.FromUnixTimeSeconds(previousUnix) : (DateTimeOffset?)null;
