@@ -34,6 +34,9 @@ public sealed class KillSwitchRow
     public string? Reason { get; set; }
 
     public DateTimeOffset? ChangedAt { get; set; }
+
+    /// <summary>🔴 #1534, IADR-0620: 書くたびに 1 つ進む版（単調増加・並行トークン）。既存の行は 0 から始まる。</summary>
+    public long Version { get; set; }
 }
 
 // 取引の一時停止（pause）の単一行状態（FR-10, ADR-0009）。kill switch と同型。日次損失ロックアウトとは別テーブル。

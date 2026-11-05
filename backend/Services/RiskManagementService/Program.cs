@@ -249,6 +249,8 @@ builder.Services.AddScoped<WorkingEntryOrdersService>();
 builder.Services.AddScoped<InFlightOrdersService>();
 // FR-10, FR-04, #1113, IADR-0463 決定 3: 銘柄単位の新規建ての可否（審査と同じ述語・同じ入力。読み取り専用）。
 builder.Services.AddScoped<EntryBlockersService>();
+// 🔴 FR-10, FR-14, #1534, IADR-0620: 発動・解除の「見た状態」の前提条件の段（Report＝段 1・既定 / Require＝段 2）。知らない値は起動で止める。
+builder.Services.AddSingleton(KillSwitchPreconditionOptions.From(builder.Configuration[KillSwitchPreconditionOptions.ConfigKey]));
 // NFR, FR-10, UC-06, #1530, IADR-0613: Discord を経ない停止の保持（SSH の経路。既定は無効＝従来どおり）。
 // chart は Secret ast-operator-hold の optional の secretKeyRef で読む（Secret が無ければ env も無い）。
 builder.Services.AddSingleton(builder.Configuration.GetSection(OperatorKillSwitchHoldOptions.SectionName)
