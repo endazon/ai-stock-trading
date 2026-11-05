@@ -717,6 +717,22 @@ resolve_ast_mesh_injection() {
   return 0
 }
 
+# NFR, IADR-0609, #1526: 名前空間へ Pod Security Admission の warn / audit = restricted を貼る（報告だけ）。
+#   起動器は namespace.create=false で chart を描くため、chart はラベルを描かない（chart の podSecurity.admission と同じ水準を貼る）。
+#   🔴 enforce は貼らない（段を上げるまで root で動く Pod があり、メッシュの注入の istio-init も baseline を満たさない）。
+#   貼れなければ止まる（黙って報告なしで進めない）。
+ast_apply_pod_security_labels() {
+  kubectl label namespace "$NS" \
+    pod-security.kubernetes.io/warn=restricted \
+    pod-security.kubernetes.io/audit=restricted \
+    --overwrite >/dev/null || {
+    echo "  ERROR: 名前空間 $NS へ Pod Security Admission の warn / audit を貼れませんでした。中断します（IADR-0609）。" >&2
+    return 1
+  }
+  echo "  pod-security: 名前空間 $NS は warn / audit = restricted（enforce は貼らない）"
+  return 0
+}
+
 # NFR, IADR-0570: 名前空間の注入ラベル（istio-injection=enabled）を起動器が貼る・剥がす。
 #   起動器は namespace.create=false で chart を描くため、chart はラベルを描かない（IADR-0314 決定1）。
 #   - 有効 → 貼る（無ければ）。
@@ -959,6 +975,7 @@ K8S_BUILT_FILE="$AST_BUILT_DIR/built" "$ROOT/scripts/k8s-local-images.sh" "$CLUS
 
 echo "==> [2/5] namespace & secret 供給（ESO 所有＝作らない / 従来経路＝ast-secrets を差分同期・#795 / IADR-0341）"
 kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+ast_apply_pod_security_labels || exit 1
 # 供給経路は [0/5] で決めた（resolve_ast_eso_mode）。
 ast_prepare_secrets
 
