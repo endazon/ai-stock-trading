@@ -744,7 +744,10 @@ static LlmPriceTable BuildLlmPriceTable(IConfiguration cfg) =>
             // #1295, IADR-0524: 任意の第 2 段（プロンプト長。claude-haiku-5-5 の 100,000 トークン超）も同じ行から読む。
             .Select(s => new LlmPriceRow(
                 s.Key, s["InputPer1kTokens"], s["OutputPer1kTokens"],
-                s["LongContextThresholdTokens"], s["LongContextInputPer1kTokens"], s["LongContextOutputPer1kTokens"])),
+                s["LongContextThresholdTokens"], s["LongContextInputPer1kTokens"], s["LongContextOutputPer1kTokens"],
+                // NFR（費用）, #1523, IADR-0607 決定5: キャッシュの書き・読みの単価（任意。無ければ書き＝入力×1.25・読み＝入力）。
+                s["CacheWritePer1kTokens"], s["CacheReadPer1kTokens"],
+                s["LongContextCacheWritePer1kTokens"], s["LongContextCacheReadPer1kTokens"])),
         cfg["LlmPricing:InputPer1kTokens"],
         cfg["LlmPricing:OutputPer1kTokens"],
         // NFR-13, ADR-0064 決定9, #1305, IADR-0553: 表に無いモデルの計上単価（単価表の行ではない。未設定は既定 $10 / $50）。

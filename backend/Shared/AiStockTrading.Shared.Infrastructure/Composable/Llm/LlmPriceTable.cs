@@ -114,7 +114,9 @@ public sealed class LlmPriceTable
                 continue;
             if (!TryParseLongContext(row, out var longContext))
                 continue;
-            table[Normalize(row.Model)] = new LlmPriceEntry(new LlmPrice(inputPrice, outputPrice), longContext);
+            // #1523, IADR-0607 決定6: 書き・読みの単価は任意。解析できない・0 以下は null（入力から導く＝過小にしない側）で、行は外さない。
+            table[Normalize(row.Model)] = new LlmPriceEntry(
+                new LlmPrice(inputPrice, outputPrice, ParsePricePer1k(row.CacheWrite), ParsePricePer1k(row.CacheRead)), longContext);
         }
 
         // #1305, IADR-0553: 未知モデルは専用の設定値（表の行から導かない＝行を足し外ししても変わらない。ADR-0064 決定9）。
@@ -183,7 +185,8 @@ public sealed class LlmPriceTable
             || ParsePricePer1k(row.LongContextOutput) is not { } output)
             return false;
 
-        longContext = new LlmLongContextPrice(threshold, new LlmPrice(input, output));
+        longContext = new LlmLongContextPrice(
+            threshold, new LlmPrice(input, output, ParsePricePer1k(row.LongContextCacheWrite), ParsePricePer1k(row.LongContextCacheRead)));
         return true;
     }
 
@@ -217,13 +220,21 @@ public sealed class LlmPriceTable
 /// <param name="LongContextThresholdTokens">第 2 段に切り替わる入力トークン数の閾値（この値を超えると第 2 段）。</param>
 /// <param name="LongContextInput">第 2 段の入力単価（円/1k トークン）。</param>
 /// <param name="LongContextOutput">第 2 段の出力単価（円/1k トークン）。</param>
+/// <param name="CacheWrite">#1523, IADR-0607: 第 1 段のキャッシュの書きの単価（円/1k トークン・任意。無ければ入力×1.25）。</param>
+/// <param name="CacheRead">#1523, IADR-0607: 第 1 段のキャッシュの読みの単価（円/1k トークン・任意。無ければ入力単価）。</param>
+/// <param name="LongContextCacheWrite">第 2 段のキャッシュの書きの単価（任意）。</param>
+/// <param name="LongContextCacheRead">第 2 段のキャッシュの読みの単価（任意）。</param>
 public readonly record struct LlmPriceRow(
     string Model,
     string? Input,
     string? Output,
     string? LongContextThresholdTokens = null,
     string? LongContextInput = null,
-    string? LongContextOutput = null);
+    string? LongContextOutput = null,
+    string? CacheWrite = null,
+    string? CacheRead = null,
+    string? LongContextCacheWrite = null,
+    string? LongContextCacheRead = null);
 
 // 解析済みの 1 行（第 1 段と任意の第 2 段）。
 internal sealed record LlmPriceEntry(LlmPrice Base, LlmLongContextPrice? LongContext);

@@ -18,4 +18,8 @@ public interface ILlmUsageReporter
 // 位置引数の先頭に置いて**書かなければコンパイルが通らない**形にする（報告書側 ILlmUsageReporter と同型）。
 // NFR-13, FR-04, ADR-0064 決定4, #1306, IADR-0550: InputTokens の null は**取れない**（REST の欠落・gRPC の 0）。
 // 0 へ潰さずに渡す —— 単価の段（LlmPriceTable.Resolve）は取れないとき高い側で引く。金額の式へは 0 を渡す（推定しない）。
-public readonly record struct LlmUsage(string Purpose, int? InputTokens, int OutputTokens, string? Model = null);
+// NFR（費用）, #1523, IADR-0607 決定4: InputTokens は**プロンプト全体**（キャッシュの書き・読みを含む）。そのうちの書き・読みを
+// CacheCreationInputTokens / CacheReadInputTokens で運ぶ（キャッシュを使わない呼び出しは 0）。単価の段は全体で選ぶ。
+public readonly record struct LlmUsage(
+    string Purpose, int? InputTokens, int OutputTokens, string? Model = null,
+    int CacheCreationInputTokens = 0, int CacheReadInputTokens = 0);

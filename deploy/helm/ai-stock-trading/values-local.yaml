@@ -363,6 +363,16 @@ services:
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextThresholdTokens, value: "100000" }   # 入力がこれを超える要求は第 2 段
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextInputPer1kTokens, value: "0.0819" }  # $0.50/1M（100,000 トークン超）
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextOutputPer1kTokens, value: "0.409" }  # $2.50/1M
+      # NFR（費用）, #1523, IADR-0607 決定5: プロンプトキャッシュの書き・読みの単価（MSP の LlmGateway の単価表〔MSP#2396〕と同じ USD を
+      #   163.71 円/USD で換算）。無い行は書き＝入力×1.25・読み＝入力で数える（過小にしない側。LlmPrice）。
+      - { name: LlmPricing__PerModel__claude_opus_5_5__CacheWritePer1kTokens, value: "0.819" }    # $5/1M
+      - { name: LlmPricing__PerModel__claude_opus_5_5__CacheReadPer1kTokens, value: "0.0327" }    # $0.20/1M
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__CacheWritePer1kTokens, value: "0.409" }  # $2.50/1M
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__CacheReadPer1kTokens, value: "0.0164" }  # $0.10/1M
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__CacheWritePer1kTokens, value: "0.0205" }  # $0.125/1M（100,000 トークン以下）
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__CacheReadPer1kTokens, value: "0.00164" }  # $0.01/1M
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextCacheWritePer1kTokens, value: "0.102" }   # $0.625/1M（100,000 トークン超）
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextCacheReadPer1kTokens, value: "0.00819" }  # $0.05/1M
       - { name: KnowledgeBase__Documents__BaseUrl, value: "http://document-service.microservices-platform:8080" }  # ← ③
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
@@ -608,6 +618,16 @@ services:
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextThresholdTokens, value: "100000" }   # 入力がこれを超える要求は第 2 段
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextInputPer1kTokens, value: "0.0819" }  # $0.50/1M（100,000 トークン超）
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextOutputPer1kTokens, value: "0.409" }  # $2.50/1M
+      # NFR（費用）, #1523, IADR-0607 決定5: プロンプトキャッシュの書き・読みの単価（MSP の LlmGateway の単価表〔MSP#2396〕と同じ USD を
+      #   163.71 円/USD で換算）。無い行は書き＝入力×1.25・読み＝入力で数える（過小にしない側。LlmPrice）。
+      - { name: LlmPricing__PerModel__claude_opus_5_5__CacheWritePer1kTokens, value: "0.819" }    # $5/1M
+      - { name: LlmPricing__PerModel__claude_opus_5_5__CacheReadPer1kTokens, value: "0.0327" }    # $0.20/1M
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__CacheWritePer1kTokens, value: "0.409" }  # $2.50/1M
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__CacheReadPer1kTokens, value: "0.0164" }  # $0.10/1M
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__CacheWritePer1kTokens, value: "0.0205" }  # $0.125/1M（100,000 トークン以下）
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__CacheReadPer1kTokens, value: "0.00164" }  # $0.01/1M
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextCacheWritePer1kTokens, value: "0.102" }   # $0.625/1M（100,000 トークン超）
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextCacheReadPer1kTokens, value: "0.00819" }  # $0.05/1M
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret

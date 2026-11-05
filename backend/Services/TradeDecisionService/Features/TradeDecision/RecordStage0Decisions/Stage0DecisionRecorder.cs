@@ -468,7 +468,10 @@ public sealed class Stage0DecisionRecorder(
                 // #1187: 保有なし（プロンプトと同じ HeldPosition.None）を明示する。記録の判断は新規建ての枝だけであり、
                 // 決済の損切り幅の任意化（本番の二次本判断）は掛からない（挙動は従来どおり）。
                 HeldPosition.None.SignedQuantity,
-                cancellationToken)
+                cancellationToken,
+                // FR-04, #1523, IADR-0607: 本番と同じ接頭辞（前文＋当時の日報方針）を分けて渡す。
+                screeningCacheablePrefix: TradeDecisionPromptBuilder.ScreeningCacheablePrefix(input.Policy),
+                decisionCacheablePrefix: TradeDecisionPromptBuilder.DecisionCacheablePrefix(input.Policy))
             .ConfigureAwait(false);
 
         var screeningCall = capturing.Calls.First(c => c.Purpose == LlmPurposes.TradeDecisionScreening);
@@ -681,8 +684,13 @@ public sealed class Stage0DecisionRecorder(
     {
         public List<CapturedCall> Calls { get; } = [];
 
+        public Task<string> CompleteAsync(
+            string prompt, string? model = null, string? purpose = null, CancellationToken cancellationToken = default) =>
+            CompleteAsync(new LlmPrompt(null, prompt), model, purpose, cancellationToken);
+
+        // #1523, IADR-0607: 接頭辞を落とさず内側へ渡す（本番と同じ要求の形で記録する）。
         public async Task<string> CompleteAsync(
-            string prompt, string? model = null, string? purpose = null, CancellationToken cancellationToken = default)
+            LlmPrompt prompt, string? model = null, string? purpose = null, CancellationToken cancellationToken = default)
         {
             var output = await inner.CompleteAsync(prompt, model, purpose, cancellationToken).ConfigureAwait(false);
             Calls.Add(new CapturedCall(purpose, output, usage.DrainCaptured()));

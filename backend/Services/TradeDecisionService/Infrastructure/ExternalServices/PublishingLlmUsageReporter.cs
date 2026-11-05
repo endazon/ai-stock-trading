@@ -29,14 +29,24 @@ public sealed class PublishingLlmUsageReporter(
 {
     public async Task ReportAsync(LlmUsage usage, CancellationToken cancellationToken = default)
     {
-        // #1295, IADR-0524: 入力トークン数で 2 段の単価（プロンプト長）を引き分ける。
-        // #1306, IADR-0550: 取れない（null）は段の選択だけ高い側へ倒す。金額の式の入力トークン数は 0 のまま（推定しない）。
-        var price = priceTable.Resolve(usage.Model, usage.InputTokens);
-        var amount = LlmPricing.Compute(usage.InputTokens ?? 0, usage.OutputTokens, price);
+        var amount = AmountOf(usage, priceTable);
         // ADR-0013, IADR-0129, #354: 発行は Wolverine の IMessageBus（scoped）。PublishAsync は CancellationToken を取らない。
         await bus.PublishAsync(new LlmCostIncurred(amount, clock.UtcNow, usage.Purpose, usage.Model)).ConfigureAwait(false);
         logger.LogDebug(
             "LLM 費用計上イベントを発行 purpose={Purpose} model={Model} in={InputTokens} out={OutputTokens} amount={Amount}",
             usage.Purpose, usage.Model, usage.InputTokens, usage.OutputTokens, amount);
+    }
+
+    /// <summary>
+    /// 1 回の計測の金額（円）。#1295, IADR-0524: 入力トークン数（**プロンプト全体**）で 2 段の単価（プロンプト長）を引き分ける。
+    /// #1306, IADR-0550: 取れない（null）は段の選択だけ高い側へ倒す。金額の式の入力トークン数は 0 のまま（推定しない）。
+    /// NFR（費用）, #1523, IADR-0607 決定4: キャッシュの書き・読み・残りをそれぞれの単価で数える（Stage 0 の記録の費用も同じ式）。
+    /// </summary>
+    public static decimal AmountOf(LlmUsage usage, LlmPriceTable priceTable)
+    {
+        ArgumentNullException.ThrowIfNull(priceTable);
+        var price = priceTable.Resolve(usage.Model, usage.InputTokens);
+        return LlmPricing.Compute(
+            usage.InputTokens ?? 0, usage.CacheCreationInputTokens, usage.CacheReadInputTokens, usage.OutputTokens, price);
     }
 }

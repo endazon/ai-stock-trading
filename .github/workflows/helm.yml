@@ -812,6 +812,8 @@ jobs:
           # **両方の Deployment** で 5.5 系の全行を検査する（片方の表だけ欠けても全体 grep では緑になる）。
           # haiku-5-5 はプロンプト長で 2 段。第 2 段の閾値・入力・出力の 3 行が落ちると 100,000 トークン超の要求が
           # 第 1 段（1/5 の単価）で過小計上になるため、第 1 段と同じく全行を固定する。
+          # NFR（費用）/ #1523 / IADR-0607: プロンプトキャッシュの書き・読みの単価（MSP の単価表の換算値）も両 Deployment で固定する
+          # （落ちると書き＝入力×1.25・読み＝入力の導出値へ倒れ、読みが過大計上のまま残る）。
           for svc in report-service trade-decision-service; do
             dep="$(printf '%s' "$out" | awk -v svc="$svc" 'BEGIN{RS="---"} /kind: Deployment/ && index($0, "\n  name: " svc "\n")')"
             [ -n "$dep" ] || { echo "::error::values-local に $svc の Deployment が描画されない（単価の検査ができない）。"; exit 1; }
@@ -824,7 +826,15 @@ jobs:
               'claude_haiku_5_5__OutputPer1kTokens=0.0819' \
               'claude_haiku_5_5__LongContextThresholdTokens=100000' \
               'claude_haiku_5_5__LongContextInputPer1kTokens=0.0819' \
-              'claude_haiku_5_5__LongContextOutputPer1kTokens=0.409'; do
+              'claude_haiku_5_5__LongContextOutputPer1kTokens=0.409' \
+              'claude_opus_5_5__CacheWritePer1kTokens=0.819' \
+              'claude_opus_5_5__CacheReadPer1kTokens=0.0327' \
+              'claude_sonnet_5_5__CacheWritePer1kTokens=0.409' \
+              'claude_sonnet_5_5__CacheReadPer1kTokens=0.0164' \
+              'claude_haiku_5_5__CacheWritePer1kTokens=0.0205' \
+              'claude_haiku_5_5__CacheReadPer1kTokens=0.00164' \
+              'claude_haiku_5_5__LongContextCacheWritePer1kTokens=0.102' \
+              'claude_haiku_5_5__LongContextCacheReadPer1kTokens=0.00819'; do
               key="${row%%=*}"; val="${row#*=}"
               printf '%s' "$dep" | grep -A1 -E "^ *- name: LlmPricing__PerModel__${key}\$" | grep -q "value: \"${val}\"" \
                 || { echo "::error::values-local の $svc で LlmPricing__PerModel__${key}=${val} が描画されない（5.5 系の計上が未知モデルの計上単価か第 1 段へずれる）。"; exit 1; }

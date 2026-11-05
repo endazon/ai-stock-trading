@@ -3306,6 +3306,11 @@
       "messages": {
         "CompleteRequest": {
           "fields": {
+            "cacheable_prefix": {
+              "number": 6,
+              "type": "string",
+              "label": "singular"
+            },
             "confidentiality": {
               "number": 4,
               "type": "string",
@@ -3339,6 +3344,16 @@
         },
         "CompleteResponse": {
           "fields": {
+            "cache_creation_input_tokens": {
+              "number": 11,
+              "type": "int32",
+              "label": "singular"
+            },
+            "cache_read_input_tokens": {
+              "number": 12,
+              "type": "int32",
+              "label": "singular"
+            },
             "endpoint": {
               "number": 6,
               "type": "string",
@@ -3397,6 +3412,16 @@
         },
         "CompletionStreamEvent": {
           "fields": {
+            "cache_creation_input_tokens": {
+              "number": 12,
+              "type": "int32",
+              "label": "singular"
+            },
+            "cache_read_input_tokens": {
+              "number": 13,
+              "type": "int32",
+              "label": "singular"
+            },
             "delta": {
               "number": 1,
               "type": "string",

@@ -27,12 +27,18 @@ public sealed class DecisionOrchestrator(
     // 二次本判断の解釈が「保有を決済する売買」では損切り幅を任意にするために使う（TradeDecisionParser.ParseDetailed）。
     // **省略可能にしない** —— 省ける形にすると渡し忘れが「決済の判断を損切り幅の欠落で捨てる」（#1187 の症状）へ黙って戻り、
     // 試験は全緑のままになる（IADR-0163 決定2 の規律に倣う）。保有を知らない呼び出し側は null（不明＝緩めない）を明示する。
+    // FR-04, NFR（費用）, #1523, IADR-0607 決定2: screeningCacheablePrefix / decisionCacheablePrefix は各層のプロンプトの
+    // キャッシュできる接頭辞（TradeDecisionPromptBuilder.*CacheablePrefix）。プロンプトの先頭と一致するときだけ分けて送り、
+    // 一致しない・未指定なら従前どおり全文を送る。モデルが読む全文・model・purpose はどちらでも変わらない。
     public async Task<OrchestratedDecision> DecideAsync(
         Func<string> screeningPromptFactory, string decisionPrompt, int? signedHeldQuantity,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? screeningCacheablePrefix = null,
+        string? decisionCacheablePrefix = null)
     {
         ArgumentNullException.ThrowIfNull(screeningPromptFactory);
         ArgumentNullException.ThrowIfNull(decisionPrompt);
+        var splitDecisionPrompt = LlmPrompt.Split(decisionPrompt, decisionCacheablePrefix);
 
         // 一次スクリーニング（軽量モデル・1 回）。Hold なら二次をスキップして打ち切る（費用統制）。
         var screeningGarbleSuspected = false;
@@ -41,7 +47,8 @@ public sealed class DecisionOrchestrator(
             // IADR-0212: 用途は一次スクリーニング（軽量モデルの割当・費用も取引判断サイクルの一部）。
             var screenOutput = await llm
                 .CompleteAsync(
-                    screeningPromptFactory(), options.PrimaryModel, LlmPurposes.TradeDecisionScreening, cancellationToken)
+                    LlmPrompt.Split(screeningPromptFactory(), screeningCacheablePrefix),
+                    options.PrimaryModel, LlmPurposes.TradeDecisionScreening, cancellationToken)
                 .ConfigureAwait(false);
             // #806, IADR-0248: 一次は**方向（関心の有無）だけ**を読む（ParseScreening）。本判断用の不変量
             // （Buy/Sell は価格・損切り幅が正）を一次に掛けると、数値を省いた Buy 候補が InvalidValues＝解析不能で
@@ -103,7 +110,7 @@ public sealed class DecisionOrchestrator(
         {
             // IADR-0212: 用途は本判断（claude-sonnet-5-5 ピン留め・フォールバック禁止・ADR-0017 決定2）。
             var output = await llm
-                .CompleteAsync(decisionPrompt, options.SecondaryModel, LlmPurposes.TradeDecision, cancellationToken)
+                .CompleteAsync(splitDecisionPrompt, options.SecondaryModel, LlmPurposes.TradeDecision, cancellationToken)
                 .ConfigureAwait(false);
             // #1187: 保有を決済する売買（ロング保有中の Sell・ショート保有中の Buy）では損切り幅を任意にする。
             var parsed = TradeDecisionParser.ParseDetailed(output, signedHeldQuantity);

@@ -67,6 +67,9 @@ public sealed class Stage0RecordingUsageCollector(ILlmUsageReporter inner) : ILl
         ArgumentNullException.ThrowIfNull(priceTable);
 
         // #1306, IADR-0550: 段は取れない（null）とき高い側。金額の式の入力トークン数は 0 のまま（計上と同じ規則）。
-        return usages.Sum(u => LlmPricing.Compute(u.InputTokens ?? 0, u.OutputTokens, priceTable.Resolve(u.Model, u.InputTokens)));
+        // #1523, IADR-0607 決定4: キャッシュの書き・読み・残りをそれぞれの単価で数える（計上と同じ式）。
+        return usages.Sum(u => LlmPricing.Compute(
+            u.InputTokens ?? 0, u.CacheCreationInputTokens, u.CacheReadInputTokens, u.OutputTokens,
+            priceTable.Resolve(u.Model, u.InputTokens)));
     }
 }

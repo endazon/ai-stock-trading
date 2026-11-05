@@ -329,12 +329,8 @@ public static class TradeDecisionPromptBuilder
         var baseUnit = CurrencyFormat.CodeOf(MarketCurrency.Base);
         var priceUnit = currency == MarketCurrency.Base ? string.Empty : $" {CurrencyFormat.CodeOf(currency)}";
         var sb = new StringBuilder();
-        sb.AppendLine("あなたは確定済み日報の方針とリスク制約の範囲内でのみ判断する取引アシスタントです。");
-        sb.AppendLine("方針の範囲外・不確実な場合は必ず Hold（取引しない）を選びます。");
-        sb.AppendLine();
-        sb.AppendLine($"# 確定済み日報の方針（{policy.Date:yyyy-MM-dd}）");
-        sb.AppendLine(policy.Summary);
-        sb.AppendLine();
+        // FR-04, NFR（費用）, #1523, IADR-0607 決定1: 先頭（前文＋当日の日報方針の節）はキャッシュできる接頭辞と同じ関数で書く。
+        sb.Append(DecisionCacheablePrefix(policy));
         // FR-04, #1034, IADR-0440 決定 1: 方針の節の直後に、監視銘柄の一覧と判断対象の所属を構造化して置く。
         sb.Append(WatchlistSection(trigger, watchlist));
         if (trigger.Kind == DecisionTriggerKind.PriceMovement && trigger.Price is { } price)
@@ -484,13 +480,8 @@ public static class TradeDecisionPromptBuilder
 
         var ci = CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
-        sb.AppendLine("あなたは取引候補の一次スクリーニング担当です。詳細な本判断は行いません。");
-        sb.AppendLine("確定済み日報の方針に照らし、この銘柄が本判断に値する取引候補かを絞り込みます。");
-        sb.AppendLine("方針の範囲外・関心なし・不確実な場合は必ず Hold（見送り）を選びます。");
-        sb.AppendLine();
-        sb.AppendLine($"# 確定済み日報の方針（{policy.Date:yyyy-MM-dd}）");
-        sb.AppendLine(policy.Summary);
-        sb.AppendLine();
+        // FR-04, NFR（費用）, #1523, IADR-0607 決定1: 先頭（前文＋当日の日報方針の節）はキャッシュできる接頭辞と同じ関数で書く。
+        sb.Append(ScreeningCacheablePrefix(policy));
         // FR-04, #1034, IADR-0440 決定 1: 本判断と同じ節（縮退の保護分）。
         sb.Append(WatchlistSection(trigger, watchlist));
         sb.AppendLine($"# 対象: {SymbolText(trigger)} / 市場: {trigger.Market}");
@@ -539,6 +530,42 @@ public static class TradeDecisionPromptBuilder
         // （「必ず数値を入れる」と要求しても LLM 出力は揺れ、数値欠損の Buy を見送りにすると関心ありの銘柄が本判断に届かない）。
         sb.AppendLine("""Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。Buy/Sell でも referencePrice と stopLossDistancePerShare は null でよい（価格・損切り幅は本判断で決める）。""");
         return sb.ToString();
+    }
+
+    // FR-04, NFR（費用）, #1523, IADR-0607 決定1: 本判断のプロンプトの**キャッシュできる接頭辞**（前文＋当日の日報方針の節）。
+    // Build はこの文字列で始まる。🔴 ここへ呼び出しごとに変わる値（時刻・現在値・保有・銘柄・監視銘柄）を足さない —— 1 バイトでも
+    // 違うとプロンプトキャッシュは読まれず、書きの割増（入力の 1.25 倍）だけが掛かる。同じ日の方針なら呼び出しをまたいで同じ文字列になる。
+    public static string DecisionCacheablePrefix(DailyPolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        var sb = new StringBuilder();
+        sb.AppendLine("あなたは確定済み日報の方針とリスク制約の範囲内でのみ判断する取引アシスタントです。");
+        sb.AppendLine("方針の範囲外・不確実な場合は必ず Hold（取引しない）を選びます。");
+        sb.AppendLine();
+        AppendPolicySection(sb, policy);
+        return sb.ToString();
+    }
+
+    // FR-04, NFR（費用）, #1523, IADR-0607 決定1: 一次スクリーニングのプロンプトのキャッシュできる接頭辞（前文＋当日の日報方針の節）。
+    // BuildScreening はこの文字列で始まる。規律は DecisionCacheablePrefix と同じ。
+    public static string ScreeningCacheablePrefix(DailyPolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        var sb = new StringBuilder();
+        sb.AppendLine("あなたは取引候補の一次スクリーニング担当です。詳細な本判断は行いません。");
+        sb.AppendLine("確定済み日報の方針に照らし、この銘柄が本判断に値する取引候補かを絞り込みます。");
+        sb.AppendLine("方針の範囲外・関心なし・不確実な場合は必ず Hold（見送り）を選びます。");
+        sb.AppendLine();
+        AppendPolicySection(sb, policy);
+        return sb.ToString();
+    }
+
+    // 当日の日報方針の節（本判断・一次で共通）。
+    private static void AppendPolicySection(StringBuilder sb, DailyPolicy policy)
+    {
+        sb.AppendLine($"# 確定済み日報の方針（{policy.Date:yyyy-MM-dd}）");
+        sb.AppendLine(policy.Summary);
+        sb.AppendLine();
     }
 
     // FR-03, FR-04, ADR-0003, #1364: 価格変動トリガーの節（見出し・銘柄／市場・現在値／基準値／変動率）。本判断（Build）と

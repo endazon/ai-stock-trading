@@ -11,4 +11,14 @@ public interface ILlmCompletionClient
 {
     Task<string> CompleteAsync(
         string prompt, string? model = null, string? purpose = null, CancellationToken cancellationToken = default);
+
+    // FR-04, NFR（費用）, #1523, IADR-0607 決定3: 接頭辞と残りに分けたプロンプトで呼ぶ。model・purpose の意味は上と同じ。
+    // 既定の実装は全文（接頭辞＋残り）を上の多重定義へ渡す＝接頭辞を運ばない実装（試験の偽物・未構成の既定）は従前と同じ全文を受け取る。
+    // 接頭辞をゲートウェイへ運ぶのは送る側（HttpLlmCompletionClient）と、それを包む中継（Stage 0 の記録）だけである。
+    Task<string> CompleteAsync(
+        LlmPrompt prompt, string? model = null, string? purpose = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(prompt);
+        return CompleteAsync(prompt.FullText, model, purpose, cancellationToken);
+    }
 }
