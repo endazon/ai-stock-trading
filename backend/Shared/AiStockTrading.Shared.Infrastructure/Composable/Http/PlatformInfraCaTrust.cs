@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using System.Net.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Shared.Infrastructure.Composable.Http;
 
@@ -14,15 +16,23 @@ namespace AiStockTrading.Shared.Infrastructure.Composable.Http;
 //   3. 名前の不一致・証明書なしは、CA があっても常に拒む。CA が無い・読めないときも拒む。
 // 🔴 **平文や検証なしへは倒れない。** 失敗は呼び出しの失敗（HttpRequestException）として呼び出し元の既存の失敗の経路を通る。
 // 外部 API（Finnhub ほか）の HttpClient には使わない（既定のハンドラのまま）。
+// 用途の前提: LLM ゲートウェイへの JSON の API 呼び出し専用。SslOptions 以外（圧縮の自動展開なし・Cookie あり ほか）は
+// SocketsHttpHandler の既定のままで、差し替え前の既定のハンドラと同じである。別の用途に使うなら、これらの既定を見直す。
+//
+// CA の場所が設定されているのに読めない（ファイルが無い・PEM として読めない・読み取りの失敗）ときは、パスと理由だけを
+// Warning に出す（中身・例外の文言は出さない）。プロセス内でパスごとに 1 回（HttpClientFactory はハンドラを周期で作り直す）。
+// 場所が空（未設定）は警告しない（CA をマウントしない構成＝平文のゲートウェイ）。
 public static class PlatformInfraCaTrust
 {
     /// <summary>基盤の CA（PEM）の場所の構成キー。env では <c>PlatformInfraCa__CertificatePath</c>。</summary>
     public const string PathKey = "PlatformInfraCa:CertificatePath";
 
+    private static readonly ConcurrentDictionary<string, bool> WarnedPaths = new(StringComparer.Ordinal);
+
     /// <summary>基盤の CA を信頼する主ハンドラを作る。<paramref name="caPath"/> が空・読めなければ、連鎖の誤りは拒む。</summary>
-    public static SocketsHttpHandler CreateHandler(string? caPath)
+    public static SocketsHttpHandler CreateHandler(string? caPath, ILogger? logger = null)
     {
-        var ca = LoadCa(caPath);
+        var ca = LoadCa(caPath, logger);
         return new SocketsHttpHandler
         {
             SslOptions = new SslClientAuthenticationOptions
@@ -60,18 +70,38 @@ public static class PlatformInfraCaTrust
         return chain.Build(leaf);
     }
 
-    private static X509Certificate2? LoadCa(string? caPath)
+    private static X509Certificate2? LoadCa(string? caPath, ILogger? logger)
     {
-        if (string.IsNullOrWhiteSpace(caPath) || !File.Exists(caPath))
+        if (string.IsNullOrWhiteSpace(caPath))
             return null;
+        if (!File.Exists(caPath))
+            return Unreadable(caPath, "ファイルが無い", logger);
         try
         {
             return X509Certificate2.CreateFromPem(File.ReadAllText(caPath));
         }
         catch (CryptographicException)
         {
-            return null;
+            return Unreadable(caPath, "PEM の証明書として読めない", logger);
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Unreadable(caPath, $"読み取りに失敗した（{ex.GetType().Name}）", logger);
+        }
+    }
+
+    // 拒否の側へ倒れる（null＝連鎖の誤りを受けない）。警告はパスごとに 1 回。
+    private static X509Certificate2? Unreadable(string caPath, string reason, ILogger? logger)
+    {
+        if (logger is not null && WarnedPaths.TryAdd(caPath, true))
+        {
+            logger.LogWarning(
+                "基盤の CA（{Path}）を読めない: {Reason}。LLM ゲートウェイの https は基盤の CA では検証されず、連鎖の誤りは拒否される（平文へは戻らない）。",
+                caPath,
+                reason);
+        }
+
+        return null;
     }
 
     // 検証のコールバックの持ち主（配線の試験が型で識別する）。

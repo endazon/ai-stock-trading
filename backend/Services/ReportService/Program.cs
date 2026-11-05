@@ -100,7 +100,9 @@ builder.Services.AddHttpClient("report-llm",
         c => c.Timeout = NarrativeTimeouts(builder.Configuration).Max)
     // NFR, NFR-18, #1535, IADR-0615 決定5: https のゲートウェイは基盤の CA で検証する（名前の不一致・CA なしは拒む・平文へ戻らない）。
     .ConfigurePrimaryHttpMessageHandler(sp =>
-        PlatformInfraCaTrust.CreateHandler(sp.GetRequiredService<IConfiguration>()[PlatformInfraCaTrust.PathKey]))
+        PlatformInfraCaTrust.CreateHandler(
+            sp.GetRequiredService<IConfiguration>()[PlatformInfraCaTrust.PathKey],
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(PlatformInfraCaTrust))))
     .AddReportDependencyGate(
         "report-llm",
         sp => sp.GetRequiredKeyedService<IServiceAccessTokenProvider>(ReportLlmTokenProviderKey),

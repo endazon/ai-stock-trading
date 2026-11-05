@@ -87,7 +87,9 @@ builder.Services.AddHttpClient("llm", c => c.Timeout = ParseTimeout(builder.Conf
     // NFR, NFR-18, #1535, IADR-0615 決定5: https のゲートウェイは基盤の CA で検証する（名前の不一致・CA なしは拒む・平文へ戻らない）。
     // http の URL（経路 B）には何も効かない。外部 API の HttpClient には付けない。
     .ConfigurePrimaryHttpMessageHandler(sp =>
-        PlatformInfraCaTrust.CreateHandler(sp.GetRequiredService<IConfiguration>()[PlatformInfraCaTrust.PathKey]))
+        PlatformInfraCaTrust.CreateHandler(
+            sp.GetRequiredService<IConfiguration>()[PlatformInfraCaTrust.PathKey],
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(PlatformInfraCaTrust))))
     .AddAiStockTradingPlatformRealmToken(
         builder.Configuration, LlmGatewayAuth.SectionName, LlmGatewayAuth.TokenClientName);
 builder.Services.AddSingleton<PlaceholderLlmCompletionClient>();

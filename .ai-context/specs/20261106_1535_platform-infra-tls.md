@@ -72,4 +72,5 @@ plan_refs:
 - [x] 外部 API の HttpClient はシステムの信頼ストアのまま（専用の検証を使わない。DI で確かめる）。既定の検証で誤りが無い証明書は専用の検証でも受ける（xUnit）。
 - [x] 経路 B の切り替えの手順（順番と戻し方）を手順書に書く。
 - [x] values-cloud（＋検査用の digest）の描画で、DB の全件が VerifyFull＋基盤の CA、ブローカの全件が amqps:5671、LLM ゲートウェイの 2 件が https で、平文のゲートウェイの宛先が無い（helm.yml の values-cloud の段）。
+- [x] ［2026-11-06 追記 / #1535 AI レビュー］CA の場所が設定されているのに読めないとき、パスと理由だけの Warning をプロセス内でパスごとに 1 回出す（中身・例外の文言は出さない）。未設定・読めたときは出さない。拒否の挙動は変えない（xUnit `PlatformInfraCaTrustLoadWarningTests`）。
 - [x] `/verify` が通る。
