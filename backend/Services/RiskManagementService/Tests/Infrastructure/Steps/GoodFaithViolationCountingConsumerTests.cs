@@ -58,6 +58,7 @@ public class GoodFaithViolationCountingConsumerTests
         return Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                opts.Services.AddSingleton(TestApprovalPublishing.Unsigned()); // #1527, IADR-0610
                 opts.Services.AddSingleton(store);
                 opts.Services.AddSingleton(new GoodFaithViolationCountingService(
                     ledger, new StubAccountObservations(account), store, new FixedClock(ExecutedAt)));

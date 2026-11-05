@@ -62,6 +62,7 @@ public class ApprovedDecisionReplayRegressionTests
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                opts.Services.AddSingleton(TestApprovalPublishing.Unsigned()); // #1527, IADR-0610
                 opts.Services.AddSingleton<IPortfolioLedgerStore>(stores.Ledger);
                 opts.Services.AddSingleton<IOrderActivityStore>(stores.Activity);
                 opts.Services.AddSingleton<IRecognitionFxRateResolver>(new StubRecognitionFxRateResolver());

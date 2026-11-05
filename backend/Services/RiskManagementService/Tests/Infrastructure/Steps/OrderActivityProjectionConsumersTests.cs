@@ -30,6 +30,7 @@ public class OrderActivityProjectionConsumersTests
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                opts.Services.AddSingleton(TestApprovalPublishing.Unsigned()); // #1527, IADR-0610
                 opts.Services.AddSingleton<IOrderActivityStore>(store);
                 opts.Discovery.DisableConventionalDiscovery()
                     .IncludeType<OrderApprovedActivityHandler>()

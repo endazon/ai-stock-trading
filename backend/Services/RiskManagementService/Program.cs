@@ -384,6 +384,8 @@ builder.Services.AddScoped(sp => new OrderScreeningService(
 // FR-10, FR-11, UC-06, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い（POST /risk-controls/positions/close）。
 // 統制ストアを依存に持たない＝手仕舞いは kill switch・日次損失ロックアウト・一時停止で止まらない（FR-10 本文）。
 builder.Services.AddScoped<PositionCloseService>();
+// 🔴 NFR, FR-10, #1527, IADR-0610: 注文の承認を発行する唯一の口（発行元の印を付ける）。段 2 で鍵が無ければ起動で止まる。
+builder.Services.AddOrderApprovalPublisher(builder.Configuration);
 // FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357: 板に残った手仕舞いの取消
 //（POST /risk-controls/positions/close/cancel）。同じく統制ストアを依存に持たない。
 builder.Services.AddScoped<RiskManagementService.Features.RiskManagement.CancelPositionClose
