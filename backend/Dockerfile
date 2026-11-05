@@ -12,9 +12,9 @@
 # submodule 配置時もコンテキスト "." はユニットルートを指し、ルート props の単独フォールバック
 # （IADR-0046）でスタンドアロン・ビルドされる。
 # ---------------------------------------------------------------------------
-ARG DOTNET_VERSION=10.0
-
-FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS build
+# NFR, IADR-0609, #1526: 基底イメージは digest で固定する（2026-11-05 時点の 10.0 の manifest list の digest。aspnet は 10.0.14）。
+# 更新は Dependabot（.github/dependabot.yml の docker）が digest ごと提案する。
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b AS build
 ARG SERVICE_PROJECT
 WORKDIR /src
 # 単一情報源（SDK/CPM/import-chain props）を先に投入する。
@@ -44,7 +44,7 @@ RUN if grep -Ev '^[[:space:]]*(//|\*|/\*)' "$(dirname "${SERVICE_PROJECT}")/Prog
     fi
 RUN dotnet publish "${SERVICE_PROJECT}" -c Release -o /app --no-restore
 
-FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION} AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:de0ee358cdd672f7017a003bed21e9ac9ed48a27c922a59b18175b6e82fa7fee AS runtime
 ARG SERVICE_DLL
 # dev/E2E 目的の軽量 healthcheck プローブ（compose の healthcheck が /health/ready を叩く・IADR-0049）。
 # 本番配備は platform（#24）の管掌。aspnet 既定タグは Debian ベースで apt を持つ。
@@ -62,6 +62,9 @@ ENV SERVICE_DLL=${SERVICE_DLL}
 # Wolverine を持たない opend-auth-gateway では読まれない（無害）。
 ENV WOLVERINE_TYPE_LOAD_MODE=Static
 EXPOSE 8080
-# aspnet ベースイメージは非 root ユーザー app で実行される。
+# NFR, IADR-0609, #1526: aspnet イメージが用意する非特権ユーザー app（APP_UID=1654）で動かす。
+# aspnet イメージの既定の利用者は root である（app は用意されているだけ）ため、USER を明示する。
+# /app は root の所有で読み取りだけ（書き込まない）。k8s では chart の podSecurity.stage が uid を決める（段 1・2 は root を明示）。
+USER $APP_UID
 # シェル形式で環境変数 SERVICE_DLL を解決し、exec で PID 1 を dotnet に委譲する。
 ENTRYPOINT ["sh", "-c", "exec dotnet \"${SERVICE_DLL}\""]

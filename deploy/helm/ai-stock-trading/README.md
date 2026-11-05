@@ -1031,6 +1031,18 @@ PersistentVolumeClaim `opend-persist` には `helm.sh/resource-policy: keep` を
 OpenD はデバイス信頼を `$HOME/.com.moomoo.OpenD` に書くため、非 root 化は **HOME の再調整とセット**で行う。
 イメージ側は uid/gid **10001** と `/home/opend` を用意済み（`USER` は切り替えていない＝既定 root）。
 
+[IADR-0609](../../../.ai-context/adr/IADR-0609_pod-security-context-staged.md) 以降は**段の値**で切り替えられる
+（下の「Pod のセキュリティ設定の段」。段 3 は uid 10001・fsGroup・0440・ケーパビリティなしを一度に描く）:
+
+```bash
+helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
+  --set opend.enabled=true \
+  --set opend.home=/home/opend \
+  --set opend.podSecurity.stage=3
+```
+
+従来の個別の `--set`（下）も引き続き効く（段の値の上に重なる）。
+
 ```bash
 helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
   --set opend.enabled=true \
@@ -1052,6 +1064,31 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 > ⚠️ `rsaSecretDefaultMode` は **k8s のファイルモード（8 進を 10 進で表す整数）**。values ファイルでは `0400` / `0440`
 > と 8 進で書ける（YAML が解釈する）が、`--set` では **10 進**（`256` / `288`）で渡すこと。非 root では Secret の所有 uid が
 > root のままなので、`fsGroup` を付けたうえで**グループ読み（0440）**が要る。
+
+## Pod のセキュリティ設定の段（`podSecurity.stage` / `opend.podSecurity.stage`。[IADR-0609](../../../.ai-context/adr/IADR-0609_pod-security-context-staged.md)）
+
+Worker のイメージ（`backend/Dockerfile`）は aspnet の非特権ユーザー（`USER $APP_UID`＝1654）で動く。chart は起動を止め得る設定を
+**段で切り替える**（既定は段 1＝報告だけ）。戻すときは段を下げて `helm upgrade` する。
+
+| 段 | Worker 10 本・CronJob（`podSecurity.stage`） | OpenD（`opend.podSecurity.stage`） |
+| --- | --- | --- |
+| 1（既定） | 動作を変えない。Worker は `runAsUser: 0` を明示（イメージが非 root でも root のまま） | 従来どおり（root。何も足さない） |
+| 2 | root のまま seccomp `RuntimeDefault`・SA トークンを置かない・権限昇格なし・ケーパビリティを全て落とす | root のまま seccomp・トークンなし・権限昇格なし。**OpenD 本体はケーパビリティを落とさない**（root で `/opt/opend` へ書く） |
+| 3 | 非 root（Worker 1654:1654・fsGroup 1654、CronJob 100:101）。発注執行の鍵の mount は 0440 | 非 root（10001:10001・fsGroup）・ケーパビリティなし・鍵の mount 0440。`opend.home=/home/opend` が要る |
+
+- **認証サイドカーは段に依らず OpenD 本体と同じ uid** で動く（uid の指定が無ければ `runAsUser: 0` を明示する）。
+- `podSecurity.readOnlyRootFilesystem=true`（段 2 以上）: Worker と CronJob のルートを読み取り専用にし、`/tmp` を emptyDir にする。
+- Namespace（`namespace.create=true`）には Pod Security Admission の **warn / audit = restricted** を常に貼る（段 1 の「報告」）。
+  `podSecurity.admission.enforce` は既定 空（貼らない）。`baseline` / `restricted` を選べるが、メッシュの注入が有効なら貼らない。
+  `restricted` は Worker が段 3（OpenD が有効なら OpenD も段 3）でないと描画で止まる。
+- 起動器（`scripts/k8s-local-deploy.sh`）は名前空間を作った直後に warn / audit = restricted を貼る（enforce は貼らない）。
+- ⚠️ 段 3 へ上げる前に、Stage 0 の記録の PVC（`stage0Recording.persistence`）に root で書いた既存ファイルが無いか確かめる
+  （hostPath 系の StorageClass では fsGroup が効かない）。
+
+```bash
+# 段 1 の報告（warn / audit）を見る: 段 3 で違反が消えることを dry-run で確かめる
+helm template ast deploy/helm/ai-stock-trading --set podSecurity.stage=3 | kubectl apply --dry-run=server -f - 2>&1 | grep -i 'would violate' || echo 'no warnings'
+```
 
 ## #132: 秘匿情報の External Secrets（Vault）受け口（`externalSecrets.enabled`）
 

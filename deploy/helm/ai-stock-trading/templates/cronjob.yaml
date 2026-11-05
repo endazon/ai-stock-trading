@@ -40,9 +40,17 @@ spec:
         {{- end }}
         spec:
           restartPolicy: Never
+          {{- /* NFR, IADR-0609, #1526: 段 1 は何も足さない（curl イメージは元から非 root の curl_user）。段 2 は seccomp・トークンなし、
+                 段 3 は runAsNonRoot と curl_user:curl_group（tradingCycle.cronjob.runAsUser / runAsGroup）。 */}}
+          {{- with (include "ast.pod.security" (dict "root" $ "uid" $c.runAsUser "gid" $c.runAsGroup "fsGroup" false "pinRoot" false) | trim) }}
+          {{- . | nindent 10 }}
+          {{- end }}
           containers:
             - name: trigger
               image: {{ $c.image | quote }}
+              {{- with (include "ast.container.security" $ | trim) }}
+              {{- . | nindent 14 }}
+              {{- end }}
               # NFR, #456, IADR-0176 決定2: run-once は OwnerOrService の認可を要する（無認証では 401）。
               # そこで **client_credentials でトークンを取り、Bearer を付けて叩く** 2 段にする。
               #
@@ -96,4 +104,13 @@ spec:
               resources:
                 requests: { cpu: 10m, memory: 32Mi }
                 limits: { cpu: 100m, memory: 64Mi }
+              {{- if include "ast.podSecurity.readOnlyRoot" $ }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: {{ $.Values.podSecurity.tmpSizeLimit | quote }}
+              {{- end }}
 {{- end }}

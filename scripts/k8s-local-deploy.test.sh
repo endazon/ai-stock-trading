@@ -140,6 +140,7 @@ case "${1:-} ${2:-}" in
       case "$a" in
         istio-injection=*) printf '%s\n' "$a" >> "$S/ns-label.log"; printf '%s' "${a#istio-injection=}" > "$S/ns-label" ;;
         istio-injection-) printf '%s\n' "$a" >> "$S/ns-label.log"; rm -f "$S/ns-label" ;;
+        pod-security.kubernetes.io/*) printf '%s\n' "$a" >> "$S/ns-label.log" ;;
       esac
     done
     exit 0
@@ -1461,6 +1462,28 @@ assert_eq 'T-mesh-12 失敗・変更なし: 案内しない' "$(cat "$STATE/err"
 upgrade_block="$(sed -n '/^if ! helm upgrade --install/,/^fi/p' "$ROOT_DIR/scripts/k8s-local-deploy.sh")"
 assert_contains 'T-mesh-12 本体: upgrade の失敗で案内してから止まる' "$upgrade_block" 'ast_mesh_upgrade_failure_hint'
 assert_contains 'T-mesh-12 本体: 失敗で止まる' "$upgrade_block" 'exit 1'
+
+printf '\nk8s-local-deploy.sh: Pod Security Admission のラベル（IADR-0609）\n'
+
+# T-psa-01: warn / audit = restricted を貼り、enforce は貼らない
+rm -f "$STATE/ns-label.log" "$STATE/label-ns-fail"
+( ast_apply_pod_security_labels ) > "$STATE/out" 2> "$STATE/err"
+RC=$?
+NS_LABEL_LOG="$(cat "$STATE/ns-label.log" 2>/dev/null || true)"
+assert_eq 'T-psa-01 正常終了する' "$RC" "0"
+assert_contains 'T-psa-01 warn=restricted を貼る' "$NS_LABEL_LOG" 'pod-security.kubernetes.io/warn=restricted'
+assert_contains 'T-psa-01 audit=restricted を貼る' "$NS_LABEL_LOG" 'pod-security.kubernetes.io/audit=restricted'
+assert_missing 'T-psa-01 enforce は貼らない' "$NS_LABEL_LOG" 'pod-security.kubernetes.io/enforce'
+# T-psa-02: 貼れなければ止まる
+: > "$STATE/label-ns-fail"
+( ast_apply_pod_security_labels ) > "$STATE/out" 2> "$STATE/err"
+RC=$?
+rm -f "$STATE/label-ns-fail"
+assert_eq 'T-psa-02 失敗: 非 0' "$RC" "1"
+assert_contains 'T-psa-02 失敗: 理由を出す' "$(cat "$STATE/err")" 'Pod Security Admission'
+# T-psa-03: 本体は名前空間を作った直後（[2/5]）に貼り、失敗で止まる（順序の固定）
+ns_step="$(sed -n '/^echo "==> \[2\/5\]/,/^echo "==> \[3\/5\]/p' "$ROOT_DIR/scripts/k8s-local-deploy.sh")"
+assert_contains 'T-psa-03 順序: [2/5] で貼る' "$ns_step" 'ast_apply_pod_security_labels || exit 1'
 
 printf '\n%d passed, %d failed\n' "$PASSED" "$FAILED"
 [ "$FAILED" -eq 0 ] || exit 1

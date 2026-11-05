@@ -70,6 +70,32 @@ mesh:
     # よるハング〕はネイティブサイドカー前提でしか解決しない＝残余リスク）。
     cronJobNativeSidecar: true
 
+# NFR, IADR-0609, #1526: Pod とコンテナのセキュリティ設定（多層防御・最小権限）。部品は templates/_pod-security.tpl。
+# 起動を止め得るため**段で切り替える**（Worker 10 本と CronJob に効く。OpenD は opend.podSecurity.stage）。戻すときは段を下げる。
+podSecurity:
+  # 1（既定）: 報告だけ。動作を変えない（Worker は runAsUser: 0 を明示する＝イメージが非 root でも従来どおり root）。
+  #            下の admission の warn / audit で restricted から外れた Pod が警告・監査記録に出る。
+  # 2      : root のまま seccomp RuntimeDefault・SA トークンを置かない・権限昇格なし・ケーパビリティを全て落とす。
+  # 3      : 2 に加えて非 root（Worker は dotnetRunAsUser・CronJob は tradingCycle.cronjob.runAsUser / runAsGroup）と fsGroup。
+  #          発注執行の RSA 鍵の mount は 0440 になる（moomoo.opend.rsaSecretDefaultMode より優先）。
+  #          ⚠️ 上げる前に、Stage 0 の記録の PVC（stage0Recording.persistence）に root で書いた既存ファイルが無いか確かめる
+  #          （hostPath 系の StorageClass では fsGroup が効かない）。
+  stage: 1
+  # aspnet イメージの非特権ユーザー（APP_UID）。backend/Dockerfile の USER $APP_UID と同じ番号（主グループも同じ番号）。
+  dotnetRunAsUser: 1654
+  # 段 2 以上でだけ受理する。Worker と CronJob のコンテナのルートを読み取り専用にし、/tmp を emptyDir（tmpSizeLimit）にする。
+  readOnlyRootFilesystem: false
+  tmpSizeLimit: 64Mi
+  # Pod Security Admission の水準（Namespace のラベル。namespace.create のとき chart が貼る。起動器 k8s-local-deploy.sh は
+  # 名前空間を作った直後に warn / audit = restricted だけを貼る）。
+  admission:
+    # 空（既定）＝貼らない。baseline / restricted を選べる。メッシュの注入（mesh.sidecarInjection.enabled）が有効なら貼らない
+    # （注入される istio-init が NET_ADMIN / NET_RAW を要し baseline を満たさないため）。
+    # restricted は podSecurity.stage=3 と（opend.enabled のとき）opend.podSecurity.stage=3 が要る（満たさなければ描画で止める）。
+    enforce: ""
+    warn: restricted
+    audit: restricted
+
 # 共有インフラを素のサービス名で解決するための ExternalName（platform-infra を指す）。
 infraAliases:
   enabled: true
@@ -86,7 +112,12 @@ tradingCycle:
     # 例: 平日 米国東部 寄り付き〜引け相当（UTC）。実運用では市場カレンダーで休場日を除外する。
     schedule: "*/30 13-20 * * 1-5"
     # 収集の run-once を叩く軽量イメージ（#121 実装後に有効化）。
-    image: curlimages/curl:8.11.1
+    # NFR, IADR-0609: digest で固定する（MSP の drift.postSyncHook と同じイメージ）。
+    image: curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69
+    # NFR, IADR-0609: podSecurity.stage=3 の uid / gid。上の digest のイメージの curl_user:curl_group（/etc/passwd が
+    # `curl_user:x:100:101`。MSP の IADR-0583 が確かめた値）。image を変えたら両方を確かめ直す。
+    runAsUser: 100
+    runAsGroup: 101
     target: http://information-collection-service:8080/internal/collection/run-once
     # NFR, #456, IADR-0176 決定2: run-once は OwnerOrService の認可を要する。CronJob は
     # client_credentials でトークンを取ってから叩く。**資格情報が無ければ Job は赤くなる**
@@ -126,8 +157,8 @@ moomoo:
     # #842: 数値の 0 も値として注入する（空と区別する）＝0 を与えると起動時に停止する（既定へ黙って倒さない）。
     replyTimeoutSeconds: ""
     # #132, IADR-0060 決定 3: RSA 秘密鍵マウントのパーミッション。0400（YAML の 8 進＝10 進 256）＝所有者のみ読取。
-    # ⚠️ マウント先コンテナの実行 uid と一致していること（現行の Worker イメージは root 実行）。
-    #    非 root 化する場合は fsGroup と 0440 を用いる（chart README 参照）。
+    # ⚠️ マウント先コンテナの実行 uid と一致していること（podSecurity.stage が 1・2 の Worker は root で動く）。
+    #    NFR, IADR-0609: podSecurity.stage=3（非 root）では fsGroup ＋ 0440 を描く（本値は使わない）。
     rsaSecretDefaultMode: 0400
   # #821: 損切りの実行機構 S3（他のブローカー側注文種別）で試す注文種別。空=アダプタ既定（stoplimit）。
   # 'stoplimit' / 'trailingstop' 以外は order-execution が起動時に停止する（既定へ黙って倒さない）。
@@ -188,6 +219,19 @@ opend:
   #   --set opend.rsaSecretDefaultMode=0440
   securityContext: {}
   podSecurityContext: {}
+  # NFR, IADR-0609, #1526: OpenD の Pod の段（Worker の podSecurity.stage とは別に切り替える。上の securityContext /
+  # podSecurityContext は段の値の**上に重なる**＝上の --set の手順はそのまま効く）。
+  #   1（既定）: 従来どおり（root。何も足さない）。
+  #   2      : root のまま seccomp RuntimeDefault・SA トークンを置かない・権限昇格なし。OpenD 本体はケーパビリティを落とさない
+  #            （root の OpenD は uid 10001 が所有する /opt/opend へ OpenD.xml を書く）。認証サイドカーは全て落とす。
+  #   3      : 非 root（runAsUser＝下の値・fsGroup）・全コンテナでケーパビリティを全て落とす。**home=/home/opend が要る**
+  #            （違えば描画で止める）。RSA 鍵の mount は 0440。**実 OpenD で未検証**（HOME が変わる＝デバイス信頼の置き場が変わる）。
+  # 🔴 認証サイドカーは段に依らず OpenD 本体と同じ uid で動く（uid の指定が無ければ runAsUser: 0 を明示する。
+  #    サイドカーのイメージは Worker と同じ USER $APP_UID で、OpenD 本体が umask 077 で作るファイルを読むため）。
+  podSecurity:
+    stage: 1
+  # 段 3 の uid / gid / fsGroup（deploy/opend/Dockerfile が用意する opend:opend）。
+  runAsUser: 10001
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { cpu: "1", memory: 1Gi }
