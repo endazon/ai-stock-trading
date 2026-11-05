@@ -1,10 +1,13 @@
 using System.Net;
+using Grpc.Core;
+using Grpc.Net.Client;
 using System.Net.Http.Json;
 using RiskManagementService.Features.RiskManagement;
 using RiskManagementService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
+using Proto = AiStockTrading.Shared.Grpc.RiskManagement.V1;
 
 namespace RiskManagementService.Tests;
 
@@ -157,6 +160,33 @@ public class OperatorKillSwitchHoldWiringTests
         disengage.StatusCode.Should().Be(HttpStatusCode.Conflict);
 
         (await client.GetFromJsonAsync<KillSwitchState>("/risk-controls/kill-switch"))!.Engaged.Should().BeTrue();
+    }
+
+    // NFR, #1530, IADR-0613: gRPC の解除（ボットの段 5 の経路・RiskControlsOwnerWriteGrpcService）も同じ処理関数を通り、保持の間は ABORTED で拒まれる。
+    [Fact]
+    public async Task 保持の間はgRPCの解除もABORTEDで拒まれ_状態は起動のまま()
+    {
+        using var factory = Factory(enabled: true);
+        var grpc = new Proto.RiskControlsOwnerWrite.RiskControlsOwnerWriteClient(GrpcChannel.ForAddress(factory.Server.BaseAddress,
+            new GrpcChannelOptions { HttpHandler = new BotHeaders(factory.Server.CreateHandler()) }));
+
+        var act = async () => await grpc.DisengageKillSwitchAsync(new Proto.KillSwitchChangeRequest { Reason = "再開" });
+
+        var ex = (await act.Should().ThrowAsync<RpcException>()).Which;
+        ex.StatusCode.Should().Be(StatusCode.Aborted);
+        (await Owner(factory).GetFromJsonAsync<KillSwitchState>("/risk-controls/kill-switch"))!.Engaged.Should().BeTrue();
+    }
+
+    // gRPC の所有者の門（GrpcOwnerOnly）は trading-owner ∧ azp＝ボットの機密クライアント（既定 ai-stock-trading-owner）を求める。
+    private sealed class BotHeaders(HttpMessageHandler inner) : DelegatingHandler(inner)
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            request.Headers.TryAddWithoutValidation(TestAuthHandler.RolesHeader, "trading-owner");
+            request.Headers.TryAddWithoutValidation(TestAuthHandler.NameHeader, "risk-bot");
+            request.Headers.TryAddWithoutValidation(TestAuthHandler.AzpHeader, "ai-stock-trading-owner");
+            return base.SendAsync(request, cancellationToken);
+        }
     }
 
     [Fact]
