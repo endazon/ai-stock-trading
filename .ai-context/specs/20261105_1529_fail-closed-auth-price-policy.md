@@ -86,7 +86,7 @@ plan_refs:
 - [x] 方針の本文の行が `# ` で始まっても、プロンプトの節の見出しにならない（`PolicySectionUntrustedTests`）
 - [x] 全文は接頭辞の関数で始まる（`PromptCachePrefixTests`・`PolicySectionUntrustedTests`）
 - [x] chart は `global.authAuthority` が未設定なら描画で止まり、明示すれば描画できる（`helm.yml` の「未設定なら止まる・明示すれば通る」の段）。リリースの values に無いとき、`helm-release-drift.js` は理由つきで止まる（`scripts.repo.test.js`）
-- [x] 未指定（null）の `UnanchoredEntryPriceOptions` も新規建てを許さない（fail-closed）。Program.cs は構成の既定 false で登録する（`UnanchoredEntryPriceWiringTests`）
+- [x] 未指定（null）の `UnanchoredEntryPriceOptions` も新規建てを許さない（fail-closed。IADR-0617 決定 3 の 2026-11-06 追記）。本番の組み立ては構成に従い、未設定・false は見送り、true でだけ許す（`UnanchoredEntryPriceWiringTests`・ホストを組んで確かめる）
 
 ## 計画への環流（本 PR の外）
 
