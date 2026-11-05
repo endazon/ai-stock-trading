@@ -45,6 +45,16 @@ global:
   # Production では appsettings.Development.json が読まれないため、経路B が従来その値で動いていたログの最小レベル（Debug）を
   # ここで明示する（情報収集の巡回 300 秒は services.information-collection の env）。棚卸しの全件は IADR-0496。
   serilogMinimumLevel: Debug
+  # NFR, NFR-18, #1535, IADR-0621: 基盤（DB・ブローカ）への接続を、基盤の CA で検証する TLS にする（基盤の IADR-0591 の段 4b-2）。
+  #   DB は VerifyFull、ブローカは amqps:5671。CA は基盤の起動器が写す ConfigMap platform-infra-ca。
+  #   🔴 配備の前に ConfigMap が AST の名前空間にあることを確かめる（無いと Pod が立たない）。切り替えと戻し方は
+  #   docs/operations/platform-infra-tls-cutover-runbook.md。戻すときは両方を false にして helm を再実行する。
+  db:
+    tls:
+      enabled: true
+  rabbitmq:
+    tls:
+      enabled: true
 
 # #723 / #727: MSP 連結プロファイルでは SC-04（OpenD 認証操作）のサイドカー opend-auth を立てる。イメージは
 # scripts/k8s-local-images.sh が opend-auth-gateway を build/import する。--set で立てると k8s-local-deploy.sh の
@@ -150,6 +160,12 @@ services:
         secretKeyRef: { name: ast-operator-hold, key: enabled, optional: true }
       - name: RiskManagement__OperatorKillSwitchHold__Reason
         secretKeyRef: { name: ast-operator-hold, key: reason, optional: true }
+      # NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）を提供側で確かめる。段 1 は Audit（記録だけ・操作を止めない）。
+      # 段 2 で Enforce にする（確かめられない操作を 403 で拒む）。シークレットは scripts/ast-owner-totp-enroll.sh が作る Secret ast-owner-totp
+      # （chart・ESO・ArgoCD の管理の外）を optional で読む。Secret が無ければ Audit は「未構成」と記録するだけ。
+      - { name: OwnerSecondFactor__Mode, value: "Audit" }
+      - name: OwnerSecondFactor__Secret
+        secretKeyRef: { name: ast-owner-totp, key: secret, optional: true }
 
   # ============ 判断由来の決済の指値の未約定時の取消（ADR-0067・#1339・利用者裁定 2026-10-21）============
   # FR-10, FR-19, ADR-0067 決定 2・6, #1339, IADR-0539: 判断由来の決済の指値が N 分たっても約定しなければ取り消す（取り消すだけ）。
@@ -429,6 +445,12 @@ services:
       # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）を提供側で確かめる。段 1 は Audit（記録だけ・操作を止めない）。
+      # 段 2 で Enforce にする（確かめられない操作を 403 で拒む）。シークレットは scripts/ast-owner-totp-enroll.sh が作る Secret ast-owner-totp
+      # （chart・ESO・ArgoCD の管理の外）を optional で読む。Secret が無ければ Audit は「未構成」と記録するだけ。
+      - { name: OwnerSecondFactor__Mode, value: "Audit" }
+      - name: OwnerSecondFactor__Secret
+        secretKeyRef: { name: ast-owner-totp, key: secret, optional: true }
 
   # ============ ②実LLM ＋ 価格文脈(#236/IADR-0099) ＋ サイクル配線: trade-decision ============
   # FR-02/04/11, ADR-0003, IADR-0061/0088/0095/0099。LogPrompts は既定 ""（記録しない・安全側）。

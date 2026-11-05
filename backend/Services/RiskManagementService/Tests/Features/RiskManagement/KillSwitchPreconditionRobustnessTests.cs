@@ -31,13 +31,52 @@ public class KillSwitchPreconditionRobustnessTests
         var seen = service.GetState().Version;
 
         // 時計が進まない（または戻る）まま、別の操作が解除して再発動した。
-        service.Disengage("owner-b", "回復", seen);
+        service.Disengage("owner-b", "回復", expectedVersion: seen);
         service.Engage("owner-b", "再発");
 
-        var stale = () => service.Disengage("owner", "見た状態で解除", seen);
+        var stale = () => service.Disengage("owner", "見た状態で解除", expectedVersion: seen);
         stale.Should().Throw<KillSwitchVersionConflictException>();
         service.GetState().Engaged.Should().BeTrue();
         service.GetState().Version.Should().Be("3");
+    }
+
+    // 🔴 #1534, #1542, IADR-0620, IADR-0615: 前提条件で拒否される解除（版の不一致・段 2 の版なし）は、第 2 要素のコードを消費しない
+    // （門〔beforeCommit〕より前に止める）。
+    [Theory]
+    [InlineData("stale")]
+    [InlineData("missing-in-stage2")]
+    public void 前提条件で拒否される解除は第2要素の門を呼ばない(string kind)
+    {
+        var store = new InMemoryKillSwitchStore();
+        var clock = new FakeClock(T0, DateOnly.FromDateTime(T0.UtcDateTime));
+        var mode = kind == "stale" ? KillSwitchPreconditionMode.Report : KillSwitchPreconditionMode.Require;
+        var service = new KillSwitchService(store, new InMemorySettingsChangeLog(), clock, preconditions: new KillSwitchPreconditionOptions(mode));
+        service.Engage("owner", "急変");
+        var gateCalls = 0;
+
+        var act = () => service.Disengage("owner", "回復", () => gateCalls++, kind == "stale" ? "0" : null);
+
+        if (kind == "stale")
+            act.Should().Throw<KillSwitchVersionConflictException>();
+        else
+            act.Should().Throw<KillSwitchPreconditionRequiredException>();
+        gateCalls.Should().Be(0);
+        store.GetState().Engaged.Should().BeTrue();
+    }
+
+    [Fact]
+    public void 正しい版の解除は第2要素の門を1回呼んでから書く()
+    {
+        var store = new InMemoryKillSwitchStore();
+        var clock = new FakeClock(T0, DateOnly.FromDateTime(T0.UtcDateTime));
+        var service = new KillSwitchService(store, new InMemorySettingsChangeLog(), clock);
+        service.Engage("owner", "急変");
+        var gateCalls = 0;
+
+        service.Disengage("owner", "回復", () => gateCalls++, service.GetState().Version);
+
+        gateCalls.Should().Be(1);
+        store.GetState().Engaged.Should().BeFalse();
     }
 
     [Fact]

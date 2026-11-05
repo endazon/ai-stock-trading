@@ -65,7 +65,7 @@ public class KillSwitchHoldAndPreconditionTests
             _ => null,
         };
         var response = await client.PostAsJsonAsync(
-            "/risk-controls/kill-switch/disengage", new KillSwitchRequest("再開", expected));
+            "/risk-controls/kill-switch/disengage", new KillSwitchRequest("再開", ExpectedVersion: expected));
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await CodeOf(response)).Should().Be(KillSwitchHeldByOperatorException.Code);
@@ -93,7 +93,7 @@ public class KillSwitchHoldAndPreconditionTests
         var seen = (await StateOf(client)).Version;
         (await client.PostAsJsonAsync("/risk-controls/kill-switch/engage", new KillSwitchRequest("再発"))).EnsureSuccessStatusCode();
 
-        var response = await client.PostAsJsonAsync("/risk-controls/kill-switch/disengage", new KillSwitchRequest("再開", seen));
+        var response = await client.PostAsJsonAsync("/risk-controls/kill-switch/disengage", new KillSwitchRequest("再開", ExpectedVersion: seen));
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await CodeOf(response)).Should().Be(KillSwitchVersionConflictException.Code);

@@ -51,7 +51,9 @@ public sealed class KillSwitchService(
             Before: "Disengaged", After: "Engaged"));
     }
 
-    public void Disengage(string actor, string reason, string? expectedVersion = null)
+    // NFR-06, #1542, IADR-0615 決定 9: beforeCommit（第 2 要素の門）は、入力の検証・冪等の判定の後、状態を変える直前にだけ呼ぶ。
+    // #1534, IADR-0620: expectedVersion は beforeCommit の後ろ（位置で渡す既存の呼び手を変えない）。
+    public void Disengage(string actor, string reason, Action? beforeCommit = null, string? expectedVersion = null)
     {
         RequireActorAndReason(actor, reason);
 
@@ -59,6 +61,18 @@ public sealed class KillSwitchService(
         // #1534, IADR-0620: 保持の拒否は版の前提条件（409 version_conflict・428）より先に効く（code は operator_hold）。
         if (hold is { Enabled: true })
             throw new KillSwitchHeldByOperatorException();
+
+        // #1534, IADR-0620: 前提条件で拒否される解除は、第 2 要素のコードを消費する前に止める（428・版の不一致の 409）。
+        // 版の比較は書き込みの中でも原子的にもう一度行う（ここは門の手前の早期の判定）。
+        if (expectedVersion is null && _mode == KillSwitchPreconditionMode.Require)
+            throw new KillSwitchPreconditionRequiredException();
+        var observed = store.GetState();
+        if (expectedVersion is not null && !string.Equals(observed.Version, expectedVersion.Trim(), StringComparison.Ordinal))
+            throw new KillSwitchVersionConflictException();
+
+        // 既に解除済みなら門を通さない（再送はコードを消費しない）。書き込みは従来どおり。
+        if (observed.Engaged)
+            beforeCommit?.Invoke();
 
         var now = clock.UtcNow;
         Write(new KillSwitchState(false, actor, reason, now), expectedVersion, requiredInStage2: true, "解除");

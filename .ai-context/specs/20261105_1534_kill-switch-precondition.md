@@ -53,6 +53,7 @@ plan_refs:
 - [x] 実 PostgreSQL で、同じ版の 2 件の同時の書き込みは 1 件だけが通る（`KillSwitchVersionConcurrencyE2ETests`。手元の Testcontainers で合格・10 回の交錯）
 - [x] 実 PostgreSQL で、前提条件なしの同時の発動 2 件は両方とも成功し、最後は発動のまま。行の無い状態での同時の初回の書き込みは、前提条件なしなら 2 件とも成功し、前提条件ありなら 1 件だけが通り他方は 409（5xx にしない）（同上）
 - [x] 保持（#1530）の間の解除は、版が合っていても古くても無くても（段 2 でも）保持の 409（`operator_hold`）で拒否され、状態も版も変わらない。保持が無ければ古い版の 409 は `version_conflict` で区別できる。保持による起動は版を進める（`KillSwitchHoldAndPreconditionTests`）
+- [x] 前提条件で拒否される解除（版の不一致・段 2 の版なし）は第 2 要素の門を呼ばない。正しい版なら門を 1 回呼んでから書く（`KillSwitchPreconditionRobustnessTests`）
 
 ## 範囲外（残余）
 

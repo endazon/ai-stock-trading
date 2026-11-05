@@ -42,6 +42,8 @@ service RiskControlsOwnerWrite {
 
 message KillSwitchChangeRequest {
   string reason = 1;
+  // NFR-06, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP の 6 桁）。末尾に追加（任意）。
+  optional string second_factor_code = 2;
 }
 
 message KillSwitchChangeResponse {
@@ -51,6 +53,8 @@ message KillSwitchChangeResponse {
 
 message TradingPauseChangeRequest {
   string reason = 1;
+  // NFR-06, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP の 6 桁）。末尾に追加（任意）。
+  optional string second_factor_code = 2;
 }
 
 message TradingPauseChangeResponse {
@@ -59,6 +63,8 @@ message TradingPauseChangeResponse {
 
 message GoodFaithViolationClearanceRequest {
   string reason = 1;
+  // NFR-06, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP の 6 桁）。末尾に追加（任意）。
+  optional string second_factor_code = 2;
 }
 
 message GoodFaithViolationClearanceResponse {
@@ -74,6 +80,8 @@ message StageTransitionApprovalRequest {
   TradingStage target_stage = 1;
   // 代理される利用者（ボットが多層認証で解決した操作者）。欠落は REST の onBehalfOf の省略と同じ。
   optional string on_behalf_of = 2;
+  // NFR-06, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP の 6 桁）。末尾に追加（任意）。
+  optional string second_factor_code = 3;
 }
 
 message StageTransitionApprovalResponse {
@@ -97,6 +105,8 @@ message DriftAdoptionCommandRequest {
   Market market = 2;
   string reason = 3;
   optional string on_behalf_of = 4;
+  // NFR-06, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP の 6 桁）。末尾に追加（任意）。
+  optional string second_factor_code = 5;
 }
 
 message DriftAdoptionCommandResponse {

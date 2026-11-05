@@ -42,6 +42,7 @@ kill switch の発動・解除は現在の状態を見ずに上書きする。�
 2a. `If-Match` は版を 1 つだけ受ける。`*`・複数の値（カンマ区切り・ヘッダーの重複）は解釈せず 400（`code` は `if_match_unsupported`）。弱い印 `W/` と引用符は外す。428 の本文も `code`（`precondition_required`）を持つ。
 2b. **前提条件なしの書き込み（段 1 の発動・解除、gRPC、撤退の自動発動）は、最後の書き込みが勝つ従前の挙動を保つ。** 版の列が並行トークンなので並行の他の書き込みと競合し得るが、そのときは読み直して書き直す（`EfKillSwitchStore.MaxWriteAttempts` = 5 回まで。競合と同じ分類の失敗だけを再試行し、上限を超えたら例外を返す＝5xx）。発動が並行で失われない。
 2c. **SSH の経路の保持（IADR-0613）の間の解除は、版の前提条件より先に保持で拒否する**（409・`code` は `operator_hold`。版が合っていても古くても無くても、段 2 でも同じ）。同じ 409 でも `code` で版の競合（`version_conflict`）と区別できる。保持による起動は前提条件なしの書き込みとして版を進める。
+2d. **第 2 要素（IADR-0615）との順**: 解除は「保持の拒否 → 段 2 の版なし（428）→ 版の不一致（409・門の手前の早期の判定）→ 第 2 要素の門 → 原子的な比較と書き込み」の順で判定する。前提条件で拒否される解除は第 2 要素のコードを消費しない。要求の `ExpectedVersion` は `SecondFactorCode` の後ろ、`Disengage` の `expectedVersion` は `beforeCommit` の後ろに置く（位置で渡す既存の呼び手を変えない）。
 3. `RiskControls:KillSwitch:Precondition` = `Report`（既定）/ `Require`。`Require` は前提条件の無い解除を `KillSwitchPreconditionRequiredException`（428）で拒否する。発動は求めない。知らない値は起動で止める。
 
 ## 結果

@@ -30,7 +30,7 @@ public class KillSwitchPreconditionTests
         engaged.Should().NotBe("0");
 
         clock.UtcNow = T0.AddMinutes(1);
-        service.Disengage("owner", "回復", engaged);
+        service.Disengage("owner", "回復", expectedVersion: engaged);
         service.GetState().Version.Should().NotBe(engaged);
     }
 
@@ -42,13 +42,13 @@ public class KillSwitchPreconditionTests
         service.Engage("A", "急変");
         var seenByA = service.GetState().Version;
         clock.UtcNow = T0.AddMinutes(1);
-        service.Disengage("B", "回復", seenByA);
+        service.Disengage("B", "回復", expectedVersion: seenByA);
         clock.UtcNow = T0.AddMinutes(2);
         service.Engage("B", "再度の急変", service.GetState().Version);
         var before = store.GetState();
 
         clock.UtcNow = T0.AddMinutes(3);
-        var stale = () => service.Disengage("A", "回復したはず", seenByA);
+        var stale = () => service.Disengage("A", "回復したはず", expectedVersion: seenByA);
 
         stale.Should().Throw<KillSwitchVersionConflictException>();
         store.GetState().Should().Be(before, "古い版を見た操作は何も書かない");
@@ -92,7 +92,7 @@ public class KillSwitchPreconditionTests
         unconditioned.Should().Throw<KillSwitchPreconditionRequiredException>();
         service.GetState().Engaged.Should().BeTrue();
 
-        service.Disengage("owner", "回復", service.GetState().Version);
+        service.Disengage("owner", "回復", expectedVersion: service.GetState().Version);
         service.GetState().Engaged.Should().BeFalse();
     }
 

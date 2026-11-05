@@ -273,6 +273,37 @@ jobs:
             echo "::error::既定値の描画でリソースが 1 件も生成されなかった（chart またはテンプレート条件の破綻）。"
             exit 1
           fi
+      # NFR, NFR-18, #1535, IADR-0621: 基盤（DB・ブローカ）への TLS（基盤の IADR-0591 の段 4b-2 の AST 側）。
+      # 1. values-local の描画で、DB を持つ全サービスの接続文字列が VerifyFull＋基盤の CA、全サービスのブローカが amqps:5671、
+      #    SSL_CERT_DIR は既定の /etc/ssl/certs を先に持ち、CA の ConfigMap は非 optional でマウントされる。
+      # 2. TLS を有効にして CA の設定が無いと描画が止まる（黙って平文へ戻らない）。
+      # 3. 既定（values.yaml）の描画は平文のまま（TLS の部品が漏れない）。
+      - name: Assert platform-infra TLS (VerifyFull・amqps・CA)
+        run: |
+          set -eu  # pipefail は付けない（grep -q が先に閉じると前段の SIGPIPE で偽になる）。入力は here-string で渡す。
+          fail() { echo "::error::$1"; exit 1; }
+          out="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          conns="$(grep -c 'name: ConnectionStrings__DefaultConnection' <<<"$out" || true)"
+          full="$(grep -cF ';SSL Mode=VerifyFull;Root Certificate=/etc/platform-infra-ca/ca.crt"' <<<"$out" || true)"
+          [ "$conns" -ge 7 ] && [ "$conns" = "$full" ] || fail "DB の接続文字列 $conns 件のうち VerifyFull＋基盤の CA は $full 件。"
+          if grep -Eq 'SSL Mode=(Require|Prefer|Allow|Disable)|Trust Server Certificate' <<<"$out"; then fail "検証を緩める DB の TLS の値が描画された。"; fi
+          mqs="$(grep -c 'name: RabbitMq__ConnectionString' <<<"$out" || true)"
+          amqps="$(grep -A1 'name: RabbitMq__ConnectionString' <<<"$out" | grep -cE 'value: "amqps://ast-[a-z-]+:\$\(RABBITMQ_PASSWORD\)@rabbitmq:5671"' || true)"
+          [ "$mqs" -ge 11 ] && [ "$mqs" = "$amqps" ] || fail "ブローカの宛先 $mqs 件のうち amqps:5671 は $amqps 件。"
+          dirs="$(grep -A1 'name: SSL_CERT_DIR' <<<"$out" | grep -c 'value: "/etc/ssl/certs:/etc/platform-infra-ca"' || true)"
+          [ "$dirs" = "$mqs" ] || fail "SSL_CERT_DIR（/etc/ssl/certs を先に残す）が $mqs 件中 $dirs 件。"
+          cas="$(grep -A1 'name: PlatformInfraCa__CertificatePath' <<<"$out" | grep -c 'value: "/etc/platform-infra-ca/ca.crt"' || true)"
+          [ "$cas" = "$mqs" ] || fail "PlatformInfraCa__CertificatePath が $mqs 件中 $cas 件。"
+          vols="$(grep -A3 -E '^        - name: platform-infra-ca$' <<<"$out" | grep -c 'name: platform-infra-ca$' || true)"
+          [ "$vols" -ge "$mqs" ] || fail "CA の ConfigMap のマウントが足りない（$vols 件）。"
+          if grep -A6 -E '^        - name: platform-infra-ca$' <<<"$out" | grep -q 'optional: true'; then fail "CA の ConfigMap が optional でマウントされた（無いと平文の Pod が立ち得る）。"; fi
+          for v in 'global.infraCa.configMap=' 'global.infraCa.caKey='; do
+            if helm template ast "$CHART" -f "$CHART/values-local.yaml" --set "$v" > /dev/null 2>&1; then fail "CA の設定（$v）が無いのに描画が通った。"; fi
+          done
+          if helm template ast "$CHART" -f "$CHART/values-local.yaml" --set global.rabbitmq.tls.port= > /dev/null 2>&1; then fail "amqps のポートが無いのに描画が通った。"; fi
+          def="$(helm template ast "$CHART")"
+          if grep -Eq 'amqps://|VerifyFull|platform-infra-ca|SSL_CERT_DIR' <<<"$def"; then fail "既定の描画に TLS の部品が現れた（既定は平文のまま）。"; fi
+          echo "platform-infra TLS: db=$full/$conns mq=$amqps/$mqs"
       # ADR-0006, NFR, #1525, IADR-0608: 単一ノードのクラウドのプロファイル（values-cloud.yaml）。
       # 1. digest の無い描画は止まる（fail-closed）。形の違う digest も止まる。
       # 2. 検査用の digest（ci/values-cloud-digests.fixture.yaml）を重ねた描画で:
@@ -281,6 +312,7 @@ jobs:
       #    認証サイドカーは載らない。
       # 3. 経路 B（values-local）・既定の描画には digest も DB_PASSWORD も現れない（部品が既定の描画へ漏れない）。
       # 4. ArgoCD の Application は values-cloud を参照しない（最初の稼働は helm を手で実行する。手順書）。
+      # 5. 基盤への接続は TLS（DB は VerifyFull＋基盤の CA・ブローカは amqps:5671・LLM ゲートウェイは https。#1535, IADR-0621）。
       - name: Assert values-cloud (単一ノードのクラウド)
         run: |
           set -eu  # pipefail は付けない（grep -q が先に閉じると printf の SIGPIPE で偽になる）。入力は here-string で渡す。
@@ -318,12 +350,21 @@ jobs:
           # NFR, IADR-0609: Pod のセキュリティは段 2（権限昇格なし）で始め、名前空間の PSA の enforce は baseline。
           grep -q 'pod-security.kubernetes.io/enforce: "baseline"' <<<"$out" || fail "values-cloud の名前空間に PSA の enforce=baseline が無い。"
           [ "$(grep -c 'allowPrivilegeEscalation: false' <<<"$out" || true)" -ge 11 ] || fail "values-cloud の Worker に権限昇格なし（段 2）が付いていない。"
+          # NFR-18, #1535, IADR-0621: 基盤への接続は TLS（DB は VerifyFull＋基盤の CA・ブローカは amqps:5671・LLM ゲートウェイは https）。
+          full="$(grep -cF ';SSL Mode=VerifyFull;Root Certificate=/etc/platform-infra-ca/ca.crt"' <<<"$out" || true)"
+          [ "$conns" = "$full" ] || fail "values-cloud の DB の接続文字列 $conns 件のうち VerifyFull＋基盤の CA は $full 件。"
+          mqs="$(grep -c 'name: RabbitMq__ConnectionString' <<<"$out" || true)"
+          amqps="$(grep -A1 'name: RabbitMq__ConnectionString' <<<"$out" | grep -cE 'value: "amqps://ast-[a-z-]+:\$\(RABBITMQ_PASSWORD\)@rabbitmq:5671"' || true)"
+          [ "$mqs" -ge 11 ] && [ "$mqs" = "$amqps" ] || fail "values-cloud のブローカの宛先 $mqs 件のうち amqps:5671 は $amqps 件。"
+          gws="$(grep -A1 'name: LlmGateway__BaseUrl' <<<"$out" | grep -c 'value: "https://llmgateway-service.microservices-platform:8080"' || true)"
+          [ "$gws" = 2 ] || fail "values-cloud の LLM ゲートウェイの宛先（取引判断・報告書）のうち https は $gws 件（2 件のはず）。"
+          if grep -q 'http://llmgateway-service' <<<"$out"; then fail "values-cloud の描画に LLM ゲートウェイの平文の宛先が現れた。"; fi
           for prof in "" "-f $CHART/values-local.yaml"; do
             o="$(helm template ast "$CHART" $prof)"
             if grep -Eq '@sha256:|name: DB_PASSWORD$' <<<"$o"; then fail "既定または values-local の描画に digest か DB_PASSWORD が現れた（部品が漏れた）。"; fi
           done
           if grep -q 'values-cloud' deploy/argocd/application.yaml; then fail "ArgoCD の Application が values-cloud を参照している（最初の稼働では使わない）。"; fi
-          echo "values-cloud: images=$(grep -c . <<<"$images") connections=$conns"
+          echo "values-cloud: images=$(grep -c . <<<"$images") connections=$conns tls-db=$full amqps=$amqps https-gateway=$gws"
       # NFR, #1548, IADR-0608 決定 1: values-cloud は values.yaml に直接重ねる。Helm は extraEnv のリストを置き換えるので、
       # values.yaml に足した env を values-cloud の同じサービスへ写し忘れると、クラウドの描画から黙って落ちる。
       # 既定の描画の env（Deployment ごと）が values-cloud（＋検査用の digest）の描画にも在ることを確かめる。
@@ -1670,7 +1711,9 @@ jobs:
               grep -A4 'name: RABBITMQ_PASSWORD$' <<<"$doc" | grep -q "key: ast-${svc}\$" || fail "$prof: $d のパスワードのキーが ast-${svc} でない"
               grep -A4 'name: RABBITMQ_PASSWORD$' <<<"$doc" | grep -q 'name: ast-rabbitmq-users$' || fail "$prof: $d のパスワードの Secret が ast-rabbitmq-users でない"
               if grep -A5 'name: RABBITMQ_PASSWORD$' <<<"$doc" | grep -q 'optional: true'; then fail "$prof: $d のパスワードが optional（無いときに別の資格情報へ戻る経路になる）"; fi
-              grep -A1 'name: RabbitMq__ConnectionString$' <<<"$doc" | grep -qF "value: \"amqp://ast-${svc}:\$(RABBITMQ_PASSWORD)@rabbitmq:5672\"" \
+              # NFR-18, #1535, IADR-0621: 経路 B（local）は TLS（amqps:5671）、既定は平文（amqp:5672）。どちらもサービスごとのユーザー。
+              if [ "$prof" = local ]; then mqurl="amqps://ast-${svc}:\$(RABBITMQ_PASSWORD)@rabbitmq:5671"; else mqurl="amqp://ast-${svc}:\$(RABBITMQ_PASSWORD)@rabbitmq:5672"; fi
+              grep -A1 'name: RabbitMq__ConnectionString$' <<<"$doc" | grep -qF "value: \"${mqurl}\"" \
                 || fail "$prof: $d の接続文字列がサービスごとのユーザーでない"
               # 補間は先に定義した env だけを参照できる（順序を崩すと $(RABBITMQ_PASSWORD) が文字のまま渡る）。
               p="$(grep -n 'name: RABBITMQ_PASSWORD$' <<<"$doc" | cut -d: -f1)"; c="$(grep -n 'name: RabbitMq__ConnectionString$' <<<"$doc" | cut -d: -f1)"
