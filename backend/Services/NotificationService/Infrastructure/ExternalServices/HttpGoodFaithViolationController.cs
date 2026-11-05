@@ -22,13 +22,17 @@ internal sealed class HttpGoodFaithViolationController(
 {
     internal const string OwnerHint = "（Bot の owner クライアント設定・trading-owner ロール割当を確認してください）";
 
+    public Task<GoodFaithViolationClearResult> ClearAsync(
+        string reason, CancellationToken cancellationToken = default) =>
+        ClearAsync(reason, null, cancellationToken);
+
     public async Task<GoodFaithViolationClearResult> ClearAsync(
-        string reason, CancellationToken cancellationToken = default)
+        string reason, string? secondFactorCode, CancellationToken cancellationToken = default)
     {
         try
         {
             using var response = await httpClient
-                .PostAsJsonAsync("/risk-controls/good-faith-violations/clear", new { reason }, cancellationToken)
+                .PostAsJsonAsync("/risk-controls/good-faith-violations/clear", new ClearRequest(reason, secondFactorCode), cancellationToken)
                 .ConfigureAwait(false);
 
             if (response.StatusCode == HttpStatusCode.OK)
@@ -120,4 +124,7 @@ internal sealed class HttpGoodFaithViolationController(
         int RemainingCount);
 
     internal sealed record ErrorView(string? Error);
+
+    // NFR-06, #1552, IADR-0615: 確認コードは null なら欄ごと送らない（本文は従来と同じ）。値はログに出さない。
+    private sealed record ClearRequest(string Reason, [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null);
 }

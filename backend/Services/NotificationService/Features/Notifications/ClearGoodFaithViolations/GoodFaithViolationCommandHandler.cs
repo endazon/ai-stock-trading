@@ -26,6 +26,9 @@ public sealed class GoodFaithViolationCommandHandler(
         DiscordCommandContext context,
         string? confirmationPhrase,
         string? clearanceReason = null,
+        // NFR-06, FR-14, #1552, IADR-0615: 確認の画面で入れた認証アプリの 6 桁（任意・空は null）。確かめるのは提供側で、
+        // ボットは運ぶだけ（ログ・応答に出さない）。
+        string? secondFactorCode = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -77,7 +80,7 @@ public sealed class GoodFaithViolationCommandHandler(
         // 操作者と経路は理由へ添える（監査の「誰が」を理由文からも辿れるようにする）。
         var reason = $"{clearanceReason.Trim()}（Discord Bot 経由・actor={auth.Actor}）";
 
-        var result = await controller.ClearAsync(reason, cancellationToken).ConfigureAwait(false);
+        var result = await controller.ClearAsync(reason, secondFactorCode, cancellationToken).ConfigureAwait(false);
 
         logger.LogInformation(
             "GFV 解除を実行しました（Actor={Actor}・Succeeded={Succeeded}・Cleared={Cleared}）。",

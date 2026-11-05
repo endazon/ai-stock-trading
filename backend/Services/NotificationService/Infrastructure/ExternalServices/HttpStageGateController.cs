@@ -91,8 +91,12 @@ public sealed class HttpStageGateController(
         }
     }
 
+    public Task<StageTransitionCommandResult> RequestTransitionAsync(
+        int targetStage, string onBehalfOf, CancellationToken cancellationToken = default) =>
+        RequestTransitionAsync(targetStage, onBehalfOf, null, cancellationToken);
+
     public async Task<StageTransitionCommandResult> RequestTransitionAsync(
-        int targetStage, string onBehalfOf, CancellationToken cancellationToken = default)
+        int targetStage, string onBehalfOf, string? secondFactorCode, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(onBehalfOf);
 
@@ -103,7 +107,7 @@ public sealed class HttpStageGateController(
             // 一覧外のクライアントでは無視される）。名前そのものが承認の資格になるわけではない。
             using var response = await httpClient
                 .PostAsJsonAsync(
-                    "/risk-controls/stage-gate/transition", new { targetStage, onBehalfOf }, cancellationToken)
+                    "/risk-controls/stage-gate/transition", new TransitionRequest(targetStage, onBehalfOf, secondFactorCode), cancellationToken)
                 .ConfigureAwait(false);
 
             // 200＝受理・422＝受理不能（未充足基準／飛び級／現段階指定）。どちらも本文に結果 JSON を持つ。
@@ -436,4 +440,7 @@ public sealed class HttpStageGateController(
         StageSettingsView? ResultingSettings,
         IReadOnlyList<int>? RejectionReasons,
         Stage1GateCriteriaView? Stage1Criteria = null);
+
+    // NFR-06, #1552, IADR-0615: 確認コードは null なら欄ごと送らない（本文は従来と同じ）。値はログに出さない。
+    private sealed record TransitionRequest(int TargetStage, string OnBehalfOf, [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null);
 }

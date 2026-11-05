@@ -21,8 +21,17 @@ public sealed class GrpcPauseController(
             cancellationToken);
 
     public Task<PauseResult> ResumeAsync(string reason, CancellationToken cancellationToken = default) =>
-        ChangeAsync("再開", options => transport.OwnerWrite.ResumeTradingAsync(new RiskProto.TradingPauseChangeRequest { Reason = reason }, options),
-            cancellationToken);
+        ResumeAsync(reason, null, cancellationToken);
+
+    // NFR-06, #1552, IADR-0615: 再開だけが確認コードを運ぶ（一時停止は止める向き＝ADR-0009 の非対称）。
+    public Task<PauseResult> ResumeAsync(string reason, string? secondFactorCode, CancellationToken cancellationToken = default)
+    {
+        var request = new RiskProto.TradingPauseChangeRequest { Reason = reason };
+        // NFR-06, #1552, IADR-0615: 確認コードは入れたときだけ載せる（欄は optional。null を代入すると例外）。値はログに出さない。
+        if (secondFactorCode is not null)
+            request.SecondFactorCode = secondFactorCode;
+        return ChangeAsync("再開", options => transport.OwnerWrite.ResumeTradingAsync(request, options), cancellationToken);
+    }
 
     private async Task<PauseResult> ChangeAsync(
         string operation,

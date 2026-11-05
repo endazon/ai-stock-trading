@@ -19,8 +19,13 @@ public sealed class GrpcPositionDriftAdoptionController(
 {
     private const string Operation = "乖離の取り込み";
 
+    public Task<PositionDriftAdoptionResult> AdoptAsync(
+        string symbol, Market market, string reason, string onBehalfOf, CancellationToken cancellationToken = default) =>
+        AdoptAsync(symbol, market, reason, onBehalfOf, null, cancellationToken);
+
     public async Task<PositionDriftAdoptionResult> AdoptAsync(
-        string symbol, Market market, string reason, string onBehalfOf, CancellationToken cancellationToken = default)
+        string symbol, Market market, string reason, string onBehalfOf, string? secondFactorCode,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(symbol);
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
@@ -33,6 +38,9 @@ public sealed class GrpcPositionDriftAdoptionController(
             Reason = reason,
             OnBehalfOf = onBehalfOf,
         };
+        // NFR-06, #1552, IADR-0615: 確認コードは入れたときだけ載せる（欄は optional。null を代入すると例外）。値はログに出さない。
+        if (secondFactorCode is not null)
+            request.SecondFactorCode = secondFactorCode;
         var outcome = await transport.Calls.CallOnceAsync(
             Operation, options => transport.OwnerWrite.AdoptPositionDriftAsync(request, options), cancellationToken).ConfigureAwait(false);
 

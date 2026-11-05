@@ -16,11 +16,19 @@ public sealed class GrpcGoodFaithViolationController(
 {
     private const string Operation = "GFV 解除";
 
-    public async Task<GoodFaithViolationClearResult> ClearAsync(string reason, CancellationToken cancellationToken = default)
+    public Task<GoodFaithViolationClearResult> ClearAsync(string reason, CancellationToken cancellationToken = default) =>
+        ClearAsync(reason, null, cancellationToken);
+
+    public async Task<GoodFaithViolationClearResult> ClearAsync(
+        string reason, string? secondFactorCode, CancellationToken cancellationToken = default)
     {
+        var request = new RiskProto.GoodFaithViolationClearanceRequest { Reason = reason };
+        // NFR-06, #1552, IADR-0615: 確認コードは入れたときだけ載せる（欄は optional。null を代入すると例外）。値はログに出さない。
+        if (secondFactorCode is not null)
+            request.SecondFactorCode = secondFactorCode;
         var outcome = await transport.Calls.CallOnceAsync(
             Operation,
-            options => transport.OwnerWrite.ClearGoodFaithViolationsAsync(new RiskProto.GoodFaithViolationClearanceRequest { Reason = reason }, options),
+            options => transport.OwnerWrite.ClearGoodFaithViolationsAsync(request, options),
             cancellationToken).ConfigureAwait(false);
 
         if (outcome.Response is not { } response)

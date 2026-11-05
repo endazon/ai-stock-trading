@@ -32,8 +32,13 @@ internal sealed class HttpPositionDriftAdoptionController(
     internal const string ActorUnconfirmed =
         "操作者が記録されたかを応答から確認できません（リスク管理が旧版の可能性があります。監査台帳で操作者を確認してください）。";
 
+    public Task<PositionDriftAdoptionResult> AdoptAsync(
+        string symbol, Market market, string reason, string onBehalfOf, CancellationToken cancellationToken = default) =>
+        AdoptAsync(symbol, market, reason, onBehalfOf, null, cancellationToken);
+
     public async Task<PositionDriftAdoptionResult> AdoptAsync(
-        string symbol, Market market, string reason, string onBehalfOf, CancellationToken cancellationToken = default)
+        string symbol, Market market, string reason, string onBehalfOf, string? secondFactorCode,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(symbol);
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
@@ -46,7 +51,7 @@ internal sealed class HttpPositionDriftAdoptionController(
             // **数量は載せない**（目標は最新の観測が決める）。市場は数値で送る（リスク管理の JSON 設定＝web 既定）。
             using var response = await httpClient
                 .PostAsJsonAsync(
-                    "/risk-controls/position-drift/adopt", new AdoptRequest(symbol, market, reason, onBehalfOf), cancellationToken)
+                    "/risk-controls/position-drift/adopt", new AdoptRequest(symbol, market, reason, onBehalfOf, secondFactorCode), cancellationToken)
                 .ConfigureAwait(false);
 
             if (response.StatusCode == HttpStatusCode.OK)
@@ -150,7 +155,9 @@ internal sealed class HttpPositionDriftAdoptionController(
     }
 
     // 要求本文（web JSON = camelCase・列挙は数値）。OnBehalfOf はリスク管理の要求型の末尾（#871）。
-    private sealed record AdoptRequest(string Symbol, Market Market, string Reason, string OnBehalfOf);
+    // NFR-06, #1552, IADR-0615: 確認コードは null なら欄ごと送らない（本文は従来と同じ）。値はログに出さない。
+    private sealed record AdoptRequest(
+        string Symbol, Market Market, string Reason, string OnBehalfOf, [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null);
 
     // リスク管理の応答の射影 DTO（送り手の本物の型は PositionDriftAdoptionResponse。T-10-989 の契約テストが結ぶ）。
     // 数量・市場は受け手で null 許容にしない——欠落は 0／既定値へ落ちるが、送り手の改名は契約テストが止める。

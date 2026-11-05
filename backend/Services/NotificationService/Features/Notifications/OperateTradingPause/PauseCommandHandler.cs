@@ -16,6 +16,9 @@ public sealed class PauseCommandHandler(
 {
     public async Task<PauseCommandResult> HandleAsync(
         DiscordCommandContext context,
+        // NFR-06, FR-14, #1552, IADR-0615: 確認の画面で入れた認証アプリの 6 桁（任意・空は null）。確かめるのは提供側で、
+        // ボットは運ぶだけ（ログ・応答に出さない）。
+        string? secondFactorCode = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -53,7 +56,7 @@ public sealed class PauseCommandHandler(
         // pause/resume は冪等（Risk が現状態を返す）。確認フレーズは要求しない（確認ボタンのみ）。
         var result = command.Kind == BotCommandKind.Pause
             ? await controller.PauseAsync(reason, cancellationToken).ConfigureAwait(false)
-            : await controller.ResumeAsync(reason, cancellationToken).ConfigureAwait(false);
+            : await controller.ResumeAsync(reason, secondFactorCode, cancellationToken).ConfigureAwait(false);
 
         logger.LogInformation(
             "一時停止操作を実行しました（Actor={Actor}・Kind={Kind}・Succeeded={Succeeded}・Paused={Paused}）。",

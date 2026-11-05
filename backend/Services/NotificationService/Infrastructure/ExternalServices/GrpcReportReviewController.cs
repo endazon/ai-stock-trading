@@ -61,14 +61,22 @@ public sealed class GrpcReportReviewController(
             response.HasLatestConfirmedVersion ? response.LatestConfirmedVersion : null);
     }
 
+    public Task<ReportConfirmResult> ConfirmAsync(
+        string periodKey, int expectedVersion, string onBehalfOf, CancellationToken cancellationToken = default) =>
+        ConfirmAsync(periodKey, expectedVersion, onBehalfOf, null, cancellationToken);
+
     public async Task<ReportConfirmResult> ConfirmAsync(
-        string periodKey, int expectedVersion, string onBehalfOf, CancellationToken cancellationToken = default)
+        string periodKey, int expectedVersion, string onBehalfOf, string? secondFactorCode,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(periodKey);
         ArgumentException.ThrowIfNullOrWhiteSpace(onBehalfOf);
 
         const string operation = "報告書の確定";
         var request = new ReportProto.ReportConfirmationRequest { PeriodKey = periodKey, ExpectedVersion = expectedVersion, OnBehalfOf = onBehalfOf };
+        // NFR-06, #1552, IADR-0615: 確認コードは入れたときだけ載せる（欄は optional。null を代入すると例外）。値はログに出さない。
+        if (secondFactorCode is not null)
+            request.SecondFactorCode = secondFactorCode;
         // FR-07, FR-14, #1385, IADR-0556 決定 2: 確定だけは専用の deadline（`Reports:GrpcConfirmTimeoutSeconds`・既定 30 秒＝REST の `report-confirm`）。
         var outcome = await transport.ConfirmCalls.CallOnceAsync(
             operation, options => transport.OwnerWrite.ConfirmReportAsync(request, options), cancellationToken).ConfigureAwait(false);

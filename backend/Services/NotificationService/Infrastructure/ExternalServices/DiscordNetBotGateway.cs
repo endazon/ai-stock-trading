@@ -36,9 +36,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     // IADR-0097: 起動・解除でモーダル ID を分離する（送信ハンドラが ID 一致だけで種別を確定でき、誤操作の余地が無い）。
     private const string KillSwitchEngageButtonId = "ast-killswitch-engage-confirm";
     private const string KillSwitchDisengageButtonId = "ast-killswitch-disengage-confirm";
-    private const string KillSwitchEngageModalId = "ast-killswitch-modal";
-    private const string KillSwitchDisengageModalId = "ast-killswitch-disengage-modal";
-    private const string KillSwitchPhraseInputId = "ast-killswitch-phrase";
+    // モーダルの ID と入力欄の ID は DiscordConfirmationModals が持つ（#1552: どの画面に確認コードの欄があるかを試験で固定する）。
 
     // FR-10, ADR-0009: 一時停止/再開の確認ボタン（確認フレーズは求めない＝pause は可逆のため）。
     private const string PauseConfirmButtonId = "ast-pause-confirm";
@@ -53,13 +51,10 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     // **kill switch と同水準**（確認ボタン → 確認フレーズのモーダル）。モーダル ID を専用に分けることで、
     // 送信ハンドラが ID 一致だけで種別を確定でき、誤って別操作を実行する余地が無い（IADR-0097 の規律）。
     private const string GfvClearButtonId = "ast-gfv-clear-confirm";
-    private const string GfvClearModalId = "ast-gfv-clear-modal";
-    private const string GfvClearPhraseInputId = "ast-gfv-clear-phrase";
 
     // ADR-0028 §理由「解除の記録が監査ログに残ることで、**後から「なぜ解除したか」を追える**」。
     // 決定3 により Discord が唯一の窓口であるため、**理由を利用者が書けなければ全解除の理由が
     // 同一文字列になり、「なぜ」は監査から復元できない**（残るのは「解除者が確認済みと自称した」ことだけ）。
-    private const string GfvClearReasonInputId = "ast-gfv-clear-reason";
 
     // FR-07, FR-14, UC-03〜05, IADR-0240: 報告書の確定の確認ボタン。
     // **版番号を CustomId に載せる**（押下時に復元する）——詳細設計07 は「確定要求は 対象ID＋版番号 を必須とする」と
@@ -77,9 +72,6 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     // モーダル ID を専用に分けることで、送信ハンドラが ID の接頭辞だけで種別を確定でき、誤って別操作を実行する余地が無い
     // （IADR-0097 の規律）。
     private const string DriftAdoptButtonPrefix = "ast-drift-adopt-confirm-";
-    private const string DriftAdoptModalPrefix = "ast-drift-adopt-modal-";
-    private const string DriftAdoptPhraseInputId = "ast-drift-adopt-phrase";
-    private const string DriftAdoptReasonInputId = "ast-drift-adopt-reason";
 
     private readonly DiscordSocketClient _client;
     private readonly KillSwitchCommandHandler _handler;
@@ -706,86 +698,70 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         switch (component.Data.CustomId)
         {
             case KillSwitchEngageButtonId:
-                {
-                    var modal = new ModalBuilder()
-                        .WithTitle("全取引の停止")
-                        .WithCustomId(KillSwitchEngageModalId)
-                        .AddTextInput("確認フレーズを入力してください", KillSwitchPhraseInputId, required: true)
-                        .Build();
-                    await component.RespondWithModalAsync(modal).ConfigureAwait(false);
-                    return;
-                }
+                await component.RespondWithModalAsync(DiscordConfirmationModals.KillSwitchEngage()).ConfigureAwait(false);
+                return;
 
             case KillSwitchDisengageButtonId:
-                {
-                    // IADR-0097: 解除も起動と同じくフレーズ入力モーダルを提示する（確認ボタンのみでは解除しない）。
-                    var modal = new ModalBuilder()
-                        .WithTitle("停止の解除")
-                        .WithCustomId(KillSwitchDisengageModalId)
-                        .AddTextInput("確認フレーズを入力してください", KillSwitchPhraseInputId, required: true)
-                        .Build();
-                    await component.RespondWithModalAsync(modal).ConfigureAwait(false);
-                    return;
-                }
+                // IADR-0097: 解除も起動と同じくフレーズ入力モーダルを提示する（確認ボタンのみでは解除しない）。
+                // NFR-06, #1552: 解除の画面には確認コードの欄もある（任意）。
+                await component.RespondWithModalAsync(DiscordConfirmationModals.KillSwitchDisengage()).ConfigureAwait(false);
+                return;
 
             case GfvClearButtonId:
-                {
-                    // #464, ADR-0028: kill switch と同じく確認フレーズのモーダルを要求する
-                    // （確認ボタンのみでは統制を解かない）。
-                    var modal = new ModalBuilder()
-                        .WithTitle("GFV による停止の解除")
-                        .WithCustomId(GfvClearModalId)
-                        // ADR-0028 決定2 は「**原因の是正が済んでいることの確認を伴う**」解除を求める。
-                        // 何を是正したかを利用者に書かせ、監査へそのまま残す。
-                        .AddTextInput("何を是正したか（監査に残ります）", GfvClearReasonInputId,
-                            TextInputStyle.Paragraph, required: true)
-                        .AddTextInput("確認フレーズを入力してください", GfvClearPhraseInputId, required: true)
-                        .Build();
-                    await component.RespondWithModalAsync(modal).ConfigureAwait(false);
-                    return;
-                }
+                // #464, ADR-0028: kill switch と同じく確認フレーズのモーダルを要求する（確認ボタンのみでは統制を解かない）。
+                // ADR-0028 決定2 の「原因の是正が済んでいることの確認」として、何を是正したかを書かせ監査へ残す。
+                await component.RespondWithModalAsync(DiscordConfirmationModals.GfvClear()).ConfigureAwait(false);
+                return;
 
             case PauseConfirmButtonId:
-            case ResumeConfirmButtonId:
                 {
-                    // FR-10, ADR-0009: 確認ボタン押下で pause/resume を実行する（確認フレーズは無い）。
+                    // FR-10, ADR-0009: 確認ボタン押下で pause を実行する（確認フレーズは無い）。
                     // 認証はハンドラ側で再評価される（押下者のすり替え防止）。
-                    var isResume = component.Data.CustomId == ResumeConfirmButtonId;
                     await component.DeferAsync(ephemeral: true).ConfigureAwait(false);
                     var result = await _pauseHandler
-                        .HandleAsync(ContextOf(component, isResume ? "/resume" : "/pause"))
+                        .HandleAsync(ContextOf(component, "/pause"))
                         .ConfigureAwait(false);
                     await DisableComponentsAsync(component, PauseResponseTextOf(result)).ConfigureAwait(false);
                     return;
                 }
 
+            case ResumeConfirmButtonId:
+                // NFR-06, #1552, IADR-0615: 再開は確認コードの欄の画面を挟む（ボタンだけでは再開しない。欄は任意）。
+                await component.RespondWithModalAsync(DiscordConfirmationModals.Resume()).ConfigureAwait(false);
+                return;
+
             default:
                 // FR-10, #871, IADR-0423: 乖離の取り込みの確認ボタン → 理由＋確認フレーズのモーダル（確認ボタンのみでは取り込まない）。
                 if (component.Data.CustomId.StartsWith(DriftAdoptButtonPrefix, StringComparison.Ordinal))
                 {
-                    var modal = new ModalBuilder()
-                        .WithTitle("乖離の取り込み")
-                        .WithCustomId(DriftAdoptModalPrefix + component.Data.CustomId[DriftAdoptButtonPrefix.Length..])
-                        // API の reason と同じ欄。なぜ台帳を合わせるのかを利用者に書かせ、監査へそのまま残す。
-                        .AddTextInput("なぜ台帳を合わせるのか（監査に残ります）", DriftAdoptReasonInputId,
-                            TextInputStyle.Paragraph, required: true)
-                        .AddTextInput("確認フレーズを入力してください", DriftAdoptPhraseInputId, required: true)
-                        .Build();
-                    await component.RespondWithModalAsync(modal).ConfigureAwait(false);
+                    // API の reason と同じ欄。なぜ台帳を合わせるのかを利用者に書かせ、監査へそのまま残す。
+                    await component.RespondWithModalAsync(
+                        DiscordConfirmationModals.DriftAdopt(component.Data.CustomId[DriftAdoptButtonPrefix.Length..])).ConfigureAwait(false);
                     return;
                 }
 
                 // FR-13, ADR-0042 決定 1, #1025: `/policy` の確認ボタン（確定＋入れ替え案の適用）。
+                // NFR-06, #1552, IADR-0615: 確定は確認コードの欄の画面を挟む（ボタンだけでは確定しない。欄は任意）。
                 if (component.Data.CustomId.StartsWith(PolicyApproveButtonPrefix, StringComparison.Ordinal))
                 {
-                    await OnPolicyApproveButtonAsync(component).ConfigureAwait(false);
+                    if (PayloadOf(component.Data.CustomId, PolicyApproveButtonPrefix) is { } policyPayload)
+                        await component.RespondWithModalAsync(DiscordConfirmationModals.PolicyApprove(policyPayload)).ConfigureAwait(false);
                     return;
                 }
 
                 // FR-07, IADR-0240: 報告書の確定の確認ボタン（CustomId に periodKey と版番号を載せる）。
                 if (component.Data.CustomId.StartsWith(ReportApproveButtonPrefix, StringComparison.Ordinal))
                 {
-                    await OnReportApproveButtonAsync(component).ConfigureAwait(false);
+                    if (PayloadOf(component.Data.CustomId, ReportApproveButtonPrefix) is { } reportPayload)
+                        await component.RespondWithModalAsync(DiscordConfirmationModals.ReportApprove(reportPayload)).ConfigureAwait(false);
+                    return;
+                }
+
+                // FR-20, ADR-0008: 昇格（実弾方向）は確認コードの欄の画面を挟む（NFR-06, #1552）。差し戻しは従来どおりボタンで実行する。
+                if (component.Data.CustomId.StartsWith(StagePromoteButtonPrefix, StringComparison.Ordinal))
+                {
+                    await component.RespondWithModalAsync(
+                        DiscordConfirmationModals.StagePromote(component.Data.CustomId[StagePromoteButtonPrefix.Length..])).ConfigureAwait(false);
                     return;
                 }
 
@@ -796,67 +772,83 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         }
     }
 
-    // FR-07, FR-14, UC-03〜05, IADR-0240: 確定の確認ボタンの押下 → 版番号付きの確定を実行する。
-    // CustomId 末尾の "-<version>" を切り出し、残りを periodKey とする（periodKey は英数字・ハイフンのみで
-    // パーサが値域を保証する。**版番号は最後のハイフン以降**＝periodKey 自体がハイフンを含んでも曖昧にならない）。
+    // FR-07, FR-14, UC-03〜05, IADR-0240: 確定の確認ボタンの CustomId の "<periodKey>-<version>" を取り出す（書式外は null）。
+    // **版番号は最後のハイフン以降**（periodKey は英数字・ハイフンのみでパーサが値域を保証する＝periodKey 自体がハイフンを含んでも曖昧にならない）。
+    private static string? PayloadOf(string customId, string prefix)
+    {
+        var payload = customId[prefix.Length..];
+        var separator = payload.LastIndexOf('-');
+        return separator <= 0 || separator == payload.Length - 1 ? null : payload;
+    }
+
+    // FR-07, FR-14, UC-03〜05, IADR-0240, NFR-06, #1552: 確定の確認の画面の送信 → 版番号付きの確定を実行する。
     //
-    // **二重押下は 2 段で吸収する**: ①押下後にボタンを取り除く（再押下できない）②ハンドラの版番号ガードが
+    // **二重押下は 2 段で吸収する**: ①送信後に元のメッセージのボタンを取り除く（再押下できない）②ハンドラの版番号ガードが
     // 同一 periodKey＋版番号 の 2 回目で確定 API を呼ばない。①だけでは、押下と応答編集の間の連打を止められない。
-    private async Task OnReportApproveButtonAsync(SocketMessageComponent component)
+    private async Task OnReportApproveModalAsync(SocketModal modal, string payload)
     {
-        var payload = component.Data.CustomId[ReportApproveButtonPrefix.Length..];
         var separator = payload.LastIndexOf('-');
-        if (separator <= 0 || separator == payload.Length - 1)
-            return; // 書式外（他機能のボタン）。
-
-        var periodKey = payload[..separator];
-        var version = payload[(separator + 1)..];
-
-        await component.DeferAsync(ephemeral: true).ConfigureAwait(false);
+        await modal.DeferAsync(ephemeral: true).ConfigureAwait(false);
         var result = await _reportHandler
-            .HandleAsync(ContextOf(component, $"/report approve {periodKey} {version}"))
+            .HandleAsync(
+                ContextOf(modal, $"/report approve {payload[..separator]} {payload[(separator + 1)..]}"),
+                SecondFactorCodeOf(modal))
             .ConfigureAwait(false);
-        await DisableComponentsAsync(component, ReportResponseTextOf(result)).ConfigureAwait(false);
+        await ReplaceOriginalAsync(modal, ReportResponseTextOf(result)).ConfigureAwait(false);
     }
 
-    // FR-13, FR-14, ADR-0042 決定 1, #1025, IADR-0433: `/policy` の確認ボタンの押下 → 確定 → （確定できたときだけ）入れ替え案の適用。
+    // FR-13, FR-14, ADR-0042 決定 1, #1025, IADR-0433, NFR-06, #1552: `/policy` の確認の画面の送信 → 確定 → （確定できたときだけ）入れ替え案の適用。
     // 判断（多層認証・版番号ガード・案の照会・適用・内訳の記録）はすべて PolicyApprovalCommandHandler が持つ。
-    private async Task OnPolicyApproveButtonAsync(SocketMessageComponent component)
+    private async Task OnPolicyApproveModalAsync(SocketModal modal, string payload)
     {
-        var payload = component.Data.CustomId[PolicyApproveButtonPrefix.Length..];
         var separator = payload.LastIndexOf('-');
-        if (separator <= 0 || separator == payload.Length - 1)
-            return;
-
-        var periodKey = payload[..separator];
-        var version = payload[(separator + 1)..];
-
-        await component.DeferAsync(ephemeral: true).ConfigureAwait(false);
+        await modal.DeferAsync(ephemeral: true).ConfigureAwait(false);
         var result = await _policyApprovalHandler
-            .HandleAsync(ContextOf(component, $"/policy approve {periodKey} {version}"))
+            .HandleAsync(
+                ContextOf(modal, $"/policy approve {payload[..separator]} {payload[(separator + 1)..]}"),
+                SecondFactorCodeOf(modal))
             .ConfigureAwait(false);
-        await DisableComponentsAsync(component, result.Message).ConfigureAwait(false);
+        await ReplaceOriginalAsync(modal, result.Message).ConfigureAwait(false);
     }
 
-    // FR-20, UC-06: 段階遷移確認ボタンの押下。CustomId のプレフィックスで昇格/差し戻しを判別し、末尾の遷移先を復元する。
+    // FR-20, UC-06: 差し戻しの確認ボタンの押下（昇格は確認の画面を挟む＝OnStagePromoteModalAsync）。末尾の遷移先を復元する。
     private async Task OnStageButtonAsync(SocketMessageComponent component)
     {
         var customId = component.Data.CustomId;
-        string? raw = null;
-        if (customId.StartsWith(StagePromoteButtonPrefix, StringComparison.Ordinal))
-            raw = $"/stage promote {customId[StagePromoteButtonPrefix.Length..]}";
-        else if (customId.StartsWith(StageDemoteButtonPrefix, StringComparison.Ordinal))
-            raw = $"/stage demote {customId[StageDemoteButtonPrefix.Length..]}";
-
-        if (raw is null)
+        if (!customId.StartsWith(StageDemoteButtonPrefix, StringComparison.Ordinal))
             return; // 未知のボタン（他機能）。
 
         await component.DeferAsync(ephemeral: true).ConfigureAwait(false);
         var result = await _stageGateHandler
-            .HandleAsync(ContextOf(component, raw))
+            .HandleAsync(ContextOf(component, $"/stage demote {customId[StageDemoteButtonPrefix.Length..]}"))
             .ConfigureAwait(false);
         await DisableComponentsAsync(component, StageResponseTextOf(result)).ConfigureAwait(false);
     }
+
+    // FR-20, UC-06, NFR-06, #1552: 昇格の確認の画面の送信。遷移先の値域はハンドラの解析が改めて確かめる。
+    private async Task OnStagePromoteModalAsync(SocketModal modal, string target)
+    {
+        await modal.DeferAsync(ephemeral: true).ConfigureAwait(false);
+        var result = await _stageGateHandler
+            .HandleAsync(ContextOf(modal, $"/stage promote {target}"), SecondFactorCodeOf(modal))
+            .ConfigureAwait(false);
+        await ReplaceOriginalAsync(modal, StageResponseTextOf(result)).ConfigureAwait(false);
+    }
+
+    // FR-10, ADR-0009, NFR-06, #1552: 再開の確認の画面の送信。
+    private async Task OnResumeModalAsync(SocketModal modal)
+    {
+        await modal.DeferAsync(ephemeral: true).ConfigureAwait(false);
+        var result = await _pauseHandler
+            .HandleAsync(ContextOf(modal, "/resume"), SecondFactorCodeOf(modal))
+            .ConfigureAwait(false);
+        await ReplaceOriginalAsync(modal, PauseResponseTextOf(result)).ConfigureAwait(false);
+    }
+
+    // NFR-06, #1552, IADR-0615: 送信された確認コード（空は null）。🔴 値はログ・応答に出さない（運ぶだけ）。
+    private static string? SecondFactorCodeOf(SocketModal modal) =>
+        DiscordConfirmationModals.SecondFactorCodeOf(
+            modal.Data.Components.FirstOrDefault(c => c.CustomId == DiscordConfirmationModals.SecondFactorInputId)?.Value);
 
     // 確認フレーズの入力 → 最終実行。認証・フレーズ検証はハンドラ側で行われる。
     // IADR-0097: 起動用・解除用でモーダル ID が分かれており、ID により渡すコマンドを出し分ける
@@ -866,14 +858,42 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         // #464, ADR-0028 決定2/決定3: GFV 解除は kill switch とは**別のハンドラ**が扱う
         // （閂の並びは同一だが、呼ぶ Risk エンドポイントも結果の型も違う）。
         // モーダル ID が分かれているため、ID 一致だけで種別を確定でき誤実行の余地が無い（IADR-0097 の規律）。
-        if (modal.Data.CustomId == GfvClearModalId)
+        // NFR-06, #1552: ボタンだけで実行していた 4 操作の確認の画面（ID の接頭辞で種別を確定する＝IADR-0097 の規律）。
+        var modalId = modal.Data.CustomId;
+        if (modalId == DiscordConfirmationModals.ResumeModalId)
+        {
+            await OnResumeModalAsync(modal).ConfigureAwait(false);
+            return;
+        }
+
+        if (modalId.StartsWith(DiscordConfirmationModals.StagePromoteModalPrefix, StringComparison.Ordinal))
+        {
+            await OnStagePromoteModalAsync(modal, modalId[DiscordConfirmationModals.StagePromoteModalPrefix.Length..]).ConfigureAwait(false);
+            return;
+        }
+
+        if (modalId.StartsWith(DiscordConfirmationModals.ReportApproveModalPrefix, StringComparison.Ordinal))
+        {
+            if (PayloadOf(modalId, DiscordConfirmationModals.ReportApproveModalPrefix) is { } reportPayload)
+                await OnReportApproveModalAsync(modal, reportPayload).ConfigureAwait(false);
+            return;
+        }
+
+        if (modalId.StartsWith(DiscordConfirmationModals.PolicyApproveModalPrefix, StringComparison.Ordinal))
+        {
+            if (PayloadOf(modalId, DiscordConfirmationModals.PolicyApproveModalPrefix) is { } policyPayload)
+                await OnPolicyApproveModalAsync(modal, policyPayload).ConfigureAwait(false);
+            return;
+        }
+
+        if (modal.Data.CustomId == DiscordConfirmationModals.GfvClearModalId)
         {
             await OnGfvClearModalAsync(modal).ConfigureAwait(false);
             return;
         }
 
         // FR-10, #871, IADR-0423: 乖離の取り込みも別のハンドラが扱う（呼ぶエンドポイントも結果の型も違う）。
-        if (modal.Data.CustomId.StartsWith(DriftAdoptModalPrefix, StringComparison.Ordinal))
+        if (modal.Data.CustomId.StartsWith(DiscordConfirmationModals.DriftAdoptModalPrefix, StringComparison.Ordinal))
         {
             await OnDriftAdoptModalAsync(modal).ConfigureAwait(false);
             return;
@@ -881,8 +901,8 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
 
         var rawCommand = modal.Data.CustomId switch
         {
-            KillSwitchEngageModalId => "/killswitch",
-            KillSwitchDisengageModalId => "/killswitch off",
+            DiscordConfirmationModals.KillSwitchEngageModalId => "/killswitch",
+            DiscordConfirmationModals.KillSwitchDisengageModalId => "/killswitch off",
             _ => null,
         };
         if (rawCommand is null)
@@ -891,10 +911,11 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         await modal.DeferAsync(ephemeral: true).ConfigureAwait(false);
 
         var phrase = modal.Data.Components
-            .FirstOrDefault(c => c.CustomId == KillSwitchPhraseInputId)?.Value;
+            .FirstOrDefault(c => c.CustomId == DiscordConfirmationModals.KillSwitchPhraseInputId)?.Value;
 
+        // NFR-06, #1552: 確認コードは解除の画面にだけ欄がある（起動の画面の送信では常に null）。
         var result = await _handler
-            .HandleAsync(ContextOf(modal, rawCommand), phrase)
+            .HandleAsync(ContextOf(modal, rawCommand), phrase, SecondFactorCodeOf(modal))
             .ConfigureAwait(false);
 
         await modal.FollowupTextAsync(ResponseTextOf(result)).ConfigureAwait(false);
@@ -906,12 +927,12 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         await modal.DeferAsync(ephemeral: true).ConfigureAwait(false);
 
         var phrase = modal.Data.Components
-            .FirstOrDefault(c => c.CustomId == GfvClearPhraseInputId)?.Value;
+            .FirstOrDefault(c => c.CustomId == DiscordConfirmationModals.GfvClearPhraseInputId)?.Value;
         var reason = modal.Data.Components
-            .FirstOrDefault(c => c.CustomId == GfvClearReasonInputId)?.Value;
+            .FirstOrDefault(c => c.CustomId == DiscordConfirmationModals.GfvClearReasonInputId)?.Value;
 
         var result = await _gfvHandler
-            .HandleAsync(ContextOf(modal, "/gfv clear"), phrase, reason)
+            .HandleAsync(ContextOf(modal, "/gfv clear"), phrase, reason, SecondFactorCodeOf(modal))
             .ConfigureAwait(false);
 
         // 拒否理由（内部の層名）はそのまま出さず一般化する（kill switch と同じ規律）。
@@ -924,7 +945,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     {
         // CustomId の "<market>-<symbol>" を復元する（市場の語はハイフンを含まないため最初のハイフンで分ける）。
         // 値域の検証はハンドラの解析が改めて行う（ここでは組み立てるだけ）。
-        var payload = modal.Data.CustomId[DriftAdoptModalPrefix.Length..];
+        var payload = modal.Data.CustomId[DiscordConfirmationModals.DriftAdoptModalPrefix.Length..];
         var separator = payload.IndexOf('-', StringComparison.Ordinal);
         if (separator <= 0 || separator == payload.Length - 1)
             return; // 書式外（他機能のモーダル）。
@@ -932,12 +953,13 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         await modal.DeferAsync(ephemeral: true).ConfigureAwait(false);
 
         var phrase = modal.Data.Components
-            .FirstOrDefault(c => c.CustomId == DriftAdoptPhraseInputId)?.Value;
+            .FirstOrDefault(c => c.CustomId == DiscordConfirmationModals.DriftAdoptPhraseInputId)?.Value;
         var reason = modal.Data.Components
-            .FirstOrDefault(c => c.CustomId == DriftAdoptReasonInputId)?.Value;
+            .FirstOrDefault(c => c.CustomId == DiscordConfirmationModals.DriftAdoptReasonInputId)?.Value;
 
         var result = await _driftHandler
-            .HandleAsync(ContextOf(modal, $"/drift adopt {payload[(separator + 1)..]} {payload[..separator]}"), phrase, reason)
+            .HandleAsync(
+                ContextOf(modal, $"/drift adopt {payload[(separator + 1)..]} {payload[..separator]}"), phrase, reason, SecondFactorCodeOf(modal))
             .ConfigureAwait(false);
 
         await modal.FollowupTextAsync(DriftResponseTextOf(result)).ConfigureAwait(false);
@@ -985,6 +1007,22 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         // ボタンを取り除く＝再押下できない。編集でも Discord は本文を解釈し直すため、
         // ラッパー（IADR-0359）がメンション方針を載せる。
         await component.ReplaceOriginalResponseAsync(text, new ComponentBuilder().Build()).ConfigureAwait(false);
+    }
+
+    // NFR-06, #1552: ボタンから開いた確認の画面の送信。DeferAsync はこのとき「元のメッセージの更新」の予約になる（Discord.Net の
+    // SocketModal.DeferAsync の注記）ため、元のメッセージを結果で差し替えてボタンを取り除く（ボタンで実行していたときと同じ見え方）。
+    // 🔴 実 Discord での確認は未了（#570）。差し替えが拒まれても結果だけは必ず届ける（追送へ落とす）。
+    private async Task ReplaceOriginalAsync(SocketModal modal, string text)
+    {
+        try
+        {
+            await modal.ReplaceOriginalResponseAsync(text, new ComponentBuilder().Build()).ConfigureAwait(false);
+        }
+        catch (Discord.Net.HttpException ex)
+        {
+            _logger.LogWarning("確認の画面の送信後に元のメッセージを差し替えられませんでした（{Code}）。結果は追送します。", ex.HttpCode);
+            await modal.FollowupTextAsync(text).ConfigureAwait(false);
+        }
     }
 
     // Discord.Net の相互作用を Application の素の文脈へ変換する。DM は GuildId が null になるため

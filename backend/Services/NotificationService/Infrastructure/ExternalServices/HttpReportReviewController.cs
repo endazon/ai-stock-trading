@@ -95,8 +95,13 @@ public sealed class HttpReportReviewController(
     // FR-09, UC-03, IADR-0240 決定11, #774: 本文に**代理される利用者**（onBehalfOf）を載せる。報告書サービスは
     // owner マップ機密クライアントのトークン（azp）に限ってこの値を確定者として採り、認可の主体（クライアント）と
     // 併せて ReportConfirmed に残す。空の操作者では呼ばない（確定者を記録できない確定をさせない）。
+    public Task<ReportConfirmResult> ConfirmAsync(
+        string periodKey, int expectedVersion, string onBehalfOf, CancellationToken cancellationToken = default) =>
+        ConfirmAsync(periodKey, expectedVersion, onBehalfOf, null, cancellationToken);
+
     public async Task<ReportConfirmResult> ConfirmAsync(
-        string periodKey, int expectedVersion, string onBehalfOf, CancellationToken cancellationToken = default)
+        string periodKey, int expectedVersion, string onBehalfOf, string? secondFactorCode,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(periodKey);
         ArgumentException.ThrowIfNullOrWhiteSpace(onBehalfOf);
@@ -105,7 +110,7 @@ public sealed class HttpReportReviewController(
         {
             using var response = await (confirmHttpClient ?? httpClient)
                 .PostAsJsonAsync(
-                    $"/reports/{periodKey}/confirm", new ConfirmRequest(expectedVersion, onBehalfOf), cancellationToken)
+                    $"/reports/{periodKey}/confirm", new ConfirmRequest(expectedVersion, onBehalfOf, secondFactorCode), cancellationToken)
                 .ConfigureAwait(false);
 
             if (response.StatusCode == HttpStatusCode.Conflict)
@@ -354,7 +359,8 @@ public sealed class HttpReportReviewController(
 
     // 報告書サービス側 ConfirmReportRequest / ReviewCommandRequest と同形（版番号付き）。
     // OnBehalfOf は #774 で末尾に追加（旧版の報告書サービスは未知のプロパティとして読み飛ばす）。
-    private sealed record ConfirmRequest(int ExpectedVersion, string OnBehalfOf);
+    // NFR-06, #1552, IADR-0615: 確認コードは null なら欄ごと送らない（本文は従来と同じ）。値はログに出さない。
+    private sealed record ConfirmRequest(int ExpectedVersion, string OnBehalfOf, [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null);
 
     // 報告書サービス側 ConfirmReportResponse の必要部分（#1025 で足された 2 項目）。欠落は null＝旧版。
     private sealed record ConfirmView(bool? Transitioned, int? Version);
