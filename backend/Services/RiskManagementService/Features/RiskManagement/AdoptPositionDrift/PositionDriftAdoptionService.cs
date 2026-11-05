@@ -39,7 +39,7 @@ public sealed class PositionDriftAdoptionService(
     // 「処理中の決済」の遡り窓は手仕舞い（PositionCloseService）と同じ値を使う（同じ事実を同じ窓で数える）。
     private readonly TimeSpan _inFlightWindow = inFlightWindow ?? PositionCloseService.DefaultInFlightWindow;
 
-    public PositionDriftAdoptionOutcome Adopt(PositionDriftAdoptionCommand command, string actor)
+    public PositionDriftAdoptionOutcome Adopt(PositionDriftAdoptionCommand command, string actor, Action? beforeCommit = null)
     {
         ArgumentNullException.ThrowIfNull(command);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
@@ -108,6 +108,9 @@ public sealed class PositionDriftAdoptionService(
             now);
 
         // 並行の二重投入は冪等キーで 1 件に絞る。負けた側は「既に取り込み済み」＝乖離なしとして返す。
+        // NFR-06, #1542, IADR-0615 決定 9: beforeCommit（第 2 要素の門）は、入力の検証・冪等の判定の後、状態を変える直前にだけ呼ぶ。
+        beforeCommit?.Invoke();
+
         if (!ledger.AppendDriftAdoption(adoption))
             return PositionDriftAdoptionOutcome.Reject(PositionDriftAdoptionRejection.NoDrift);
 

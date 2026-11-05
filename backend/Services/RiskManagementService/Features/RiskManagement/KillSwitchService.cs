@@ -42,13 +42,18 @@ public sealed class KillSwitchService(
             Before: "Disengaged", After: "Engaged"));
     }
 
-    public void Disengage(string actor, string reason)
+    // NFR-06, #1542, IADR-0615 決定 9: beforeCommit（第 2 要素の門）は、入力の検証・冪等の判定の後、状態を変える直前にだけ呼ぶ。
+    public void Disengage(string actor, string reason, Action? beforeCommit = null)
     {
         RequireActorAndReason(actor, reason);
 
         // NFR, #1530, IADR-0613: 保持の間は解除しない（止める窓口を Discord と独立させる）。外すのは SSH の側だけ。
         if (hold is { Enabled: true })
             throw new KillSwitchHeldByOperatorException();
+
+        // 既に解除済みなら門を通さない（再送はコードを消費しない）。書き込みは従来どおり。
+        if (store.GetState().Engaged)
+            beforeCommit?.Invoke();
 
         var now = clock.UtcNow;
         store.SetState(new KillSwitchState(false, actor, reason, now));
