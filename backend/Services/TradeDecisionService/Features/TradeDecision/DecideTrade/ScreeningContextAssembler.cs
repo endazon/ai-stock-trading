@@ -115,10 +115,10 @@ public static class ScreeningContextAssembler
                 i, kind, EstimateChars(reference), reference.PublishedAt, reference.Score)));
         }
 
-        // 保護分: プロンプト骨格 + 方針全文 + 監視銘柄節（共有）と、銘柄行 + 現在値行 + 保護参考情報（銘柄側）。
+        // 保護分: プロンプト骨格 + 方針の節（#1529, IADR-0618: 符号化と案内を含む、プロンプトへ出す文字列そのものの長さ） + 監視銘柄節（共有）と、銘柄行 + 現在値行 + 保護参考情報（銘柄側）。
         // #1034, IADR-0440 決定 5: 監視銘柄節は概算ではなく**プロンプトへ出す文字列そのものの長さ**を数える
         // （表示の上限 50 件で頭打ちになるため、予算 150,000 文字〔IADR-0313〕に対して数千文字以内に収まる）。
-        var sharedProtected = PromptScaffoldChars + policy.Summary.Length
+        var sharedProtected = PromptScaffoldChars + TradeDecisionPromptBuilder.PolicySection(policy).Length
             + TradeDecisionPromptBuilder.WatchlistSection(trigger, watchlist).Length;
         // FR-03, FR-04, #1364: 急変が起点なら一次へ出す価格変動トリガーの節も保護分（削ると急変追随の条件を判定できない）。
         // 概算ではなく**プロンプトへ出す文字列そのものの長さ**を数える（定時は空文字列＝0 で従来の見積りと同じ）。

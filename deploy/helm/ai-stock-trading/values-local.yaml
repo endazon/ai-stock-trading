@@ -37,14 +37,24 @@
 # Discord OwnerAuth（IADR-0098）・**KB / LLM ゲートウェイの s2s Authority（#781）**をすべてこの 1 値から導出するので、
 # s2s も揃って MSP レルムへ移る（片側だけ移らない）。**このファイルにレルムのリテラルは 1 つも置かない。**
 # 要る客体（trading-service ロール・ai-stock-trading-svc / -owner クライアント）は MSP レルム側が持つ（MSP#1372）。
-# 反映順は MSP レルム（MSP#1372）→ 本値。chart 既定（values.yaml＝本番描画）と AST レルム（infra/keycloak/
-# realm-export.json＝単体 E2E 用）は不変。
+# 🔴 #1529, IADR-0612: chart の既定（values.yaml）は空で、未設定なら描画で止まる。本値の明示は必須である。
+# 反映順は MSP レルム（MSP#1372）→ 本値。AST レルム（infra/keycloak/realm-export.json＝単体 E2E 用）は不変。
 global:
   authAuthority: http://keycloak:8080/realms/platform
   # NFR-06, IADR-0496, #1192: ASPNETCORE_ENVIRONMENT は values.yaml の Production を継ぐ（Development は描画で止まる）。
   # Production では appsettings.Development.json が読まれないため、経路B が従来その値で動いていたログの最小レベル（Debug）を
   # ここで明示する（情報収集の巡回 300 秒は services.information-collection の env）。棚卸しの全件は IADR-0496。
   serilogMinimumLevel: Debug
+  # NFR, NFR-18, #1535, IADR-0621: 基盤（DB・ブローカ）への接続を、基盤の CA で検証する TLS にする（基盤の IADR-0591 の段 4b-2）。
+  #   DB は VerifyFull、ブローカは amqps:5671。CA は基盤の起動器が写す ConfigMap platform-infra-ca。
+  #   🔴 配備の前に ConfigMap が AST の名前空間にあることを確かめる（無いと Pod が立たない）。切り替えと戻し方は
+  #   docs/operations/platform-infra-tls-cutover-runbook.md。戻すときは両方を false にして helm を再実行する。
+  db:
+    tls:
+      enabled: true
+  rabbitmq:
+    tls:
+      enabled: true
 
 # #723 / #727: MSP 連結プロファイルでは SC-04（OpenD 認証操作）のサイドカー opend-auth を立てる。イメージは
 # scripts/k8s-local-images.sh が opend-auth-gateway を build/import する。--set で立てると k8s-local-deploy.sh の

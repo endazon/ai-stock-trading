@@ -38,6 +38,8 @@ public class WatchlistErrorResponseAndMarketNameTests
         await using var factory = baseFactory.WithWebHostBuilder(b =>
         {
             b.UseEnvironment(environment);
+            // #1529, IADR-0612: Production では Authority の明示が要る（appsettings.Development.json は読まれない）。
+            b.UseSetting("Auth:Authority", "https://localhost/realms/test");
             b.ConfigureTestServices(s =>
             {
                 foreach (var d in s.Where(d => d.ServiceType == typeof(IMonitoredSymbolStore)).ToList()) s.Remove(d);

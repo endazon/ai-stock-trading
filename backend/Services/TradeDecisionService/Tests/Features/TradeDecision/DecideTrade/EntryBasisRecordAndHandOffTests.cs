@@ -367,7 +367,7 @@ public class EntryBasisRecordAndHandOffTests
     private static AppSvc Create(string llmOutput, int held) => new(
         new FixedLlm(llmOutput), new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
         currentPrice: new FakeCurrentPrice(new CurrentPriceReading(96m, Intraday)),
-        heldPosition: new FakeHeld(held));
+        heldPosition: new FakeHeld(held), unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
     private sealed class FakeClock : IClock { public DateTimeOffset UtcNow => Now; }
 

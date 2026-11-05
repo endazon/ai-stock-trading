@@ -27,6 +27,8 @@ public class LlmPricingStartupWarningTests(ReportWorkerWebApplicationFactory fac
         {
             if (environment is not null)
                 b.UseEnvironment(environment);
+            // #1529, IADR-0612: Production では Authority の明示が要る（appsettings.Development.json は読まれない）。
+            b.UseSetting("Auth:Authority", "https://localhost/realms/test");
             foreach (var (key, value) in settings)
                 b.UseSetting(key, value);
             // Program.cs は AddSerilog で ILoggerFactory を差し替えるため、ConfigureLogging の provider には届かない。

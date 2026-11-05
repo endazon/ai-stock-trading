@@ -719,6 +719,15 @@ function withPrivateTempDir(fn) {
   }
 }
 
+// NFR, #1529, IADR-0612: chart が authAuthority の未設定で描画を止めるときの文言の目印（templates/deployment.yaml の fail と同じ語）。
+const AUTH_AUTHORITY_MISSING_MARKER = 'global.authAuthority が未設定です';
+
+function authAuthorityMissingMessage(release) {
+  return `リリース ${release} の values にも --values にも global.authAuthority がありません（旧 chart の既定のレルムに頼っていたリリースです）。`
+    + 'この chart へ上げる前に、稼働中のリリースの values に global.authAuthority（配備のレルム。例 http://keycloak:8080/realms/platform）を明示してください。'
+    + '差の確認だけなら、global.authAuthority を明示した values ファイル（values-local.yaml は明示済み）を --values で重ねてください。';
+}
+
 /**
  * 稼働側とチャート側の manifest を helm から集める（読み取り専用）。runner は差し替え可能（試験用）。
  * `helm get values` の結果は表示しない（quiet）・一時ファイルにだけ書き、終わったら（シグナルでも）消す。
@@ -732,7 +741,20 @@ function collectFromHelm({ release, namespace, chart = DEFAULT_CHART, values = [
     fs.writeFileSync(valuesFile, userValues, { mode: 0o600 });
     const args = ['template', release, chart, '-n', namespace, '--is-upgrade', '--no-hooks', '--skip-tests', '-f', valuesFile];
     for (const v of values) args.push('-f', v);
-    const rendered = runner(args);
+    let rendered;
+    try {
+      rendered = runner(args);
+    } catch (e) {
+      // NFR, #1529, IADR-0612: chart の既定の global.authAuthority は空で、未設定なら描画で止まる。旧 chart の既定（単体実行向けのレルム）に
+      // 頼っていたリリースはここで落ちるので、運用者が何をすればよいかを示して止める（稼働のリリースには触れない）。
+      if (String(e.message).includes(AUTH_AUTHORITY_MISSING_MARKER)) {
+        const err = new Error(authAuthorityMissingMessage(release));
+        err.helmFailure = true;
+        err.authAuthorityMissing = true;
+        throw err;
+      }
+      throw e;
+    }
     return { live, rendered };
   });
 }
@@ -880,6 +902,7 @@ function main(argv) {
 if (require.main === module) process.exit(main(process.argv.slice(2)));
 
 module.exports = {
+  AUTH_AUTHORITY_MISSING_MARKER,
   splitDocuments,
   parseFlow,
   flattenBlock,

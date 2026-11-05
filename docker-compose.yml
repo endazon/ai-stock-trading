@@ -439,6 +439,9 @@ services:
         SERVICE_DLL: TradeDecisionService.dll
     environment:
       <<: *app-env
+      # 🔴 FR-04, FR-10, #1529, IADR-0617: 現在値の供給が無い構成（本 compose の既定）では新規建てを LLM の参照価格で作らない（既定 false）。
+      # 単体の検証で従前どおり新規建てまで流すときだけ true（明示の opt-in）。手仕舞いは止めない。
+      TradeDecision__AllowUnanchoredEntryPrice: ${TRADEDECISION_ALLOWUNANCHOREDENTRYPRICE:-false}
       # fail-safe: 空=プレースホルダ（取引しない）。#76 で有効化。
       Reports__BaseUrl: ${REPORTS_BASEURL:-}
       RiskManagement__BaseUrl: ${RISK_MANAGEMENT_BASEURL:-}

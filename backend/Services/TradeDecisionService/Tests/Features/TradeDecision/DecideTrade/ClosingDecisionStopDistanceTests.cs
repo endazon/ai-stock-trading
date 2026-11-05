@@ -1,5 +1,6 @@
 extern alias RiskManagementWorker;
 
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Features.TradeDecision;
@@ -34,7 +35,7 @@ public class ClosingDecisionStopDistanceTests
 
     private static AppSvc Service(string llmOutput, IHeldPositionProvider held, RecordingSkips? skips = null) =>
         new(new FixedLlm(llmOutput), new FakePolicy(), new FakeSizing(), new FakeClock(),
-            NullLogger<AppSvc>.Instance, heldPosition: held, skipReporter: skips);
+            NullLogger<AppSvc>.Instance, heldPosition: held, skipReporter: skips, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
     // 🔴 本件の核: 保有中（ロング 970 株）の利確の Sell は、損切り幅が null でも決済の発注意図（保有全量・Close・損切り価格なし）になる。
     [Fact]

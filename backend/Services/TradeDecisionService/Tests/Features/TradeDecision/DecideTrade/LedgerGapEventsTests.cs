@@ -195,7 +195,7 @@ public class LedgerGapEventsTests
         var service = new AppSvc(
             llm, new FakePolicy(withoutPolicy ? null : Policy), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
             currentPrice: currentPrice, fxRate: fxRate, heldPosition: held, skipReporter: s, heldReporter: h,
-            forgoneReporter: f, positionQueryHealth: health);
+            forgoneReporter: f, positionQueryHealth: health, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
         return new Probe(service, llm, f, h, s, health);
     }
 

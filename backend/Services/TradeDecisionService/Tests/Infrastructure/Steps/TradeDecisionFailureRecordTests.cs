@@ -1,6 +1,7 @@
 extern alias AuditWorker;
 extern alias RiskManagementWorker;
 
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using System.Text.Json;
 using AuditWorker::AuditService.Domain;
 using RiskManagementWorker::RiskManagementService.Domain;
@@ -148,7 +149,7 @@ public class TradeDecisionFailureRecordTests
         new(Guid.NewGuid(), "AAPL", Market.UnitedStates, 1_040m, 1_000m, 0.04m, Now);
 
     private static AppSvc DecisionService(ISizingContextProvider sizing, ILlmCompletionClient? llm = null) =>
-        new(llm ?? new FakeLlm(BuyJson), new FakePolicy(), sizing, new FixedClock(), NullLogger<AppSvc>.Instance);
+        new(llm ?? new FakeLlm(BuyJson), new FakePolicy(), sizing, new FixedClock(), NullLogger<AppSvc>.Instance, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
     private static PriceMovementDetectedHandler PriceHandler(AppSvc service, ITradeDecisionFailureReporter reporter) =>
         new(service, new OpenCalendar(), new FixedClock(), new BusinessMetrics(), reporter,
@@ -323,6 +324,8 @@ public class TradeDecisionFailureRecordTests
                 opts.Services.AddSingleton<IDailyPolicyProvider, FakePolicy>();
                 opts.Services.AddSingleton<ISizingContextProvider, FakeSizing>();
                 opts.Services.AddScoped<AppSvc>();
+                // FR-04, #1529, IADR-0617: 現在値の供給を持たない試験の前提（参照価格での新規建て）を明示の opt-in で与える（既定は見送り）。
+                opts.Services.AddSingleton(new UnanchoredEntryPriceOptions(Allow: true));
                 opts.Services.AddSingleton<BusinessMetrics>();
                 opts.Services.AddSingleton<NewsCollectionStatusStore>();
                 // FR-02, #1169, IADR-0490: 同じアセンブリの定時の購読の必須依存（本番は Program.cs の singleton。値は本番の既定と同じ導出）。

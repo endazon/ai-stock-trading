@@ -157,6 +157,10 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
 
 運用者の手順:
 
+0. 🔴 **この chart（`global.authAuthority` の既定が空で、未設定なら描画で止まる版）へ上げる前に、稼働中のリリースの values に
+   `global.authAuthority` を明示する**（`helm get values ast -n ai-stock-trading` で有無を確かめ、無ければ配備の values か `--set` で
+   配備のレルムを与える。値を画面へ出すときは秘密に注意）。明示していないと、本スクリプトは描画の失敗を「`global.authAuthority` が
+   未設定」と理由つきで報告して止まり（exit 2）、`helm upgrade` も同じ理由で失敗する。
 1. **配備の前に走らせる。** 出た差が、この配備（`helm upgrade`）で稼働へ入るものである。意図した変更（今回の PR の values・
    テンプレート）だけが出ていることを確かめる。意図しない差（他人の未配備の変更・手で入れた設定）が出たら、配備の前に理由を確かめる。
 2. 🔴 **OpenD の Deployment は変わってはならない。** 出力の 1 行目 `OpenD の Deployment（opend）:` が **「変化なし」**
@@ -1011,6 +1015,10 @@ env を注入せず、**未知の値・範囲外は `order-execution` が起動�
 > （黙って SIMULATE で流して「実弾で動いている」と誤認させないための閂・#132 / IADR-0060）。実弾解禁には別 IADR と
 > 前提条件の充足が要る（[運用仕様書の本番切替チェックリスト](../../../docs/operations/operations.md#opend-の本番切替チェックリスト132)・
 > [実弾切替 Runbook](../../../docs/operations/live-trading-cutover-runbook.md)）。
+
+## 単体実行向けのレルムを Production で使わない（`global.allowStandaloneRealm`。#1529 / [IADR-0612](../../../.ai-context/adr/IADR-0612_production-rejects-standalone-realm-defaults.md)）
+
+chart の既定 `global.authAuthority` は**空**で、未設定なら**描画で止まる**。配備の values で配備のレルムを明示する（values-local は `platform`）。Production（chart の既定）で認証を持つサービスは、単体実行向けのレルム（`ai-stock-trading`・`infra/keycloak/realm-export.json`）を指す Authority では**起動しない**。意図して使うときだけ `global.allowStandaloneRealm=true`（`Auth__AllowStandaloneRealm=true` を描く）。
 
 ## #132: OpenD の本番配備（`opend.enabled`）
 
