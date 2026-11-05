@@ -31,6 +31,7 @@ public class Stage1FillObservationConsumerTests
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                opts.Services.AddSingleton(TestApprovalPublishing.Unsigned()); // #1527, IADR-0610
                 opts.Services.AddSingleton<IPortfolioLedgerStore>(ledger);
                 opts.Services.AddSingleton<IStage1FillObservationStore>(fills);
                 // #611, IADR-0286: 承認ハンドラが要する認識時レートの解決器（本テストの関心外・未記録で通す）。

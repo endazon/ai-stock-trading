@@ -8,6 +8,7 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
+using AiStockTrading.Shared.Infrastructure.Composable.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Wolverine;
@@ -50,7 +51,7 @@ public class OrderApprovedMethodResolvedPublishFailureTests
         }
     }
 
-    private static OrderApprovedHandler NewHandler()
+    internal static OrderApprovedHandler NewHandler(OrderApprovalVerifier? verifier = null)
     {
         var store = new InMemoryExecutedOrderStore();
         var service = new AppSvc(
@@ -59,10 +60,12 @@ public class OrderApprovedMethodResolvedPublishFailureTests
             service,
             new TradeExpenseRecordingService(new UnsuppliedOrderExpenseSource(), store),
             new BusinessMetrics(),
+            verifier ?? new OrderApprovalVerifier(
+                OrderApprovalSigningMode.Report, signature: null, NullLogger<OrderApprovalVerifier>.Instance),
             NullLogger<OrderApprovedHandler>.Instance);
     }
 
-    private static OrderApproved Approved(StopLossExecutionMethod method) => new(
+    internal static OrderApproved Approved(StopLossExecutionMethod method) => new(
         Guid.NewGuid(),
         new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m,
             StopLossPrice: 950m),
@@ -81,7 +84,7 @@ public class OrderApprovedMethodResolvedPublishFailureTests
         proxy.ThrowSynchronously = throwSynchronously;
         var approved = Approved(StopLossExecutionMethod.NoProtectiveStop);
 
-        var handle = () => NewHandler().Handle(approved, bus, CancellationToken.None);
+        var handle = () => NewHandler().Handle(approved, new Envelope(approved), bus, CancellationToken.None);
 
         await handle.Should().NotThrowAsync("報告のための発行の失敗で承認を再配送させない");
         proxy.ResolvedAttempts.Should().Be(1, "前提: 解決結果の発行は試みて、失敗している");
@@ -100,7 +103,7 @@ public class OrderApprovedMethodResolvedPublishFailureTests
         proxy.ThrowSynchronously = throwSynchronously;
         var approved = Approved(StopLossExecutionMethod.BrokerStopOrder);
 
-        await NewHandler().Handle(approved, bus, CancellationToken.None);
+        await NewHandler().Handle(approved, new Envelope(approved), bus, CancellationToken.None);
 
         proxy.ResolvedAttempts.Should().Be(1);
         proxy.Published.OfType<OrderExecuted>().Should().ContainSingle().Which.DecisionId.Should().Be(approved.DecisionId);
