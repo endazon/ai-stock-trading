@@ -32,7 +32,11 @@ case "$args" in
     for a in "$@"; do case "$a" in --from-file=reason=*) cat "${a#--from-file=reason=}" > "$S/reason.txt" ;; esac; done
     printf 'apiVersion: v1\nkind: Secret\n'; exit 0 ;;
   *" apply -f - "*) cat > /dev/null; exit 0 ;;
-  *" logs "*) [ -f "$S/marker" ] && printf '2026-11-05 [WRN] operator-kill-switch-hold: active (outcome=Engaged)\n'; exit 0 ;;
+  *" logs "*)
+    # 印の後にも大量の行を書く（読み手が先に抜けると SIGPIPE になる形。pipefail の下でも一致を取りこぼさないことを見る）。
+    [ -f "$S/marker" ] && printf '2026-11-05 [WRN] operator-kill-switch-hold: active (outcome=Engaged)\n'
+    [ -f "$S/marker" ] && for i in $(seq 1 20000); do printf 'line %s padding padding padding padding\n' "$i"; done
+    exit 0 ;;
   *" get secret "*) [ -f "$S/secret" ]; exit $? ;;
   *" get applications.argoproj.io "*) [ -f "$S/argocd" ] && echo application/ai-stock-trading; exit 0 ;;
   *" get deployment "*) printf '1/1'; exit 0 ;;

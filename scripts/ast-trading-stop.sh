@@ -103,7 +103,10 @@ restart_risk() {
 wait_for_marker() {
 	local since="$1" waited=0
 	while [ "$waited" -le "$WAIT_SECONDS" ]; do
-		if k logs "deployment/${RISK_DEPLOY}" --since-time="$since" 2>/dev/null | grep -Fq "$HOLD_MARKER"; then
+		# pipefail の下で `| grep -q` は早く抜け、上流が SIGPIPE（141）で終わると一致しても偽になる。出力を受けてから照合する。
+		local logs
+		logs="$(k logs "deployment/${RISK_DEPLOY}" --since-time="$since" 2>/dev/null || true)"
+		if [[ "$logs" == *"$HOLD_MARKER"* ]]; then
 			return 0
 		fi
 		sleep "$POLL_SECONDS"
