@@ -52,20 +52,32 @@ plan_refs:
    Dependabot の docker（`/backend`）を有効にして digest の更新を受ける。
 2. **段 `podSecurity.stage`（Worker 10 本と CronJob）**。部品は `templates/_pod-security.tpl`。
    - **1（既定）= 報告だけ**: Worker の Pod は `runAsUser: 0` を明示する（イメージが非 root でも従来どおり root）。CronJob は何も足さない（curl イメージは元から非 root）。
-   - **2**: root のまま、Pod に `seccompProfile: RuntimeDefault`・`automountServiceAccountToken: false`、コンテナに
+   - **段に依らず**: 全 Pod に `automountServiceAccountToken: false`（AST の Pod は k8s API を使わない: chart は serviceAccountName も Role も描かず、
+     コードに k8s の client が無い。メッシュのサイドカーは自前の projected token を使う）。［2026-11-05 追記 / 第 5 回監査］段 2 から繰り上げた。
+   - **2**: root のまま、Pod に `seccompProfile: RuntimeDefault`、コンテナに
      `allowPrivilegeEscalation: false`・`capabilities.drop: [ALL]`（root の所有者として読み書きするだけなのでケーパビリティは要らない）。
    - **3**: 2 に加えて `runAsNonRoot: true`。Worker は 1654:1654・`fsGroup: 1654`（`podSecurity.dotnetRunAsUser`）、CronJob は curl イメージの
      100:101（`tradingCycle.cronjob.runAsUser` / `runAsGroup`。MSP が digest の `/etc/passwd`・`/etc/group` で確かめた値）。
      発注執行の RSA 鍵の mount は 0440（fsGroup のグループ読み）。
+     ［2026-11-05 追記 / AI レビュー］CronJob の 100:101 は `tradingCycle.cronjob.uidVerifiedImage`（既定 = 既定の image）で確かめた値とし、
+     段 3 で image がこれと違い uid / gid が 100:101 のままなら描画で止める。通すには uid / gid を直すか、uidVerifiedImage を同じ image に揃える（明示の上書き）。
    - `podSecurity.readOnlyRootFilesystem: true` は段 2 以上でだけ受理し、Worker と CronJob のコンテナのルートを読み取り専用にして `/tmp` を emptyDir にする。
-3. **OpenD の段 `opend.podSecurity.stage`**（既定 1 = 従来どおり）:
-   - 2: root のまま Pod に seccomp RuntimeDefault・トークンなし、コンテナに権限昇格なし。**OpenD 本体はケーパビリティを落とさない**（root で /opt/opend へ書く）。
+3. **OpenD の段 `opend.podSecurity.stage`**（1 / 3。［2026-11-05 追記 / 第 5 回監査］旧 段 2 の中身を段 1 へ繰り上げ、2 は受け付けない）:
+   - 1（既定）: root のまま、**OpenD を壊さずに付けられるものを常に付ける** —— Pod に seccomp RuntimeDefault・トークンなし、両コンテナに
+     `allowPrivilegeEscalation: false`、認証サイドカーは `capabilities.drop: [ALL]`。いずれも OpenD の既知の要件（root の所有者として
+     `/opt/opend`・`$HOME`・共有領域へ書く・setuid の実行ファイルを使わない・特権の syscall を使わない）と描画で確かめた。
+     段 1 で**付けないもの**と理由: OpenD 本体の `capabilities.drop: [ALL]`（root の OpenD は uid 10001 が所有する `/opt/opend` へ `OpenD.xml` を書く
+     ＝CAP_DAC_OVERRIDE に頼る。`deploy/opend/Dockerfile` の chown と `entrypoint.sh` の書き込み）・`runAsNonRoot`（HOME が変わりデバイス信頼の置き場が変わる。
+     IADR-0060 決定 2）・`readOnlyRootFilesystem`（起動時に `/opt/opend/OpenD.xml` を書く）。seccomp は実 OpenD で未実測のため、
+     外すときは受け口で上書きする（`opend.podSecurityContext.seccompProfile.type=Unconfined`）。
+   - ［2026-11-05 追記 / AI レビュー］段 3 は実機で未検証のため、上げる前の確かめる項目（uid・起動・OpenD.xml・鍵・デバイス信頼の再検証の要否・
+     発注経路・サイドカー）と切り戻しを chart README に「必須の前提」として置く。
    - 3: 非 root（`opend.runAsUser`＝10001。Dockerfile が用意済みの uid/gid）・`fsGroup`・全コンテナでケーパビリティを全て落とす。`opend.home` が `/home/opend` でなければ
      描画で止める。鍵の mount は 0440。
    - 受け口 `opend.securityContext` / `opend.podSecurityContext` は段の値の**上に重ねる**（従来の `--set` の手順はそのまま効く）。段 3 で uid が 0 になる上書きは描画で止める。
    - **認証サイドカーは常に OpenD 本体と同じ uid**: コンテナの securityContext を OpenD 本体から写し、Pod にもコンテナにも uid が無ければ `runAsUser: 0` を明示する。
-     段 2 以上ではサイドカーのケーパビリティを全て落とす（同じ uid の所有者として読み書きするだけ）。
-   - dev の生 manifest（`deploy/opend/k8s/opend.yaml`）のサイドカーにも `runAsUser: 0` を明示する（OpenD 本体は root のまま）。
+     段に依らずサイドカーのケーパビリティを全て落とす（同じ uid の所有者として読み書きするだけ）。
+   - dev の生 manifest（`deploy/opend/k8s/opend.yaml`）のサイドカーにも `runAsUser: 0` を明示し、Pod に `automountServiceAccountToken: false` を付ける（OpenD 本体は root のまま）。
 4. **Pod Security Admission**: `namespace.create` のとき Namespace に warn / audit = `podSecurity.admission.warn` / `audit`（既定 restricted）を常に貼る。
    enforce は `podSecurity.admission.enforce`（既定 空＝貼らない。baseline / restricted を選べる）。メッシュの注入が有効なら貼らない（istio-init が baseline を満たさない）。
    restricted は Worker が段 3、OpenD が有効なら OpenD も段 3 でなければ描画で止める。起動器 `k8s-local-deploy.sh` は名前空間を作った直後に warn / audit = restricted を貼る。

@@ -5,6 +5,11 @@
 {{- if .Values.tradingCycle.cronjob.enabled }}
 {{- $c := .Values.tradingCycle.cronjob }}
 {{- $g := .Values.global }}
+{{- /* NFR, IADR-0609: 段 3 の uid / gid（既定 100:101）は uidVerifiedImage の curl イメージで確かめた値。image だけを替えると
+       その番号の利用者がいるとは限らない。uid / gid を直すか、uidVerifiedImage を同じ image に揃える（明示の上書き）まで止める。 */}}
+{{- if and (ge (int (include "ast.podSecurity.stage" .)) 3) (ne (toString $c.image) (toString $c.uidVerifiedImage)) (eq (int $c.runAsUser) 100) (eq (int $c.runAsGroup) 101) }}
+{{- fail (printf "podSecurity.stage=3 で tradingCycle.cronjob.image（%s）が uid / gid を確かめたイメージ（tradingCycle.cronjob.uidVerifiedImage: %s）と違い、runAsUser / runAsGroup が既定の 100:101 のままです。新しいイメージの /etc/passwd・/etc/group を確かめ、runAsUser / runAsGroup を直すか、同じ番号でよければ uidVerifiedImage を同じ image に揃えてください（IADR-0609）。" $c.image $c.uidVerifiedImage) }}
+{{- end }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:

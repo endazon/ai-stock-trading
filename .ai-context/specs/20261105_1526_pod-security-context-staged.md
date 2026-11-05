@@ -37,13 +37,15 @@ plan_refs:
 2. chart の段 `podSecurity.stage`（Worker と CronJob）:
    - **1（既定）= 報告だけ**: Pod の利用者・ケーパビリティは従来どおり（Worker は `runAsUser: 0` を明示＝イメージが非 root になっても root のまま）。
      Namespace の warn / audit = restricted で違反が見える。
-   - **2**: root のまま `seccompProfile: RuntimeDefault`・`allowPrivilegeEscalation: false`・`capabilities.drop: [ALL]`・`automountServiceAccountToken: false`。
+   - **2**: root のまま `seccompProfile: RuntimeDefault`・`allowPrivilegeEscalation: false`・`capabilities.drop: [ALL]`。
+   - **段に依らず** `automountServiceAccountToken: false`（全 Pod。AST の Pod は k8s API を使わない。［2026-11-05 追記 / 第 5 回監査］段 2 から段に依らずへ繰り上げた）。
    - **3**: 2 に加えて非 root（Worker は 1654:1654・fsGroup 1654、CronJob は curl イメージの 100:101）。発注執行の RSA 鍵の mount は 0440。
    - `podSecurity.readOnlyRootFilesystem: true`（段 2 以上でだけ受理）: コンテナのルートを読み取り専用にし `/tmp` を emptyDir にする。
-3. OpenD は別の段 `opend.podSecurity.stage`（既定 1 = 従来どおり）:
-   - 2: root のまま seccomp RuntimeDefault・権限昇格なし・トークンなし。OpenD 本体はケーパビリティを落とさない（root で /opt/opend へ書くため）。
+3. OpenD は別の段 `opend.podSecurity.stage`（1 / 3。［2026-11-05 追記 / 第 5 回監査］旧 段 2 の中身を段 1 へ繰り上げた）:
+   - 1（既定）: root のまま、壊さずに付けられるもの（Pod の seccomp RuntimeDefault・両コンテナの権限昇格なし・サイドカーの ALL を落とす・トークンなし）を常に付ける。
+     OpenD 本体はケーパビリティを落とさない（root で /opt/opend へ書くため）。非 root・readOnlyRootFilesystem も段 1 では付けない（HOME と /opt/opend）。
    - 3: 非 root（10001:10001・fsGroup 10001）＋ケーパビリティを全て落とす。`opend.home=/home/opend` でなければ描画で止める。鍵の mount は 0440。
-   - 認証サイドカーは**常に OpenD 本体と同じ uid** で動く（uid の指定が無ければ `runAsUser: 0` を明示する）。段 2 以上でケーパビリティを落とす。
+   - 認証サイドカーは**常に OpenD 本体と同じ uid** で動く（uid の指定が無ければ `runAsUser: 0` を明示する）。段に依らずケーパビリティを落とす。
    - 受け口 `opend.securityContext` / `opend.podSecurityContext` は段の値の上に重なる（従来の手順はそのまま使える）。
 4. Pod Security Admission: Namespace（`namespace.create`）に warn / audit = restricted を常に貼る。`podSecurity.admission.enforce` は既定 空（貼らない）。
    baseline / restricted を選べるが、メッシュの注入が有効なら貼らない。restricted は Worker が段 3（OpenD が有効なら OpenD も段 3）でないと描画で止める。

@@ -24,24 +24,24 @@
 {{- fail "opend.home が空です（OpenD はデバイス信頼を $HOME/.com.moomoo.OpenD に書くため必須）。既定は /root。" }}
 {{- end }}
 {{- /* NFR, IADR-0609, #1526: OpenD の Pod の段（opend.podSecurity.stage。Worker の podSecurity.stage とは別）。
-       段の値を組み、受け口 opend.securityContext / opend.podSecurityContext を**上に重ねる**（従来の --set の手順はそのまま効く）。
-       1: 何も足さない（従来どおり root）。
-       2: root のまま Pod に seccomp RuntimeDefault・トークンなし、コンテナに権限昇格なし。OpenD 本体はケーパビリティを落とさない
-          （root の OpenD は uid 10001 が所有する /opt/opend へ OpenD.xml を書く＝CAP_DAC_OVERRIDE に頼る）。
+       段の値を組み、受け口 opend.securityContext / opend.podSecurityContext を**上に重ねる**（従来の --set の手順はそのまま効く。
+       段 1 の値を外すときも受け口で上書きする。例: --set opend.podSecurityContext.seccompProfile.type=Unconfined）。
+       1（既定）: root のまま、OpenD を壊さずに付けられるものを常に付ける —— Pod に seccomp RuntimeDefault・トークンなし、
+          両コンテナに権限昇格なし、認証サイドカーはケーパビリティを全て落とす（同じ uid の所有者として読み書きするだけ）。
+          付けないもの: OpenD 本体のケーパビリティを落とすこと（root の OpenD は uid 10001 が所有する /opt/opend へ OpenD.xml を書く
+          ＝CAP_DAC_OVERRIDE に頼る）・非 root（HOME とデバイス信頼の置き場が変わる）・readOnlyRootFilesystem（/opt/opend へ書く）。
+       2: 受け付けない（旧 段 2 の中身は段 1 へ繰り上げた）。
        3: 非 root（opend.runAsUser・fsGroup）・全コンテナでケーパビリティを全て落とす。HOME は /home/opend に限る。 */}}
 {{- $ostRaw := ($o.podSecurity | default dict).stage }}
-{{- if not (has (toString $ostRaw) (list "1" "2" "3")) }}
-{{- fail (printf "opend.podSecurity.stage は 1 / 2 / 3 のどれかです（受け取った値: %v。IADR-0609）" $ostRaw) }}
+{{- if not (has (toString $ostRaw) (list "1" "3")) }}
+{{- fail (printf "opend.podSecurity.stage は 1 / 3 のどちらかです（受け取った値: %v。段 2 の中身は段 1 へ繰り上げた。IADR-0609）" $ostRaw) }}
 {{- end }}
 {{- $ost := int (toString $ostRaw) }}
 {{- $podSc := dict }}
 {{- $ctrSc := dict }}
 {{- $sideSc := dict }}
-{{- if ge $ost 2 }}
 {{- $_ := set $podSc "seccompProfile" (dict "type" "RuntimeDefault") }}
 {{- $_ := set $ctrSc "allowPrivilegeEscalation" false }}
-{{- $_ := set $sideSc "capabilities" (dict "drop" (list "ALL")) }}
-{{- end }}
 {{- if ge $ost 3 }}
 {{- if ne (toString $o.home) "/home/opend" }}
 {{- fail (printf "opend.podSecurity.stage=3（非 root）には opend.home=/home/opend が要ります（受け取った値: %s。deploy/opend/Dockerfile が uid 10001 用に用意した HOME。IADR-0609 / IADR-0060 決定 2）。" $o.home) }}
@@ -68,9 +68,7 @@
 {{- /* 認証サイドカーは OpenD 本体と同じ uid で動く（共有 emptyDir のファイルは umask 077・FIFO は 600）。サイドカーのイメージは
        Worker と同じ USER $APP_UID なので、Pod にもコンテナにも uid が無ければ root（0）を明示して OpenD 本体に揃える。 */}}
 {{- $sideSc = mustMergeOverwrite $sideSc (deepCopy $ctrSc) }}
-{{- if and (ge $ost 2) (lt $ost 3) }}
 {{- $_ := set $sideSc "capabilities" (dict "drop" (list "ALL")) }}
-{{- end }}
 {{- if and (not (hasKey $sideSc "runAsUser")) (not (hasKey $podSc "runAsUser")) }}
 {{- $_ := set $sideSc "runAsUser" 0 }}
 {{- end }}
@@ -138,10 +136,8 @@ spec:
         sidecar.istio.io/inject: "false"
       {{- end }}
     spec:
-      {{- if ge $ost 2 }}
-      {{- /* NFR, IADR-0609: AST は k8s API を使わない。名前空間の default のトークンを置かない。 */}}
+      {{- /* NFR, IADR-0609: AST は k8s API を使わない。段に依らず、名前空間の default のトークンを置かない。 */}}
       automountServiceAccountToken: false
-      {{- end }}
       {{- with $podSc }}
       securityContext:
         {{- toYaml . | nindent 8 }}

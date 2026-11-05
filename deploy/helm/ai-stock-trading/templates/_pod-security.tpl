@@ -2,9 +2,11 @@
 NFR, IADR-0609, #1526: Pod とコンテナのセキュリティ設定（多層防御・最小権限）の単一情報源。値は values.yaml の podSecurity。
 
 段（podSecurity.stage。Worker と CronJob に効く。OpenD は opend.podSecurity.stage で templates/opend.yaml が組む）:
-  1（既定）: 報告だけ。動作を変えない。Worker は runAsUser: 0 を明示する（イメージは USER $APP_UID＝非 root。
+  1（既定）: 動作を変えない。Worker は runAsUser: 0 を明示する（イメージは USER $APP_UID＝非 root。
              発注執行の鍵の mount 0400 と Stage 0 の PVC の既存ファイルが root を前提にしているため、段を上げるまで root のまま）。
-  2      : root のまま seccomp RuntimeDefault・トークンを置かない・権限昇格なし・ケーパビリティを全て落とす。
+  2      : root のまま seccomp RuntimeDefault・権限昇格なし・ケーパビリティを全て落とす。
+  （段に依らず）: SA トークンを置かない（automountServiceAccountToken: false）。AST の Pod は k8s API を使わない
+             （serviceAccountName も Role も無い。メッシュのサイドカーは自前の projected token を使う）。
   3      : 2 に加えて非 root（runAsNonRoot・uid / gid・fsGroup）。鍵の mount は 0440（fsGroup のグループ読み）。
 
 - ast.podSecurity.stage                 : 検証済みの段（1〜3 の整数）。値域の外は描画で止める。
@@ -50,9 +52,7 @@ NFR, IADR-0609, #1526: Pod とコンテナのセキュリティ設定（多層�
 
 {{- define "ast.pod.security" -}}
 {{- $st := int (include "ast.podSecurity.stage" .root) -}}
-{{- if ge $st 2 }}
 automountServiceAccountToken: false
-{{- end }}
 {{- if ge $st 3 }}
 {{- $uid := int (default 0 .uid) -}}
 {{- $gid := int (default 0 .gid) -}}

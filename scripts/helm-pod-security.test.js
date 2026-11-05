@@ -7,8 +7,10 @@
  * 固定するもの:
  *   1. 全プロファイル（values.yaml と values-*.yaml。gRPC の実測の overlay は values-local に重ねる）× 段（podSecurity.stage /
  *      opend.podSecurity.stage = 1・2・3）の描画で、Worker・CronJob・OpenD（本体と認証サイドカー）の Pod / コンテナが段の形を持つ。
- *      - 段 1（既定）: 動作を変えない。Worker は runAsUser: 0 を明示し、seccomp・ケーパビリティ・トークンの設定を足さない。
- *      - 段 2: root のまま seccomp RuntimeDefault・トークンなし・権限昇格なし・ケーパビリティを全て落とす（OpenD 本体だけは落とさない）。
+ *      - 段に依らず: 全 Pod が automountServiceAccountToken: false。
+ *      - 段 1（既定）: Worker・CronJob は動作を変えない（Worker は runAsUser: 0 を明示）。OpenD は root のまま seccomp RuntimeDefault・
+ *        権限昇格なし・サイドカーはケーパビリティを全て落とす（OpenD 本体は落とさない）。
+ *      - 段 2（Worker・CronJob だけ。OpenD は 1 / 3）: root のまま seccomp RuntimeDefault・権限昇格なし・ケーパビリティを全て落とす。
  *      - 段 3: 非 root（Worker 1654・CronJob 100:101・OpenD 10001）・fsGroup・全コンテナでケーパビリティを全て落とす・鍵の mount は 0440。
  *      プロファイルが段を宣言していれば（例: values-cloud.yaml）、宣言どおりの段の形かも見る。
  *   2. 認証サイドカーの実行 uid は常に OpenD 本体と同じ（共有 emptyDir のファイルは umask 077・FIFO は 600）。
@@ -210,12 +212,14 @@ function violations(text, stages, ro = false) {
     const p = podSc(w);
     const tag = `${w.kind}/${w.name}`;
     const automount = w.flat.get(`${w.prefix}automountServiceAccountToken`);
-    if (st >= 2) {
+    // 段に依らず全 Pod でトークンを置かない（AST の Pod は k8s API を使わない）。
+    if (automount !== 'false') v.push(`${tag}: automountServiceAccountToken: false が無い（段に依らず要る）`);
+    // OpenD は段 1 から seccomp・権限昇格なし（壊さずに付けられるもの）。Worker・CronJob の段 1 は動作を変えない。
+    const hardened = st >= 2 || r === 'opend';
+    if (hardened) {
       if (p.get('seccompProfile.type') !== 'RuntimeDefault') v.push(`${tag}: 段 ${st} なのに Pod の seccompProfile が RuntimeDefault でない`);
-      if (automount !== 'false') v.push(`${tag}: 段 ${st} なのに automountServiceAccountToken: false が無い`);
-    } else {
-      if (p.has('seccompProfile.type')) v.push(`${tag}: 段 1 なのに seccompProfile がある（動作を変えない段）`);
-      if (automount !== undefined) v.push(`${tag}: 段 1 なのに automountServiceAccountToken がある`);
+    } else if (p.has('seccompProfile.type')) {
+      v.push(`${tag}: 段 1 なのに seccompProfile がある（動作を変えない段）`);
     }
     if (w.flat.has(`${w.prefix}serviceAccountName`)) v.push(`${tag}: serviceAccountName がある（AST は k8s API を使わない）`);
     // Pod の利用者
@@ -238,12 +242,12 @@ function violations(text, stages, ro = false) {
       const c = ctrSc(w, i);
       const ctag = `${tag}/${name}`;
       const isOpendMain = r === 'opend' && name === 'opend';
-      if (st >= 2) {
+      if (hardened) {
         if (c.get('allowPrivilegeEscalation') !== 'false') v.push(`${ctag}: 段 ${st} なのに allowPrivilegeEscalation: false が無い`);
         const mustDrop = st >= 3 || !isOpendMain;
         if (mustDrop && !dropsAll(c)) v.push(`${ctag}: 段 ${st} なのに capabilities.drop に ALL が無い`);
-        if (!mustDrop && dropItem(c, 0) !== undefined) v.push(`${ctag}: 段 2 の OpenD 本体がケーパビリティを落としている（root で /opt/opend へ書けなくなる）`);
-      } else if (!(r === 'opend' && name === 'opend-auth')) {
+        if (!mustDrop && dropItem(c, 0) !== undefined) v.push(`${ctag}: 段 ${st} の OpenD 本体（root）がケーパビリティを落としている（/opt/opend へ書けなくなる）`);
+      } else {
         for (const k of c.keys()) v.push(`${ctag}: 段 1 なのにコンテナの securityContext.${k} がある`);
       }
       if (r !== 'opend') {
@@ -303,6 +307,8 @@ function namespaceLabels(text) {
   return out;
 }
 
+// OpenD の段は 1 / 3（旧 段 2 は段 1 へ繰り上げた）。Worker の段 2 には OpenD の段 1 を組ませる。
+const opendStageFor = (st) => (st >= 3 ? 3 : 1);
 function stageArgs(w, o, ro = false) {
   const a = ['--set', `podSecurity.stage=${w}`, '--set', `opend.podSecurity.stage=${o}`];
   if (o >= 3) a.push(...OPEND_HOME_NONROOT);
@@ -333,7 +339,7 @@ function main() {
     });
     for (const st of [1, 2, 3]) {
       ok(`${prof.label}: 段 ${st}（Worker・CronJob・OpenD）の形`, () => {
-        const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...stageArgs(st, st)]), { w: st, o: st });
+        const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...stageArgs(st, opendStageFor(st))]), { w: st, o: opendStageFor(st) });
         assert.deepStrictEqual(v, []);
       });
     }
@@ -397,8 +403,25 @@ function main() {
   process.stdout.write('helm-pod-security: 描画で止まる\n');
   for (const bad of ['0', '4', 'x']) {
     ok(`podSecurity.stage=${bad} は止まる`, () => mustFail(['--set', `podSecurity.stage=${bad}`], 'podSecurity.stage'));
+  }
+  for (const bad of ['0', '2', '4', 'x']) {
     ok(`opend.podSecurity.stage=${bad} は止まる`, () => mustFail([...ENABLE_ALL, '--set', `opend.podSecurity.stage=${bad}`], 'opend.podSecurity.stage'));
   }
+  const CRON3 = ['--set', 'tradingCycle.cronjob.enabled=true', '--set', 'podSecurity.stage=3'];
+  ok('段 3 で CronJob の image だけを替え uid / gid が既定のままなら止まる', () => mustFail([...CRON3, '--set', 'tradingCycle.cronjob.image=curlimages/curl:8.12.0'], 'uidVerifiedImage'));
+  ok('段 3 で CronJob の image を替えても、uidVerifiedImage を揃えれば（明示の上書き）通る', () => {
+    mustRender([...CRON3, '--set', 'tradingCycle.cronjob.image=example/curl:1', '--set', 'tradingCycle.cronjob.uidVerifiedImage=example/curl:1']);
+  });
+  ok('段 3 で CronJob の image を替えても、uid / gid を直せば通る', () => {
+    mustRender([...CRON3, '--set', 'tradingCycle.cronjob.image=example/curl:1', '--set', 'tradingCycle.cronjob.runAsUser=1000', '--set', 'tradingCycle.cronjob.runAsGroup=1000']);
+  });
+  ok('段 2 では CronJob の image を替えても止めない（uid を描かない）', () => {
+    mustRender(['--set', 'tradingCycle.cronjob.enabled=true', '--set', 'podSecurity.stage=2', '--set', 'tradingCycle.cronjob.image=example/curl:1']);
+  });
+  ok('values.yaml: uidVerifiedImage は既定の image と同じ', () => {
+    const base = read(`${CHART}/values.yaml`);
+    assert.strictEqual(readValue(base, 'tradingCycle.cronjob.uidVerifiedImage'), readValue(base, 'tradingCycle.cronjob.image'));
+  });
   ok('readOnlyRootFilesystem を段 1 で有効にすると止まる', () => mustFail(['--set', 'podSecurity.readOnlyRootFilesystem=true'], 'readOnlyRootFilesystem'));
   ok('enforce の値域の外は止まる', () => mustFail(['--set', 'podSecurity.admission.enforce=strict'], 'podSecurity.admission'));
   ok('warn の値域の外は止まる', () => mustFail(['--set', 'podSecurity.admission.warn=none'], 'podSecurity.admission'));
@@ -441,6 +464,8 @@ function main() {
     const t = read('deploy/opend/k8s/opend.yaml');
     const side = t.slice(t.indexOf('- name: opend-auth'), t.indexOf('volumes:', t.indexOf('- name: opend-auth')));
     assert.ok(/securityContext:\n\s+runAsUser: 0\n/.test(side), 'サイドカーに runAsUser: 0 が無い');
+    const pod = t.slice(t.indexOf('kind: Deployment'), t.indexOf('containers:', t.indexOf('kind: Deployment')));
+    assert.ok(/\n {6}automountServiceAccountToken: false\n/.test(pod), 'Pod に automountServiceAccountToken: false が無い');
   });
 
   process.stdout.write('helm-pod-security: 変異（判定が空振りしない）\n');
@@ -465,7 +490,7 @@ function main() {
   }
   ok('変異: 段 1 の認証サイドカーの runAsUser: 0 を抜く（OpenD 本体と uid がずれる）→ 赤', () => {
     const s1 = mustRender(ENABLE_ALL);
-    const needle = '          securityContext:\n            runAsUser: 0\n';
+    const needle = '            runAsUser: 0\n';
     assert.strictEqual(s1.split(needle).length - 1, 1, 'サイドカーの runAsUser: 0 がちょうど 1 つでない');
     const v = violations(s1.replace(needle, ''), { w: 1, o: 1 });
     assert.ok(v.some((x) => x.includes('認証サイドカーの uid')), v.join('\n'));
@@ -475,6 +500,14 @@ function main() {
     assert.ok(good.includes(needle), 'OpenD の toYaml の形が見つからない');
     const v = violations(good.replace(needle, ''), { w: 3, o: 3 });
     assert.ok(v.some((x) => x.includes('opend') && x.includes('ALL')), v.join('\n'));
+  });
+  ok('変異: 段 1 の OpenD の Pod の automountServiceAccountToken を抜く → 赤', () => {
+    const s1 = mustRender(ENABLE_ALL);
+    const o = s1.indexOf('kind: Deployment\nmetadata:\n  name: opend\n');
+    const at = s1.indexOf('      automountServiceAccountToken: false\n', o);
+    assert.ok(o >= 0 && at > o, 'OpenD の Pod の行が見つからない');
+    const m = s1.slice(0, at) + s1.slice(at + '      automountServiceAccountToken: false\n'.length);
+    assert.ok(violations(m, { w: 1, o: 1 }).some((x) => x.includes('opend') && x.includes('automount')));
   });
   ok('変異: 段 3 の描画を段 1 として判定 → 赤', () => assert.ok(violations(good, { w: 1, o: 1 }).length > 0));
   ok('変異: 段 1 の描画を段 2 として判定 → 赤', () => assert.ok(violations(mustRender(ENABLE_ALL), { w: 2, o: 2 }).length > 0));
