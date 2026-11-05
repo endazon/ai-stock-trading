@@ -14,6 +14,8 @@ const BLOCK = [
   { re: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/, name: 'Slack トークン' },
   { re: /\bAIza[0-9A-Za-z\-_]{20,}\b/, name: 'Google API キー' },
   { re: /\bsk-[A-Za-z0-9]{20,}\b/, name: 'API シークレットキー' },
+  // NFR / #1540: Anthropic の API キー・OAuth トークン（sk-ant-<種別><2 桁>-…）。上の形は `sk-` の直後の `-` で外れるため別に持つ。
+  { re: /\bsk-ant-[a-z]+\d{2}-[A-Za-z0-9_-]{40,}/, name: 'Anthropic API キー' },
 ];
 // 低確度（警告のみ）
 const WARN = [
