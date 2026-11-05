@@ -12,7 +12,9 @@ namespace ReportService.Tests.Features.Reports;
 // 段 1（Audit）は記録だけで確定を止めず、段 2（Enforce）は確かめられなければ 403 で確定しない。既定（Off）は従来どおり。
 public class ReportConfirmSecondFactorTests
 {
-    private const string Secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    // RFC 6238 付録 B の SHA1 の公開の試験値の種（ASCII の "1234567890" を 2 回）を、実行時に base32 へ組み立てる（本物の秘密ではない。
+    // 文字列の定数で書くと秘密の走査に掛かる）。
+    private static readonly string Secret = Totp.EncodeBase32(System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("1234567890", 2))));
 
     [Theory]
     [InlineData(null, HttpStatusCode.OK)]

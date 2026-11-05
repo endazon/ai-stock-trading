@@ -33,6 +33,29 @@ public static class Totp
         return (binary % 1_000_000).ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
     }
 
+    /// <summary>鍵を base32（大文字・パディングなし）へ写す。試験が公開の試験値の鍵から組み立てるのに使う。</summary>
+    public static string EncodeBase32(byte[] key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        const string Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+        var sb = new System.Text.StringBuilder();
+        int buffer = 0, bits = 0;
+        foreach (var b in key)
+        {
+            buffer = (buffer << 8) | b;
+            bits += 8;
+            while (bits >= 5)
+            {
+                bits -= 5;
+                sb.Append(Alphabet[(buffer >> bits) & 0x1F]);
+            }
+        }
+
+        if (bits > 0)
+            sb.Append(Alphabet[(buffer << (5 - bits)) & 0x1F]);
+        return sb.ToString();
+    }
+
     /// <summary>base32 を鍵へ写す。書式の外・短すぎる（10 バイト未満）は false。</summary>
     public static bool TryDecodeBase32(string? text, out byte[] key)
     {

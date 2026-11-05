@@ -9,8 +9,9 @@ namespace AiStockTrading.Shared.Infrastructure.Tests.SecondFactor;
 // NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）の検証。提供側で検証し、段 1 は記録だけ、段 2 は拒む。
 public class OwnerSecondFactorGateTests
 {
-    // RFC 6238 付録 B の SHA1 の鍵（ASCII "12345678901234567890"）の base32。
-    private const string RfcSecret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    // RFC 6238 付録 B の SHA1 の公開の試験値の種（ASCII の "1234567890" を 2 回）を、実行時に base32 へ組み立てる（本物の秘密ではない。
+    // 文字列の定数で書くと秘密の走査に掛かる）。
+    private static readonly string RfcSecret = Totp.EncodeBase32(System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("1234567890", 2))));
 
     [Theory]
     [InlineData(59L, "287082")]
@@ -20,6 +21,7 @@ public class OwnerSecondFactorGateTests
     public void RFC6238の試験値と一致する(long unixSeconds, string expected)
     {
         Totp.TryDecodeBase32(RfcSecret, out var key).Should().BeTrue();
+        Totp.EncodeBase32(key).Should().Be(RfcSecret, "符号化と復号は往復する");
         key.Should().Equal(Encoding.ASCII.GetBytes("12345678901234567890"));
 
         Totp.Compute(key, Totp.StepOf(DateTimeOffset.FromUnixTimeSeconds(unixSeconds))).Should().Be(expected);

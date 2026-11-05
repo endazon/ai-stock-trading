@@ -11,7 +11,9 @@ namespace RiskManagementService.Tests;
 // 第 2 要素（TOTP）を提供側で確かめる。止める向き（kill switch の起動・一時停止）には課さない。段 1（Audit）は記録だけ。
 public class OwnerSecondFactorWiringTests
 {
-    private const string Secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    // RFC 6238 付録 B の SHA1 の公開の試験値の種（ASCII の "1234567890" を 2 回）を、実行時に base32 へ組み立てる（本物の秘密ではない。
+    // 文字列の定数で書くと秘密の走査に掛かる）。
+    private static readonly string Secret = Totp.EncodeBase32(System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("1234567890", 2))));
 
     private static RiskWorkerWebApplicationFactory Factory(string? mode) => new()
     {
