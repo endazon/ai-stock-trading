@@ -12,21 +12,31 @@ namespace RiskManagementService.Features.RiskManagement;
 // MaintenanceMarginEvaluationService）はすべてここを通す。素の bus.PublishAsync(承認) に戻すと印の無い承認が出る
 // （OrderApprovalPublisherGuardTests が本サービスのソースを走査して止める）。
 //
-// 鍵が無い構成（段 1 の既定）では印を付けずに発行し、警告を残す（従前と同じ発行。受け手は段 1 なら通す）。
-public sealed class OrderApprovalPublisher(OrderApprovalSignature? signature, ILogger<OrderApprovalPublisher> logger)
+// 鍵が無い構成（段 1 の既定）では印を付けずに発行する（従前と同じ発行。受け手は段 1 なら通す）。警告は生成時に 1 回。
+public sealed class OrderApprovalPublisher
 {
+    private readonly OrderApprovalSignature? _signature;
+
+    // 鍵が無いことは構成の事実なので、生成時（単一の実体＝起動後の最初の解決）に 1 回だけ Warning を残す（承認ごとには出さない）。
+    public OrderApprovalPublisher(OrderApprovalSignature? signature, ILogger<OrderApprovalPublisher> logger)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        _signature = signature;
+        if (signature is null)
+        {
+            logger.LogWarning(
+                "注文の承認の印を付ける鍵が構成されていないため、承認を印なしで発行します（OrderApprovalSigning:Key。段 1 の受け手は通し、段 2 の受け手は発注しません）。");
+        }
+    }
+
     public ValueTask PublishAsync(IMessageBus bus, OrderApproved approved)
     {
         ArgumentNullException.ThrowIfNull(bus);
         ArgumentNullException.ThrowIfNull(approved);
 
+        var signature = _signature;
         if (signature is null)
-        {
-            logger.LogWarning(
-                "注文の承認の印を付ける鍵が構成されていないため、印なしで発行します（OrderApprovalSigning:Key）: DecisionId={DecisionId}",
-                approved.DecisionId);
             return bus.PublishAsync(approved);
-        }
 
         return bus.PublishAsync(
             approved,

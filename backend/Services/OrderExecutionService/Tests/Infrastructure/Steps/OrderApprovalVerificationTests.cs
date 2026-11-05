@@ -112,4 +112,18 @@ public class OrderApprovalVerificationTests
 
         Verifier(OrderApprovalSigningMode.Report, signature: null).Admit(approved, EnvelopeOf(approved, null)).Should().BeTrue();
     }
+
+    [Theory]
+    [InlineData(OrderApprovalSigningMode.Report, true)]
+    [InlineData(OrderApprovalSigningMode.Enforce, false)]
+    public void 発注意図の無い承認は段に従い_例外にしない(OrderApprovalSigningMode mode, bool admitted)
+    {
+        var approved = OrderApprovedMethodResolvedPublishFailureTests.Approved(StopLossExecutionMethod.BrokerStopOrder);
+        var broken = approved with { Intent = null! };
+
+        var admit = () => Verifier(mode, Signer).Admit(broken, EnvelopeOf(broken, Signer.Sign(approved)));
+
+        admit.Should().NotThrow();
+        admit().Should().Be(admitted);
+    }
 }

@@ -65,6 +65,10 @@ public sealed class OrderApprovalSignature
     public OrderApprovalVerification Verify(OrderApproved approved, string? signature)
     {
         ArgumentNullException.ThrowIfNull(approved);
+        // 本文が壊れている（発注意図が無い）承認は印を組めない。段に依らず「合わない」として扱い、例外にしない
+        // （受け手は段 1 なら記録して従前どおり、段 2 なら発注しない）。
+        if (approved.Intent is null)
+            return OrderApprovalVerification.Mismatch;
         if (string.IsNullOrEmpty(signature))
             return OrderApprovalVerification.Missing;
 
@@ -92,10 +96,12 @@ public sealed class OrderApprovalSignature
     }
 
     /// <summary>正準形（試験用に公開する）。項目は <c>|</c> で区切り、文字列は長さを前置して区切りの偽装を防ぐ。</summary>
+    /// <exception cref="ArgumentException">発注意図が無い（<see cref="Verify"/> はこの前に Mismatch を返す）。</exception>
     public static string Canonical(OrderApproved approved)
     {
         ArgumentNullException.ThrowIfNull(approved);
-        var i = approved.Intent;
+        var i = approved.Intent
+            ?? throw new ArgumentException("発注意図（Intent）の無い承認は正準形を組めません。", nameof(approved));
         var sb = new StringBuilder();
         sb.Append(Version);
         Field(sb, approved.DecisionId.ToString("D"));
@@ -135,6 +141,9 @@ public sealed class OrderApprovalSignature
         value is null ? "-" : $"{value.Length.ToString(CultureInfo.InvariantCulture)}:{value}";
 
     // 末尾のゼロを落として正規化する（10.50 と 10.5 を同じ値として扱う。直列化の往復で桁が変わっても印は合う）。
+    // 前提: decimal を 1（小数 28 桁で表した 1）で割ると、値を変えずに尺度（scale）が最小になる（.NET の decimal の除算は、
+    // 割り切れるとき結果の尺度を必要な最小に縮める）。値の範囲は decimal 全域で溢れない（1 で割るだけ）。
+    // 書式は InvariantCulture（小数点は「.」・桁区切りなし）。
     private static string Dec(decimal? value) =>
         value is { } v ? (v / 1.0000000000000000000000000000m).ToString(CultureInfo.InvariantCulture) : "-";
 

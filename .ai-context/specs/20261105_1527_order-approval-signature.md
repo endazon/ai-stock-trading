@@ -33,7 +33,7 @@ plan_refs:
 1. **発行元は印を付ける。** 3 経路の発行を `OrderApprovalPublisher`（唯一の口）へ寄せ、HMAC-SHA256 の印をメッセージのヘッダー `ast-order-approval-sig` に載せる。素の `PublishAsync(承認)` は構造テストが止める。
 2. **受け手は確かめる。** `OrderApprovedHandler` は、予約・ブローカーに触れる前に `OrderApprovalVerifier.Admit` を呼ぶ。
    - 段 1（`OrderApprovalSigning:Mode=Report`・既定）: 合わない・無い・確かめられない（受け手に鍵が無い）は Warning を残して通す（従前の挙動）。
-   - 段 2（`Enforce`）: 合わない・無いものは発注しない。Error を残し、何も発行しない（例外にもしない）。
+   - 段 2（`Enforce`）: 合わない・無いものは発注しない。構造化した Warning（`OrderApprovalRejected`）を残し、何も発行しない（例外にもしない）。発注意図の無い壊れた承認も段に依らず Mismatch。
 3. **鍵は Secret で渡す。** `OrderApprovalSigning:Key`（base64・32 バイト以上）。値は Git・values に置かない。段 2 で鍵が無ければ起動で止める。鍵が読めない・短いときは段に依らず起動で止める（文言に値を出さない）。入れ替えの間だけ `OrderApprovalSigning:PreviousKey` を検証に使える。
 4. **正準形は項目を明示して組む**（JSON の直列化に依らない）。`OrderApproved` と `OrderIntent`・`EntryBasis` の全項目を覆い、契約の項目の一覧を試験で固定する（足し忘れは赤）。
 5. **決済の扱いは変えない。** kill switch の下でも決済は通す（計画どおり）。守るのは「その決済の承認が正規の発行元のものか」であり、印の検証は決済にも新規建てにも同じく掛かる。追加の停止の確認は入れない（入れると計画 ADR-0009 決定 4 に反する）。
@@ -42,7 +42,8 @@ plan_refs:
 
 1. 鍵を作る（`scripts/gen-order-approval-signing-key.sh --vault`〔ESO 所有〕か `--k8s`〔従来経路〕）。値は表示されない。
 2. risk-management と order-execution を作り直す（両方が鍵を読む）。段 1 のまま、発注執行のログに「発行元を確かめられませんでした」が出ないことを確かめる。
-3. `global.orderApprovalSigning.mode=Enforce` で描画する（鍵の Secret が必須になる。無ければ Pod が起動しない）。
+3. **キューと DLQ（`<queue>_error`）に印のない承認が残っていないことを確かめる**（段 2 の後に再配送すると発注されない）。
+4. `global.orderApprovalSigning.mode=Enforce` で描画する（鍵の Secret が必須になる。無ければ Pod が起動しない）。拒否は構造化した Warning（EventId `OrderApprovalRejected`）で残る。
 
 ## 母集合（規則 9）
 
@@ -64,3 +65,5 @@ plan_refs:
 - 承認を購読する他の受け手（台帳・活動射影・監査）の検証。発注には進まないが、台帳の記録は残る。段 2 の後に、同じ部品で確かめるかを決める。
 - 承認以外の発注に至るメッセージ（決済の取消・訂正など）。同じ部品で広げられる。
 - 鍵の定期の入れ替えの自動化（手順はスクリプトの `--rotate` と PreviousKey）。
+- 段 2 で拒否した決済の承認の台帳の行（手仕舞いの在庫を最長 30 分押さえる）と、構造テストが変数名の正規表現に依ること（IADR-0610 残余 5・6）。
+- 鍵の生成スクリプトの `--vault` は、KV が存在すれば patch だけを行い、失敗したら止まる。put は KV が存在しないと確定したときだけ（共有の KV の他のキーを消さない）。

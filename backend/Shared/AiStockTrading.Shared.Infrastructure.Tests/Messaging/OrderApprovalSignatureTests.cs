@@ -164,4 +164,15 @@ public class OrderApprovalSignatureTests
             "ProductType", "Quantity", "Side", "StopFloorSource", "StopLossPrice", "Symbol");
         Names(typeof(EntryBasis)).Should().Equal("Condition", "ReferencePrice");
     }
+
+    [Fact]
+    public void 発注意図の無い承認は例外にせず合わないとする()
+    {
+        // 本文が壊れた承認（JSON の intent が null）。印を組めないので Mismatch（段 1 は記録して通し、段 2 は発注しない）。
+        var signer = Signer(NewKey());
+        var broken = Approved() with { Intent = null! };
+
+        signer.Verify(broken, "v1.AAAA").Should().Be(OrderApprovalVerification.Mismatch);
+        signer.Verify(broken, null).Should().Be(OrderApprovalVerification.Mismatch);
+    }
 }

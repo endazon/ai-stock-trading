@@ -881,7 +881,8 @@ risk-management が発行する注文の承認に HMAC の印を付け、order-e
 | `secretName` / `secretKey` | `ast-secrets` / `order-approval-signing-key` | 鍵（32 バイト以上の乱数・base64）の置き場。段 1 は `optional`、段 2 は必須 |
 
 - 鍵は `scripts/gen-order-approval-signing-key.sh --vault`（ESO 所有。Vault `ai-stock-trading/app-secrets` のプロパティ）か `--k8s`（従来経路）で作る。値は表示されない。既にあれば書かない（`--rotate` で作り直す）。
-- 段 2 へ上げる前に、段 1 のまま両サービスに鍵が載り、order-execution のログに「発行元を確かめられませんでした」が出ないことを確かめる。
+- 段 2 へ上げる前に、段 1 のまま両サービスに鍵が載り、order-execution のログに「発行元を確かめられませんでした」が出ないこと、キューと DLQ に印のない承認が残っていないことを確かめる。
+- `--vault` は KV が在れば patch だけ（失敗したら止まる）。KV が無いと確定したときだけ put する（共有の KV の他のキーを消さない）。
 
 ## 外部連携（fail-safe 既定）
 
