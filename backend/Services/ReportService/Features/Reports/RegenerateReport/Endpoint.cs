@@ -1,3 +1,4 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.Shared.Contracts.Logging;
 using ReportService.Features.Reports.ConfirmReport;
 
@@ -16,7 +17,9 @@ internal static class RegenerateReportEndpoint
     public static void MapRegenerateReport(this IEndpointRouteBuilder owner) =>
         owner.MapPost("/{periodKey}/regenerate", (string periodKey, RegenerateReportRequest? req, ReportRegenerationService svc,
             DelegatedActorOptions delegated, ILoggerFactory loggerFactory, HttpContext http) =>
-                HandleAsync(periodKey, req ?? new RegenerateReportRequest(), svc, delegated, loggerFactory, http));
+                HandleAsync(periodKey, req ?? new RegenerateReportRequest(), svc, delegated, loggerFactory, http))
+            // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
+            .AllowOwnerBot();
 
     // NFR, IADR-0450: REST と gRPC 面（ReportOwnerWriteGrpcService）が共有する処理（作り直した利用者の解決・状態の写しを 2 箇所に書かない）。
     internal static async Task<IResult> HandleAsync(string periodKey, RegenerateReportRequest req, ReportRegenerationService svc,

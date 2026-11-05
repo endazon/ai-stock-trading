@@ -380,6 +380,13 @@ spec:
             {{- end }}
             - name: Auth__OwnerToken__Mode
               value: {{ $otb.mode | default "Report" | quote }}
+            {{- /* 🔴 NFR-06, #1554, IADR-0622: ボットの許可表の段（Report＝許可表の外を記録だけ・Enforce＝拒否）。aud / azp の段とは別。 */}}
+            {{- $obs := $g.ownerBotScope | default dict }}
+            {{- if not (has ($obs.mode | default "Report") (list "Report" "Enforce")) }}
+            {{- fail (printf "global.ownerBotScope.mode は Report か Enforce です（値: %v）。" $obs.mode) }}
+            {{- end }}
+            - name: Auth__OwnerBot__Mode
+              value: {{ $obs.mode | default "Report" | quote }}
             {{- end }}
             {{- range $e := $svc.extraEnv }}
             - name: {{ $e.name }}

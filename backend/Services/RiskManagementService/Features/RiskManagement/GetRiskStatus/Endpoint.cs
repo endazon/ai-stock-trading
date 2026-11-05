@@ -1,3 +1,5 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
+
 namespace RiskManagementService.Features.RiskManagement.GetRiskStatus;
 
 // ---- 稼働状態の集約照会（FR-10, UC-07, ADR-0009）: 表示専用。Discord `/status` が参照する ----
@@ -8,5 +10,7 @@ namespace RiskManagementService.Features.RiskManagement.GetRiskStatus;
 internal static class GetRiskStatusEndpoint
 {
     public static void MapGetRiskStatus(this IEndpointRouteBuilder owner) =>
-        owner.MapGet("/status", (RiskStatusService svc) => Results.Ok(svc.Build()));
+        owner.MapGet("/status", (RiskStatusService svc) => Results.Ok(svc.Build()))
+            // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
+            .AllowOwnerBot();
 }

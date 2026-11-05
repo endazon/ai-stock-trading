@@ -216,7 +216,7 @@ public class GrpcOwnerGateWiringTests
 
     private static string Read(params string[] path) => File.ReadAllText(Path.Combine([RepoRoot(), .. path]));
 
-    // 🔴 既定は realm の owner 機密クライアントであり、そのクライアントは client_credentials 専用・trading-owner だけを持つ。
+    // 🔴 既定は realm の owner 機密クライアントであり、そのクライアントは client_credentials 専用・所有者のロールとボット専用のロールだけを持つ。
     //   （standardFlow / directAccessGrants が有効だと、人がそのクライアントの azp でトークンを取れてしまい、門の意味が消える。）
     [Fact]
     public void T_10_1726_既定はrealmのボットの機密クライアントで_人のトークンのazpになり得ない()
@@ -236,8 +236,14 @@ public class GrpcOwnerGateWiringTests
 
         var serviceAccount = realm.RootElement.GetProperty("users").EnumerateArray()
             .Single(u => u.TryGetProperty("serviceAccountClientId", out var id) && id.GetString() == bot);
+        // NFR-06, #1554, IADR-0622: 段 ②（ボット専用のロールを足し、所有者のロールはまだ外さない）の形。⑤ で trading-owner を外す。
+        //   サービスのロール（trading-service）は持たない。
         serviceAccount.GetProperty("realmRoles").EnumerateArray().Select(r => r.GetString())
-            .Should().Equal("trading-owner");
+            .Should().Equal("trading-owner", "trading-bot");
+        realm.RootElement.GetProperty("users").EnumerateArray()
+            .Where(u => u.GetProperty("realmRoles").EnumerateArray().Any(r => r.GetString() == "trading-bot"))
+            .Select(u => u.GetProperty("username").GetString())
+            .Should().Equal(new[] { $"service-account-{bot}" }, "ボット専用のロールはボットのサービスアカウントだけが持つ");
     }
 
     [Fact]

@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [NFR-06, FR-14, FR-10, FR-20, UC-06, ADR-0047, ADR-0009, ADR-0006, IADR-0062, IADR-0098, IADR-0448, IADR-0449, IADR-0450]
 author: claude (Claude Code)
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-06
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (NFR-06・FR-14)
   - planning:projects/ai-stock-trading/06_technical/07_discord-bot-design.md (§認証・認可 4 の確認ステップ)
@@ -92,3 +92,7 @@ J-4（ボットの権限）:
 - ボットの確認の画面に 6 桁の入力を足す（7 操作。確認フレーズの 3 コマンドは同じモーダルに足す）。
 - 段 2（Enforce）への切り替え（段 1 の記録で Verified が出ることを確かめてから）。
 - J-4 の B（#1528 の後）・C。
+
+## ［2026-11-06 追記 / #1554］決定 7 の B を IADR-0622 で行った
+
+- ボットの資格情報で届く REST の所有者の操作を、ボットの REST アダプタが呼ぶ経路の許可表（21 本）とボット専用のロール `trading-bot` で絞る。段 1 は許可表の外を記録するだけで、段 2 で拒む。詳細は [IADR-0622](IADR-0622_owner-bot-route-allowlist-and-bot-role.md)。基盤のレルムの変更は MSP#2441。C（承認の面）は残る。

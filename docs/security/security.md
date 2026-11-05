@@ -3,15 +3,15 @@ title: セキュリティ仕様書
 type: security-spec
 status: review
 created: 2026-08-07
-updated: 2026-11-05
+updated: 2026-11-06
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-02, FR-08, FR-10, FR-11, FR-13, FR-14, FR-19, FR-20, NFR-05, NFR-06, NFR-10, NFR, UC-06, UC-07]
 adrs: [ADR-0003, ADR-0004, ADR-0012, MSP:ADR-0004, MSP:ADR-0024]
-iadrs: [IADR-0610, IADR-0011, IADR-0019, IADR-0324, IADR-0051, IADR-0056, IADR-0059, IADR-0060, IADR-0062, IADR-0072, IADR-0111, IADR-0164, IADR-0169, IADR-0171, IADR-0174, IADR-0175, IADR-0176, IADR-0314, IADR-0061, IADR-0316, IADR-0496]
-specs: [20261105_1527_order-approval-signature, 20260807_450_security-spec-from-measurement, 20260910_727_msp-linked-realm-unification, 20260909_627_mesh-sidecar-injection-switch, 20260909_708_log-forging-sanitization, 20261007_1192_aspnetcore-env-production]
-issues: [#24, #318, #346, #450, #456, #627, #708, #727, #1192, MSP#445, MSP#1015, MSP#1372]
+iadrs: [IADR-0610, IADR-0011, IADR-0019, IADR-0324, IADR-0051, IADR-0056, IADR-0059, IADR-0060, IADR-0062, IADR-0072, IADR-0111, IADR-0164, IADR-0169, IADR-0171, IADR-0174, IADR-0175, IADR-0176, IADR-0314, IADR-0061, IADR-0316, IADR-0496, IADR-0622]
+specs: [20261105_1527_order-approval-signature, 20260807_450_security-spec-from-measurement, 20260910_727_msp-linked-realm-unification, 20260909_627_mesh-sidecar-injection-switch, 20260909_708_log-forging-sanitization, 20261007_1192_aspnetcore-env-production, 20261106_1554_owner-bot-scope]
+issues: [#24, #318, #346, #450, #456, #627, #708, #727, #1192, #1554, MSP#445, MSP#1015, MSP#1372]
 -->
 
 
@@ -195,7 +195,7 @@ issues: [#24, #318, #346, #450, #456, #627, #708, #727, #1192, MSP#445, MSP#1015
 | --- | --- | --- | --- |
 | T-1 | **取引データが外部 AI エージェントへ流出する** | 建玉・発注履歴・判断根拠の第三者流出 | ✅ **MCP へ公開しない**。`McpExposureNotDeclaredTests` が `backend/` と `deploy/` を走査し、**宣言が入り込むとテストが落ちる**（MCP 非公開の維持）。上記「MCP への公開」節を参照 |
 | T-2 | **無認証の内部エンドポイントを踏まれ、収集サイクルを任意に起動される** | LLM 費用の消費・レート制限の枯渇（**発注はしない**。判断は下流の統制を通る） | ✅ **対策済み**（[#456](https://github.com/endazon/ai-stock-trading/issues/456)。run-once の認可と CronJob のトークン取得）。`POST /internal/collection/run-once` は **`OwnerOrService`** を要求する。**渡しているのは「サイクルを起こす権限」であって「発注する権限」ではない**（決定1）。CronJob は **client_credentials でトークンを取ってから**叩き、**資格情報が無い・token 取得に失敗した場合は Job が赤くなる**（fail-closed・決定2）。**退行は構造テストが止める** —— `UnauthenticatedEndpointsNotAllowedTests` が**認可メタデータを持たないエンドポイントを許可リスト以外に許さない**（決定4） |
-| T-3 | **JWT の検証が緩く、別クライアント向けトークンが通る** | 認可の迂回 | 🔴 **未対策（判断済み・値は据え置き）**。`RequireHttpsMetadata = false`（メタデータ取得が平文 HTTP を許す）・`ValidateAudience = false`（**aud を検証しない**）。**基盤（microservices-platform）の Keycloak クライアント構成と揃っている必要があり、片側だけ厳しくすると全サービスが 401 になる**ため据え置いた（run-once の認可を定めた実装 ADR の決定 3）。**再判断する条件**: ①Ingress が入り外部から到達可能になる ②マルチテナント化する ③基盤側の構成が確認できるようになる。担当: [#24](https://github.com/endazon/ai-stock-trading/issues/24)。🟡 **所有者の操作（REST の所有者の判定）に限り、ロールに加えて宛先（aud）と発行先のクライアント（azp）を許可集合で確かめる判定を段で導入中**（[#1528](https://github.com/endazon/ai-stock-trading/issues/1528)）。段 1（既定）は不一致を記録して通し、段 2 で拒否する。サービス間の判定と JwtBearer の設定は変えない |
+| T-3 | **JWT の検証が緩く、別クライアント向けトークンが通る** | 認可の迂回 | 🔴 **未対策（判断済み・値は据え置き）**。`RequireHttpsMetadata = false`（メタデータ取得が平文 HTTP を許す）・`ValidateAudience = false`（**aud を検証しない**）。**基盤（microservices-platform）の Keycloak クライアント構成と揃っている必要があり、片側だけ厳しくすると全サービスが 401 になる**ため据え置いた（run-once の認可を定めた実装 ADR の決定 3）。**再判断する条件**: ①Ingress が入り外部から到達可能になる ②マルチテナント化する ③基盤側の構成が確認できるようになる。担当: [#24](https://github.com/endazon/ai-stock-trading/issues/24)。🟡 **所有者の操作（REST の所有者の判定）に限り、ロールに加えて宛先（aud）と発行先のクライアント（azp）を許可集合で確かめる判定を段で導入中**（[#1528](https://github.com/endazon/ai-stock-trading/issues/1528)）。段 1（既定）は不一致を記録して通し、段 2 で拒否する。サービス間の判定と JwtBearer の設定は変えない。🟡 **ボットの機密クライアントのトークンは、ボットが使う REST の経路（許可表）と gRPC の所有者の面にだけ届くよう段で絞る**（[#1554](https://github.com/endazon/ai-stock-trading/issues/1554)。段 1 は許可表の外を記録、段 2 で拒否。ボット専用のロールは許可表の経路でだけ通る） |
 | T-4 | **収集した外部テキストが LLM への指示として作用する**（プロンプトインジェクション） | AI が意図しない判断・発注を行う | ✅ **RAG 取得文脈を「データ」として構造分離し、出典で限定する**（RAG 取得文脈のプロンプトインジェクション対策）。文脈は**参考情報として本判断プロンプトのみ**に注入し、**既定 no-op・取得失敗は文脈なしへ縮退**する（RAG 文脈は Application の抽象ポートで受ける） |
 | T-5 | **AI の暴走・誤判断が実弾の発注になる** | 実損 | ✅ **多重。** 実弾 triple-latch（OpenD 本番化の切替ゲート）／ブローカー階層の閂 0〜4（provider × environment の 2 軸表現）／**アダプタは `TrdEnv_Simulate` 固定**（`Mode=Live` でも SIMULATE を用いる）／`BrokerFactory` の安全既定はペーパー／kill switch は `OwnerOnly` |
 | T-6 | **設定で統制を実質無効化される** | ガードの空洞化 | ✅ **構造クランプ。** 保持期間は**下限** 7 日（重複排除ストアのパージ方針）、為替の鮮度上限は**上限** 30 日（為替レートの鮮度＝警告と停止の分離）。**設定値ではなく構造で担保する** |

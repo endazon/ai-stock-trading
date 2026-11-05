@@ -39,6 +39,11 @@ global:
   #   段 2 へ上げるのは、段 1 で各サービスのログに不一致が出ないことを確かめた後。
   ownerTokenBinding:
     mode: Report
+  # 🔴 NFR-06, #1554, IADR-0622: ボットの資格情報（azp ai-stock-trading-owner）で届く REST の所有者の操作を、ボットの許可表の経路に絞る段。
+  #   Report（段 1・既定）＝許可表の外の呼び出しを記録して通す／Enforce（段 2）＝拒否。ownerTokenBinding とは別に上げる。
+  #   段 2 へ上げるのは、段 1 で各サービスのログに「ボットの許可表の外」が出ないことを確かめた後。
+  ownerBotScope:
+    mode: Report
   # NFR-06, NFR-05, IADR-0496, #1192: 全 Worker の ASPNETCORE_ENVIRONMENT（サービス単位は services.<name>.aspnetcoreEnvironment で上書き可）。
   # 🔴 Development は描画で止める（開発者向け例外ページが要求ヘッダー・スタックを応答へ載せるため）。
   aspnetcoreEnvironment: Production

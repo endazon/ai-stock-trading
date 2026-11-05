@@ -33,6 +33,10 @@ public static class AiStockTradingAuthPolicies
     // 利用者ロール（Keycloak のレルムロール想定）。単独利用者運用のため単層とする（IADR-0011）。
     public const string OwnerRole = "trading-owner";
 
+    // 🔴 NFR-06, FR-14, #1554, IADR-0622: Discord ボット専用のロール。ボットのクライアント（azp）かつボットの許可表の経路
+    // （REST の AllowOwnerBot）と gRPC の所有者の面でだけ、所有者と同じに扱う。他では通さない（OwnerTokenBindingHandler）。
+    public const string BotRole = "trading-bot";
+
     // IADR-0051: サービス間 s2s 認証用の最小権限ロール（読み取り系のみ許可）。kill switch/設定変更は持たない。
     public const string ServiceRole = "trading-service";
 }
@@ -77,19 +81,22 @@ public static class AuthExtensions
         // 🔴 NFR, FR-10, #1528, IADR-0611: REST の所有者の判定で aud / azp も確かめる（段 1 は記録だけ）。設定は起動時に解決し、誤りはここで止める。
         var ownerTokenBinding = OwnerTokenBinding.Resolve(config);
         services.AddSingleton(ownerTokenBinding);
+        // 🔴 NFR-06, #1554, IADR-0622: ボットの許可表の段（Auth:OwnerBot:Mode。aud / azp の段とは別）。
+        services.AddSingleton(OwnerBotScope.Resolve(config));
         services.AddSingleton<IAuthorizationHandler, OwnerTokenBindingHandler>();
 
         // FR-10/FR-19/FR-20, ADR-0003/ADR-0007/ADR-0008: 利用者のみのエンドポイント用に OwnerOnly ポリシーを登録する。
         services.AddAuthorization(options =>
         {
+            // #1554, IADR-0622: ボット専用のロールも受けるが、通すかは判定器が決める（ボットのクライアントかつ許可表の経路だけ）。
             options.AddPolicy(AiStockTradingAuthPolicies.OwnerOnly, policy => policy
-                .RequireRole(AiStockTradingAuthPolicies.OwnerRole)
+                .RequireRole(AiStockTradingAuthPolicies.OwnerRole, AiStockTradingAuthPolicies.BotRole)
                 .AddRequirements(new OwnerTokenBindingRequirement(AllowService: false)));
 
             // IADR-0051: 読み取り系の同期照会は利用者（trading-owner）またはサービス（trading-service）が呼べる。
             // #1528, IADR-0611: 所有者の分岐は aud / azp も確かめる（サービスの分岐は従来どおり）。
             options.AddPolicy(AiStockTradingAuthPolicies.OwnerOrService, policy => policy
-                .RequireRole(AiStockTradingAuthPolicies.OwnerRole, AiStockTradingAuthPolicies.ServiceRole)
+                .RequireRole(AiStockTradingAuthPolicies.OwnerRole, AiStockTradingAuthPolicies.ServiceRole, AiStockTradingAuthPolicies.BotRole)
                 .AddRequirements(new OwnerTokenBindingRequirement(AllowService: true)));
 
             // NFR-06, FR-14, ADR-0047 決定 3, IADR-0448 決定 1, #1067: gRPC 面の門。s2s の分岐は OwnerOrService と同じ、

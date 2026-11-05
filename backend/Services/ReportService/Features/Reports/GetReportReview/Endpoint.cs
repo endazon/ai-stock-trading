@@ -1,3 +1,4 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AppSvc = ReportService.Features.Reports.ReportAppService;
 
 namespace ReportService.Features.Reports.GetReportReview;
@@ -12,5 +13,7 @@ internal static class GetReportReviewEndpoint
             // （既存の読み手は増えた項目を無視する＝非破壊）。
             var review = svc.GetReviewView(periodKey);
             return review is null ? Results.NotFound() : Results.Ok(review);
-        });
+        })
+            // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
+            .AllowOwnerBot();
 }

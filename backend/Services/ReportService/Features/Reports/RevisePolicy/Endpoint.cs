@@ -1,3 +1,4 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.Shared.Contracts.Logging;
 using ReportService.Domain;
 using ReportService.Features.Reports.ConfirmReport;
@@ -20,7 +21,9 @@ internal static class RevisePolicyEndpoint
     public static void MapRevisePolicy(this IEndpointRouteBuilder owner) =>
         owner.MapPost("/policy-revisions", (RevisePolicyRequest req, ReportPolicyRevisionService svc,
             DelegatedActorOptions delegated, ILoggerFactory loggerFactory, HttpContext http) =>
-                HandleAsync(req, svc, delegated, loggerFactory, http));
+                HandleAsync(req, svc, delegated, loggerFactory, http))
+            // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
+            .AllowOwnerBot();
 
     // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（ReportOwnerWriteGrpcService）が共有する処理（改訂者の解決・状態の写しを 2 箇所に書かない）。
     internal static async Task<IResult> HandleAsync(RevisePolicyRequest req, ReportPolicyRevisionService svc,

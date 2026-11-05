@@ -1,3 +1,4 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using ReportService.Common.Abstractions;
@@ -32,7 +33,9 @@ internal static partial class WatchlistProposalEndpoints
                 ProposalLookupOutcome.NotConfirmedAtVersion => Results.Conflict(new { error = lookup.Error }),
                 _ => Results.Ok(lookup.Proposal),
             };
-        });
+        })
+            // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
+            .AllowOwnerBot();
 
         // 記録: 200＝記録した／409＝既に記録済み（1 回だけ）・案でない・その版で確定されていない／404＝試行が無い。
         // 🔴 PR #1027 の監査 L1: 記録は 1 回だけで、書くとその案の適用を永久に塞ぐ。したがって**確定された案の試行にだけ**受け付ける
@@ -40,7 +43,9 @@ internal static partial class WatchlistProposalEndpoints
         owner.MapPost("/policy-revisions/{attemptId:guid}/watchlist-apply-result",
             (Guid attemptId, WatchlistApplyResultRequest req, IPolicyRevisionLedger ledger, IReportStore store, IClock clock,
                 DelegatedActorOptions delegated, HttpContext http) =>
-                RecordApplyResult(attemptId, req, ledger, store, clock, delegated, http));
+                RecordApplyResult(attemptId, req, ledger, store, clock, delegated, http))
+            // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
+            .AllowOwnerBot();
     }
 
     // NFR, IADR-0450, #753（段 5）: 適用の内訳の記録。REST と gRPC 面（ReportOwnerWriteGrpcService）が共有する（1 回だけ・確定された案だけの

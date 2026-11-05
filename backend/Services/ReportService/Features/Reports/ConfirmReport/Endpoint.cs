@@ -1,3 +1,4 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Logging;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
@@ -19,7 +20,9 @@ internal static class ConfirmReportEndpoint
         owner.MapPost("/{periodKey}/confirm", (string periodKey, ConfirmReportRequest req, AppSvc svc,
             IMessageBus bus, IKnowledgeBaseWriter kb, ILoggerFactory loggerFactory, DelegatedActorOptions delegated,
             IPolicyRevisionLedger policyLedger, IReportDraftKnowledgeCopy draftCopy, HttpContext http) =>
-                HandleAsync(periodKey, req, svc, bus, kb, loggerFactory, delegated, policyLedger, http, draftCopy));
+                HandleAsync(periodKey, req, svc, bus, kb, loggerFactory, delegated, policyLedger, http, draftCopy))
+            // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
+            .AllowOwnerBot();
 
     // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（ReportOwnerWriteGrpcService）が共有する処理（確定者の解決・版番号付きの冪等・監査の発行・
     // KB への保存・台帳の確定時刻を 2 箇所に書かない）。
