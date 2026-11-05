@@ -249,6 +249,10 @@ builder.Services.AddScoped<WorkingEntryOrdersService>();
 builder.Services.AddScoped<InFlightOrdersService>();
 // FR-10, FR-04, #1113, IADR-0463 決定 3: 銘柄単位の新規建ての可否（審査と同じ述語・同じ入力。読み取り専用）。
 builder.Services.AddScoped<EntryBlockersService>();
+// NFR, FR-10, UC-06, #1530, IADR-0613: Discord を経ない停止の保持（SSH の経路。既定は無効＝従来どおり）。
+// chart は Secret ast-operator-hold の optional の secretKeyRef で読む（Secret が無ければ env も無い）。
+builder.Services.AddSingleton(builder.Configuration.GetSection(OperatorKillSwitchHoldOptions.SectionName)
+    .Get<OperatorKillSwitchHoldOptions>() ?? new OperatorKillSwitchHoldOptions());
 // NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）。既定は Off（段 1 = Audit・段 2 = Enforce は構成で選ぶ）。
 // シークレットは Secret ast-owner-totp の optional の参照（scripts/ast-owner-totp-enroll.sh が作る）。
 builder.Services.AddSingleton(sp => new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorGate(
@@ -490,6 +494,16 @@ if (JasperFxCommandLine.IsHostRun(args))
     var db = scope.ServiceProvider.GetRequiredService<RiskManagementDbContext>();
     if (db.Database.IsRelational())
         await db.Database.MigrateAsync();
+
+    // NFR, FR-10, UC-06, #1530, IADR-0613: 保持が入っていれば、受け付けを始める前に既存の kill switch を起動する（変更履歴に残る）。
+    // 印の文字列（operator-kill-switch-hold:）は scripts/ast-trading-stop.sh がログから確かめる。変えるときは両方を直す。
+    var holdOutcome = scope.ServiceProvider.GetRequiredService<KillSwitchService>().ApplyOperatorHold();
+    if (holdOutcome != OperatorHoldOutcome.Inactive)
+    {
+        app.Logger.LogWarning(
+            "operator-kill-switch-hold: active (outcome={Outcome})。SSH の経路の保持により kill switch を起動したまま保ち、解除を拒みます。",
+            holdOutcome);
+    }
 }
 
 // 相関ID・認証・認可のミドルウェア。
