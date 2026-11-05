@@ -4,6 +4,8 @@
 # ★ 重ね方: `helm upgrade --install ast deploy/helm/ai-stock-trading -f values-cloud.yaml -f <digest のファイル>`
 #   - values.yaml に**直接**重ねる。values-local.yaml とは併用しない（経路 B の調整をクラウドへ流さない。IADR-0608 決定 1）。
 #   - Helm はリスト（extraEnv）を置き換える。下の各サービスの extraEnv は、そのサービスで使う全要素を持つ。
+#     values.yaml に env を足したら、ここの同じサービスにも写す。写し忘れは helm.yml の「values-cloud drops no env」が止める（#1548）。
+#     クラウドで意図して外すものは、同じ段の除外表に理由と一緒に書く。
 #
 # ★ クラウドに持ち込まないもの（オーナーの決定 2026-11-05）:
 #   - ニュースの RAG（MSP の knowledge ユニット）: KB の宛先（KnowledgeBase__*）を書かない＝既定の空＝no-op。

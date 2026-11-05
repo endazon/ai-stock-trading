@@ -365,6 +365,56 @@ jobs:
           done
           if grep -q 'values-cloud' deploy/argocd/application.yaml; then fail "ArgoCD の Application が values-cloud を参照している（最初の稼働では使わない）。"; fi
           echo "values-cloud: images=$(grep -c . <<<"$images") connections=$conns tls-db=$full amqps=$amqps https-gateway=$gws"
+      # NFR, #1548, IADR-0608 決定 1: values-cloud は values.yaml に直接重ねる。Helm は extraEnv のリストを置き換えるので、
+      # values.yaml に足した env を values-cloud の同じサービスへ写し忘れると、クラウドの描画から黙って落ちる。
+      # 既定の描画の env（Deployment ごと）が values-cloud（＋検査用の digest）の描画にも在ることを確かめる。
+      # クラウドで意図して外すものは下の除外表（<Deployment> <env> <理由>）に書く。表の行がクラウドに現れた・既定に無い・理由が空でも落とす。
+      - name: Assert values-cloud drops no env from prod default (Helm リスト置換の防御)
+        run: |
+          set -eu  # pipefail は付けない（grep -q が先に閉じると前段の SIGPIPE で偽になる）。入力は here-string で渡す。
+          fail() { echo "::error::$1"; exit 1; }
+          names() { helm template ast "$CHART" "$@" -s templates/deployment.yaml \
+            | awk '/^  name: /{svc=$2} /^            - name: /{print svc" "$3}' | sort -u; }
+          excluded="$(cat <<'TABLE'
+          # ニュースの RAG（MSP の knowledge ユニット）を持ち込まない（オーナーの決定 2026-11-05・IADR-0608 決定 4）。KB の宛先が空＝no-op。
+          information-collection-service KnowledgeBase__Documents__BaseUrl RAG を持ち込まない（KB への保存をしない）
+          information-collection-service KnowledgeBase__Search__BaseUrl RAG を持ち込まない（KB の検索をしない）
+          information-collection-service KnowledgeBase__Auth__Authority RAG を持ち込まない（KB の資格情報が要らない）
+          information-collection-service KnowledgeBase__Auth__ClientId RAG を持ち込まない（KB の資格情報が要らない）
+          information-collection-service KnowledgeBase__Auth__ClientSecret RAG を持ち込まない（KB の資格情報が要らない）
+          report-service KnowledgeBase__Documents__BaseUrl RAG を持ち込まない（報告書の KB の写しは無効）
+          report-service KnowledgeBase__Auth__Authority RAG を持ち込まない（KB の資格情報が要らない）
+          report-service KnowledgeBase__Auth__ClientId RAG を持ち込まない（KB の資格情報が要らない）
+          report-service KnowledgeBase__Auth__ClientSecret RAG を持ち込まない（KB の資格情報が要らない）
+          trade-decision-service KnowledgeBase__Search__BaseUrl RAG を持ち込まない（判断は「検索を使っていない」を明示する）
+          trade-decision-service KnowledgeBase__SearchAuth__Authority RAG を持ち込まない（KB の資格情報が要らない）
+          trade-decision-service KnowledgeBase__SearchAuth__ClientId RAG を持ち込まない（KB の資格情報が要らない）
+          trade-decision-service KnowledgeBase__SearchAuth__ClientSecret RAG を持ち込まない（KB の資格情報が要らない）
+          # Stage 0 の記録は無効（IADR-0608。記録の構成を書かない＝既定の Enabled=false）。
+          report-service Stage0Recording__ApprovedEstimateJpy Stage 0 の記録が無効（既定も空＝未供給。月報の対比は「供給されていません」）
+          trade-decision-service Stage0Recording__ApprovedEstimateJpy Stage 0 の記録が無効（既定も空＝未承認）
+          trade-decision-service Stage0Recording__LlmTrainingCutoff Stage 0 の記録が無効（記録を作らないので照合の相手が無い）
+          TABLE
+          )"
+          excluded="$(sed 's/^ *//' <<<"$excluded" | grep -v '^#' | grep . || true)"
+          names > /tmp/env-prod.txt
+          names -f "$CHART/values-cloud.yaml" -f "$CHART/ci/values-cloud-digests.fixture.yaml" > /tmp/env-cloud.txt
+          prod_count="$(wc -l < /tmp/env-prod.txt)"
+          [ "$prod_count" -ge 100 ] || fail "env 名の抽出が $prod_count 件しか取れなかった（deployment.yaml のインデント変更で awk が破綻した可能性。抽出が壊れると常に緑になる）。"
+          while read -r svc env reason; do
+            [ -n "$svc" ] || continue
+            [ -n "${reason:-}" ] || fail "除外表の行に理由が無い: $svc $env"
+            grep -qxF "$svc $env" /tmp/env-prod.txt || fail "除外表の $svc $env が既定の描画に無い（名前が変わった・消えた。表から外す）。"
+            if grep -qxF "$svc $env" /tmp/env-cloud.txt; then fail "除外表の $svc $env が values-cloud の描画に在る（外す理由が無くなった。表から外す）。"; fi
+          done <<<"$excluded"
+          awk '{print $1" "$2}' <<<"$excluded" | sort -u > /tmp/env-excluded.txt
+          missing="$(comm -23 /tmp/env-prod.txt /tmp/env-cloud.txt | comm -23 - /tmp/env-excluded.txt)"
+          if [ -n "$missing" ]; then
+            echo "::error::values-cloud の extraEnv の上書きで次の env が消えている（values.yaml から写し忘れ。意図して外すなら除外表に理由と一緒に書く）:"
+            printf '%s\n' "$missing"
+            exit 1
+          fi
+          echo "ok: values-cloud は既定描画の env を落としていない（$prod_count 件を照合・除外 $(wc -l < /tmp/env-excluded.txt) 件）"
       # 🔴 NFR-06, NFR-05, IADR-0496, #1192（T-10-2356・T-10-2357）: 全 Worker の ASPNETCORE_ENVIRONMENT は Production で、Development は
       # どのプロファイルでも描画されない（以前は固定値 Development で、例外時の開発者向けページが Authorization ヘッダーを応答へ載せた）。
       # 陰性対照: global／サービス単位の Development（大小無視）は描画が失敗し、Development 以外の上書きは効く（検査の空振りを作らない）。
