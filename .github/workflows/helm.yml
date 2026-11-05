@@ -287,6 +287,57 @@ jobs:
             echo "::error::既定値の描画でリソースが 1 件も生成されなかった（chart またはテンプレート条件の破綻）。"
             exit 1
           fi
+      # ADR-0006, NFR, #1525, IADR-0608: 単一ノードのクラウドのプロファイル（values-cloud.yaml）。
+      # 1. digest の無い描画は止まる（fail-closed）。形の違う digest も止まる。
+      # 2. 検査用の digest（ci/values-cloud-digests.fixture.yaml）を重ねた描画で:
+      #    KB（knowledge・retrieval・document-service）への宛先が無い／全イメージが digest で固定・pullPolicy Never／
+      #    リポジトリの既定の DB パスワードが無く Secret から読む／Stage 0 の記録と報告書の KB の写しが無効／OpenD（SIMULATE）が載り
+      #    認証サイドカーは載らない。
+      # 3. 経路 B（values-local）・既定の描画には digest も DB_PASSWORD も現れない（部品が既定の描画へ漏れない）。
+      # 4. ArgoCD の Application は values-cloud を参照しない（最初の稼働は helm を手で実行する。手順書）。
+      - name: Assert values-cloud (単一ノードのクラウド)
+        run: |
+          set -eu  # pipefail は付けない（grep -q が先に閉じると printf の SIGPIPE で偽になる）。入力は here-string で渡す。
+          cloud="$CHART/values-cloud.yaml"
+          fixture="$CHART/ci/values-cloud-digests.fixture.yaml"
+          fail() { echo "::error::$1"; exit 1; }
+          if err="$(helm template ast "$CHART" -f "$cloud" 2>&1)"; then fail "digest の無い values-cloud の描画が通った（requireDigest が効いていない）。"; fi
+          grep -q 'requireDigest=true' <<<"$err" || fail "digest の無い描画の失敗の理由が requireDigest ではない: $err"
+          if helm template ast "$CHART" -f "$cloud" -f "$fixture" --set-string 'services.audit.digest=sha256:abc' > /dev/null 2>&1; then
+            fail "形の違う digest（sha256:abc）で描画が通った。"
+          fi
+          out="$(helm template ast "$CHART" -f "$cloud" -f "$fixture")"
+          if grep -Eiq 'KnowledgeBase__|knowledge-|retrieval|document-service' <<<"$out"; then
+            grep -Ein 'KnowledgeBase__|knowledge-|retrieval|document-service' <<<"$out" | head -20
+            fail "values-cloud の描画に KB（knowledge・retrieval・document-service）への宛先が現れた。"
+          fi
+          images="$(grep -E '^ +image: ' <<<"$out" || true)"
+          # 11 サービス＋OpenD の 12 本ちょうど（認証サイドカー・CronJob は values-cloud では無効）。増減したらこの数と検査を見直す。
+          [ "$(grep -c . <<<"$images" || true)" -eq 12 ] || fail "values-cloud の描画のイメージが 12 本（11 サービス＋OpenD）でない: $images"
+          bad="$(grep -Ev '@sha256:[0-9a-f]{64}"?$' <<<"$images" || true)"
+          [ -z "$bad" ] || fail "digest で固定されていないイメージがある: $bad"
+          policies="$(grep -E '^ +imagePullPolicy: ' <<<"$out" | sort -u)"
+          [ "$(printf '%s\n' "$policies" | sed 's/^ *//')" = "imagePullPolicy: Never" ] || fail "imagePullPolicy が Never だけでない: $policies"
+          if grep -q 'Password=ai' <<<"$out"; then fail "values-cloud の描画にリポジトリの既定の DB パスワードが現れた。"; fi
+          conns="$(grep -c 'name: ConnectionStrings__DefaultConnection' <<<"$out" || true)"
+          refs="$(grep -cF 'Password=$(DB_PASSWORD)' <<<"$out" || true)"
+          [ "$conns" -ge 1 ] && [ "$conns" = "$refs" ] || fail "接続文字列 $conns 件のうち DB_PASSWORD を参照するのは $refs 件。"
+          [ "$(grep -A3 -E '^ +- name: DB_PASSWORD$' <<<"$out" | grep -c 'name: "ast-db-credentials"' || true)" = "$conns" ] \
+            || fail "DB_PASSWORD が Secret ast-db-credentials から読まれていない。"
+          if grep -Eq 'Stage0Recording__|PersistentVolumeClaim.*stage0|name: stage0-' <<<"$out"; then fail "values-cloud に Stage 0 の記録の構成が現れた。"; fi
+          grep -A1 'name: ReportDraftKnowledge__Enabled' <<<"$out" | grep -q 'value: "false"' || fail "報告書の KB の写しが無効になっていない。"
+          grep -A1 'name: Broker__Provider' <<<"$out" | grep -q 'value: "moomoo"' || fail "values-cloud の発注先が moomoo（SIMULATE）でない。"
+          grep -q '^  name: opend$' <<<"$out" || fail "values-cloud に OpenD が描画されない。"
+          if grep -q 'name: opend-auth$' <<<"$out"; then fail "values-cloud に OpenD の認証サイドカー（画面の口）が描画された。"; fi
+          # NFR, IADR-0609: Pod のセキュリティは段 2（権限昇格なし）で始め、名前空間の PSA の enforce は baseline。
+          grep -q 'pod-security.kubernetes.io/enforce: "baseline"' <<<"$out" || fail "values-cloud の名前空間に PSA の enforce=baseline が無い。"
+          [ "$(grep -c 'allowPrivilegeEscalation: false' <<<"$out" || true)" -ge 11 ] || fail "values-cloud の Worker に権限昇格なし（段 2）が付いていない。"
+          for prof in "" "-f $CHART/values-local.yaml"; do
+            o="$(helm template ast "$CHART" $prof)"
+            if grep -Eq '@sha256:|name: DB_PASSWORD$' <<<"$o"; then fail "既定または values-local の描画に digest か DB_PASSWORD が現れた（部品が漏れた）。"; fi
+          done
+          if grep -q 'values-cloud' deploy/argocd/application.yaml; then fail "ArgoCD の Application が values-cloud を参照している（最初の稼働では使わない）。"; fi
+          echo "values-cloud: images=$(grep -c . <<<"$images") connections=$conns"
       # 🔴 NFR-06, NFR-05, IADR-0496, #1192（T-10-2356・T-10-2357）: 全 Worker の ASPNETCORE_ENVIRONMENT は Production で、Development は
       # どのプロファイルでも描画されない（以前は固定値 Development で、例外時の開発者向けページが Authorization ヘッダーを応答へ載せた）。
       # 陰性対照: global／サービス単位の Development（大小無視）は描画が失敗し、Development 以外の上書きは効く（検査の空振りを作らない）。

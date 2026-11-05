@@ -197,6 +197,21 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
 - 検査器の自己試験は `node scripts/helm-release-drift.js --self-test`（同梱の fixture だけ・helm もクラスタも使わない。CI の
   `scripts-tests` が走らせる）。
 
+## 単一ノードのクラウド: `values-cloud.yaml`（#1525 / IADR-0608）
+
+自宅の PC から Hetzner の単一ノード（k3s）へ移すときのプロファイル。手順は
+[クラウド移行 Runbook](../../../docs/operations/cloud-single-node-migration-runbook.md)。
+
+- **重ね方**: `values.yaml` に直接重ねる（`-f values-cloud.yaml -f <digest のファイル>`）。`values-local.yaml` とは併用しない。
+- **持ち込まないもの**: KB の宛先（`KnowledgeBase__*`）・Stage 0 の記録・報告書の KB の写し・OpenD の認証サイドカー（画面の口）。
+  検索の取得口が未構成だと、取引判断のプロンプトに「この環境では検索を使っていない」の 1 行が出る。
+- **digest で固定する**: `global.image.requireDigest: true` のとき、自前のイメージ（`services.<名>.digest`・`opend.image.digest`・
+  `opend.authGateway.image.digest`）に digest が無ければ描画で止まる。digest はノードで書き出したファイルから重ね、コミットしない。
+  `pullPolicy` は `Never`。検査用の値は `ci/values-cloud-digests.fixture.yaml`（実在しない digest）。
+- **DB のパスワードは Secret から読む**: `global.db.passwordSecret`（`name` / `key`）を与えると、接続文字列のパスワードを
+  `$(DB_PASSWORD)` で組み、`global.db.password` を描かない。values-cloud は `ast-db-credentials` を使う。
+- 既定（本番）と `values-local.yaml` の描画は、これらの部品を入れる前と 1 バイトも変わらない（`helm.yml` が digest と DB_PASSWORD の不在を検査する）。
+
 ## 経路B（ローカル SIMULATE）の機能有効化: `values-local.yaml`
 
 > 起点: [IADR-0100](../../../.ai-context/adr/IADR-0100_route-b-values-local-standing-config.md) /
