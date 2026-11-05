@@ -9,6 +9,14 @@ updates:
     schedule:
       interval: "weekly"
 
+  # NFR, IADR-0609, #1526: Worker 共有イメージ（backend/Dockerfile）の基底イメージは digest で固定している。
+  # digest の更新（基底のセキュリティ修正の取り込み）を提案させる。既定は自動マージしない（人手レビュー必須）。
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
   # 使用スタックに合わせて有効化（コメント解除）:
   # - package-ecosystem: "nuget"       # C# / .NET
   #   directory: "/"

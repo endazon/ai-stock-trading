@@ -23,6 +23,11 @@ on:
       - "scripts/finnhub-key-budget.json"
       # #1351: 起動器の Recreate 判定（ast_recreate_deployments）を実際の描画に当てる検査がある。
       - "scripts/k8s-local-deploy.sh"
+      # NFR, IADR-0609, #1526: Pod のセキュリティ設定の描画検査は、Worker のイメージの USER・基底の digest と
+      # dev の生 manifest のサイドカーの uid も突き合わせる。
+      - "scripts/helm-pod-security.test.js"
+      - "backend/Dockerfile"
+      - "deploy/opend/k8s/opend.yaml"
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
@@ -33,6 +38,11 @@ on:
       - "scripts/finnhub-key-budget.json"
       # #1351: 起動器の Recreate 判定（ast_recreate_deployments）を実際の描画に当てる検査がある。
       - "scripts/k8s-local-deploy.sh"
+      # NFR, IADR-0609, #1526: Pod のセキュリティ設定の描画検査は、Worker のイメージの USER・基底の digest と
+      # dev の生 manifest のサイドカーの uid も突き合わせる。
+      - "scripts/helm-pod-security.test.js"
+      - "backend/Dockerfile"
+      - "deploy/opend/k8s/opend.yaml"
 
 # NFR / IADR-0208 決定 1: 連続 push で古い実行を捨てる（PR のみ）。
 # 本ワークフローは約 40 回の `helm template` を直列に回すため、重複実行の無駄が大きい。
@@ -87,6 +97,11 @@ jobs:
           helm template ast "$CHART" \
             --set opend.enabled=true \
             --set opend.authGateway.enabled=true > /dev/null
+      # NFR, IADR-0609, #1526: Pod とコンテナのセキュリティ設定を**実際に描いて**固定する —— 全プロファイル（values*.yaml）× 段
+      # （podSecurity.stage / opend.podSecurity.stage = 1・2・3）の形、認証サイドカーが OpenD 本体と同じ uid、Namespace の
+      # Pod Security Admission の水準、描画で止まる条件、Dockerfile・起動器・生 manifest との一致、変異。
+      - name: Test pod security settings (render, supply, mutation)
+        run: node scripts/helm-pod-security.test.js
       # #584 / IADR-0284 決定5（段0）/ IADR-0328: east-west gRPC の h2c ポート（services.<name>.grpcPort）。
       # 既定では**どのサービスも宣言しない**ため既定描画では評価されない。ON にした派生を描画し、
       # 有効化時に初めて壊れるテンプレートを CI で捕まえる（IADR-0058 の核心）。
