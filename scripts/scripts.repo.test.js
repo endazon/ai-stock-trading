@@ -77,6 +77,13 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     assert.strictEqual(r.status, 0, `${r.stdout || ''}${r.stderr || ''}`.slice(-3000));
   });
 
+  // --- NFR, FR-10, #1530, IADR-0613: Discord を経ない停止（scripts/ast-trading-stop.sh）の Bash 試験 ---
+  // 上と同じ理由で ci.yml の `run: bash` へは足さず、node の経路から起動する（kubectl はスタブ）。
+  ok('ast-trading-stop.test.sh（Discord を経ない停止）が通る', () => {
+    const r = require('child_process').spawnSync('bash', ['scripts/ast-trading-stop.test.sh'], { encoding: 'utf8', env: { ...process.env } });
+    assert.strictEqual(r.status, 0, `${r.stdout || ''}${r.stderr || ''}`.slice(-3000));
+  });
+
   // --- NFR, #1527, IADR-0610: 注文の承認の印の鍵の生成（scripts/gen-order-approval-signing-key.sh）の Bash 試験（vault / kubectl はスタブ） ---
   ok('gen-order-approval-signing-key.test.sh（鍵を表示せず・引数に載せずに書く）が通る', () => {
     const r = require('child_process').spawnSync('bash', ['scripts/gen-order-approval-signing-key.test.sh'], { encoding: 'utf8', env: { ...process.env } });
