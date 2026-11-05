@@ -132,12 +132,20 @@ rc="$(run)"; check "操作なしは 2" "$([ "$rc" = 2 ] && echo 0 || echo 1)"
 marker="$(sed -n "s/^HOLD_MARKER='\(.*\)'$/\1/p" "$SCRIPT")"
 check "印が Program.cs にある" \
 	"$([ -n "$marker" ] && grep -Fq "\"${marker}" "$ROOT_DIR/backend/Services/RiskManagementService/Program.cs" && echo 0 || echo 1)"
-# 11) Secret の名前・キーは chart の risk-management の env と同じ（values.yaml と values-local.yaml）。
-for v in values.yaml values-local.yaml; do
+# 11) Secret の名前・キーは chart の risk-management の env と同じ（values.yaml・values-local.yaml・values-cloud.yaml。
+#     後ろ 2 つは risk-management の extraEnv を丸ごと置き換えるので、無いとその profile では保持が効かない）。
+for v in values.yaml values-local.yaml values-cloud.yaml; do
 	f="$ROOT_DIR/deploy/helm/ai-stock-trading/$v"
 	check "$v: 保持の env が Secret ast-operator-hold を optional で読む" \
 		"$([ "$(grep -c 'secretKeyRef: { name: ast-operator-hold, key: \(enabled\|reason\), optional: true }' "$f")" = 2 ] && echo 0 || echo 1)"
 done
+
+# 12) values-cloud の描画（helm があるときだけ。CI の helm.yml は別に描画を検査する）でも、risk-management が 2 本の参照を持つ。
+if command -v helm >/dev/null 2>&1; then
+	chart="$ROOT_DIR/deploy/helm/ai-stock-trading"
+	rendered="$(helm template ast "$chart" -f "$chart/values-cloud.yaml" -f "$chart/ci/values-cloud-digests.fixture.yaml" 2>/dev/null)"
+	check "values-cloud の描画: ast-operator-hold の参照が 2 本" "$([ "$(printf '%s\n' "$rendered" | grep -c 'name: ast-operator-hold')" = 2 ] && echo 0 || echo 1)"
+fi
 
 echo "ast-trading-stop.test.sh: ${pass} passed, ${fail} failed"
 [ "$fail" -eq 0 ]

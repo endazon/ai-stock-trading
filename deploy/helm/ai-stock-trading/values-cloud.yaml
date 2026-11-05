@@ -91,6 +91,12 @@ services:
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # NFR, FR-10, UC-06, #1530, IADR-0613: Discord を経ない停止の保持（values.yaml の同じ行の写し。extraEnv は配列で丸ごと置き換わるため、
+      # ここに無いとクラウドの profile では Secret ast-operator-hold を作っても env に載らず、保持が効かない）。
+      - name: RiskManagement__OperatorKillSwitchHold__Enabled
+        secretKeyRef: { name: ast-operator-hold, key: enabled, optional: true }
+      - name: RiskManagement__OperatorKillSwitchHold__Reason
+        secretKeyRef: { name: ast-operator-hold, key: reason, optional: true }
   order-execution:
     extraEnv:
       - { name: Reconciliation__Enabled, value: "true" }
