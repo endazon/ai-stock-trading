@@ -131,7 +131,7 @@ public class OwnerTokenBindingPolicyTests
     }
 
     [Fact]
-    public void 既定は段1_宛先は_platform_api_クライアントは_bff_とボット()
+    public void 既定は段1_宛先は_ai_stock_trading_api_クライアントは_bff_とボット()
     {
         var settings = OwnerTokenBinding.Resolve(new ConfigurationBuilder().Build());
 

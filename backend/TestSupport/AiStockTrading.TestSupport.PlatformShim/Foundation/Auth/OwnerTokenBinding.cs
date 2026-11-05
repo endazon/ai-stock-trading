@@ -68,6 +68,9 @@ public static class OwnerTokenBinding
             throw new InvalidOperationException(
                 $"{key} は配列で構成すること（環境変数なら {key.Replace(":", "__", StringComparison.Ordinal)}__0=...）。");
 
+        // 子要素が 1 つも無い＝未構成 → 既定。子要素があれば既定を置き換える（足し合わせない）。
+        // 子要素が全部空白だけのときは空の集合になる: 段 1 は全トークンが不一致として記録されて通り、段 2 は Resolve が起動で止める
+        // （空の許可集合で所有者の操作が全部 403 になる構成を黙って動かさない）。
         var children = configuration.GetSection(key).GetChildren().ToList();
         if (children.Count == 0)
             return fallback;
