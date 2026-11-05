@@ -14,10 +14,33 @@ public sealed class EfKillSwitchStore(RiskManagementDbContext db) : IKillSwitchS
         return ToState(row);
     }
 
+    /// <summary>
+    /// 前提条件なしの書き込み（段 1 の発動・解除、gRPC、撤退の自動発動）。🔴 #1534, IADR-0620: 最後の書き込みが勝つ従前の挙動を保つ。
+    /// 版の列は並行トークンなので、並行する他の書き込みと競合すると保存が失敗し得る（楽観排他・初回の行の作成の主キー違反 23505）。
+    /// そのときは読み直して書き直す（上限 <see cref="MaxWriteAttempts"/> 回）。発動を並行で失敗させない。上限を超えたら例外をそのまま返す（5xx）。
+    /// </summary>
     public void SetState(KillSwitchState state)
     {
         ArgumentNullException.ThrowIfNull(state);
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                Write(state);
+                return;
+            }
+            catch (Exception ex) when (attempt < MaxWriteAttempts && IsConflict(ex))
+            {
+                Untrack();
+            }
+        }
+    }
 
+    /// <summary>前提条件なしの書き込みの再試行の上限（読み直しを含む回数）。</summary>
+    public const int MaxWriteAttempts = 5;
+
+    private void Write(KillSwitchState state)
+    {
         var row = db.KillSwitch.Find(SingletonKeys.Id);
         if (row is null)
         {
@@ -43,8 +66,16 @@ public sealed class EfKillSwitchStore(RiskManagementDbContext db) : IKillSwitchS
         db.SaveChanges();
     }
 
+    // 失敗した書き込みの追跡を外す（次の Find が DB から読み直す。同じスコープの後続の SaveChanges にも持ち越さない）。
+    private void Untrack()
+    {
+        foreach (var entry in db.ChangeTracker.Entries<KillSwitchRow>().ToList())
+            entry.State = EntityState.Detached;
+    }
+
     // 🔴 #1534, IADR-0620: 比較と書き込みを 1 つの取引で行う（関係 DB では直列化可能。版の列は並行トークン）。
-    // 「版が違う」（false＝409）として扱うのは、比較の不一致・直列化の失敗（40001）・デッドロック（40P01）・楽観排他の失敗だけ。
+    // 「版が違う」（false＝409）として扱うのは、比較の不一致・直列化の失敗（40001）・デッドロック（40P01）・楽観排他の失敗・
+    // 行の無い状態での並行の初回の作成の主キー違反（23505。kill_switch の一意な列は主キーだけ）だけ。
     // 接続断・タイムアウト・その他の DB の失敗は再送出する（5xx）—— DB の障害を「状態が変わった」と見せない。
     public bool TrySetState(KillSwitchState state, string expectedVersion)
     {
@@ -58,15 +89,13 @@ public sealed class EfKillSwitchStore(RiskManagementDbContext db) : IKillSwitchS
             if (!string.Equals(current.Version, expectedVersion, StringComparison.Ordinal))
                 return false;
 
-            SetState(state);
+            Write(state);
             tx?.Commit();
             return true;
         }
         catch (Exception ex) when (IsConflict(ex))
         {
-            // 失敗した書き込みの追跡を外す（DbContext はスコープ付きだが、同じスコープの後続の SaveChanges に持ち越さない）。
-            foreach (var entry in db.ChangeTracker.Entries<KillSwitchRow>().ToList())
-                entry.State = EntityState.Detached;
+            Untrack();
             return false;
         }
     }
@@ -77,7 +106,7 @@ public sealed class EfKillSwitchStore(RiskManagementDbContext db) : IKillSwitchS
             return true;
         for (var e = ex; e is not null; e = e.InnerException)
         {
-            if (e is PostgresException { SqlState: PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected })
+            if (e is PostgresException { SqlState: PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected or PostgresErrorCodes.UniqueViolation })
                 return true;
         }
 

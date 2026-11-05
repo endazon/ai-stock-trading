@@ -62,12 +62,13 @@ public class KillSwitchPreconditionRobustnessTests
         { "deadlock", true },
         { "connection", false },
         { "timeout", false },
-        { "unique", false },
+        { "unique", true },
+        { "foreign-key", false },
     };
 
     [Theory]
     [MemberData(nameof(Failures))]
-    public void 版の競合として扱う失敗は直列化とデッドロックと楽観排他だけ(string kind, bool conflict) =>
+    public void 版の競合として扱う失敗は直列化とデッドロックと楽観排他と初回の作成の主キー違反だけ(string kind, bool conflict) =>
         EfKillSwitchStore.IsConflict(Failure(kind)).Should().Be(conflict);
 
     [Fact]
@@ -98,6 +99,47 @@ public class KillSwitchPreconditionRobustnessTests
 
         store.TrySetState(new KillSwitchState(false, "owner", "回復", T0), "1").Should().BeFalse();
         db.ChangeTracker.Entries<KillSwitchRow>().Should().BeEmpty("失敗した書き込みを同じスコープの後続の保存へ持ち越さない");
+    }
+
+    // 🔴 前提条件なしの書き込み（段 1・gRPC・撤退の自動発動）は、並行の競合で失敗させない（最後の書き込みが勝つ従前の挙動）。
+    [Fact]
+    public void 前提条件なしの書き込みは競合したら読み直して書き直す()
+    {
+        var name = Guid.NewGuid().ToString();
+        using (var seed = NewContext(name))
+            new EfKillSwitchStore(seed).SetState(new KillSwitchState(false, "owner", "初期", T0));
+
+        var interceptor = new ThrowOnSave(Failure("concurrency"), times: 2);
+        using var db = NewContext(name, interceptor);
+        new EfKillSwitchStore(db).SetState(new KillSwitchState(true, "auto", "撤退", T0));
+
+        interceptor.Calls.Should().Be(3);
+        using var check = NewContext(name);
+        var state = new EfKillSwitchStore(check).GetState();
+        state.Engaged.Should().BeTrue();
+        state.Version.Should().Be("2");
+    }
+
+    [Fact]
+    public void 前提条件なしの書き込みは上限まで競合し続けたら例外を返す()
+    {
+        var interceptor = new ThrowOnSave(Failure("concurrency"));
+        using var db = NewContext(Guid.NewGuid().ToString(), interceptor);
+        var write = () => new EfKillSwitchStore(db).SetState(new KillSwitchState(true, "auto", "撤退", T0));
+
+        write.Should().Throw<DbUpdateConcurrencyException>();
+        interceptor.Calls.Should().Be(EfKillSwitchStore.MaxWriteAttempts);
+    }
+
+    [Fact]
+    public void 前提条件なしの書き込みは競合でない失敗を再試行しない()
+    {
+        var interceptor = new ThrowOnSave(Failure("connection"));
+        using var db = NewContext(Guid.NewGuid().ToString(), interceptor);
+        var write = () => new EfKillSwitchStore(db).SetState(new KillSwitchState(true, "auto", "撤退", T0));
+
+        write.Should().Throw<DbUpdateException>();
+        interceptor.Calls.Should().Be(1);
     }
 
     // ── REST（If-Match・code）────────────────────────────────────────────────
@@ -210,6 +252,7 @@ public class KillSwitchPreconditionRobustnessTests
         "connection" => new DbUpdateException("接続", new NpgsqlException("接続が切れた")),
         "timeout" => new DbUpdateException("時間切れ", new TimeoutException()),
         "unique" => new DbUpdateException("一意", Postgres(PostgresErrorCodes.UniqueViolation)),
+        "foreign-key" => new DbUpdateException("外部キー", Postgres(PostgresErrorCodes.ForeignKeyViolation)),
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -221,9 +264,11 @@ public class KillSwitchPreconditionRobustnessTests
             .AddInterceptors(interceptors)
             .Options);
 
-    private sealed class ThrowOnSave(Exception failure) : SaveChangesInterceptor
+    private sealed class ThrowOnSave(Exception failure, int times = int.MaxValue) : SaveChangesInterceptor
     {
+        public int Calls { get; private set; }
+
         public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result) =>
-            throw failure;
+            ++Calls <= times ? throw failure : result;
     }
 }

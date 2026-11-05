@@ -38,8 +38,9 @@ kill switch の発動・解除は現在の状態を見ずに上書きする。�
 ## 決定
 
 1. `KillSwitchState.Version`（版の列 `kill_switch.Version` の文字列・未操作と既存行は `"0"`）。版はストアが書くたびに 1 つ進める（渡された状態の値は使わない）。`GET /kill-switch` は本文と `ETag` で返す。
-2. `KillSwitchRequest.ExpectedVersion`（本文）または `If-Match`。渡されたら `IKillSwitchStore.TrySetState(状態, 版)` で比較と書き込みを原子的に行い、違えば `KillSwitchVersionConflictException`（409・本文の `code` は `version_conflict`）。EF は直列化可能な取引と並行トークン、インメモリは錠。**「版が違う」として扱うのは、比較の不一致・直列化の失敗（SQLSTATE 40001）・デッドロック（40P01）・楽観排他の失敗（`DbUpdateConcurrencyException`）だけ**で、接続断・タイムアウト・その他の DB の失敗は再送出する（5xx。DB の障害を「状態が変わった」と見せない）。競合で false を返すときは、失敗した書き込みの追跡を外す。
+2. `KillSwitchRequest.ExpectedVersion`（本文）または `If-Match`。渡されたら `IKillSwitchStore.TrySetState(状態, 版)` で比較と書き込みを原子的に行い、違えば `KillSwitchVersionConflictException`（409・本文の `code` は `version_conflict`）。EF は直列化可能な取引と並行トークン、インメモリは錠。**「版が違う」として扱うのは、比較の不一致・直列化の失敗（SQLSTATE 40001）・デッドロック（40P01）・楽観排他の失敗（`DbUpdateConcurrencyException`）・行の無い状態での並行の初回の作成の主キー違反（23505）だけ**で、接続断・タイムアウト・その他の DB の失敗は再送出する（5xx。DB の障害を「状態が変わった」と見せない）。競合で false を返すときは、失敗した書き込みの追跡を外す。
 2a. `If-Match` は版を 1 つだけ受ける。`*`・複数の値（カンマ区切り・ヘッダーの重複）は解釈せず 400（`code` は `if_match_unsupported`）。弱い印 `W/` と引用符は外す。428 の本文も `code`（`precondition_required`）を持つ。
+2b. **前提条件なしの書き込み（段 1 の発動・解除、gRPC、撤退の自動発動）は、最後の書き込みが勝つ従前の挙動を保つ。** 版の列が並行トークンなので並行の他の書き込みと競合し得るが、そのときは読み直して書き直す（`EfKillSwitchStore.MaxWriteAttempts` = 5 回まで。競合と同じ分類の失敗だけを再試行し、上限を超えたら例外を返す＝5xx）。発動が並行で失われない。
 3. `RiskControls:KillSwitch:Precondition` = `Report`（既定）/ `Require`。`Require` は前提条件の無い解除を `KillSwitchPreconditionRequiredException`（428）で拒否する。発動は求めない。知らない値は起動で止める。
 
 ## 結果
@@ -50,3 +51,4 @@ kill switch の発動・解除は現在の状態を見ずに上書きする。�
 
 1. Discord ボット（gRPC）と画面（BFF）が版を送るよう改めること。段 2 の前提（オーナーの判断で上げる）。
 2. （2026-11-06 に解消）時刻の tick を版にしていたときの ABA は、単調増加の版の列で塞いだ。
+3. `KillSwitchState.Revision` は照会の JSON に出さない（`JsonIgnore`。版は `version` の文字列だけを見せる）。残余 1（画面・ボットが版を送る作業）のときに、照会・要求の DTO を `KillSwitchState` から切り離し、内部の値と公開の形を分ける。

@@ -98,4 +98,90 @@ public sealed class KillSwitchVersionConcurrencyE2ETests : IAsyncLifetime
                 .ToString(System.Globalization.CultureInfo.InvariantCulture), "版は 1 つだけ進む");
         }
     }
+    // 前提条件の無い 2 件（段 1 の発動・gRPC・撤退の自動発動）を同時に流す。版の列が並行トークンでも、どちらも失敗しない（最後が勝つ）。
+    private async Task<bool[]> RaceAsync(Func<EfKillSwitchStore, bool> first, Func<EfKillSwitchStore, bool> second)
+    {
+        using var gate = new Barrier(2);
+
+        bool Run(Func<EfKillSwitchStore, bool> write)
+        {
+            using var db = NewContext();
+            var store = new EfKillSwitchStore(db);
+            gate.SignalAndWait(TimeSpan.FromSeconds(30));
+            return write(store);
+        }
+
+        return await Task.WhenAll(
+            Task.Run(() => Run(first), TestContext.Current.CancellationToken),
+            Task.Run(() => Run(second), TestContext.Current.CancellationToken));
+    }
+
+    private async Task ResetAsync()
+    {
+        await using var db = NewContext();
+        await db.KillSwitch.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task 前提条件の無い同時の発動は2件とも成功し_最後は発動のまま()
+    {
+        using (var seed = NewContext())
+            new EfKillSwitchStore(seed).SetState(new KillSwitchState(false, "owner", "初期", DateTimeOffset.UtcNow));
+
+        for (var round = 0; round < 10; round++)
+        {
+            var before = long.Parse(CurrentVersion(), System.Globalization.CultureInfo.InvariantCulture);
+
+            bool Engage(EfKillSwitchStore store)
+            {
+                store.SetState(new KillSwitchState(true, "auto", $"round {round}", DateTimeOffset.UtcNow));
+                return true;
+            }
+
+            var results = await RaceAsync(Engage, Engage);
+
+            results.Should().AllSatisfy(r => r.Should().BeTrue());
+            using var db = NewContext();
+            var state = new EfKillSwitchStore(db).GetState();
+            state.Engaged.Should().BeTrue($"round {round}: 発動は並行でも失われない");
+            long.Parse(state.Version, System.Globalization.CultureInfo.InvariantCulture).Should().Be(before + 2, "2 件とも書かれた");
+        }
+    }
+
+    [Fact]
+    public async Task 行の無い状態での同時の初回の書き込みは_前提条件なしなら2件とも成功する()
+    {
+        for (var round = 0; round < 10; round++)
+        {
+            await ResetAsync();
+
+            bool Engage(EfKillSwitchStore store)
+            {
+                store.SetState(new KillSwitchState(true, "auto", $"round {round}", DateTimeOffset.UtcNow));
+                return true;
+            }
+
+            var results = await RaceAsync(Engage, Engage);
+
+            results.Should().AllSatisfy(r => r.Should().BeTrue());
+            CurrentVersion().Should().Be("2", $"round {round}: 主キー違反で落ちた側は読み直して書き直す");
+        }
+    }
+
+    [Fact]
+    public async Task 行の無い状態での同時の初回の書き込みは_前提条件ありなら1件だけが通り他方は競合()
+    {
+        for (var round = 0; round < 10; round++)
+        {
+            await ResetAsync();
+
+            bool Write(EfKillSwitchStore store) =>
+                store.TrySetState(new KillSwitchState(true, "owner", $"round {round}", DateTimeOffset.UtcNow), "0");
+
+            var results = await RaceAsync(Write, Write);
+
+            results.Count(r => r).Should().Be(1, $"round {round}: 版 0 を前提にした初回の作成は 1 件だけ（他方は 409。5xx にしない）");
+            CurrentVersion().Should().Be("1");
+        }
+    }
 }
