@@ -33,6 +33,8 @@ spec:
     metadata:
       labels: { app: opend }
     spec:
+      # NFR, IADR-0609: AST の Pod は k8s API を使わない。名前空間の default のトークンを置かない。
+      automountServiceAccountToken: false
       containers:
         - name: opend
           image: "k3d-local/ai-stock-trading/opend:latest"
@@ -97,6 +99,10 @@ spec:
         - name: opend-auth
           image: "k3d-local/ai-stock-trading/opend-auth-gateway:latest"
           imagePullPolicy: IfNotPresent
+          # NFR, IADR-0609: OpenD 本体（root）と同じ uid で動かす。イメージは USER $APP_UID（1654）だが、OpenD 本体が
+          # umask 077 で作る共有領域のファイル（FIFO は 600）を読み書きするため、uid を揃える（chart の opend.yaml と同じ規則）。
+          securityContext:
+            runAsUser: 0
           ports:
             - { containerPort: 8080, name: auth }
           env:
