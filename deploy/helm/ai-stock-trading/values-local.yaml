@@ -153,6 +153,13 @@ services:
       # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # NFR, FR-10, UC-06, #1530, IADR-0613: Discord を経ない停止の保持（SSH から scripts/ast-trading-stop.sh が Secret ast-operator-hold を作る）。
+      # 保持の間は起動時に既存の kill switch を起動し、解除（Discord・画面）を 409 で拒む。外しても kill switch は起動したまま残る。
+      # optional のため Secret が無ければ env も無い＝既定の振る舞いのまま。Secret は chart・ESO・ArgoCD の管理の外（オーナーが作る・消す）。
+      - name: RiskManagement__OperatorKillSwitchHold__Enabled
+        secretKeyRef: { name: ast-operator-hold, key: enabled, optional: true }
+      - name: RiskManagement__OperatorKillSwitchHold__Reason
+        secretKeyRef: { name: ast-operator-hold, key: reason, optional: true }
 
   # ============ 判断由来の決済の指値の未約定時の取消（ADR-0067・#1339・利用者裁定 2026-10-21）============
   # FR-10, FR-19, ADR-0067 決定 2・6, #1339, IADR-0539: 判断由来の決済の指値が N 分たっても約定しなければ取り消す（取り消すだけ）。

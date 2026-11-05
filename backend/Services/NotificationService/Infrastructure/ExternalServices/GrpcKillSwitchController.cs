@@ -30,6 +30,10 @@ public sealed class GrpcKillSwitchController(
 
         if (outcome.Response is not { } response)
         {
+            // NFR, #1530, IADR-0613: 解除の ABORTED は保持（SSH の経路）の間の拒否（REST の 409。kill switch の解除に他の 409 は無い）。
+            if (operation == "解除" && outcome.Status == Grpc.Core.StatusCode.Aborted)
+                return new KillSwitchResult(false, true, HttpKillSwitchController.OperatorHoldMessage);
+
             return outcome.Status == Grpc.Core.StatusCode.DeadlineExceeded
                 ? new KillSwitchResult(false, false, HttpKillSwitchController.TimedOutMessage(operation))
                 : new KillSwitchResult(false, false, NotificationGrpcCalls.FailureMessage($"kill switch の{operation}", outcome.Status));
