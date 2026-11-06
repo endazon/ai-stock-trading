@@ -14,8 +14,13 @@
 #   - Stage 0 の記録: 無効（記録の構成を書かない＝既定の Enabled=false）。
 #
 # ★ 秘密: 値は secretKeyRef だけで参照し、このファイルにも helm の引数にも書かない。
-#   供給方式は externalSecrets.enabled で切り替える（既定 false＝手で作る Secret。基盤の最小構成の決定に合わせて変える）。
+#   🔴 NFR-05, ADR-0080, #1560, IADR-0623: 秘密はすべて OpenBao から ESO で写す（下の externalSecrets）。k8s の Secret を手で作らない
+#   （例外は ast-operator-hold だけ。秘密ではない SSH からの停止の切り替えで、OpenBao の封印のあいだも効く必要がある）。
 #   🔴 移行の条件（手順書の最初の節）を満たすまで、本物の秘密をサーバーへ入れない。
+#
+# ★ 段 2（強制。NFR-06, FR-10, #1560, IADR-0623 決定 3）: 段 1（記録だけ）と段 2 の 2 段で作った守りを、クラウドでは段 2 で始める。
+#   注文の承認の印・所有者のトークンの aud / azp・ボットの許可表（global の 3 つ）、危険な操作の第 2 要素（risk-management・report）、
+#   kill switch の前提条件（risk-management）。values.yaml（既定）と values-local（経路 B）は段 1 のまま。
 #
 # ★ 基盤との接続の暗号化（DB・ブローカ・LLM ゲートウェイ。#1535, IADR-0621）: 接続の形は chart（deployment.yaml）が持ち、
 #   ここはスイッチを入れるだけにする。DB は VerifyFull＋基盤の CA、ブローカは amqps:5671、LLM ゲートウェイは https
@@ -37,6 +42,13 @@ global:
   #   基盤の最小構成は KC_HOSTNAME=http://keycloak:8080・realm platform で、AST の名前空間からは ExternalName の keycloak で引く
   #   （infraAliases）。トークンの iss がこの値と一致しないと検証で落ちる。
   authAuthority: http://keycloak:8080/realms/platform
+  # 🔴 段 2（IADR-0610 / 0611 / 0622）。鍵の Secret が無ければ注文の承認の発行元・受け手の Pod は起動しない（Enforce は非 optional）。
+  orderApprovalSigning:
+    mode: Enforce
+  ownerTokenBinding:
+    mode: Enforce
+  ownerBotScope:
+    mode: Enforce
   # NFR-18, #1535, IADR-0621: 基盤の DB・ブローカへの接続を TLS にする（経路 B の values-local と同じスイッチ）。
   rabbitmq:
     tls:
@@ -49,6 +61,15 @@ global:
     passwordSecret:
       name: ast-db-credentials
       key: password
+    # NFR-05, #1560, IADR-0623: 利用者名は基盤が乱数の接尾辞つきで作る（cloud/shared/ast-db の username）。固定の値を描かない。
+    usernameSecret:
+      name: ast-db-credentials
+      key: username
+  # NFR-18, NFR-05, #1560, IADR-0623: 基盤の CA の写しは ESO が Secret に作る（cloud/shared/platform-infra-ca。公開してよい証明書）。
+  infraCa:
+    configMap: ""
+    secretName: platform-infra-ca
+    caKey: ca.crt
 
 # OpenD（SIMULATE）。配布物の tar の sha256 を記録してからノードでイメージを作る（手順書）。
 # 🔴 取引パスワードはクラスタに置かない（SIMULATE では解錠は要らない）。moomoo-credentials はログインの資格だけを持つ。
@@ -60,10 +81,61 @@ opend:
 broker:
   tier: moomoo-sim
 
+# NFR-05, ADR-0080, #1560, IADR-0623: 秘密は OpenBao から ESO で写す。取り決め（基盤の IADR-0689 決定 6）:
+#   - ストアは名前空間の SecretStore openbao（kubernetes 認証・role ast-eso・ServiceAccount ast-eso-reader）。ClusterSecretStore は使えない。
+#   - KV v2 のマウントは cloud/。取引ユニットだけの値は cloud/ast/<Secret の名前>、基盤と共有の値は cloud/shared/<名前>。
+#   - property の名前は k8s の Secret のキーの名前と 1 対 1。値を入れる順と入れ方は手順書の §5。
 externalSecrets:
-  enabled: false
+  enabled: true
+  secretStoreRef:
+    name: openbao
+    kind: SecretStore
+  refreshInterval: 1h
+  deletionPolicy: Retain
+  openbaoStore:
+    create: true
+    server: http://openbao.openbao.svc:8200
+    path: cloud
+    role: ast-eso
+    serviceAccountName: ast-eso-reader
+  moomooCredentials:
+    remoteKey: ast/moomoo-credentials
+    loginAccountProperty: login-account
+    loginPwdMd5Property: login-pwd-md5
+  moomooRsa:
+    remoteKey: ast/moomoo-rsa
+    property: opend_rsa.pem
+  rabbitmqUsers:
+    remoteKey: shared/ast-rabbitmq-users
+  dbCredentials:
+    enabled: true
+    targetName: ast-db-credentials
+    remoteKey: shared/ast-db
+  ownerTotp:
+    enabled: true
+    targetName: ast-owner-totp
+    remoteKey: ast/ast-owner-totp
+  infraCa:
+    enabled: true
+    targetName: platform-infra-ca
+    remoteKey: shared/platform-infra-ca
+    property: ca.crt
   appSecrets:
-    enabled: false
+    enabled: true
+    targetName: ast-secrets
+    # 外から持ち込む値（Discord・情報源）と、OpenBao の中で作る注文の承認の鍵（gen）。キーは Secret のキーと同じ名前。
+    remoteKey: ast/ast-secrets
+    # クラウドの realm の 3 つの機密クライアント（基盤の realm-for-cloud.js の CLOUD_CLIENTS）。client ID は秘密ではない。
+    clientIds:
+      service-auth-client-id: ai-stock-trading-svc
+      llm-auth-client-id: ai-stock-trading-llm-caller
+      discord-owner-auth-client-id: ai-stock-trading-owner
+    sharedClientSecrets:
+      remoteKey: shared/ast-client-secrets
+      properties:
+        service-auth-client-secret: ai-stock-trading-svc
+        llm-auth-client-secret: ai-stock-trading-llm-caller
+        discord-owner-auth-client-secret: ai-stock-trading-owner
 
 reloader:
   enabled: false
@@ -109,9 +181,12 @@ services:
         secretKeyRef: { name: ast-operator-hold, key: reason, optional: true }
       # NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（values.yaml の同じ行の写し。extraEnv は配列で丸ごと置き換わるため、
       # ここに無いとクラウドの profile では段も Secret ast-owner-totp も読まれず、門は Off のままになる）。
-      - { name: OwnerSecondFactor__Mode, value: "Audit" }
+      # 🔴 段 2（IADR-0623 決定 3）: 確かめられない危険な操作を 403 で拒む。
+      - { name: OwnerSecondFactor__Mode, value: "Enforce" }
       - name: OwnerSecondFactor__Secret
         secretKeyRef: { name: ast-owner-totp, key: secret, optional: true }
+      # 🔴 FR-10, FR-14, #1560, IADR-0620, IADR-0623 決定 3: 段 2。版の無い kill switch の解除を 428 で拒む（ボットは版を添える。#1561）。
+      - { name: RiskControls__KillSwitch__Precondition, value: "Require" }
   order-execution:
     extraEnv:
       - { name: Reconciliation__Enabled, value: "true" }
@@ -231,7 +306,8 @@ services:
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
       # NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（values.yaml の同じ行の写し。extraEnv は配列で丸ごと置き換わるため、
       # ここに無いとクラウドの profile では段も Secret ast-owner-totp も読まれず、門は Off のままになる）。
-      - { name: OwnerSecondFactor__Mode, value: "Audit" }
+      # 🔴 段 2（IADR-0623 決定 3）: 確かめられない危険な操作を 403 で拒む。
+      - { name: OwnerSecondFactor__Mode, value: "Enforce" }
       - name: OwnerSecondFactor__Secret
         secretKeyRef: { name: ast-owner-totp, key: secret, optional: true }
   trade-decision:

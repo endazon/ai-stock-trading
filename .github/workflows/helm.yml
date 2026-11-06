@@ -393,6 +393,54 @@ jobs:
           done
           if grep -q 'values-cloud' deploy/argocd/application.yaml; then fail "ArgoCD の Application が values-cloud を参照している（最初の稼働では使わない）。"; fi
           echo "values-cloud: images=$(grep -c . <<<"$images") connections=$conns tls-db=$full amqps=$amqps https-gateway=$gws"
+      # NFR-05, NFR-06, ADR-0080, #1560, IADR-0623: クラウドの秘密は OpenBao から ESO で写し、守りは段 2 で始める。
+      # 1. 描画が参照する Secret（secretKeyRef・volume）は、ast-operator-hold（秘密ではない停止の切り替え）を除き、どれも
+      #    ExternalSecret の同期先である（手で作る Secret が残らない）。ExternalSecret はどれも名前空間の SecretStore openbao を使う。
+      # 2. SecretStore openbao は kubernetes 認証・role ast-eso・ServiceAccount ast-eso-reader・audience vault（基盤の取り決め）。
+      # 3. DB の利用者名は Secret から読む（クラウド）。既定と経路 B（values-local）は従来どおり固定の ai を描く（利用者名の Secret を読まない）。
+      # 4. 5 つの守りが段 2（Enforce・Require）。既定と経路 B は段 1 のまま。
+      - name: Assert values-cloud secrets from OpenBao and stage 2
+        run: |
+          set -eu
+          fail() { echo "::error::$1"; exit 1; }
+          out="$(helm template ast "$CHART" -f "$CHART/values-cloud.yaml" -f "$CHART/ci/values-cloud-digests.fixture.yaml")"
+          refs="$( { awk '/secretKeyRef:/{f=1;next} f&&/^ *name:/{gsub(/[" ]|name:/,"");print;f=0}' <<<"$out"; \
+                     awk '/^ *secretName:/{gsub(/[" ]|secretName:/,"");print}' <<<"$out"; } | sort -u)"
+          targets="$(awk '/^kind:/{k=$2} k=="ExternalSecret"&&/^  target:/{t=1;next} t&&/^    name:/{gsub(/[" ]|name:/,"");print;t=0}' <<<"$out" | sort -u)"
+          [ "$(grep -c . <<<"$refs" || true)" -ge 6 ] || fail "参照する Secret の抽出が痩せた（$refs）。"
+          missing="$(comm -23 <(grep -vx 'ast-operator-hold' <<<"$refs") <(printf '%s\n' "$targets"))"
+          [ -z "$missing" ] || fail "values-cloud が参照する Secret のうち ExternalSecret の同期先でないもの: $(tr '\n' ' ' <<<"$missing")"
+          if grep -qx 'ast-operator-hold' <<<"$targets"; then fail "ast-operator-hold を ESO で写している（OpenBao の封印のあいだも効く停止の切り替えは管理の外に置く）。"; fi
+          stores="$(awk '/^kind:/{k=$2} k=="ExternalSecret"&&/^  secretStoreRef:/{s=1;next} s&&/^    name:/{n=$2} s&&/^    kind:/{print n"/"$2;s=0}' <<<"$out" | sort -u)"
+          [ "$stores" = "openbao/SecretStore" ] || fail "ExternalSecret のストアが SecretStore openbao だけでない: $stores"
+          store="$(awk '/^kind: SecretStore$/{f=1} /^---/{f=0} f' <<<"$out")"
+          grep -q 'role: "ast-eso"' <<<"$store" || fail "SecretStore openbao の role が ast-eso でない。"
+          grep -A3 'serviceAccountRef:' <<<"$store" | grep -q 'name: ast-eso-reader' || fail "SecretStore openbao の ServiceAccount が ast-eso-reader でない。"
+          grep -A3 'serviceAccountRef:' <<<"$store" | grep -A1 'audiences:' | grep -q '"vault"' || fail "SecretStore openbao の audience が vault でない。"
+          grep -q '^  name: ast-eso-reader$' <<<"$out" || fail "ServiceAccount ast-eso-reader が描かれない。"
+          conns="$(grep -c 'name: ConnectionStrings__DefaultConnection' <<<"$out" || true)"
+          users="$(grep -cF 'Username=$(DB_USERNAME);' <<<"$out" || true)"
+          [ "$conns" -ge 1 ] && [ "$conns" = "$users" ] || fail "values-cloud の接続文字列 $conns 件のうち利用者名を Secret から読むのは $users 件。"
+          if grep -q 'Username=ai;' <<<"$out"; then fail "values-cloud の描画に固定の DB の利用者名 ai が現れた。"; fi
+          mode() { grep -A1 -E "^ +- name: $1\$" <<<"$2" | grep -oE 'value: "[A-Za-z]+"' | sort -u | tr '\n' ' '; }
+          for m in Auth__OwnerToken__Mode Auth__OwnerBot__Mode OrderApprovalSigning__Mode OwnerSecondFactor__Mode; do
+            [ "$(mode "$m" "$out")" = 'value: "Enforce" ' ] || fail "values-cloud の $m が Enforce だけでない: $(mode "$m" "$out")"
+          done
+          [ "$(mode RiskControls__KillSwitch__Precondition "$out")" = 'value: "Require" ' ] || fail "values-cloud の kill switch の前提条件が Require でない。"
+          [ "$(grep -cE '^ +- name: OwnerSecondFactor__Mode$' <<<"$out" || true)" = 2 ] || fail "第 2 要素の段が risk-management と report の 2 つに無い。"
+          for prof in "" "-f $CHART/values-local.yaml"; do
+            o="$(helm template ast "$CHART" $prof --set global.authAuthority="$CI_AUTH_AUTHORITY")"
+            c="$(grep -c 'name: ConnectionStrings__DefaultConnection' <<<"$o" || true)"
+            u="$(grep -cF 'Username=ai;' <<<"$o" || true)"
+            [ "$c" -ge 1 ] && [ "$c" = "$u" ] || fail "既定または values-local（${prof:-既定}）の接続文字列 $c 件のうち利用者名 ai は $u 件（既定の値を変えない）。"
+            if grep -qE 'name: DB_USERNAME$|kind: SecretStore$|ast-eso-reader' <<<"$o"; then fail "既定または values-local の描画にクラウドの部品が漏れた。"; fi
+            for m in Auth__OwnerToken__Mode Auth__OwnerBot__Mode OrderApprovalSigning__Mode; do
+              [ "$(mode "$m" "$o")" = 'value: "Report" ' ] || fail "既定または values-local の $m が段 1（Report）でない: $(mode "$m" "$o")"
+            done
+            [ "$(mode OwnerSecondFactor__Mode "$o")" = 'value: "Audit" ' ] || fail "既定または values-local の第 2 要素が段 1（Audit）でない。"
+            if grep -qE '^ +- name: RiskControls__KillSwitch__Precondition$' <<<"$o"; then fail "既定または values-local に kill switch の前提条件の段が描かれた（既定は Report）。"; fi
+          done
+          echo "values-cloud secrets: refs=$(grep -c . <<<"$refs") externalsecrets=$(grep -c . <<<"$targets") connections=$conns"
       # NFR, #1548, IADR-0608 決定 1: values-cloud は values.yaml に直接重ねる。Helm は extraEnv のリストを置き換えるので、
       # values.yaml に足した env を values-cloud の同じサービスへ写し忘れると、クラウドの描画から黙って落ちる。
       # 既定の描画の env（Deployment ごと）が values-cloud（＋検査用の digest）の描画にも在ることを確かめる。

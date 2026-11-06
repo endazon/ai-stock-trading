@@ -41,13 +41,20 @@
 {{- $dbTls := and $g.db.tls $g.db.tls.enabled -}}
 {{- $mqTls := and $mq.tls $mq.tls.enabled -}}
 {{- $infraCa := $g.infraCa | default dict -}}
-{{- if and (or $dbTls $mqTls) (or (not $infraCa.configMap) (not $infraCa.caKey)) -}}
-{{- fail "global.infraCa.configMap / caKey が要ります（global.db.tls / global.rabbitmq.tls が有効なときはサーバ証明書を基盤の CA で検証する。IADR-0621）。" -}}
+{{- if and (or $dbTls $mqTls) (or (not (or $infraCa.configMap $infraCa.secretName)) (not $infraCa.caKey)) -}}
+{{- fail "global.infraCa.configMap（または secretName）/ caKey が要ります（global.db.tls / global.rabbitmq.tls が有効なときはサーバ証明書を基盤の CA で検証する。IADR-0621）。" -}}
+{{- end -}}
+{{- /* NFR-05, #1560, IADR-0623 決定 2: CA の写しを ESO が Secret に作る形（クラウド）。secretName を与えたら Secret から mount する。 */ -}}
+{{- if and $infraCa.configMap $infraCa.secretName -}}
+{{- fail "global.infraCa.configMap と secretName は併用できません（どちらから読むか読めない構成を許さない。IADR-0623）。クラウドは secretName だけを与え、configMap を空にしてください。" -}}
 {{- end -}}
 {{- if and $mqTls (not $mq.tls.port) -}}
 {{- fail "global.rabbitmq.tls.port が要ります（amqps の口。IADR-0621）。" -}}
 {{- end -}}
 {{- $infraCaMount := or $dbTls $mqTls -}}
+{{- if and $g.db.usernameSecret (not $g.db.passwordSecret) -}}
+{{- fail "global.db.usernameSecret は global.db.passwordSecret と一緒に与えてください（接続文字列を Secret の参照で組む形だけが利用者名を Secret から読む。IADR-0623）。" -}}
+{{- end -}}
 {{- range $name, $svc := .Values.services }}
 {{- /* FR-09/14, #245, IADR-0102: Discord Bot の環境固有 ID（非機密）を values（discord.bot.*）から与える設定点。
        env を**追加**せず extraEnv の**値を上書き**する（同名 env の二重定義を作らない）。空既定では 1 つも
@@ -347,13 +354,23 @@ spec:
             {{- with $g.db.passwordSecret }}
             {{- /* NFR, ADR-0006, #1525, IADR-0608 決定3: パスワードは Secret から読み、接続文字列は env の参照で組む（値をチャートに書かない）。
                    与えないとき（既定・経路 B）は従来どおり global.db.password を描く。 */}}
+            {{- /* NFR-05, #1560, IADR-0623 決定 2: 利用者名も Secret から読める（クラウドの利用者名は基盤が乱数の接尾辞つきで作る）。 */}}
+            {{- $dbUser := $g.db.username }}
+            {{- with $g.db.usernameSecret }}
+            {{- $dbUser = "$(DB_USERNAME)" }}
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "global.db.usernameSecret.name が要ります（IADR-0623）" .name | quote }}
+                  key: {{ required "global.db.usernameSecret.key が要ります（IADR-0623）" .key | quote }}
+            {{- end }}
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ required "global.db.passwordSecret.name が要ります（IADR-0608）" .name | quote }}
                   key: {{ required "global.db.passwordSecret.key が要ります（IADR-0608）" .key | quote }}
             - name: ConnectionStrings__DefaultConnection
-              value: "Host={{ $g.db.host }};Port={{ $g.db.port }};Database={{ $svc.db }};Username={{ $g.db.username }};Password=$(DB_PASSWORD){{ if $dbTls }};SSL Mode=VerifyFull;Root Certificate=/etc/platform-infra-ca/{{ $infraCa.caKey }}{{ end }}"
+              value: "Host={{ $g.db.host }};Port={{ $g.db.port }};Database={{ $svc.db }};Username={{ $dbUser }};Password=$(DB_PASSWORD){{ if $dbTls }};SSL Mode=VerifyFull;Root Certificate=/etc/platform-infra-ca/{{ $infraCa.caKey }}{{ end }}"
             {{- else }}
             - name: ConnectionStrings__DefaultConnection
               {{- /* NFR, NFR-18, #1535, IADR-0621 決定2: TLS は VerifyFull（CA の検証と host の名前の照合）。CA は global.infraCa だけを信頼する。
@@ -592,8 +609,13 @@ spec:
       {{- if $infraCaMount }}
         {{- /* NFR, NFR-18, #1535, IADR-0621: 非 optional（ConfigMap が無ければ Pod が立たない＝平文へ戻らない）。 */}}
         - name: platform-infra-ca
+          {{- if $infraCa.secretName }}
+          secret:
+            secretName: {{ $infraCa.secretName }}
+          {{- else }}
           configMap:
             name: {{ $infraCa.configMap }}
+          {{- end }}
             items:
               - key: {{ $infraCa.caKey }}
                 path: {{ $infraCa.caKey }}
