@@ -210,7 +210,17 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   `pullPolicy` は `Never`。検査用の値は `ci/values-cloud-digests.fixture.yaml`（実在しない digest）。
 - **DB のパスワードは Secret から読む**: `global.db.passwordSecret`（`name` / `key`）を与えると、接続文字列のパスワードを
   `$(DB_PASSWORD)` で組み、`global.db.password` を描かない。values-cloud は `ast-db-credentials` を使う。
-- 既定（本番）と `values-local.yaml` の描画は、これらの部品を入れる前と 1 バイトも変わらない（`helm.yml` が digest と DB_PASSWORD の不在を検査する）。
+- **秘密は OpenBao から ESO で写す**（#1560 / IADR-0623）: values-cloud は名前空間の `SecretStore openbao`（kubernetes 認証・role `ast-eso`・
+  ServiceAccount `ast-eso-reader`・audience `vault`）を `externalSecrets.openbaoStore.create` で描き、描画が参照する Secret を
+  ExternalSecret で写す（`ast-db-credentials`・`ast-rabbitmq-users`・`ast-secrets`・`ast-owner-totp`・`moomoo-credentials`・`moomoo-rsa`・
+  CA の写し `platform-infra-ca`）。例外は `ast-operator-hold`（秘密ではない SSH からの停止の切り替え。管理の外）。
+  - `global.db.usernameSecret`: DB の利用者名も Secret から読む（`passwordSecret` と一緒に与える）。既定は与えない＝`global.db.username` を描く。
+  - `global.infraCa.secretName`: CA を Secret から mount する（`configMap` との併用は描画で止める）。既定は空＝ConfigMap。
+  - `externalSecrets.deletionPolicy`・`dbCredentials`・`ownerTotp`・`infraCa`・`appSecrets.clientIds`・`appSecrets.sharedClientSecrets`: 既定はどれも無効・空。
+- **守りは段 2 で始める**（#1560 / IADR-0623 決定 3）: `global.orderApprovalSigning`・`ownerTokenBinding`・`ownerBotScope` は `Enforce`、
+  risk-management・report の `OwnerSecondFactor__Mode` は `Enforce`、risk-management の `RiskControls__KillSwitch__Precondition` は `Require`。
+- 既定（本番）と `values-local.yaml` の描画は、これらの部品を入れる前と 1 バイトも変わらない（`helm.yml` が digest・DB_PASSWORD・
+  利用者名の Secret・ストアの不在と、利用者名 `ai`・段 1 を検査する）。
 
 ## 経路B（ローカル SIMULATE）の機能有効化: `values-local.yaml`
 

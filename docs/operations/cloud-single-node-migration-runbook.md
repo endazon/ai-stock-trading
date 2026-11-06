@@ -4,14 +4,14 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-11-05
-updated: 2026-11-06
+updated: 2026-11-07
 ---
 <!-- trace:
-ids: [FR-04, FR-08, NFR, NFR-03]
-adrs: [ADR-0006, ADR-0024, ADR-0073, ADR-0076]
-iadrs: [IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341]
-specs: [20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
-issues: [#1535, #1525, #24, planning#868, MSP#2401, MSP#2402]
+ids: [FR-04, FR-08, NFR, NFR-03, NFR-05, NFR-06, FR-10]
+adrs: [ADR-0006, ADR-0024, ADR-0073, ADR-0076, ADR-0078, ADR-0080]
+iadrs: [IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615]
+specs: [20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
+issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471]
 -->
 
 # 運用 Runbook: 単一ノードのクラウドへの移行
@@ -23,16 +23,34 @@ issues: [#1535, #1525, #24, planning#868, MSP#2401, MSP#2402]
 
 ## 1. 移行の条件（この順番を必ず守る）
 
-**次の 5 段をすべて満たすまで、サーバーに本物の秘密（moomoo のログイン情報・LLM の API キー・Discord のトークンなど）を入れない。**
+**次の 5 段をすべて満たすまで、サーバーに本物の秘密を入れない。** 本物の秘密は次の 3 つである。
+
+- 外から持ち込む資格情報（moomoo のログイン情報・Discord のトークン・情報源の API キー・所有者の TOTP の秘密など）。
+- クラスタの中で乱数で作る資格情報（DB・ブローカの利用者・機密クライアントの secret・注文の承認の印の鍵・OpenD の RSA の鍵など）。
+- TLS のサーバ証明書の秘密鍵（基盤の側）。
+
+どれも **OpenBao から供給する**（§5）。k8s の Secret を手で作ってから移す形は採らない。
 
 1. 両リポジトリの非公開のセキュリティの指摘が、すべて直りマージされている。指摘ごとに直したことを、PoC の担当が確かめる。
-2. このクラウドの構成（AST の values-cloud と本書・基盤の最小構成・バックアップと警報）がマージされている。
+2. このクラウドの構成がマージされている。
+   - AST の values-cloud（秘密は OpenBao から ESO で写す・守りは段 2）と本書。
+   - 基盤の最小構成（OpenBao・ESO・unseal の手順を含む）と、バックアップと警報。
 3. マージされた構成と修正を、書き手と別の新しい文脈のエージェントが監査し、critical と high が 0 件である。指摘の確かめは PoC の担当が行う。
 4. サーバーを、秘密を入れない状態で立てる。外から次を確かめる。
    - 開いている口が SSH だけであること。
    - k3s の起動フラグ。
    - データの暗号化。
-5. 1〜4 の結果をオーナーに報告し、オーナーが承認してから、**オーナー自身が**秘密を入れる。
+   - **到達の確認（秘密は要らない）**: ノードから `scripts/measure-region-latency.sh` を**既定の回数（5 回）以上**で流す。`--count` で 5 より少なくしない。
+     - 必須の情報源（Finnhub・SEC EDGAR・FRED）は既定のホストで測る。
+     - ニュース系は Finnhub（既定）と Google News RSS（`--host news.google.com:443` で足す）の **2 つのうち 1 つ以上**が届けばよい。
+     - 日銀（`--host www.stat-search.boj.or.jp:443`）と EDINET（既定）は記録だけにする。
+     - OpenD の接続先（moomoo のサーバー）は `--tcp-only <ホスト>:<ポート>` で足す。ホストとポートは、オーナーが moomoo の公式資料で確かめてここへ書く: `<未確認>`。
+       公式資料に接続先が無く確かめられないときは、確かめた日付と参照先（資料の URL や文書名）を段 5 の報告に残す（残さなければこの段を満たさない）。OpenD の到達は初日（§8）に確かめる。
+     - **「届かない」は、必須の接続先のどれかが 1 回も成功しないこと**（ニュース系は 2 つとも 0 回）。届かなければ、秘密を入れる前に作り直し（シンガポール）を裁定にかける。段 5 へ進まない。
+     - 遅延は記録するが、判断の基準に含めない。
+5. 1〜4 の結果をオーナーに報告し、オーナーが承認してから、**オーナー自身が**秘密を入れる（§5）。
+   - 入れる順: §5.1 の値 → §5.4 の配備 → **§5.3 の TOTP の登録**（登録する前は、取引を再開・緩める 7 操作が 403 になる）→ §5.5 の突き合わせ。
+   - 入れた後、**突き合わせ**を行う（§5 の最後）。描画が参照する Secret のうち、OpenBao から写されていないもの（`ast-operator-hold` を除く）が 1 つでもあれば、取引を始めない。
 
 ## 2. 前提と、使わないもの
 
@@ -89,27 +107,83 @@ issues: [#1535, #1525, #24, planning#868, MSP#2401, MSP#2402]
 ## 5. 秘密と配備
 
 - 🔴 **秘密の値を画面に表示しない・コマンドの引数に書かない・リポジトリに置かない。**
-  - 値は標準入力かファイル（`umask 077` で作り、使い終わったら消す）で渡す。
+  - 値は標準入力でだけ渡す。ファイルに書くときは `umask 077` で作り、使い終わったら消す。
   - 秘密の作り直しは、オーナーが手順のスクリプトを実行して行う。
-- 供給の方式は `externalSecrets.enabled` で切り替える。
-  - 既定は `false` で、Secret を手で作る。
-  - 基盤の最小構成が ESO を使うと決めたら、`true` にする（基盤の手順書に合わせる）。
-- 手で作る Secret（名前空間 `ai-stock-trading`）:
-  - `ast-db-credentials`（キー `password`）: 基盤の最小構成が作った AST 用の DB のパスワードを、**値を表示せずに**写す。
-    - 例: 基盤の Secret を `kubectl get secret … -o jsonpath=…` で読み、`base64 -d` してそのまま `kubectl create secret generic ast-db-credentials --from-file=password=/dev/stdin` へ流す。
-    - リポジトリの既定のパスワードは使わない（`values-cloud.yaml` は既定値を描かない）。
-    - 🔴 パスワードは接続文字列（`Password=…;`）へ埋め込まれる。`;`・`=`・引用符・空白を含まない値（16 進か英数字）に限る。基盤の最小構成の生成器は乱数の 16 進を作るので、この条件を満たす。手で作り直すときも 16 進か英数字にする。
-  - `ast-rabbitmq-users`・`ast-secrets`・`moomoo-credentials`・`moomoo-rsa`: 経路 B と同じキー名で作る（[Vault 秘匿値 Runbook](vault-secrets-runbook.md) のキー一覧）。
-- 基盤の CA の写し（名前空間 `ai-stock-trading` の ConfigMap `platform-infra-ca`・キー `ca.crt`）を、配備の前に作る。
-  - DB・ブローカ・LLM ゲートウェイへの接続は、この CA で検証する TLS である（`values-cloud.yaml` が有効にする）。
-  - 写しが無いと Pod は起動しない（平文の接続へは戻らない）。CA の証明書は公開してよい情報で、秘密ではない。
-  - 例: `kubectl -n platform-infra get configmap platform-infra-ca -o jsonpath='{.data.ca\.crt}' > ca.crt` で読み、
-    `kubectl -n ai-stock-trading create configmap platform-infra-ca --from-file=ca.crt=ca.crt --dry-run=client -o yaml | kubectl apply -f -` で写す。
-  - 写した後、両方の名前空間の `openssl x509 -noout -fingerprint -sha256` が同じことを確かめる。
-  - 基盤が証明書の組を作り直したら、写しを差し替えてから取引ユニットのサービスを作り直す（`kubectl -n ai-stock-trading rollout restart deploy`）。
-  - 切り替えの確かめ方と戻し方は [基盤の TLS 切り替え Runbook](platform-infra-tls-cutover-runbook.md)。
+- **秘密は OpenBao に置き、ESO が k8s の Secret へ写す。** k8s の Secret を手で作らない（例外は下の `ast-operator-hold` だけ）。
+  - OpenBao・ESO の本体、unseal、オーナー用の資格、基盤と共有の値の作成は、基盤の手順書（`deploy/cloud/README.md` と OpenBao の初期化・unseal の手順書）で先に済ませる。
+  - 取引ユニットの名前空間のストア（`SecretStore openbao`・ServiceAccount `ast-eso-reader`）と ExternalSecret は、`values-cloud.yaml` を当てると chart が作る。
+  - 置き場（KV v2 のマウント `cloud/`）: 取引ユニットだけの値は `cloud/ast/<Secret の名前>`、基盤と共有の値は `cloud/shared/<名前>`。property の名前は Secret のキーの名前と同じ。
+- 外から持ち込む値は、基盤の `put-external-secret.sh` で入れる（基盤の手順書の確定した呼び方）。
+  - 形: `<値> | bash <基盤>/deploy/cloud/vault/put-external-secret.sh --live --operator-file <…>.age --identity <…> [--overwrite] cloud/ast/<名前> <キー>`
+  - 値は標準入力の中身を、末尾の改行も含めてそのまま 1 つのキーへ書く。空なら書かない。
+  - キーが既に在れば何も変えずに 5 で止まる。上書きは `--overwrite` のときだけ（同じパスのほかのキーは残る）。`cloud/shared` へは書けない。
+
+### 5.1 入れるもの（取引ユニットの分）
+
+| Secret（キー） | OpenBao のパス（property） | 入れ方 |
+| --- | --- | --- |
+| `ast-db-credentials`（`username`・`password`） | `cloud/shared/ast-db` | 基盤の `seed-secrets.sh` が OpenBao の中で作る（オーナーは何も入れない） |
+| `ast-rabbitmq-users`（11 の利用者名） | `cloud/shared/ast-rabbitmq-users` | 同上 |
+| `ast-secrets` の 3 つの client secret | `cloud/shared/ast-client-secrets`（キーは clientId） | 同上。client ID は chart が字面で足す |
+| CA の写し `platform-infra-ca`（`ca.crt`） | `cloud/shared/platform-infra-ca` | 基盤の `configure.sh` が置く（公開してよい証明書） |
+| `ast-secrets` の `order-approval-signing-key` | `cloud/ast/ast-secrets` | 基盤の `seed-secrets.sh … gen cloud/ast/ast-secrets order-approval-signing-key 32`（OpenBao の中で乱数。在れば上書きしない） |
+| `ast-secrets` の外の値 | `cloud/ast/ast-secrets` | オーナーが `put-external-secret.sh cloud/ast/ast-secrets <キー>` で 1 つずつ入れる（下） |
+| `moomoo-credentials`（`login-account`・`login-pwd-md5`） | `cloud/ast/moomoo-credentials` | オーナーが入れる。パスワードは平文で置かず、MD5 の小文字 16 進を入れる |
+| `moomoo-rsa`（`opend_rsa.pem`） | `cloud/ast/moomoo-rsa` | オーナーが手元で 1024 ビットの鍵を作り、ディスクに書かずに流す（下） |
+| `ast-owner-totp`（`secret`） | `cloud/ast/ast-owner-totp` | `scripts/ast-owner-totp-enroll.sh --live --openbao`（§5.3） |
+
+`ast-secrets` の外の値（キー）: `discord-bot-token`・`discord-webhook-url`・`discord-bot-killswitch-phrase`・`finnhub-api-key`・
+`marketdata-finnhub-api-key`・`fred-api-key`・`edinet-subscription-key`・`sec-edgar-user-agent`。
+Discord の環境の ID（`discord-bot-guild-id`・`discord-bot-channel-id`・`discord-bot-allowed-user-ids`・`discord-bot-user-mapping`）も、
+ESO を使う構成では `ast-secrets` から読む（秘密ではないが、`--set-string discord.bot.*` とは併用できない）。
+
+例（値は標準入力から。画面に出さない）:
+
+```bash
+# 呼び出しの前置き（秘密は含まない。ファイルのパスだけ）。
+PUT=(bash <基盤>/deploy/cloud/vault/put-external-secret.sh --live --operator-file <…>.age --identity <…>)
+# 外の値: 打った文字が見えない read で受け、パイプでだけ渡す（履歴・ディスクに残さない。末尾の改行を付けない）。
+read -rs v && printf '%s' "$v" | "${PUT[@]}" cloud/ast/ast-secrets discord-bot-token; unset v
+# moomoo のログインパスワードは MD5 にしてから入れる（末尾の改行を落とす）。
+read -rs v && printf '%s' "$v" | md5sum | cut -d' ' -f1 | tr -d '\n' | "${PUT[@]}" cloud/ast/moomoo-credentials login-pwd-md5; unset v
+# OpenD の RSA の鍵（1024 ビット・PKCS#1）。鍵はディスクに書かない。
+openssl genrsa -traditional 1024 2>/dev/null | "${PUT[@]}" cloud/ast/moomoo-rsa opend_rsa.pem
+```
+
+- RSA の鍵は 1024 ビットにする。手元の PoC がこの長さで動いており、2048 ビットで OpenD が動いた記録は無い（基盤の `gen-rsa` は 2048 未満を作れない）。
+- DB のパスワードと利用者名は接続文字列（`Username=…;Password=…;`）へ埋め込まれる。基盤の生成器は英数字と `_` だけを作るので、`;`・`=`・引用符・空白は入らない。
+
+### 5.2 OpenBao を経ないもの
+
+- `ast-operator-hold`（`enabled`・`reason`）: **秘密ではない。SSH から入れる停止の切り替え**である（[Discord を経ない停止の Runbook](out-of-band-trading-stop-runbook.md)）。
+  - OpenBao が封印のあいだや ESO が止まったときにも効く必要があるので、従来どおり `kubectl` で作る・消す。
+- 取引ユニットの名前空間の CA の ConfigMap は要らない。CA は ESO が Secret `platform-infra-ca` に写し、chart がそれを mount する。
+
+### 5.3 所有者の TOTP
+
+1. 基盤の `put-external-secret.sh` を呼ぶ前置き（スクリプトのパスと `--live --operator-file <…>.age --identity <…>`。秘密は含まない）を `AST_PUT_EXTERNAL_SECRET` に入れる。パスと引数に空白を含めない。
+2. `bash scripts/ast-owner-totp-enroll.sh --live --openbao` を流す。シークレットは標準入力でだけ渡り、QR だけが端末に出る（Enter で消す）。
+   - 既に登録されていれば 5 で止まる（何も変えない）。作り直すときだけ `--rotate` を付ける（基盤の口へ `--overwrite` を渡す。旧い登録は使えなくなる）。
+3. スクリプトが ESO に同期を求め、写し終えてから risk-management と report を作り直させる。同期を確かめられなければ止まるので、
+   `kubectl -n ai-stock-trading get externalsecret ast-owner-totp` で `SecretSynced` を確かめてから、2 つの Pod を作り直す。
+
+### 5.4 配備
+
 - 配備: `helm upgrade --install ast deploy/helm/ai-stock-trading -f deploy/helm/ai-stock-trading/values-cloud.yaml -f <§4 のファイル>`
-  - Discord の環境固有 ID は `--set-string discord.bot.*` で与える。これらは秘密ではない。
+- 守りは段 2 で始まる（注文の承認の印・所有者のトークンの aud / azp・ボットの許可表・危険な操作の第 2 要素・kill switch の前提条件）。
+  - 注文の承認の鍵が無いと、risk-management と order-execution の Pod は起動しない。TOTP が無いと、取引を再開・緩める 7 操作は拒まれる。
+- 値を替えたら（作り直し・更新）、ESO が写した後に読む側を作り直す（`kubectl -n ai-stock-trading rollout restart deploy/<名前>`）。クラウドに Reloader は無い。
+- 基盤が CA を作り直したら、`cloud/shared/platform-infra-ca` の更新を ESO が写した後に、取引ユニットのサービスを作り直す。
+  切り替えの確かめ方と戻し方は [基盤の TLS 切り替え Runbook](platform-infra-tls-cutover-runbook.md)。
+
+### 5.5 突き合わせ（秘密を入れた後・取引を始める前）
+
+1. `kubectl -n ai-stock-trading get externalsecret` で、すべてが `SecretSynced` であること。
+2. 描画が参照する Secret（`helm template … -f values-cloud.yaml -f <§4 のファイル>` の `secretKeyRef` と `secretName`）の一覧と、
+   ExternalSecret の同期先の一覧を照らす。参照されているのに同期先に無いもの（`ast-operator-hold` を除く）が 1 つでもあれば、取引を始めない。
+   - CI（helm.yml の「Assert values-cloud secrets from OpenBao and stage 2」）が同じ突き合わせを描画で行っている。ここではノードの上の実物で確かめる。
+3. 名前空間に、ESO が所有していない Secret が無いこと（`kubectl -n ai-stock-trading get secret -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.ownerReferences[0].kind}{"\n"}{end}'`。
+   `ast-operator-hold` と ServiceAccount・Helm の記録の Secret は除く）。
 
 ## 6. 切り替えの順番（場の時間外に行う）
 
@@ -142,9 +216,8 @@ issues: [#1535, #1525, #24, planning#868, MSP#2401, MSP#2402]
 結果は #24 に記録する（リージョンの実測）。
 
 - [ ] moomoo への接続: OpenD がログインし、発注執行の口座照会が成功する。
-- [ ] 情報源への到達: Finnhub・SEC EDGAR・FRED・日銀（BOJ）へ、ノードから HTTPS で届く。
-  - 例: `scripts/measure-region-latency.sh`。日銀は `--host www.stat-search.boj.or.jp:443` を足す。
-- [ ] 遅延: `scripts/measure-region-latency.sh --count 10` の中央値を記録する。OpenD の接続先は `--host <ホスト>:<ポート> --tcp-only` で足す。
+- [ ] 情報源への到達は §1 の段 4 で確かめ済み（秘密を入れる前）。ここでは API キーを要する取得が成功することを、各サービスのログで確かめる。
+- [ ] 遅延: `scripts/measure-region-latency.sh --count 10 --tcp-only <OpenD の接続先のホスト>:<ポート>` の中央値を記録する。
 - [ ] digest の参照で全 Pod が起動している（§4 の 5）。
 - [ ] 基盤への接続が TLS で通っている: DB・ブローカの接続の失敗と、LLM ゲートウェイの証明書の検証の失敗がログに無い。
 - [ ] 取引判断のログ（判断の記録）の `ragContext` が `not-configured` で、判断が失敗していない。
