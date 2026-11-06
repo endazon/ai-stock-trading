@@ -22,23 +22,55 @@ public sealed class HttpKillSwitchController(
     : IKillSwitchController
 {
     public Task<KillSwitchResult> EngageAsync(string reason, CancellationToken cancellationToken = default) =>
-        PostAsync("/risk-controls/kill-switch/engage", reason, null, "起動", cancellationToken);
+        PostAsync("/risk-controls/kill-switch/engage", reason, null, null, "起動", cancellationToken);
 
     public Task<KillSwitchResult> DisengageAsync(string reason, CancellationToken cancellationToken = default) =>
         DisengageAsync(reason, null, cancellationToken);
 
     // NFR-06, #1552, IADR-0615: 解除だけが確認コードを運ぶ（起動は止める向きのため運ばない＝ADR-0009 の非対称）。
     public Task<KillSwitchResult> DisengageAsync(string reason, string? secondFactorCode, CancellationToken cancellationToken = default) =>
-        PostAsync("/risk-controls/kill-switch/disengage", reason, secondFactorCode, "解除", cancellationToken);
+        DisengageAsync(reason, secondFactorCode, null, cancellationToken);
+
+    // FR-10, FR-14, #1561, IADR-0620: 解除だけが見た状態の版を運ぶ（起動は止める向き。古い版で止められなくならないよう運ばない）。
+    public Task<KillSwitchResult> DisengageAsync(
+        string reason, string? secondFactorCode, string? expectedVersion, CancellationToken cancellationToken = default) =>
+        PostAsync("/risk-controls/kill-switch/disengage", reason, secondFactorCode, expectedVersion, "解除", cancellationToken);
+
+    // FR-10, FR-14, #1561, IADR-0620: 今の版は稼働状態の照会（ボットの許可表の経路）から読む。失敗は null（版なしで従来どおり進む）。
+    public async Task<string?> GetVersionAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient.GetAsync("/risk-controls/status", cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("kill switch の版を照会できませんでした（HTTP {Status}）。版なしで確認を出します。", (int)response.StatusCode);
+                return null;
+            }
+
+            var view = await response.Content.ReadFromJsonAsync<StatusVersionView>(cancellationToken).ConfigureAwait(false);
+            return KillSwitchVersions.Normalize(view?.KillSwitchVersion);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("kill switch の版の照会がタイムアウトしました。版なしで確認を出します。");
+            return null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("kill switch の版を照会できませんでした（{Error}）。版なしで確認を出します。", ex.GetType().Name);
+            return null;
+        }
+    }
 
     private async Task<KillSwitchResult> PostAsync(
-        string path, string reason, string? secondFactorCode, string operation, CancellationToken cancellationToken)
+        string path, string reason, string? secondFactorCode, string? expectedVersion, string operation, CancellationToken cancellationToken)
     {
         try
         {
             // FR-11・ADR-0003: 理由必須。actor は Risk 側が認証済みトークン（preferred_username）から採る。
             using var response = await httpClient
-                .PostAsJsonAsync(path, new KillSwitchRequest(reason, secondFactorCode), cancellationToken)
+                .PostAsJsonAsync(path, new KillSwitchRequest(reason, secondFactorCode, expectedVersion), cancellationToken)
                 .ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
@@ -48,10 +80,14 @@ public sealed class HttpKillSwitchController(
                     ? "（Bot の owner クライアント設定・trading-owner ロール割当を確認してください）"
                     : string.Empty;
                 // NFR, #1530, IADR-0613: 保持（SSH の経路）の間の解除は 409＋code=operator_hold。利用者向けの文言で返す。
-                if (response.StatusCode == HttpStatusCode.Conflict && await IsOperatorHoldAsync(response, cancellationToken).ConfigureAwait(false))
+                // FR-10, #1561, IADR-0620: 版の競合（409＋version_conflict）と版なしの拒否（428＋precondition_required）も分けて返す。
+                var code = response.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.PreconditionRequired
+                    ? await CodeOfAsync(response, cancellationToken).ConfigureAwait(false)
+                    : null;
+                if (KillSwitchVersions.RejectionOf(code) is { } rejected)
                 {
-                    logger.LogWarning("kill switch の{Operation}は保持の間のため拒まれました（409）。", operation);
-                    return new KillSwitchResult(false, true, OperatorHoldMessage);
+                    logger.LogWarning("kill switch の{Operation}は拒まれました（{Status}・{Code}）。", operation, (int)response.StatusCode, code);
+                    return rejected;
                 }
 
                 logger.LogWarning(
@@ -88,7 +124,8 @@ public sealed class HttpKillSwitchController(
     internal const string OperatorHoldMessage =
         "kill switch はノード側（SSH）の経路で保持されているため、Discord からは解除できません。保持を外してから解除してください。";
 
-    private static async Task<bool> IsOperatorHoldAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    // 拒否の本文の機械可読な印（code）。読めなければ null。
+    private static async Task<string?> CodeOfAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         try
         {
@@ -97,11 +134,12 @@ public sealed class HttpKillSwitchController(
             return doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
                 && doc.RootElement.TryGetProperty("code", out var code)
                 && code.ValueKind == System.Text.Json.JsonValueKind.String
-                && code.GetString() == "operator_hold";
+                    ? code.GetString()
+                    : null;
         }
         catch (System.Text.Json.JsonException)
         {
-            return false;
+            return null;
         }
     }
 
@@ -115,7 +153,14 @@ public sealed class HttpKillSwitchController(
 
     // Risk 側 KillSwitchRequest と同形（理由必須）。
     // NFR-06, #1552, IADR-0615: 確認コードは null なら欄ごと送らない（本文は従来と同じ）。値はログに出さない。
-    private sealed record KillSwitchRequest(string Reason, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null);
+    // FR-10, #1561, IADR-0620: 版も null なら欄ごと送らない（前提条件なし＝従来の本文）。
+    private sealed record KillSwitchRequest(
+        string Reason,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedVersion = null);
+
+    // 稼働状態の照会の必要部分（kill switch の版だけ）。
+    private sealed record StatusVersionView(string? KillSwitchVersion);
 
     // Risk 側 KillSwitchState の必要部分のみを受ける射影（Engaged のみ利用する）。
     private sealed record KillSwitchStateView(bool Engaged);

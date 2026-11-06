@@ -21,13 +21,30 @@ public sealed class GrpcKillSwitchController(
         DisengageAsync(reason, null, cancellationToken);
 
     // NFR-06, #1552, IADR-0615: 解除だけが確認コードを運ぶ（起動は止める向き＝ADR-0009 の非対称）。
-    public Task<KillSwitchResult> DisengageAsync(string reason, string? secondFactorCode, CancellationToken cancellationToken = default)
+    public Task<KillSwitchResult> DisengageAsync(string reason, string? secondFactorCode, CancellationToken cancellationToken = default) =>
+        DisengageAsync(reason, secondFactorCode, null, cancellationToken);
+
+    // FR-10, FR-14, #1561, IADR-0620: 解除だけが見た状態の版を運ぶ（起動は止める向き）。欄は入れたときだけ立てる。
+    public Task<KillSwitchResult> DisengageAsync(
+        string reason, string? secondFactorCode, string? expectedVersion, CancellationToken cancellationToken = default)
     {
         var request = new RiskProto.KillSwitchChangeRequest { Reason = reason };
         // NFR-06, #1552, IADR-0615: 確認コードは入れたときだけ載せる（欄は optional。null を代入すると例外）。値はログに出さない。
         if (secondFactorCode is not null)
             request.SecondFactorCode = secondFactorCode;
+        if (expectedVersion is not null)
+            request.ExpectedVersion = expectedVersion;
         return ChangeAsync("解除", options => transport.OwnerWrite.DisengageKillSwitchAsync(request, options), cancellationToken);
+    }
+
+    // FR-10, FR-14, #1561, IADR-0620: 今の版は稼働状態の照会（RiskControlsOwnerRead/GetRiskStatus）から読む。失敗・欠落は null。
+    public async Task<string?> GetVersionAsync(CancellationToken cancellationToken = default)
+    {
+        var outcome = await transport.Calls.CallAsync(
+            "kill switch の版の照会",
+            options => transport.OwnerRead.GetRiskStatusAsync(new RiskProto.GetRiskStatusRequest(), options),
+            cancellationToken).ConfigureAwait(false);
+        return outcome.Response is { HasKillSwitchVersion: true } response ? KillSwitchVersions.Normalize(response.KillSwitchVersion) : null;
     }
 
     private async Task<KillSwitchResult> ChangeAsync(
@@ -39,7 +56,11 @@ public sealed class GrpcKillSwitchController(
 
         if (outcome.Response is not { } response)
         {
-            // NFR, #1530, IADR-0613: 解除の ABORTED は保持（SSH の経路）の間の拒否（REST の 409。kill switch の解除に他の 409 は無い）。
+            // NFR, #1530, IADR-0613, FR-10, #1561, IADR-0620: 拒否の印（末尾の metadata の code）で、保持・版の競合・版なしを分ける。
+            if (KillSwitchVersions.RejectionOf(outcome.ErrorCode) is { } rejected)
+                return rejected;
+
+            // 印の無い解除の ABORTED は、印を送らない旧版の提供側の保持の拒否（当時は解除の 409 は保持だけだった）。
             if (operation == "解除" && outcome.Status == Grpc.Core.StatusCode.Aborted)
                 return new KillSwitchResult(false, true, HttpKillSwitchController.OperatorHoldMessage);
 

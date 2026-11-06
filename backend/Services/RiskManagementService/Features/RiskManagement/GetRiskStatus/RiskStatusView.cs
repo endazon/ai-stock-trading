@@ -63,7 +63,9 @@ public sealed record RiskStatusView(
     // 🔴 true のとき `Capital` は null である。解除は自動（直前の暦日の観測が成功すれば次の読み出しから供給に戻る）。
     bool CapitalBaselineObservationMissing = false,
     // 上が true のとき、最後に観測できた取引日（米国東部の暦日）。false なら null。
-    DateOnly? CapitalBaselineLatestTradingDay = null);
+    DateOnly? CapitalBaselineLatestTradingDay = null,
+    // FR-10, FR-14, #1561, IADR-0620: kill switch の版（ボットが解除の確認に載せ、要求の expectedVersion へ添える）。末尾に追加。
+    string? KillSwitchVersion = null);
 
 // ADR-0009: 成立中で最優先の統制。重い順（kill switch > 日次損失ロックアウト > 一時停止）。
 public enum ActiveTradingControl

@@ -21,5 +21,6 @@
   "stopLossMethod": 0,
   "driftAdoptionCountToday": 0,
   "capitalBaselineObservationMissing": false,
-  "capitalBaselineLatestTradingDay": null
+  "capitalBaselineLatestTradingDay": null,
+  "killSwitchVersion": "0"
 }

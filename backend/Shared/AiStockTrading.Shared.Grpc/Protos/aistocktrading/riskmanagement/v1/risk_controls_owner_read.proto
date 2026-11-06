@@ -46,4 +46,6 @@ message GetRiskStatusResponse {
   optional string max_drawdown_ratio = 13;
   optional int32 open_position_count = 14;
   optional int32 max_open_positions = 15;
+  // FR-10, FR-14, #1561, IADR-0620: kill switch の版（解除の前提条件に添える「見た状態」）。末尾に追加（任意）。
+  optional string kill_switch_version = 16;
 }

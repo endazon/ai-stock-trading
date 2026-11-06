@@ -62,6 +62,7 @@ public sealed class RiskStatusService(
 
         return new RiskStatusView(
             KillSwitchEngaged: snapshot.KillSwitchEngaged,
+            KillSwitchVersion: snapshot.KillSwitchVersion,
             DailyLossLockoutActive: lockoutActive,
             LockoutReleaseOn: lockout?.ReleaseOn,
             TradingPaused: pause.Paused,
