@@ -100,3 +100,6 @@ trace ブロック規約〔ADR-0029 決定4〕の値域検査が読む）。
 - **2026-10-30 に 0077 へ**〔ADR-0077 判断由来の新規建ての指値も、N 分未約定なら取り消すだけにする。PoC の経路で有効にし、本番の既定は無効のままとする（ADR-0067 決定 4 の部分改定）。planning#852（planning#859 で追加）〕。#1519（PoC の構成で新規建ての取消を有効にする PR）が ADR-0077 を引くため、同じ PR で引き直した。
   **2026-10-30 実測**: 計画リポの `origin/main`（`2085b15`。`git rev-parse --is-shallow-repository` → `true` のため `git worktree add --detach origin/main` で展開した木で実行。
   ファイルの実在の検査であり履歴は使わない）で `node tools/doc-checks/gen-plan-ranges.js --check` が exit 0、ai-stock-trading は ADR **[1, 77]・77 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。
+- **2026-11-06 に 0080 へ**〔ADR-0078 クラウド PoC（Hetzner 欧州の単一ノード）へ移す前提とゲート／ADR-0079 画面なしの運用での所有者の本人性と、取引を再開・緩める 7 操作の TOTP（いずれも planning#870 で追加）／ADR-0080 クラウド PoC の移行のゲートを改める（クラスタの中で乱数で作る資格情報と TLS の秘密鍵も OpenBao から供給するまで移行しない・条件 5 に秘密なしの到達の確認。planning#871 で追加）。いずれも Accepted。#1560（クラウドの秘密を OpenBao から供給する PR・IADR-0623）が ADR-0078・0079・0080 を引くため、同じ PR で引き直した〕。
+  **2026-11-06 実測**: 計画リポの `origin/main`（`53603a8`。`git rev-parse --is-shallow-repository` → `true` のため `git worktree add --detach origin/main` で展開した木で実行。
+  ファイルの実在の検査であり履歴は使わない）で `node tools/doc-checks/gen-plan-ranges.js --check` が exit 0、ai-stock-trading は ADR **[1, 80]・80 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。
