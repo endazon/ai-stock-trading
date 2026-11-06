@@ -1256,7 +1256,7 @@ Pod はサイドカー未注入（平文）のため、AST→基盤方向の HTT
 に RST で全断している（逆方向・MSP BFF→AST は到達可能）。🔴 **本設定点は受け皿であり、実クラスタでの
 有効化・疎通確認は未了**（IADR-0314 は Proposed のまま。再測定手順は同 IADR 参照）。
 
-**連結ローカル（`scripts/k8s-local-deploy.sh`）では `AST_MESH_INJECTION` で選ぶ**（IADR-0570。Refs GHSA-j4qv-2w99-xg5p）。
+**連結ローカル（`scripts/k8s-local-deploy.sh`）では `AST_MESH_INJECTION` で選ぶ**（IADR-0570。Refs 非公開の指摘（MSP））。
 helm を手で `--set` しない —— 起動器は `--reuse-values` を使わないため、手で与えた値は次の配備で外れる。
 
 ```bash

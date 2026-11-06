@@ -19,7 +19,7 @@
 {{- fail (printf "未知の broker.tier %q。'paper'（内蔵擬似）または 'moomoo-sim'（OpenD 経由 SIMULATE）を指定してください（IADR-0111）。" $tier) -}}
 {{- end -}}
 {{- $broker := get $brokerTiers $tier -}}
-{{- /* NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: ブローカへはサービスごとのユーザー（<usernamePrefix><サービス名>）で接続する。
+{{- /* NFR, IADR-0568（Refs 非公開の指摘（AST））: ブローカへはサービスごとのユーザー（<usernamePrefix><サービス名>）で接続する。
        旧キー global.rabbitmqConnectionString（全サービス共通の 1 組・資格情報を値に含む）は廃止し、与えられたら止める。 */ -}}
 {{- if $g.rabbitmqConnectionString -}}
 {{- fail "global.rabbitmqConnectionString は廃止しました。ブローカへはサービスごとのユーザーで接続します（global.rabbitmq.* と Secret global.rabbitmq.credentialsSecretName。IADR-0568）。" -}}
@@ -294,7 +294,7 @@ spec:
             - name: Grpc__Port
               value: {{ $svc.grpcPort | quote }}
             {{- end }}
-            {{- /* NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: サービスごとのユーザーで接続する。パスワードは Secret（キー = ユーザー名）から
+            {{- /* NFR, IADR-0568（Refs 非公開の指摘（AST））: サービスごとのユーザーで接続する。パスワードは Secret（キー = ユーザー名）から
                    RABBITMQ_PASSWORD として入れ、接続文字列は k8s の $(VAR) 補間で組む（env の値に平文を描かない。基盤の chart と同じ形）。
                    🔴 optional にしない: 値が無いまま既定のユーザーへ戻る経路を作らない（新しい Pod が起動せず、旧 Pod が残る）。 */}}
             - name: RABBITMQ_PASSWORD

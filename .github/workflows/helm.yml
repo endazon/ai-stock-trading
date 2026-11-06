@@ -1653,7 +1653,7 @@ jobs:
           # #722 / IADR-0322: 検証コードの投入面は既定で立てない（OpenD のコンソールへ書ける面を既定で開かない）。
           if printf '%s' "$out" | grep -q 'name: opend-auth'; then fail "authGateway が既定で有効になっている"; fi
           echo "ok: opend の既定描画は生 manifest と同等の不変条件を満たす"
-      # NFR, IADR-0570（Refs GHSA-j4qv-2w99-xg5p）: メッシュ参入の切り替えで OpenD の Pod テンプレートが変わらない
+      # NFR, IADR-0570（Refs 非公開の指摘（MSP））: メッシュ参入の切り替えで OpenD の Pod テンプレートが変わらない
       # （＝起動器が注入を有効・無効にしても OpenD は作り直されない）ことと、OpenD が常に注入対象外であることを固定する。
       # 起動器と同じ形（values-local.yaml・namespace.create=false）で描き、注入の有無の 2 通りの OpenD を丸ごと突き合わせる。
       # 陰性対照: excludeOpend=false なら注釈を描かない／namespace.create=false では名前空間のラベルを描かない
@@ -1780,7 +1780,7 @@ jobs:
             fail "authGateway 無効でも ExternalSecret を描いた"
           fi
           echo "ok: OpenD への到達は発注執行と基盤の BFF だけ・呼び出し元検証の Secret はサイドカーだけが optional でマウントする"
-      # NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: 全 Worker はブローカへサービスごとのユーザーで接続する。既定のユーザーの痕跡が無い。
+      # NFR, IADR-0568（Refs 非公開の指摘（AST））: 全 Worker はブローカへサービスごとのユーザーで接続する。既定のユーザーの痕跡が無い。
       - name: Assert per-service broker credentials (IADR-0568)
         run: |
           fail() { echo "::error::ブローカのサービスごとの資格情報（IADR-0568）: $1"; exit 1; }

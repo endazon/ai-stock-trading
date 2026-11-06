@@ -8,7 +8,7 @@
 #   scripts/k8s-local-deploy.sh [--force-empty-secrets] [--force-empty-values] [--adopt-existing-secrets]
 #                               [--allow-dev-client-secrets] [--changed-since <ref>] [cluster-name]
 #
-# NFR, IADR-0098（2026-10-22 追記・Refs GHSA-pcf9-8mh4-8wgh）: **機密クライアント 5 件の secret が開発用の値なら止める（fail-closed）**。
+# NFR, IADR-0098（2026-10-22 追記・Refs 非公開の指摘（AST））: **機密クライアント 5 件の secret が開発用の値なら止める（fail-closed）**。
 #   対象は svc / owner / kb-writer / kb-reader / llm-caller の client secret（ast-secrets のキー）。経路を問わず、
 #   イメージを作る前（[0/5]）に確かめる。開発用の値で動かしてよいと分かっているときだけ、明示の opt-in
 #   （--allow-dev-client-secrets か ALLOW_DEV_CLIENT_SECRETS=1。`1` だけ）で通す（大きく警告する）。
@@ -34,7 +34,7 @@
 #     ESO に取り込ませてよいと判断したときだけ --adopt-existing-secrets で警告に下げて進める。
 #   - 従来経路（AST_ESO=0）: ESO の無いクラスタ向け。下記の env → ast-secrets 同期と discord.bot.* の values 経路。
 #   どちらでも helm へ externalSecrets.enabled / appSecrets.enabled を明示する（プロファイルとの食い違いを残さない）。
-# NFR, IADR-0570（Refs GHSA-j4qv-2w99-xg5p）: **メッシュ参入（Istio のサイドカー注入）は AST_MESH_INJECTION=1|0 で選ぶ。**
+# NFR, IADR-0570（Refs 非公開の指摘（MSP））: **メッシュ参入（Istio のサイドカー注入）は AST_MESH_INJECTION=1|0 で選ぶ。**
 #   未指定の再実行は現行の helm リリースの mesh.sidecarInjection.enabled を引き継ぎ、新規・未宣言なら無効（従来どおり）。
 #   有効なら名前空間へ istio-injection=enabled を貼り（chart は namespace.create=false で描くため貼らない）、
 #   明示の 0 なら剥がす。状態が変わった回は OpenD を除く全 Deployment を作り直す（絞り込みがあっても）。
@@ -146,7 +146,7 @@ AST_PROFILE_VALUES_DEFAULT="$ROOT/deploy/helm/ai-stock-trading/values-local.yaml
 # 基盤 BFF はこの名前で force-sync する。描画との一致は .github/workflows/helm.yml の #795 ステップが検査する）。
 # NFR, IADR-0566: opend-auth-caller-secret（認証サイドカーの呼び出し元検証）も ESO が所有する（画面の契約の外。
 # 値は Vault の ai-stock-trading/opend-auth へ入れる）。管理外の同名 Secret があれば同じく名前を挙げて止める。
-# NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: ast-rabbitmq-users（ブローカのサービスごとの資格情報。Vault ai-stock-trading/rabbitmq-users）も
+# NFR, IADR-0568（Refs 非公開の指摘（AST））: ast-rabbitmq-users（ブローカのサービスごとの資格情報。Vault ai-stock-trading/rabbitmq-users）も
 # ESO が所有する。種は基盤の bootstrap が乱数で入れ、ブローカへのユーザーの作成は基盤の reconcile-users.sh が行う。
 AST_RABBITMQ_SECRET="ast-rabbitmq-users"
 AST_ESO_TARGET_SECRETS=("$SECRET_NAME" moomoo-credentials moomoo-rsa opend-auth-caller-secret "$AST_RABBITMQ_SECRET")
@@ -176,7 +176,7 @@ AST_SECRET_KEYS=(
   "discord-owner-auth-client-secret|DISCORD_OWNERAUTH_CLIENTSECRET|dev-only-owner-secret"
 )
 
-# NFR, IADR-0098（2026-10-22 追記・Refs GHSA-pcf9-8mh4-8wgh）: 開発用の値で動かさない機密クライアント（ast-secrets の
+# NFR, IADR-0098（2026-10-22 追記・Refs 非公開の指摘（AST））: 開発用の値で動かさない機密クライアント（ast-secrets の
 # <secret のキー>|<client id のキー>）。開発用の値は宣言から導く —— svc / owner は上の既定値、kb-writer / kb-reader /
 # llm-caller は「<client id の既定>-dev-secret-change-me」（基盤の realm の宣言と同じ規則）。値をここへ複写しない。
 AST_DEV_GUARDED_CLIENT_SECRETS=(
@@ -477,7 +477,7 @@ ast_warn_ignored_secret_env() {
   return 0
 }
 
-# ---- NFR, IADR-0098（2026-10-22 追記・Refs GHSA-pcf9-8mh4-8wgh）: 機密クライアントの secret の fail-closed ----
+# ---- NFR, IADR-0098（2026-10-22 追記・Refs 非公開の指摘（AST））: 機密クライアントの secret の fail-closed ----
 
 # AST_SECRET_KEYS から <Secret キー> の行の欄を返す（$2: 2=環境変数 / 3=既定値）。
 ast_secret_key_field() {
@@ -560,7 +560,7 @@ ast_dev_client_secret_guard() {
   return 1
 }
 
-# NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: 従来経路（ESO なし）では、ブローカの資格情報の Secret を本スクリプトは作らない
+# NFR, IADR-0568（Refs 非公開の指摘（AST））: 従来経路（ESO なし）では、ブローカの資格情報の Secret を本スクリプトは作らない
 # （開発用の既定値を持たない）。無ければ helm の前で止める（全 Worker が非 optional に読むため、無いまま進めると新しい Pod が起動しない）。
 ast_require_rabbitmq_secret() {
   kubectl get secret "$AST_RABBITMQ_SECRET" -n "$NS" >/dev/null 2>&1 && return 0
@@ -659,7 +659,7 @@ resolve_ast_value_overrides() {
   return 0
 }
 
-# NFR, IADR-0570（Refs GHSA-j4qv-2w99-xg5p）: メッシュ参入（Istio のサイドカー注入）の受け口。
+# NFR, IADR-0570（Refs 非公開の指摘（MSP））: メッシュ参入（Istio のサイドカー注入）の受け口。
 #   AST_MESH_INJECTION=1|0（true|false も可）。優先順位は「明示 → 現行の helm リリースの値 → 既定（無効）」。
 #   未指定の再実行は現行の mesh.sidecarInjection.enabled を引き継ぐ（手で与えた値が次の配備で外れない）。
 #   それ以外の値（空を含む）は exit 2。前回値が真偽値として読めなければ止める（黙って既定へ戻さない）。

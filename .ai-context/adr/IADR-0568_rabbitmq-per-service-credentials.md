@@ -5,11 +5,11 @@ status: Accepted
 related_ids: [NFR, ADR-0013, ADR-0001, IADR-0094, IADR-0341, IADR-0566]
 author: claude (Claude Code)
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-11-07
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0013_messaging-follow-wolverine-kafka.md
 related_specs:
-  - ../specs/20261022_GHSA-pvmh_rabbitmq-per-service-credentials.md
+  - ../specs/20261022_rabbitmq-per-service-credentials.md
 ---
 
 # IADR-0568: ブローカへのサービスごとの資格情報（移行の段 2）
@@ -18,11 +18,11 @@ related_specs:
 
 - 状態: **Accepted**
 - 日付: 2026-10-22
-- 決定者: オーナー裁定 2026-10-22（Refs GHSA-pvmh-cvmf-pvcp。順序は基盤 → AST）。chart の形は実装が決めた。
+- 決定者: オーナー裁定 2026-10-22（Refs 非公開の指摘（AST）。順序は基盤 → AST）。chart の形は実装が決めた。
 
 ## 起点・関連
 
-- 起点: Refs GHSA-pvmh-cvmf-pvcp（最小権限・既定の資格情報を使わない）。
+- 起点: Refs 非公開の指摘（AST）（最小権限・既定の資格情報を使わない）。
 - 前提: 基盤の段 1（MSP の IADR-0573。ユーザーと権限・Vault の種・ブローカへの到達の制限。基盤のリポジトリでマージ済みであること）。
 - 関連: IADR-0094 / [IADR-0341](IADR-0341_screen-only-eso-wiring-local-profile.md)（ESO の受け口）、計画 ADR-0013（Wolverine + RabbitMQ）、ADR-0001（基盤の再利用）。
 
@@ -54,3 +54,5 @@ related_specs:
 1. `backend/Services/*/appsettings.Development.json` と単体試験・docker-compose の接続文字列は、単体起動の専用ブローカ向けであり本変更の対象外
    （k8s の Worker は `ASPNETCORE_ENVIRONMENT=Production` で Development の設定を読まない）。
 2. 値を回す順序（ブローカ → Secret）の間は、作り直された Pod が一時的に認証に失敗し得る。手順は基盤の reconcile-users.sh を先に回す。
+
+［2026-11-07 追記 / #1566］利用者裁定により、非公開の指摘の識別子を中立表記へ置換（決定内容は不変）
