@@ -1,3 +1,4 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using System.Text.RegularExpressions;
 using AiStockTrading.Shared.Contracts.Logging;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -20,7 +21,9 @@ internal static partial class ApplyWatchlistProposalEndpoint
         owner.MapPost("/watchlist/proposal-apply", (WatchlistProposalApplyRequest req, MonitorWatchlistService svc,
             DelegatedActorOptions delegated, WatchlistVolumeEstimator estimator, WatchlistCycleFitGuard guard,
             ILoggerFactory loggerFactory, HttpContext http) =>
-                HandleAsync(req, svc, delegated, estimator, guard, loggerFactory, http));
+                HandleAsync(req, svc, delegated, estimator, guard, loggerFactory, http))
+            // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
+            .AllowOwnerBot();
 
     // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（WatchlistOwnerWriteGrpcService）が共有する処理（代理の解決・案の形の検証・楽観排他・
     // 巡回間隔の検査を 2 箇所に書かない）。

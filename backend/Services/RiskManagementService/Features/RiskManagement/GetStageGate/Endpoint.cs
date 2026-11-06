@@ -1,3 +1,5 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
+
 namespace RiskManagementService.Features.RiskManagement.GetStageGate;
 
 // ---- 段階ゲート（FR-20, UC-06, ADR-0008, IADR-0041/0070）----
@@ -9,5 +11,7 @@ namespace RiskManagementService.Features.RiskManagement.GetStageGate;
 internal static class GetStageGateEndpoint
 {
     public static void MapGetStageGate(this IEndpointRouteBuilder read) =>
-        read.MapGet("/stage-gate", (StageGateService svc) => Results.Ok(svc.GetStatus()));
+        read.MapGet("/stage-gate", (StageGateService svc) => Results.Ok(svc.GetStatus()))
+            // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
+            .AllowOwnerBot();
 }

@@ -3,7 +3,7 @@
   "attributes": {
     "_header": "HEADER NOTE (ADR-0038 decision 3 / IADR-0324, AST#776). JSON has no comment syntax and Keycloak imports this file as-is, so this note rides in the realm's free-form attributes map. It is descriptive only and affects nothing at runtime.",
     "_scope": "STANDALONE ONLY: single-unit E2E (IADR-0050) and a developer local run. Linked deployment with the platform authenticates users against the PLATFORM realm (values-local.yaml global.authAuthority, IADR-0324).",
-    "_sourceOfTruth": "COPIES: trading-owner / trading-service and clients ai-stock-trading-svc / -owner are copies of the platform realm (microservices-platform realm.json, MSP#1372). Drift detection is owned by the platform side (ADR-0038 follow-up 2)."
+    "_sourceOfTruth": "COPIES: trading-owner / trading-service / trading-bot and clients ai-stock-trading-svc / -owner are copies of the platform realm (microservices-platform realm.json, MSP#1372). Drift detection is owned by the platform side (ADR-0038 follow-up 2)."
   },
   "enabled": true,
   "sslRequired": "none",
@@ -16,6 +16,10 @@
       {
         "name": "trading-service",
         "description": "dev: OwnerOrService read-only (IADR-0051): s2s sync queries (sizing-context / open-positions / daily-policy); cannot operate kill switch or settings. COPY; authoritative source is the platform realm. ADR-0038 decision 3."
+      },
+      {
+        "name": "trading-bot",
+        "description": "dev: Discord Bot only role (IADR-0622, AST#1554). Accepted only from the bot client (azp ai-stock-trading-owner) on the bot route allowlist and the gRPC owner surface. COPY; authoritative source is the platform realm (MSP#2441)."
       }
     ]
   },
@@ -56,7 +60,7 @@
       "username": "service-account-ai-stock-trading-owner",
       "enabled": true,
       "serviceAccountClientId": "ai-stock-trading-owner",
-      "realmRoles": ["trading-owner"]
+      "realmRoles": ["trading-owner", "trading-bot"]
     }
   ],
   "clients": [
@@ -83,7 +87,7 @@
     },
     {
       "clientId": "ai-stock-trading-owner",
-      "description": "dev: confidential owner client for Discord Bot control (client_credentials + trading-owner, IADR-0098/0062). Production secret from Secret/Vault. COPY of the platform realm (MSP#1372); ADR-0038 decision 3.",
+      "description": "dev: confidential owner client for Discord Bot control (client_credentials + trading-owner/trading-bot, IADR-0098/0062/0622). Production secret from Secret/Vault. COPY of the platform realm (MSP#1372); ADR-0038 decision 3.",
       "enabled": true,
       "publicClient": false,
       "standardFlowEnabled": false,

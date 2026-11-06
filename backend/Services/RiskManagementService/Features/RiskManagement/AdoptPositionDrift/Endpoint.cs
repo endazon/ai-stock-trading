@@ -1,3 +1,4 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.Shared.Contracts.Logging;
 using AiStockTrading.Shared.Contracts.Trading;
 using Wolverine;
@@ -26,7 +27,9 @@ internal static class AdoptPositionDriftEndpoint
         owner.MapPost("/position-drift/adopt",
             (PositionDriftAdoptionRequest req, PositionDriftAdoptionService svc, IMessageBus bus,
                 DelegatedActorOptions delegated, ILoggerFactory loggerFactory, HttpContext http) =>
-                HandleAsync(req, svc, bus, delegated, loggerFactory, http));
+                HandleAsync(req, svc, bus, delegated, loggerFactory, http))
+            // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
+            .AllowOwnerBot();
 
     // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（RiskControlsOwnerWriteGrpcService）が共有する処理（操作者の解決・検証・監査の発行を
     // 2 箇所に書かない）。

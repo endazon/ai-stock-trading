@@ -1,6 +1,9 @@
 using System.Security.Claims;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.Shared.Contracts.Logging;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -105,10 +108,10 @@ public sealed record OwnerTokenBindingRequirement(bool AllowService) : IAuthoriz
 
 /// <summary>NFR, #1528, IADR-0611: <see cref="OwnerTokenBindingRequirement"/> の判定器。</summary>
 public sealed class OwnerTokenBindingHandler(
-    OwnerTokenBindingSettings settings, ILogger<OwnerTokenBindingHandler> logger)
+    OwnerTokenBindingSettings settings, OwnerBotScopeSettings botScope, ILogger<OwnerTokenBindingHandler> logger)
     : AuthorizationHandler<OwnerTokenBindingRequirement>
 {
-    private const int MaxLoggedChars = 64;
+    internal const int MaxLoggedChars = 64;
 
     protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext context, OwnerTokenBindingRequirement requirement)
@@ -124,8 +127,14 @@ public sealed class OwnerTokenBindingHandler(
             return Task.CompletedTask;
         }
 
-        // 所有者でなければ何もしない（ロールの要件が落とす）。
-        if (!user.IsInRole(AiStockTradingAuthPolicies.OwnerRole))
+        // 所有者（ボット専用のロールを含む）でなければ何もしない（ロールの要件が落とす）。
+        var isOwner = user.IsInRole(AiStockTradingAuthPolicies.OwnerRole);
+        var isBotRole = user.IsInRole(AiStockTradingAuthPolicies.BotRole);
+        if (!isOwner && !isBotRole)
+            return Task.CompletedTask;
+
+        // 🔴 NFR-06, #1554, IADR-0622: ボットの資格情報は、ボットが使う経路（許可表の印）にだけ届く。
+        if (!AllowsBotScope(context, user, isBotRole))
             return Task.CompletedTask;
 
         if (OwnerTokenBinding.Matches(user, settings))
@@ -149,10 +158,56 @@ public sealed class OwnerTokenBindingHandler(
         return Task.CompletedTask;
     }
 
-    // ログへ出す前に制御文字を落として切り詰める（トークンのクレームは外から来る値）。
-    private static string Shorten(string value)
+    // NFR-06, #1554, IADR-0622: ボットの許可表の判定。false なら通さない（呼び出し側は Succeed しない）。
+    //   - trading-bot: ボットのクライアントかつ印の付いた経路でだけ通す（段に関係なく。誰も持っていなかったロールの追加）。
+    //   - ボットのクライアントの trading-owner: 印の無い経路は、段 1 は記録して通し、段 2 は通さない。
+    //   - それ以外（利用者のトークン）: 見ない。
+    private bool AllowsBotScope(AuthorizationHandlerContext context, ClaimsPrincipal user, bool isBotRole)
+    {
+        var fromBot = OwnerBotScope.IsBotClient(user, botScope);
+        var allowedRoute = OwnerBotScope.IsAllowedForBot(context.Resource);
+        var azp = Shorten(string.Join(",", user.FindAll(GrpcOwnerClientGate.AuthorizedPartyClaim).Select(c => c.Value)));
+
+        if (isBotRole && !(fromBot && allowedRoute))
+        {
+            logger.LogWarning(
+                "ボット専用のロールのトークンを、ボットのクライアントかつボットの許可表の経路でないため拒否します: azp={Azp} route={Route}",
+                azp, RouteOf(context.Resource));
+            return false;
+        }
+
+        if (!fromBot || allowedRoute)
+            return true;
+
+        if (botScope.Mode == OwnerTokenBindingMode.Enforce)
+        {
+            logger.LogWarning(
+                "ボットのクライアントのトークンがボットの許可表の外の所有者の経路を呼んだため拒否します（段 2）: azp={Azp} route={Route}",
+                azp, RouteOf(context.Resource));
+            return false;
+        }
+
+        logger.LogWarning(
+            "ボットのクライアントのトークンがボットの許可表の外の所有者の経路を呼んだが、段 1 のため通します: azp={Azp} route={Route}",
+            azp, RouteOf(context.Resource));
+        return true;
+    }
+
+    // 記録に載せる経路（メソッドと雛形。値は載せない）。
+    private static string RouteOf(object? resource)
+    {
+        if (resource is not HttpContext http)
+            return "-";
+        var pattern = (http.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? "-";
+        return Shorten($"{http.Request.Method} {pattern}");
+    }
+
+    // ログへ出す前に制御文字を落として切り詰め、行を割る文字を共通の無害化（LogSanitizer）に通す（トークンのクレームと経路は外から来る値。
+    // CWE-117。#1541 の aud / azp の記録と #1554 のボットの許可表の記録の両方がここを通る）。
+    internal static string Shorten(string value)
     {
         var cleaned = new string(value.Where(c => !char.IsControl(c)).ToArray());
-        return cleaned.Length <= MaxLoggedChars ? cleaned : cleaned[..MaxLoggedChars] + "…";
+        var cut = cleaned.Length <= MaxLoggedChars ? cleaned : cleaned[..MaxLoggedChars] + "…";
+        return LogSanitizer.Sanitize(cut, MaxLoggedChars + 1) ?? string.Empty;
     }
 }

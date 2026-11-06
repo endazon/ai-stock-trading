@@ -929,6 +929,14 @@ REST の所有者の判定で、ロールに加えてトークンの宛先（aud
 - 許可集合の既定は aud `ai-stock-trading-api`（AST 専用。Keycloak の audience mapper で `bff` と `ai-stock-trading-owner` にだけ付ける。MSP 共通の `platform-api` は使わない）・azp `bff` と `ai-stock-trading-owner`。変えるときはサービスの `extraEnv` に配列（`Auth__OwnerToken__Audiences__0` … / `Auth__OwnerToken__Clients__0` …）で書く。
 - 段 2 へ上げる前に、段 1 のまま各サービスのログに「所有者のトークンの宛先またはクライアントが許可集合に無い」が出ないことを確かめる。
 
+## ボットの許可表（`global.ownerBotScope`。#1554 / [IADR-0622](../../../.ai-context/adr/IADR-0622_owner-bot-route-allowlist-and-bot-role.md)）
+
+Discord ボットの機密クライアント（azp `ai-stock-trading-owner`）のトークンは、ボットが使う REST の経路（許可表）と gRPC の所有者の面にだけ届く。`mode` は auth のサービスへ `Auth__OwnerBot__Mode` で描く（`ownerTokenBinding` とは別に上げる）。
+
+- `Report`（既定・段 1）: 許可表の外の所有者の経路への呼び出しを Warning で残して通す。`Enforce`（段 2）: 拒否する（403）。他の値は描画で止まる。
+- ボット専用のロール `trading-bot` は、段に関係なく、ボットのクライアントかつ許可表の経路でだけ通る。
+- 段 2 へ上げる前に、段 1 のまま各サービスのログに「ボットのクライアントのトークンがボットの許可表の外の所有者の経路を呼んだ」が出ないことを確かめる。
+
 ## #13, #267: ブローカ階層（`broker.tier`）と moomoo（OpenD）発注
 
 発注先は**単一スイッチ `broker.tier`** で選ぶ（IADR-0111）。運用の本番近接順は次の 3 階層である。

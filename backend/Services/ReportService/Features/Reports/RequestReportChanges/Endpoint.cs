@@ -1,3 +1,4 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using ReportService.Domain;
 using AppSvc = ReportService.Features.Reports.ReportAppService;
 
@@ -8,7 +9,9 @@ internal static class RequestReportChangesEndpoint
     // 差し戻し（PendingApproval→ChangesRequested）。修正指示を受けて改訂を促す。内容不変のため版番号は変わらない。
     public static void MapRequestReportChanges(this IEndpointRouteBuilder owner) =>
         owner.MapPost("/{periodKey}/request-changes", (string periodKey, ReviewCommandRequest req, AppSvc svc, HttpContext http) =>
-            Handle(periodKey, req, svc, http));
+            Handle(periodKey, req, svc, http))
+            // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
+            .AllowOwnerBot();
 
     // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（ReportOwnerWriteGrpcService）が共有する処理（2 箇所に書かない）。
     internal static IResult Handle(string periodKey, ReviewCommandRequest req, AppSvc svc, HttpContext http) =>

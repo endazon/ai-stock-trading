@@ -1,3 +1,4 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Logging;
 using AiStockTrading.Shared.Kernel.Trading;
@@ -25,7 +26,9 @@ internal static class RequestStageTransitionEndpoint
         owner.MapPost("/stage-gate/transition",
             (StageTransitionRequest req, StageGateService svc, IMessageBus bus,
                 DelegatedActorOptions delegated, ILoggerFactory loggerFactory, HttpContext http) =>
-                HandleAsync(req, svc, bus, delegated, loggerFactory, http));
+                HandleAsync(req, svc, bus, delegated, loggerFactory, http))
+            // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
+            .AllowOwnerBot();
 
     // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（RiskControlsOwnerWriteGrpcService）が共有する処理（承認者の解決・値域検証・監査の発行を
     // 2 箇所に書かない）。

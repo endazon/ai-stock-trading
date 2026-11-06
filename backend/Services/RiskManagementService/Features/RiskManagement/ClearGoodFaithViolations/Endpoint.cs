@@ -1,3 +1,4 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.Shared.Contracts.Events;
 using Wolverine;
 
@@ -22,7 +23,9 @@ internal static class ClearGoodFaithViolationsEndpoint
     public static void MapClearGoodFaithViolations(this IEndpointRouteBuilder owner) =>
         owner.MapPost("/good-faith-violations/clear",
             (GoodFaithViolationClearRequest req, GoodFaithViolationClearingService svc, IMessageBus bus, HttpContext http) =>
-                HandleAsync(req, svc, bus, http));
+                HandleAsync(req, svc, bus, http))
+            // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
+            .AllowOwnerBot();
 
     // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（RiskControlsOwnerWriteGrpcService）が共有する処理（2 箇所に書かない）。
     internal static async Task<IResult> HandleAsync(

@@ -115,7 +115,9 @@ public static class GrpcOwnerClientGate
     {
         if (user?.Identity?.IsAuthenticated != true) return false;
 
-        return user.IsInRole(Extensions.AiStockTradingAuthPolicies.OwnerRole)
+        // NFR-06, #1554, IADR-0622: ボット専用のロールも受ける（azp がボットのクライアントであることは従来どおり求める）。
+        return (user.IsInRole(Extensions.AiStockTradingAuthPolicies.OwnerRole)
+                || user.IsInRole(Extensions.AiStockTradingAuthPolicies.BotRole))
             && IsTrustedOwnerClient(user, clients);
     }
 }

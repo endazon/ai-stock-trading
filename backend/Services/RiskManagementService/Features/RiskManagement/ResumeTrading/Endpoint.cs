@@ -1,3 +1,5 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
+
 namespace RiskManagementService.Features.RiskManagement.ResumeTrading;
 
 // FR-10, FR-14, UC-06, ADR-0009: 取引の再開（OwnerOnly・理由必須）。
@@ -6,7 +8,9 @@ namespace RiskManagementService.Features.RiskManagement.ResumeTrading;
 internal static class ResumeTradingEndpoint
 {
     public static void MapResumeTrading(this IEndpointRouteBuilder owner) =>
-        owner.MapPost("/resume", (PauseRequest req, PauseService svc, HttpContext http) => Handle(req, svc, http));
+        owner.MapPost("/resume", (PauseRequest req, PauseService svc, HttpContext http) => Handle(req, svc, http))
+            // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
+            .AllowOwnerBot();
 
     // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（RiskControlsOwnerWriteGrpcService）が共有する処理（2 箇所に書かない）。
     internal static IResult Handle(PauseRequest req, PauseService svc, HttpContext http)

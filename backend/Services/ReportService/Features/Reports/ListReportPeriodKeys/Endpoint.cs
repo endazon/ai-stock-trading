@@ -1,3 +1,4 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AppSvc = ReportService.Features.Reports.ReportAppService;
 
 namespace ReportService.Features.Reports.ListReportPeriodKeys;
@@ -9,5 +10,7 @@ namespace ReportService.Features.Reports.ListReportPeriodKeys;
 internal static class ListReportPeriodKeysEndpoint
 {
     public static void MapListReportPeriodKeys(this IEndpointRouteBuilder owner) =>
-        owner.MapGet("/period-keys", (AppSvc svc) => Results.Ok(svc.ListPeriodKeys()));
+        owner.MapGet("/period-keys", (AppSvc svc) => Results.Ok(svc.ListPeriodKeys()))
+            // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
+            .AllowOwnerBot();
 }
