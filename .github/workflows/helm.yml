@@ -283,13 +283,13 @@ jobs:
       - name: Assert owner bot scope mode (default Report・rejects unknown)
         run: |
           set -euo pipefail
-          out="$(helm template ast deploy/helm/ai-stock-trading)"
+          out="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY")"
           modes="$(grep -c 'name: Auth__OwnerToken__Mode' <<<"$out" || true)"
           bots="$(grep -A1 'name: Auth__OwnerBot__Mode' <<<"$out" | grep -c 'value: "Report"' || true)"
           [ "$modes" -gt 0 ] && [ "$bots" = "$modes" ] || { echo "::error::Auth__OwnerBot__Mode=Report が auth のサービス全部に無い（$bots / $modes）"; exit 1; }
-          enforce="$(helm template ast deploy/helm/ai-stock-trading --set global.ownerBotScope.mode=Enforce | grep -A1 'name: Auth__OwnerBot__Mode' | grep -c 'value: "Enforce"' || true)"
+          enforce="$(helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set global.ownerBotScope.mode=Enforce | grep -A1 'name: Auth__OwnerBot__Mode' | grep -c 'value: "Enforce"' || true)"
           [ "$enforce" = "$modes" ] || { echo "::error::global.ownerBotScope.mode=Enforce が描かれない"; exit 1; }
-          if helm template ast deploy/helm/ai-stock-trading --set global.ownerBotScope.mode=enforce >/dev/null 2>&1; then
+          if helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" --set global.ownerBotScope.mode=enforce >/dev/null 2>&1; then
             echo "::error::知らない段（enforce）が描画で止まらない"; exit 1
           fi
       - name: Assert default render is non-empty
