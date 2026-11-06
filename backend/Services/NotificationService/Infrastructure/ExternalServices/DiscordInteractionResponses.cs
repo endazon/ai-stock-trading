@@ -1,4 +1,5 @@
 using Discord;
+using Microsoft.Extensions.Logging;
 
 namespace NotificationService.Infrastructure.ExternalServices;
 
@@ -63,4 +64,31 @@ public static class DiscordInteractionResponses
             m.AllowedMentions = DiscordMentionPolicy.SuppressAll;
         });
     }
+
+    // NFR-06, #1552: ボタンから開いた確認の画面の送信の後、元のメッセージを結果で差し替える（ボタンを取り除く）。
+    // 🔴 結果だけは必ず届ける: 差し替えが Discord に拒まれた（HttpException）・時間切れ（TimeoutException）・
+    // 要求していないキャンセル（TaskCanceledException。Discord.Net の内部の時間切れ）なら、結果を追送する。実 Discord での確認は未了（#570）。
+    // 要求されたキャンセル・その他の例外はそのまま上げる（握り潰さない）。
+    internal static async Task ReplaceOriginalOrFollowupAsync(Func<Task> replace, Func<Task> followup, ILogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(replace);
+        ArgumentNullException.ThrowIfNull(followup);
+        ArgumentNullException.ThrowIfNull(logger);
+        try
+        {
+            await replace().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsDeliveryFailure(ex))
+        {
+            logger.LogWarning("確認の画面の送信後に元のメッセージを差し替えられませんでした（{Error}）。結果は追送します。", ex.GetType().Name);
+            await followup().ConfigureAwait(false);
+        }
+    }
+
+    private static bool IsDeliveryFailure(Exception ex) => ex switch
+    {
+        Discord.Net.HttpException or TimeoutException => true,
+        TaskCanceledException canceled => !canceled.CancellationToken.IsCancellationRequested,
+        _ => false,
+    };
 }

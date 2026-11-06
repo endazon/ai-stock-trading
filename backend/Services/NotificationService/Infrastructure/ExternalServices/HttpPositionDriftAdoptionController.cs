@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
 using NotificationService.Features.Notifications;
+using System.Text.Json.Serialization;
 
 namespace NotificationService.Infrastructure.ExternalServices;
 
@@ -157,7 +158,7 @@ internal sealed class HttpPositionDriftAdoptionController(
     // 要求本文（web JSON = camelCase・列挙は数値）。OnBehalfOf はリスク管理の要求型の末尾（#871）。
     // NFR-06, #1552, IADR-0615: 確認コードは null なら欄ごと送らない（本文は従来と同じ）。値はログに出さない。
     private sealed record AdoptRequest(
-        string Symbol, Market Market, string Reason, string OnBehalfOf, [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null);
+        string Symbol, Market Market, string Reason, string OnBehalfOf, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null);
 
     // リスク管理の応答の射影 DTO（送り手の本物の型は PositionDriftAdoptionResponse。T-10-989 の契約テストが結ぶ）。
     // 数量・市場は受け手で null 許容にしない——欠落は 0／既定値へ落ちるが、送り手の改名は契約テストが止める。

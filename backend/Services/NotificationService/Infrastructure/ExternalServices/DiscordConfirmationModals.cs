@@ -106,4 +106,98 @@ internal static class DiscordConfirmationModals
     /// </summary>
     internal static string? SecondFactorCodeOf(string? submitted) =>
         string.IsNullOrWhiteSpace(submitted) ? null : submitted.Trim();
+
+    /// <summary>
+    /// NFR-06, #1552, IADR-0097: 送信された確認の画面を、モーダルの ID（完全一致か接頭辞）から操作の種別に振り分け、ハンドラへ渡す
+    /// コマンドの文字列・確認フレーズ・理由・確認コードを取り出す。ID が書式外（他機能・対象の欠けた ID）なら <c>null</c>＝何もしない。
+    /// <para>
+    /// Gateway は結果に従ってハンドラを呼ぶだけにする（振り分けと取り出しの規則はここにだけ置き、試験で固定する）。
+    /// </para>
+    /// </summary>
+    /// <param name="modalId">送信されたモーダルの ID。</param>
+    /// <param name="valueOf">入力欄の ID から送信された値を返す（無ければ <c>null</c>）。</param>
+    internal static ConfirmationSubmission? Route(string modalId, Func<string, string?> valueOf)
+    {
+        ArgumentNullException.ThrowIfNull(modalId);
+        ArgumentNullException.ThrowIfNull(valueOf);
+
+        var code = SecondFactorCodeOf(valueOf(SecondFactorInputId));
+
+        if (modalId == KillSwitchEngageModalId)
+            // 止める向き: 確認コードの欄は無い（送られても運ばない）。
+            return new(ConfirmationKind.KillSwitchEngage, "/killswitch", valueOf(KillSwitchPhraseInputId), null, null);
+        if (modalId == KillSwitchDisengageModalId)
+            return new(ConfirmationKind.KillSwitchDisengage, "/killswitch off", valueOf(KillSwitchPhraseInputId), null, code);
+        if (modalId == ResumeModalId)
+            return new(ConfirmationKind.Resume, "/resume", null, null, code);
+        if (modalId == GfvClearModalId)
+            return new(ConfirmationKind.GfvClear, "/gfv clear", valueOf(GfvClearPhraseInputId), valueOf(GfvClearReasonInputId), code);
+
+        if (modalId.StartsWith(StagePromoteModalPrefix, StringComparison.Ordinal))
+        {
+            // 遷移先の値域はハンドラの解析が改めて確かめる。空なら書式外。
+            var target = modalId[StagePromoteModalPrefix.Length..];
+            return target.Length == 0 ? null : new(ConfirmationKind.StagePromote, $"/stage promote {target}", null, null, code);
+        }
+
+        if (modalId.StartsWith(ReportApproveModalPrefix, StringComparison.Ordinal))
+            return VersionedOf(modalId, ReportApproveModalPrefix) is { } report
+                ? new(ConfirmationKind.ReportApprove, $"/report approve {report.Key} {report.Version}", null, null, code)
+                : null;
+
+        if (modalId.StartsWith(PolicyApproveModalPrefix, StringComparison.Ordinal))
+            return VersionedOf(modalId, PolicyApproveModalPrefix) is { } policy
+                ? new(ConfirmationKind.PolicyApprove, $"/policy approve {policy.Key} {policy.Version}", null, null, code)
+                : null;
+
+        if (modalId.StartsWith(DriftAdoptModalPrefix, StringComparison.Ordinal))
+        {
+            // "<market>-<symbol>"（市場の語はハイフンを含まないため最初のハイフンで分ける）。値域の検証はハンドラの解析が行う。
+            var payload = modalId[DriftAdoptModalPrefix.Length..];
+            var separator = payload.IndexOf('-', StringComparison.Ordinal);
+            if (separator <= 0 || separator == payload.Length - 1)
+                return null;
+            return new(ConfirmationKind.DriftAdopt, $"/drift adopt {payload[(separator + 1)..]} {payload[..separator]}",
+                valueOf(DriftAdoptPhraseInputId), valueOf(DriftAdoptReasonInputId), code);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 確定の確認の ID の "&lt;periodKey&gt;-&lt;version&gt;" を取り出す（書式外は <c>null</c>）。**版番号は最後のハイフン以降**
+    /// （periodKey は英数字・ハイフンのみでパーサが値域を保証する＝periodKey 自体がハイフンを含んでも曖昧にならない）。
+    /// </summary>
+    internal static (string Key, string Version)? VersionedOf(string customId, string prefix)
+    {
+        ArgumentNullException.ThrowIfNull(customId);
+        ArgumentNullException.ThrowIfNull(prefix);
+        if (!customId.StartsWith(prefix, StringComparison.Ordinal))
+            return null;
+        var payload = customId[prefix.Length..];
+        var separator = payload.LastIndexOf('-');
+        return separator <= 0 || separator == payload.Length - 1 ? null : (payload[..separator], payload[(separator + 1)..]);
+    }
+}
+
+/// <summary>NFR-06, #1552: 確認の画面の操作の種別（送信の受け取りが呼ぶハンドラを決める）。</summary>
+internal enum ConfirmationKind
+{
+    KillSwitchEngage,
+    KillSwitchDisengage,
+    Resume,
+    StagePromote,
+    GfvClear,
+    DriftAdopt,
+    ReportApprove,
+    PolicyApprove,
+}
+
+/// <summary>
+/// NFR-06, #1552: 振り分けの結果。🔴 <see cref="ToString"/> は確認コード・確認フレーズ・理由を出さない（ログに紛れ込ませない）。
+/// </summary>
+internal sealed record ConfirmationSubmission(
+    ConfirmationKind Kind, string RawCommand, string? Phrase, string? Reason, string? SecondFactorCode)
+{
+    public override string ToString() => $"{Kind} {RawCommand}";
 }

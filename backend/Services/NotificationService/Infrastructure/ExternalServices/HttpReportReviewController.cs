@@ -5,6 +5,7 @@ using System.Text.Json;
 using NotificationService.Domain;
 using NotificationService.Features.Notifications;
 using Microsoft.Extensions.Logging;
+using System.Text.Json.Serialization;
 
 namespace NotificationService.Infrastructure.ExternalServices;
 
@@ -360,7 +361,7 @@ public sealed class HttpReportReviewController(
     // 報告書サービス側 ConfirmReportRequest / ReviewCommandRequest と同形（版番号付き）。
     // OnBehalfOf は #774 で末尾に追加（旧版の報告書サービスは未知のプロパティとして読み飛ばす）。
     // NFR-06, #1552, IADR-0615: 確認コードは null なら欄ごと送らない（本文は従来と同じ）。値はログに出さない。
-    private sealed record ConfirmRequest(int ExpectedVersion, string OnBehalfOf, [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null);
+    private sealed record ConfirmRequest(int ExpectedVersion, string OnBehalfOf, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null);
 
     // 報告書サービス側 ConfirmReportResponse の必要部分（#1025 で足された 2 項目）。欠落は null＝旧版。
     private sealed record ConfirmView(bool? Transitioned, int? Version);

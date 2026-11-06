@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Json;
 using NotificationService.Features.Notifications;
 using Microsoft.Extensions.Logging;
+using System.Text.Json.Serialization;
 
 namespace NotificationService.Infrastructure.ExternalServices;
 
@@ -160,7 +161,7 @@ public sealed class HttpPauseController(
 
     // Risk 側 PauseRequest と同形（理由必須）。
     // NFR-06, #1552, IADR-0615: 確認コードは null なら欄ごと送らない（本文は従来と同じ）。値はログに出さない。
-    private sealed record PauseRequest(string Reason, [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null);
+    private sealed record PauseRequest(string Reason, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null);
 
     // Risk 側 PauseState の必要部分のみを受ける射影（Paused のみ利用する）。
     private sealed record PauseStateView(bool Paused);

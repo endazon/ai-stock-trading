@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using AiStockTrading.Shared.Contracts.Trading;
 using NotificationService.Features.Notifications;
 using Microsoft.Extensions.Logging;
+using System.Text.Json.Serialization;
 
 namespace NotificationService.Infrastructure.ExternalServices;
 
@@ -442,5 +443,5 @@ public sealed class HttpStageGateController(
         Stage1GateCriteriaView? Stage1Criteria = null);
 
     // NFR-06, #1552, IADR-0615: 確認コードは null なら欄ごと送らない（本文は従来と同じ）。値はログに出さない。
-    private sealed record TransitionRequest(int TargetStage, string OnBehalfOf, [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null);
+    private sealed record TransitionRequest(int TargetStage, string OnBehalfOf, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null);
 }
