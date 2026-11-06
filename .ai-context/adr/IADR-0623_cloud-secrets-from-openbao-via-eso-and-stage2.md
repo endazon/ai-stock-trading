@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [NFR-05, NFR-06, NFR-18, FR-10, FR-14, ADR-0006, ADR-0078, ADR-0079, ADR-0080, IADR-0608, IADR-0610, IADR-0611, IADR-0613, IADR-0615, IADR-0620, IADR-0621, IADR-0622, IADR-0341, IADR-0094, MSP:IADR-0689]
 author: claude (Claude Code)
 created: 2026-11-06
-updated: 2026-11-06
+updated: 2026-11-07
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0080_cloud-poc-gate-in-cluster-credentials-and-pre-secret-reachability.md (決定 1・2・3)
   - planning:projects/ai-stock-trading/07_adr/ADR-0078_cloud-poc-hetzner-eu-premises-and-migration-gate.md (決定 5・6)
@@ -73,3 +73,10 @@ plan_refs:
 2. 段 2 で拒まれたときのボットの専用の文言（IADR-0615 の 2026-11-06 の追記の ②）。いまは認可の失敗と同じ汎用の文言である。
 3. OpenD の RSA の鍵を 2048 ビットへ上げられるかは、クラウドで OpenD が動いてから確かめる（上げられれば `gen-rsa` で OpenBao の中で作れる）。
 4. Secret の書き換えで消費側を作り直す仕組み（Reloader）はクラウドに無い。値を替えたら手で `rollout restart` する（手順書）。
+
+## ［2026-11-07 追記 / #1560］残余 1 は確定した
+
+- 基盤の `put-external-secret.sh` の呼び方が確定した（MSP#2478・基盤の IADR-0689 決定 11）: `<値> | bash deploy/cloud/vault/put-external-secret.sh --live --operator-file <…>.age --identity <…> [--overwrite] cloud/<ast|platform|msp>/<名前> <キー>`。値は標準入力の中身をそのまま 1 つのキーへ書き、キーが在れば 5 で止まり、上書きは `--overwrite` のときだけ。
+- 決定 5 の形（前置きを `AST_PUT_EXTERNAL_SECRET` で受け、末尾にパスとキーを足し、値は標準入力）のまま受けられる。TOTP の登録は `--rotate` のときだけ前置きの後ろ・パスの前に `--overwrite` を足す。基盤の口の 5（キーが在る）は、このスクリプトの 5（既に登録されている）として返す。手順書と仕様書の「仮」の印を外した。
+- 前置きを空白で区切って読む点（パス・引数に空白を含めない）は残る。
+- 手順書 §1 の段 5 に、TOTP の登録を配備の後・突き合わせの前に行う順を明記した（登録する前は、取引を再開・緩める 7 操作が 403 になる）。

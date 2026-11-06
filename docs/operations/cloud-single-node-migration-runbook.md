@@ -4,7 +4,7 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-11-05
-updated: 2026-11-06
+updated: 2026-11-07
 ---
 <!-- trace:
 ids: [FR-04, FR-08, NFR, NFR-03, NFR-05, NFR-06, FR-10]
@@ -49,6 +49,7 @@ issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471]
      - **「届かない」は、必須の接続先のどれかが 1 回も成功しないこと**（ニュース系は 2 つとも 0 回）。届かなければ、秘密を入れる前に作り直し（シンガポール）を裁定にかける。段 5 へ進まない。
      - 遅延は記録するが、判断の基準に含めない。
 5. 1〜4 の結果をオーナーに報告し、オーナーが承認してから、**オーナー自身が**秘密を入れる（§5）。
+   - 入れる順: §5.1 の値 → §5.4 の配備 → **§5.3 の TOTP の登録**（登録する前は、取引を再開・緩める 7 操作が 403 になる）→ §5.5 の突き合わせ。
    - 入れた後、**突き合わせ**を行う（§5 の最後）。描画が参照する Secret のうち、OpenBao から写されていないもの（`ast-operator-hold` を除く）が 1 つでもあれば、取引を始めない。
 
 ## 2. 前提と、使わないもの
@@ -112,7 +113,10 @@ issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471]
   - OpenBao・ESO の本体、unseal、オーナー用の資格、基盤と共有の値の作成は、基盤の手順書（`deploy/cloud/README.md` と OpenBao の初期化・unseal の手順書）で先に済ませる。
   - 取引ユニットの名前空間のストア（`SecretStore openbao`・ServiceAccount `ast-eso-reader`）と ExternalSecret は、`values-cloud.yaml` を当てると chart が作る。
   - 置き場（KV v2 のマウント `cloud/`）: 取引ユニットだけの値は `cloud/ast/<Secret の名前>`、基盤と共有の値は `cloud/shared/<名前>`。property の名前は Secret のキーの名前と同じ。
-- 🔶 **仮: 下の `put-external-secret.sh` の呼び方は、基盤の手順書の確定（基盤の次の PR）に合わせて直す。** 引数は「パス」と「キー」の 2 つで、値は標準入力から読む形を想定している。
+- 外から持ち込む値は、基盤の `put-external-secret.sh` で入れる（基盤の手順書の確定した呼び方）。
+  - 形: `<値> | bash <基盤>/deploy/cloud/vault/put-external-secret.sh --live --operator-file <…>.age --identity <…> [--overwrite] cloud/ast/<名前> <キー>`
+  - 値は標準入力の中身を、末尾の改行も含めてそのまま 1 つのキーへ書く。空なら書かない。
+  - キーが既に在れば何も変えずに 5 で止まる。上書きは `--overwrite` のときだけ（同じパスのほかのキーは残る）。`cloud/shared` へは書けない。
 
 ### 5.1 入れるもの（取引ユニットの分）
 
@@ -136,12 +140,14 @@ ESO を使う構成では `ast-secrets` から読む（秘密ではないが、`
 例（値は標準入力から。画面に出さない）:
 
 ```bash
-# 外の値: 打った文字が見えない read で受け、パイプでだけ渡す（履歴・ディスクに残さない）。
-read -rs v && printf '%s' "$v" | bash <基盤>/deploy/cloud/vault/put-external-secret.sh cloud/ast/ast-secrets discord-bot-token; unset v
-# moomoo のログインパスワードは MD5 にしてから入れる。
-read -rs v && printf '%s' "$v" | md5sum | cut -d' ' -f1 | tr -d '\n' | bash <基盤>/deploy/cloud/vault/put-external-secret.sh cloud/ast/moomoo-credentials login-pwd-md5; unset v
+# 呼び出しの前置き（秘密は含まない。ファイルのパスだけ）。
+PUT=(bash <基盤>/deploy/cloud/vault/put-external-secret.sh --live --operator-file <…>.age --identity <…>)
+# 外の値: 打った文字が見えない read で受け、パイプでだけ渡す（履歴・ディスクに残さない。末尾の改行を付けない）。
+read -rs v && printf '%s' "$v" | "${PUT[@]}" cloud/ast/ast-secrets discord-bot-token; unset v
+# moomoo のログインパスワードは MD5 にしてから入れる（末尾の改行を落とす）。
+read -rs v && printf '%s' "$v" | md5sum | cut -d' ' -f1 | tr -d '\n' | "${PUT[@]}" cloud/ast/moomoo-credentials login-pwd-md5; unset v
 # OpenD の RSA の鍵（1024 ビット・PKCS#1）。鍵はディスクに書かない。
-openssl genrsa -traditional 1024 2>/dev/null | bash <基盤>/deploy/cloud/vault/put-external-secret.sh cloud/ast/moomoo-rsa opend_rsa.pem
+openssl genrsa -traditional 1024 2>/dev/null | "${PUT[@]}" cloud/ast/moomoo-rsa opend_rsa.pem
 ```
 
 - RSA の鍵は 1024 ビットにする。手元の PoC がこの長さで動いており、2048 ビットで OpenD が動いた記録は無い（基盤の `gen-rsa` は 2048 未満を作れない）。
@@ -155,8 +161,9 @@ openssl genrsa -traditional 1024 2>/dev/null | bash <基盤>/deploy/cloud/vault/
 
 ### 5.3 所有者の TOTP
 
-1. 基盤の `put-external-secret.sh` を呼ぶ前置き（スクリプトのパスとオーナー用の資格のファイルの引数。秘密は含まない）を `AST_PUT_EXTERNAL_SECRET` に入れる。
+1. 基盤の `put-external-secret.sh` を呼ぶ前置き（スクリプトのパスと `--live --operator-file <…>.age --identity <…>`。秘密は含まない）を `AST_PUT_EXTERNAL_SECRET` に入れる。パスと引数に空白を含めない。
 2. `bash scripts/ast-owner-totp-enroll.sh --live --openbao` を流す。シークレットは標準入力でだけ渡り、QR だけが端末に出る（Enter で消す）。
+   - 既に登録されていれば 5 で止まる（何も変えない）。作り直すときだけ `--rotate` を付ける（基盤の口へ `--overwrite` を渡す。旧い登録は使えなくなる）。
 3. スクリプトが ESO に同期を求め、写し終えてから risk-management と report を作り直させる。同期を確かめられなければ止まるので、
    `kubectl -n ai-stock-trading get externalsecret ast-owner-totp` で `SecretSynced` を確かめてから、2 つの Pod を作り直す。
 

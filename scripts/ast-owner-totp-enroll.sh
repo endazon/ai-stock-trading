@@ -16,12 +16,14 @@
 # --openbao（クラウド。NFR-05, ADR-0080, #1560, IADR-0623 決定 5）: 2 の代わりに、基盤の put-external-secret.sh の**標準入力へだけ**
 #   シークレットを流し、OpenBao の cloud/ast/ast-owner-totp（property secret）へ書く。k8s の Secret は ESO が写す
 #   （ExternalSecret ast-owner-totp。chart の values-cloud）。書いた後に同期を求め、写し終えてから 4 を行う。
-#   🔶 仮: put-external-secret.sh の呼び方は基盤の PR ② で確定する。確定までは、呼び出しの前置き（スクリプトのパスと
-#      オーナー用の資格のファイルの引数。秘密は持たない）を環境変数 AST_PUT_EXTERNAL_SECRET で与える。末尾に
-#      `cloud/ast/ast-owner-totp secret` を足して呼ぶ。例:
-#        AST_PUT_EXTERNAL_SECRET='bash ../microservices-platform/deploy/cloud/vault/put-external-secret.sh --live --operator-file <…>.age --identity <…>'
-#   前置きは空白で区切って読む（引用符は解釈しない）。🔶 パス・引数に空白を含めない（呼び方の確定のときに直す）。
-#   既に登録されているかは、ESO が写した k8s の Secret の有無で見る。
+#   呼び方は基盤の確定した形（MSP#2478・基盤の IADR-0689 決定 11）:
+#     <値> | bash deploy/cloud/vault/put-external-secret.sh --live --operator-file <…>.age --identity <…> [--overwrite] cloud/ast/<名前> <キー>
+#   呼び出しの前置き（スクリプトのパスとオーナー用の資格のファイルの引数。秘密は持たない）を環境変数 AST_PUT_EXTERNAL_SECRET で与える。
+#   末尾に（--rotate のときだけ `--overwrite` と）`cloud/ast/ast-owner-totp secret` を足して呼ぶ。例:
+#     AST_PUT_EXTERNAL_SECRET='bash ../microservices-platform/deploy/cloud/vault/put-external-secret.sh --live --operator-file <…>.age --identity <…>'
+#   前置きは空白で区切って読む（引用符は解釈しない）。🔶 パス・引数に空白を含めない。
+#   既に登録されているかは、ESO が写した k8s の Secret の有無で見る。OpenBao にキーが既に在れば、基盤の口も 5 で止まる
+#   （何も変えない）。このスクリプトも同じ 5（既に登録されている）で終わる。作り直すなら --rotate（基盤の口へ --overwrite を渡す）。
 #
 # 環境変数: KUBECTL（既定 kubectl。k3s は `k3s kubectl`）・AST_NAMESPACE（既定 ai-stock-trading）・AST_TOTP_ISSUER（既定 ai-stock-trading）
 # 終了コード: 0＝成功 / 1＝失敗 / 2＝引数の誤り / 3＝--live が無い / 4＝qrencode が無い / 5＝既に登録されている（--rotate なし）
@@ -86,9 +88,17 @@ head -c 20 /dev/urandom | base32 | tr -d '=\n' > "$tmp/secret"
 [ "$(wc -c < "$tmp/secret")" -ge 32 ] || { echo "ERROR: シークレットを作れませんでした。" >&2; exit 1; }
 
 if [ "$openbao" -eq 1 ]; then
-	# シークレットは標準入力でだけ渡す（引数・環境変数に載せない）。
-	"${PUT_CMD[@]}" "cloud/ast/${SECRET_NAME}" secret < "$tmp/secret" >/dev/null \
-		|| { echo "ERROR: OpenBao へ書けませんでした（何も登録していません。QR は出していません）。" >&2; exit 1; }
+	# シークレットは標準入力でだけ渡す（引数・環境変数に載せない）。基盤の口は在るキーを上書きしない（--overwrite のときだけ）。
+	overwrite=()
+	[ "$rotate" -eq 1 ] && overwrite=(--overwrite)
+	put_rc=0
+	"${PUT_CMD[@]}" "${overwrite[@]+"${overwrite[@]}"}" "cloud/ast/${SECRET_NAME}" secret < "$tmp/secret" >/dev/null || put_rc=$?
+	if [ "$put_rc" -eq 5 ]; then
+		echo "ERROR: 既に登録されています（OpenBao の cloud/ast/${SECRET_NAME} にキーが在る）。作り直すと旧い登録は使えなくなります。" >&2
+		echo "       作り直すなら --rotate を付けてください（何も変えていません。QR は出していません）。" >&2
+		exit 5
+	fi
+	[ "$put_rc" -eq 0 ] || { echo "ERROR: OpenBao へ書けませんでした（終了コード ${put_rc}。何も登録していません。QR は出していません）。" >&2; exit 1; }
 	echo "OpenBao の cloud/ast/${SECRET_NAME} に書きました（値は表示しません）。"
 else
 	k create secret generic "$SECRET_NAME" --from-file=secret="$tmp/secret" --dry-run=client -o yaml | k apply -f - >/dev/null

@@ -5,7 +5,7 @@ status: accepted
 related_ids: [NFR-05, NFR-06, NFR-18, FR-10, FR-14, ADR-0006, ADR-0078, ADR-0079, ADR-0080, IADR-0623, IADR-0608, IADR-0610, IADR-0611, IADR-0613, IADR-0615, IADR-0620, IADR-0621, IADR-0622, IADR-0341, MSP:IADR-0689]
 author: claude (Claude Code)
 created: 2026-11-06
-updated: 2026-11-06
+updated: 2026-11-07
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0080_cloud-poc-gate-in-cluster-credentials-and-pre-secret-reachability.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0078_cloud-poc-hetzner-eu-premises-and-migration-gate.md
@@ -122,3 +122,8 @@ plan_refs:
 - 基盤の側（OpenBao・ESO の本体・role と policy・`put-external-secret.sh`）。MSP#2471 と MSP の PR ②。
 - 段 2 で拒まれたときのボットの専用の文言（IADR-0615 の 2026-11-06 の追記の ②）。いまは認可の失敗と同じ汎用の文言で、段 2 でも操作は止まる側に倒れる。
 - サーバーの注文・秘密の投入・稼働の確認（オーナー）。
+
+## ［2026-11-07 追記 / #1560］決定 5 の「仮」は確定した
+
+- 基盤の `put-external-secret.sh` の呼び方が確定した（MSP#2478・基盤の IADR-0689 決定 11）。決定 5 の形のまま受けられる。`--rotate` のときだけ `--overwrite` を渡し、基盤の口の 5（キーが在る）は登録のスクリプトの 5 として返す。詳細は IADR-0623 の 2026-11-07 の追記。
+- 手順書 §1 の段 5 に、TOTP の登録を配備の後・突き合わせの前に行う順を明記した。

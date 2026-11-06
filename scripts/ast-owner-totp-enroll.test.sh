@@ -35,6 +35,8 @@ cat > "$BIN/put-external-secret" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$AST_TEST_STATE/put-args.log"
 cat > "$AST_TEST_STATE/put-stdin.txt"
+# 基盤の口と同じく、キーが在れば --overwrite なしは 5（何も変えない）。
+if [ -f "$AST_TEST_STATE/put-exists" ]; then case " $* " in *" --overwrite "*) ;; *) exit 5 ;; esac; fi
 STUB
 chmod +x "$BIN/kubectl" "$BIN/qrencode" "$BIN/put-external-secret"
 # qrencode を含まない PATH（基本コマンドだけ）。
@@ -43,7 +45,7 @@ for c in bash sed head base32 tr wc mktemp rm cat printf grep tail; do p="$(comm
 
 pass=0; fail=0
 check() { if [ "$2" -eq 0 ]; then pass=$((pass + 1)); else echo "FAIL: $1"; fail=$((fail + 1)); fi; }
-reset() { rm -f "$STATE"/calls.log "$STATE"/secret.txt "$STATE"/qr-input.txt "$STATE"/exists "$STATE"/put-args.log "$STATE"/put-stdin.txt "$STATE"/es-gets "$STATE"/es-stuck; : > "$STATE/calls.log"; }
+reset() { rm -f "$STATE"/calls.log "$STATE"/secret.txt "$STATE"/qr-input.txt "$STATE"/exists "$STATE"/put-args.log "$STATE"/put-stdin.txt "$STATE"/es-gets "$STATE"/es-stuck "$STATE"/put-exists; : > "$STATE/calls.log"; }
 run() { AST_TEST_STATE="$STATE" KUBECTL="$BIN/kubectl" PATH="${RUNPATH:-$BIN:$PATH}" bash "$SCRIPT" "$@" < /dev/null > "$STATE/out.log" 2>&1; echo $?; }
 ok() { [ "$1" ] && echo 0 || echo 1; }
 
@@ -94,6 +96,15 @@ check "--openbao: QR の入力は put へ渡したのと同じシークレット
 
 reset; touch "$STATE/exists"; rc="$(AST_PUT_EXTERNAL_SECRET="$PUT" run --live --openbao)"
 check "--openbao: 登録済みで --rotate なしは 5（書かない）" "$([ "$rc" = 5 ] && [ ! -e "$STATE/put-args.log" ] && echo 0 || echo 1)"
+
+reset; touch "$STATE/exists"; rc="$(AST_PUT_EXTERNAL_SECRET="$PUT" AST_TOTP_SYNC_INTERVAL=0 run --live --openbao --rotate)"
+check "--openbao --rotate: 基盤の口へ --overwrite を前置きの後ろ・パスの前に渡す" \
+	"$([ "$rc" = 0 ] && grep -qx -- '--live --operator-file op.age --identity id.txt --overwrite cloud/ast/ast-owner-totp secret' "$STATE/put-args.log" && echo 0 || echo 1)"
+reset; rc="$(AST_PUT_EXTERNAL_SECRET="$PUT" AST_TOTP_SYNC_INTERVAL=0 run --live --openbao)"
+check "--openbao: 通常の登録は --overwrite を渡さない" "$([ "$rc" = 0 ] && ! grep -q -- '--overwrite' "$STATE/put-args.log" && echo 0 || echo 1)"
+reset; touch "$STATE/put-exists"; rc="$(AST_PUT_EXTERNAL_SECRET="$PUT" AST_TOTP_SYNC_INTERVAL=0 run --live --openbao)"
+check "--openbao: OpenBao にキーが在れば（基盤の口が 5）、5 で終わり QR を出さず Pod を作り直さない" \
+	"$([ "$rc" = 5 ] && [ ! -e "$STATE/qr-input.txt" ] && ! grep -q 'delete pod' "$STATE/calls.log" && grep -qF -- '--rotate' "$STATE/out.log" && echo 0 || echo 1)"
 
 reset; touch "$STATE/es-stuck"; rc="$(AST_PUT_EXTERNAL_SECRET="$PUT" AST_TOTP_SYNC_WAIT=2 AST_TOTP_SYNC_INTERVAL=0 run --live --openbao)"
 check "--openbao: 同期を確かめられなければ 1 で、Pod を作り直さない" "$([ "$rc" = 1 ] && ! grep -q 'delete pod' "$STATE/calls.log" && echo 0 || echo 1)"
