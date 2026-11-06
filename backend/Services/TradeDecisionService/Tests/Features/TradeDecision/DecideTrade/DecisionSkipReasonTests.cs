@@ -1,5 +1,6 @@
 extern alias RiskManagementWorker;
 
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Features.TradeDecision;
@@ -135,7 +136,7 @@ public class DecisionSkipReasonTests
             retrieval: null, options: null, profitability: null, profitabilityOptions: null,
             unconfirmedNotifier: null, currentPrice: currentPrice, fxRate: fxRate, heldPosition: held,
             retrievalSourcePolicy: null, statusNotifier: null, screeningReporter: null,
-            skipReporter: reporter);
+            skipReporter: reporter, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
     // 基準通貨（米国株・USD 建て）の起点。通貨換算の影響を分離する。
     private static PriceMovementDetected Trigger() =>
@@ -348,7 +349,7 @@ public class DecisionSkipReasonTests
         var service = new AppSvc(
             new FakeLlm(HoldJson), new FakePolicy(Policy), new FakeSizing(Context()),
             new FakeClock(), NullLogger<AppSvc>.Instance,
-            skipReporter: reporter);
+            skipReporter: reporter, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         var act = async () => await service.DecideAsync(Trigger(), TestContext.Current.CancellationToken);
 

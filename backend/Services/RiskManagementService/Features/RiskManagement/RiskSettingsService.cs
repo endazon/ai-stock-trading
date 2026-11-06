@@ -165,6 +165,11 @@ public sealed class RiskSettingsService(
             reason);
     }
 
+    // 🔴 FR-20, ADR-0008, #1533, IADR-0616 決定1・2: 段階の書き込みは段階ゲートの遷移の受理（StageGateService）からだけ呼ぶ。
+    // 設定の口（PUT /settings/stage）からは呼ばない（ゲートを経ずに段階を変えられる口を残さない）。
+    public void SyncStageFromGate(StageSettings stage, string actor, string reason) => UpdateStage(stage, actor, reason);
+
+    // 段階の検証と保存。本番の呼び手は SyncStageFromGate だけ（設定の口は呼ばない。SingleStageSourceTests が固定する）。
     public void UpdateStage(StageSettings stage, string actor, string reason)
     {
         ArgumentNullException.ThrowIfNull(stage);
@@ -190,10 +195,11 @@ public sealed class RiskSettingsService(
                 nameof(stage)).ClientVisible();
         }
 
-        var current = store.GetCurrent();
+        // 🔴 #1533, IADR-0616 決定 3: Before は保存値（段 2 の継ぎ目が置き換える前）から取り、段階を書く保存（SaveWithStage）を通す。
+        var current = store.GetStored();
         // FR-20, #334, IADR-0140: 段階だけを差し替える。**発注先（BrokerProvider）には触れない**——
         // 2 軸は独立であり、段階の変更が発注先を自動で動かしてはならない（`with` が他プロパティを保つ）。
-        Save(current with { Stage = stage }, current.Stage, stage, SettingsChangeType.Stage, actor, reason);
+        Save(current with { Stage = stage }, current.Stage, stage, SettingsChangeType.Stage, actor, reason, store.SaveWithStage);
     }
 
     /// <summary>
@@ -304,13 +310,14 @@ public sealed class RiskSettingsService(
         object after,
         SettingsChangeType changeType,
         string actor,
-        string reason)
+        string reason,
+        Action<RiskManagementSettings>? write = null)
     {
         var now = clock.UtcNow;
         // 🔴 FR-11, #1291, IADR-0532 決定1: 履歴が書けなければ設定も変えない（「設定は変わったが履歴が無い」を残さない）。
         _writeTransaction.Execute(() =>
         {
-            store.Save(updated);
+            (write ?? store.Save)(updated);
             changeLog.Record(new SettingsChangeEntry(
                 actor, changeType, reason, now,
                 Before: before.ToString(), After: after.ToString()));

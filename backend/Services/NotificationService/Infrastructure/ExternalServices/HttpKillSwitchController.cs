@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using NotificationService.Features.Notifications;
 using Microsoft.Extensions.Logging;
+using System.Text.Json.Serialization;
 
 namespace NotificationService.Infrastructure.ExternalServices;
 
@@ -21,19 +22,23 @@ public sealed class HttpKillSwitchController(
     : IKillSwitchController
 {
     public Task<KillSwitchResult> EngageAsync(string reason, CancellationToken cancellationToken = default) =>
-        PostAsync("/risk-controls/kill-switch/engage", reason, "起動", cancellationToken);
+        PostAsync("/risk-controls/kill-switch/engage", reason, null, "起動", cancellationToken);
 
     public Task<KillSwitchResult> DisengageAsync(string reason, CancellationToken cancellationToken = default) =>
-        PostAsync("/risk-controls/kill-switch/disengage", reason, "解除", cancellationToken);
+        DisengageAsync(reason, null, cancellationToken);
+
+    // NFR-06, #1552, IADR-0615: 解除だけが確認コードを運ぶ（起動は止める向きのため運ばない＝ADR-0009 の非対称）。
+    public Task<KillSwitchResult> DisengageAsync(string reason, string? secondFactorCode, CancellationToken cancellationToken = default) =>
+        PostAsync("/risk-controls/kill-switch/disengage", reason, secondFactorCode, "解除", cancellationToken);
 
     private async Task<KillSwitchResult> PostAsync(
-        string path, string reason, string operation, CancellationToken cancellationToken)
+        string path, string reason, string? secondFactorCode, string operation, CancellationToken cancellationToken)
     {
         try
         {
             // FR-11・ADR-0003: 理由必須。actor は Risk 側が認証済みトークン（preferred_username）から採る。
             using var response = await httpClient
-                .PostAsJsonAsync(path, new KillSwitchRequest(reason), cancellationToken)
+                .PostAsJsonAsync(path, new KillSwitchRequest(reason, secondFactorCode), cancellationToken)
                 .ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
@@ -109,7 +114,8 @@ public sealed class HttpKillSwitchController(
     internal static string TimedOutMessage(string operation) => $"kill switch の{operation}がタイムアウトしました（状態は不明です）";
 
     // Risk 側 KillSwitchRequest と同形（理由必須）。
-    private sealed record KillSwitchRequest(string Reason);
+    // NFR-06, #1552, IADR-0615: 確認コードは null なら欄ごと送らない（本文は従来と同じ）。値はログに出さない。
+    private sealed record KillSwitchRequest(string Reason, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null);
 
     // Risk 側 KillSwitchState の必要部分のみを受ける射影（Engaged のみ利用する）。
     private sealed record KillSwitchStateView(bool Engaged);

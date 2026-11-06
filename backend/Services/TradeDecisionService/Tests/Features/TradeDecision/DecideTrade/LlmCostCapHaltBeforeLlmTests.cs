@@ -1,5 +1,6 @@
 extern alias RiskManagementWorker;
 
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using System.Net;
 using System.Text;
 using RiskManagementWorker::RiskManagementService.Domain;
@@ -89,7 +90,7 @@ public class LlmCostCapHaltBeforeLlmTests
         var skips = new RecordingSkips();
         var service = new AppSvc(
             llm, policy, new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
-            skipReporter: skips, forgoneReporter: forgone, costHalt: gate);
+            skipReporter: skips, forgoneReporter: forgone, costHalt: gate, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
         return new Probe(service, llm, policy, forgone, skips);
     }
 

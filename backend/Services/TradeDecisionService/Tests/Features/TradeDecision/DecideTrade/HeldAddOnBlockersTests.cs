@@ -139,7 +139,7 @@ public class HeldAddOnBlockersTests
                 ? new DecisionOrchestrationOptions { EnableScreening = true, ScreeningContextBudgetChars = screeningBudget }
                 : null,
             heldPosition: held, skipReporter: skips, heldReporter: heldReporter, forgoneReporter: forgone,
-            entryBlockers: blockers);
+            entryBlockers: blockers, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
         return new Probe(service, llm, forgone, heldReporter, skips);
     }
 

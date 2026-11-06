@@ -18,6 +18,9 @@ public sealed class KillSwitchCommandHandler(
     public async Task<KillSwitchCommandResult> HandleAsync(
         DiscordCommandContext context,
         string? confirmationPhrase,
+        // NFR-06, FR-14, #1552, IADR-0615: 確認の画面で入れた認証アプリの 6 桁（任意・空は null）。確かめるのは提供側で、
+        // ボットは運ぶだけ（ログ・応答に出さない）。
+        string? secondFactorCode = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -62,7 +65,7 @@ public sealed class KillSwitchCommandHandler(
         // 起動・解除いずれも冪等（既に当該状態なら Risk が現状態を返すのみ）。
         var result = command.Kind == BotCommandKind.KillSwitchEngage
             ? await controller.EngageAsync(reason, cancellationToken).ConfigureAwait(false)
-            : await controller.DisengageAsync(reason, cancellationToken).ConfigureAwait(false);
+            : await controller.DisengageAsync(reason, secondFactorCode, cancellationToken).ConfigureAwait(false);
 
         logger.LogInformation(
             "kill switch 操作を実行しました（Actor={Actor}・Kind={Kind}・Succeeded={Succeeded}・Engaged={Engaged}）。",

@@ -41,7 +41,7 @@ builder.Services.AddSerilog((_, logConfig) =>
 builder.Services.AddAiStockTradingObservability(builder.Configuration, ServiceName);
 
 // ADR-0004（platform）: Keycloak 認証（監視設定変更は OwnerOnly）。
-builder.Services.AddAiStockTradingAuth(builder.Configuration);
+builder.Services.AddAiStockTradingAuth(builder.Configuration, builder.Environment);
 
 // ADR-0001（Database per Service）, IADR-0012 踏襲: 市場監視専有 DB（market_monitor_svc）。
 var connStr = builder.Configuration.GetConnectionString("DefaultConnection")

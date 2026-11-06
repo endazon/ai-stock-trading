@@ -27,6 +27,16 @@ public interface IReportReviewController
     Task<ReportConfirmResult> ConfirmAsync(
         string periodKey, int expectedVersion, string onBehalfOf, CancellationToken cancellationToken = default);
 
+    // 確定（確認コードつき）。報告書の確定と方針の確定（`/policy`）の両方がここを通る（どちらの操作かは提供側が版から決める）。
+    //
+    // NFR-06, FR-14, UC-06, #1552, IADR-0615: secondFactorCode は利用者が確認の画面に入れた認証アプリの 6 桁（任意・空は null）。
+    // 提供側が確かめる（ボットは確かめず、ログ・応答に出さない）。既定の実装はコードを捨てて従来の要求を送る（試験の偽物を壊さない）。
+    // 実装（Http*・Grpc*）は必ず上書きし、REST の本文・gRPC の要求の既存の欄で運ぶ。
+    Task<ReportConfirmResult> ConfirmAsync(
+        string periodKey, int expectedVersion, string onBehalfOf, string? secondFactorCode,
+        CancellationToken cancellationToken = default) =>
+        ConfirmAsync(periodKey, expectedVersion, onBehalfOf, cancellationToken);
+
     // 差し戻し（修正指示）。PendingApproval → ChangesRequested。版番号付き楽観排他。
     Task<ReportReviewResult> RequestChangesAsync(
         string periodKey, int expectedVersion, CancellationToken cancellationToken = default);

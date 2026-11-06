@@ -10,6 +10,14 @@ public interface IGoodFaithViolationController
 {
     // 解除を要求する。理由は必須（Risk 側が空を 400 で拒否する）。
     Task<GoodFaithViolationClearResult> ClearAsync(string reason, CancellationToken cancellationToken = default);
+
+    // 解除の要求（確認コードつき）。
+    //
+    // NFR-06, FR-14, UC-06, #1552, IADR-0615: secondFactorCode は利用者が確認の画面に入れた認証アプリの 6 桁（任意・空は null）。
+    // 提供側が確かめる（ボットは確かめず、ログ・応答に出さない）。既定の実装はコードを捨てて従来の要求を送る（試験の偽物を壊さない）。
+    // 実装（Http*・Grpc*）は必ず上書きし、REST の本文・gRPC の要求の既存の欄で運ぶ。
+    Task<GoodFaithViolationClearResult> ClearAsync(string reason, string? secondFactorCode, CancellationToken cancellationToken = default) =>
+        ClearAsync(reason, cancellationToken);
 }
 
 // FR-19, UC-06: 解除要求の結果。

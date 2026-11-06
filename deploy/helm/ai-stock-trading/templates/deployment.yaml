@@ -31,6 +31,10 @@
 {{- /* NFR, IADR-0609, #1526: Pod のセキュリティ設定の段と水準の組み合わせを、描画のたびに検める（templates/_pod-security.tpl）。 */ -}}
 {{- include "ast.podSecurity.validate" . -}}
 {{- $readOnlyRoot := include "ast.podSecurity.readOnlyRoot" . -}}
+{{- /* 🔴 NFR, #1529, IADR-0612: 認証のレルムは配備の values で明示する（既定は空。単体実行向けのレルムへ黙って倒さない）。 */ -}}
+{{- if not .Values.global.authAuthority }}
+{{- fail "global.authAuthority が未設定です。配備のレルム（例 http://keycloak:8080/realms/platform）を values で明示してください（#1529）。" }}
+{{- end }}
 {{- /* NFR, NFR-18, #1535, IADR-0621: 基盤（DB・ブローカ）への TLS。検証に使う CA（global.infraCa）を /etc/platform-infra-ca へ
        読み取り専用・非 optional でマウントする（ConfigMap が無いクラスタでは Pod が立たない＝黙って平文へ戻らない）。
        有効なのに CA の設定・TLS のポートが無ければ描画で止める。形は基盤の chart と同じ（基盤の IADR-0591 決定 4）。 */ -}}
@@ -360,6 +364,12 @@ spec:
             {{- if $svc.auth }}
             - name: Auth__Authority
               value: {{ $g.authAuthority | quote }}
+            {{- /* 🔴 NFR, #1529, IADR-0612: Production では単体実行向けのレルム（ai-stock-trading）を指す Authority で起動しない。
+                   意図して使うときだけ global.allowStandaloneRealm=true で明示する（既定 false＝描かない）。 */}}
+            {{- if $g.allowStandaloneRealm }}
+            - name: Auth__AllowStandaloneRealm
+              value: "true"
+            {{- end }}
             {{- end }}
             {{- /* #736, IADR-0324: s2s 発信者（extraEnv に ServiceAuth__ClientId を持つ）へ token エンドポイントを
                    global.authAuthority から導出して注入する。auth:true なら ServiceAuthExtensions が Auth:Authority

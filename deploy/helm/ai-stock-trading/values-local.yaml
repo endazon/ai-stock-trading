@@ -37,8 +37,8 @@
 # Discord OwnerAuth（IADR-0098）・**KB / LLM ゲートウェイの s2s Authority（#781）**をすべてこの 1 値から導出するので、
 # s2s も揃って MSP レルムへ移る（片側だけ移らない）。**このファイルにレルムのリテラルは 1 つも置かない。**
 # 要る客体（trading-service ロール・ai-stock-trading-svc / -owner クライアント）は MSP レルム側が持つ（MSP#1372）。
-# 反映順は MSP レルム（MSP#1372）→ 本値。chart 既定（values.yaml＝本番描画）と AST レルム（infra/keycloak/
-# realm-export.json＝単体 E2E 用）は不変。
+# 🔴 #1529, IADR-0612: chart の既定（values.yaml）は空で、未設定なら描画で止まる。本値の明示は必須である。
+# 反映順は MSP レルム（MSP#1372）→ 本値。AST レルム（infra/keycloak/realm-export.json＝単体 E2E 用）は不変。
 global:
   authAuthority: http://keycloak:8080/realms/platform
   # NFR-06, IADR-0496, #1192: ASPNETCORE_ENVIRONMENT は values.yaml の Production を継ぐ（Development は描画で止まる）。

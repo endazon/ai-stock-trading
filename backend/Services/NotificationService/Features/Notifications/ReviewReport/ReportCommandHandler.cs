@@ -25,6 +25,9 @@ public sealed class ReportCommandHandler(
 {
     public async Task<ReportCommandResult> HandleAsync(
         DiscordCommandContext context,
+        // NFR-06, FR-14, #1552, IADR-0615: 確認の画面で入れた認証アプリの 6 桁（任意・空は null）。確かめるのは提供側で、
+        // ボットは運ぶだけ（ログ・応答に出さない）。
+        string? secondFactorCode = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -54,7 +57,7 @@ public sealed class ReportCommandHandler(
                 return await ShowAsync(preKey, auth.Actor!, cancellationToken).ConfigureAwait(false);
 
             case { Kind: BotCommandKind.ReportApprove, PeriodKey: { } key, Version: { } version }:
-                return await ApproveAsync(key, version, auth.Actor!, cancellationToken).ConfigureAwait(false);
+                return await ApproveAsync(key, version, auth.Actor!, secondFactorCode, cancellationToken).ConfigureAwait(false);
 
             case { Kind: BotCommandKind.ReportRequestChanges, PeriodKey: { } rcKey }:
                 return await RequestChangesAsync(rcKey, command.Version, auth.Actor!, cancellationToken)
@@ -153,7 +156,7 @@ public sealed class ReportCommandHandler(
 
     // FR-07, FR-14, ADR-0003, 詳細設計07 §二重実行防止: 版番号付きの確定。
     private async Task<ReportCommandResult> ApproveAsync(
-        string periodKey, int version, string actor, CancellationToken cancellationToken)
+        string periodKey, int version, string actor, string? secondFactorCode, CancellationToken cancellationToken)
     {
         // 閂3: 版番号ガード（層1）。同一 対象ID＋版番号 の 2 回目は確定 API を呼ばない。
         var outcome = guard.TryConfirm(periodKey, version);
@@ -177,7 +180,7 @@ public sealed class ReportCommandHandler(
         // FR-09, UC-03, IADR-0240 決定11, #774: 多層認証で解決した操作者を確定要求へ添える。Bot のトークンは
         // owner マップ機密クライアントのもので人を表さない——添えないと確定者が通知・監査台帳で unknown になる。
         var result = await controller
-            .ConfirmAsync(periodKey, version, actor, cancellationToken)
+            .ConfirmAsync(periodKey, version, actor, secondFactorCode, cancellationToken)
             .ConfigureAwait(false);
 
         // FR-07, FR-14, #1385, IADR-0556 決定 3: 時間切れ（確定されたか分からない）なら、利用者に返す前にレビュー局面を照会して確かめる。

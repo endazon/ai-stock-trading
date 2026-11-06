@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 
@@ -44,14 +45,20 @@ public static class AiStockTradingAuthPolicies
 public static class AuthExtensions
 {
     // ADR-0004（platform）: Keycloak OIDC/JWT 認証。利用者のみの操作を RBAC で守る。
+    // 🔴 NFR, #1529, IADR-0612: environment を渡すと、Production では単体実行向けの既定（コードの既定の Authority・単体実行向けのレルム）を
+    // 使わせない（起動で止める。StandaloneRealmGuard）。Program.cs は builder.Environment を必ず渡す（StandaloneRealmGuardWiringTests が固定）。
     public static IServiceCollection AddAiStockTradingAuth(
         this IServiceCollection services,
-        IConfiguration config)
+        IConfiguration config,
+        IHostEnvironment? environment = null)
     {
         ArgumentNullException.ThrowIfNull(config);
 
+        if (environment is not null)
+            StandaloneRealmGuard.Validate(config, environment);
+
         var authority = config["Auth:Authority"]
-            ?? "http://keycloak:8080/realms/ai-stock-trading";
+            ?? StandaloneRealmGuard.DevelopmentDefaultAuthority;
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
@@ -111,5 +118,52 @@ public static class AuthExtensions
                 .RequireAssertion(context => GrpcOwnerClientGate.AllowsOwner(context.User, grpcOwnerClients)));
         });
         return services;
+    }
+}
+
+/// <summary>
+/// 🔴 NFR, #1529, IADR-0612: 単体実行（docker-compose・Development）向けの認証の既定が Production の構成へ漏れないようにする。
+/// <list type="bullet">
+/// <item>Production で <c>Auth:Authority</c> が無い・空なら起動で止める（コードの既定へ黙って倒さない）。</item>
+/// <item>Production で Authority が単体実行向けのレルム（<c>/realms/ai-stock-trading</c>。<c>infra/keycloak/realm-export.json</c> の
+/// 開発用クライアントを持つ）を指すなら、明示の opt-in（<c>Auth:AllowStandaloneRealm=true</c>）が無い限り起動で止める。</item>
+/// </list>
+/// Production 以外（Development・試験の環境名）は従前どおり。
+/// </summary>
+public static class StandaloneRealmGuard
+{
+    /// <summary>Production 以外で Authority が無いときの既定（単体実行向け）。</summary>
+    public const string DevelopmentDefaultAuthority = "http://keycloak:8080/realms/ai-stock-trading";
+
+    /// <summary>単体実行向けのレルムの名前。</summary>
+    public const string StandaloneRealm = "ai-stock-trading";
+
+    /// <summary>明示の opt-in の構成キー。</summary>
+    public const string AllowKey = "Auth:AllowStandaloneRealm";
+
+    public static void Validate(IConfiguration config, IHostEnvironment environment)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(environment);
+        if (!environment.IsProduction())
+            return;
+
+        var authority = config["Auth:Authority"];
+        if (string.IsNullOrWhiteSpace(authority))
+            throw new InvalidOperationException(
+                "Production では Auth:Authority を明示すること（コードの既定〔単体実行向けのレルム〕へは倒さない）。");
+
+        if (IsStandaloneRealm(authority) && !string.Equals(config[AllowKey], "true", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"Production の Auth:Authority が単体実行向けのレルム（{StandaloneRealm}）を指しています。"
+                + $"配備のレルム（例 global.authAuthority）を指すか、意図して使うときだけ {AllowKey}=true を明示すること。");
+    }
+
+    /// <summary>Authority のパスが <c>/realms/ai-stock-trading</c> で終わるか（末尾の / は無視。大小文字は区別しない）。</summary>
+    public static bool IsStandaloneRealm(string authority)
+    {
+        ArgumentNullException.ThrowIfNull(authority);
+        var path = Uri.TryCreate(authority.Trim(), UriKind.Absolute, out var uri) ? uri.AbsolutePath : authority.Trim();
+        return path.TrimEnd('/').EndsWith("/realms/" + StandaloneRealm, StringComparison.OrdinalIgnoreCase);
     }
 }

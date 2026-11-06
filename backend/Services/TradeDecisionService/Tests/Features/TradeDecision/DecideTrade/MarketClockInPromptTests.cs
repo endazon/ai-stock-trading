@@ -78,7 +78,7 @@ public class MarketClockInPromptTests
         var llm = new RecordingLlm();
         var service = new AppSvc(llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
             options: DecisionOrchestrationOptions.Default with { EnableScreening = true },
-            currentPrice: new FakeCurrentPrice(new CurrentPriceReading(20m, IntradayPriceContext.Unknown)));
+            currentPrice: new FakeCurrentPrice(new CurrentPriceReading(20m, IntradayPriceContext.Unknown)), unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         await service.DecideAsync(DecisionTrigger.Scheduled("MARA", Market.UnitedStates, Now), TestContext.Current.CancellationToken);
 
@@ -94,7 +94,7 @@ public class MarketClockInPromptTests
             new Dictionary<Market, IReadOnlySet<DateOnly>>(),
             new Dictionary<Market, IReadOnlySet<DateOnly>> { [Market.UnitedStates] = new HashSet<DateOnly> { new(2026, 10, 19) } });
         var service = new AppSvc(llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
-            currentPrice: new FakeCurrentPrice(new CurrentPriceReading(20m, IntradayPriceContext.Unknown)), marketCalendar: calendar);
+            currentPrice: new FakeCurrentPrice(new CurrentPriceReading(20m, IntradayPriceContext.Unknown)), marketCalendar: calendar, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         await service.DecideAsync(DecisionTrigger.Scheduled("MARA", Market.UnitedStates, Now), TestContext.Current.CancellationToken);
 

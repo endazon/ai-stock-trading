@@ -66,7 +66,8 @@ public static class RejectionReasonClassification
             // #1396, IADR-0561: 閉場前の締め切り（PreCloseEntryCutoff）も時刻の規則が設計どおり作動した記録なのでクラス A（既定）。
             // #1397, IADR-0562: テーマの同時保有の上限（ThemeConcentrationExceeded）も上限の正常作動なのでクラス A（既定）。
             or RejectionReason.StopOutStatusUnknown
-            or RejectionReason.MarketDisabled => RejectionReasonClass.B,
+            or RejectionReason.MarketDisabled
+            or RejectionReason.OrderIntentInvalid => RejectionReasonClass.B,
 
         // クラス A: 統制の正常作動（金額・件数・損失の上限、差金決済防止、空売り統制の 8 規則＝拒否理由 9 種、
         // #375 の現金口座統制 2 種＝CashAccountSettlementHold / GoodFaithViolationLimitReached）。

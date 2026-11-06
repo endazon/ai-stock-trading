@@ -3,15 +3,15 @@ title: 取引ガード（FR-19）機能仕様書
 type: functional-spec
 status: draft
 created: 2026-07-09
-updated: 2026-10-16
+updated: 2026-11-06
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-19, FR-20, SC-02, SC-03, UC-01, UC-02, UC-06, FR-05]
 adrs: [ADR-0003, ADR-0007, ADR-0009, ADR-0016, ADR-0021, ADR-0025, ADR-0028, ADR-0067]
-iadrs: [IADR-0004, IADR-0006, IADR-0038, IADR-0040, IADR-0131, IADR-0132, IADR-0153, IADR-0165, IADR-0182, IADR-0539]
-specs: [20260711_manipulation-detector, 20260804_332_trading-guards, 20260806_375_cash-account-support, 20260807_425_gfv-self-counting, 20261016_1339_decision-close-unfilled-cancel]
-issues: [#12, #13, #17, #19, #25, #26, #28, #49, #332, #333, #375, #380, #425, #464, #1339, planning#797]
+iadrs: [IADR-0004, IADR-0006, IADR-0038, IADR-0040, IADR-0131, IADR-0132, IADR-0153, IADR-0165, IADR-0182, IADR-0539, IADR-0615]
+specs: [20260711_manipulation-detector, 20260804_332_trading-guards, 20260806_375_cash-account-support, 20260807_425_gfv-self-counting, 20261016_1339_decision-close-unfilled-cancel, 20261106_1552_bot-second-factor-input]
+issues: [#12, #13, #17, #19, #25, #26, #28, #49, #332, #333, #375, #380, #425, #464, #1339, #1552, planning#797]
 -->
 
 
@@ -353,6 +353,8 @@ GFV 違反記録の解除条件を定めた計画 ADR（2026-08-07 Accepted）�
    決定 3 により Discord Bot が唯一の窓口である以上、定型文にすると**全解除の理由が同一文字列になり**、
    同計画 ADR の §理由 の「後から『なぜ解除したか』を追える」が成立しない
 5. **OwnerOnly**（trading-owner）。s2s トークンでは 403
+6. **確認コード**（認証アプリの 6 桁。確認フレーズと同じ画面の任意の欄で入れ、リスク管理が確かめる）。段 1 は記録だけで止めない。
+   段 2 では確かめられない解除を 403 で拒む（手順は [確認コードの Runbook](../operations/owner-second-factor-runbook.md)）
 
 **対象は「現在解除されていない全件」**であり利用者に選ばせない。**解除対象が 0 件のときは成功に見せない**
 （422）——「解除した」と記録すると**何も起きていない操作が監査上の事実になる**。

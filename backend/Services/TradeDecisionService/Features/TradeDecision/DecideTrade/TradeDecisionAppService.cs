@@ -49,8 +49,14 @@ public sealed class TradeDecisionAppService(
     IInFlightCloseProvider? inFlightCloses = null,
     IMarketCalendar? marketCalendar = null,
     IHeldSymbolsProvider? holdings = null,
-    ILlmCostHaltGate? costHalt = null)
+    ILlmCostHaltGate? costHalt = null,
+    UnanchoredEntryPriceOptions? unanchoredEntryPrice = null)
 {
+    // 🔴 FR-04, FR-10, ADR-0003, #1529, IADR-0617: 権威ある現在値の供給が無い構成（no-op）で、新規建てを LLM が返した参照価格で
+    // サイジング・損切り・発注してよいか。**本番は Program.cs が構成 TradeDecision:AllowUnanchoredEntryPrice（既定 false＝見送る）から登録する**
+    // （UnanchoredEntryPriceWiringTests が固定）。未指定（null）も「許さない」（fail-closed）。手仕舞いは対象外（FR-10）。
+    private readonly bool _allowUnanchoredEntryPrice = unanchoredEntryPrice?.Allow ?? false;
+
     // 🔴 NFR-13, UC-02, #1423 M-5, ADR-0074 決定1・2, IADR-0582: 月次 LLM 費用上限の 100% 到達（Halted）の照会口。
     // 未指定＝NoOp（常に停止していない＝従来どおり）。本番は Program.cs が CostControl:BaseUrl のときだけ Http を渡す。
     private readonly ILlmCostHaltGate _costHalt = costHalt ?? new NoOpLlmCostHaltGate();
@@ -816,6 +822,18 @@ public sealed class TradeDecisionAppService(
         // FR-02, FR-10, IADR-0099 決定2: 発注に用いる参照価格を権威ある現在値へアンカリングする。現在値ありのときは
         // LLM の幻覚しうる ReferencePrice ではなく実市場価格でサイジング・損切り・採算 notional を効かせる。現在値なし
         // （既定 no-op）は従来どおり decision.ReferencePrice＝現行挙動。
+        // 🔴 FR-04, FR-10, ADR-0003, #1529, IADR-0617: 現在値の供給が無い構成（no-op）では、LLM の参照価格だけで**新規建て**を作らない
+        // （幻覚しうる値でサイジング・損切りライン・発注価格が決まるため）。手仕舞い（Close）は止めない（FR-10）。
+        // 供給が有効なのに現在値が取れない場合は、LLM を呼ぶ前に見送り済みである（IADR-0099 決定3）。
+        if (currentPrice is null && !effect.IsClose && !_allowUnanchoredEntryPrice)
+        {
+            logger.LogWarning(
+                "権威ある現在値が無いため、LLM の参照価格では新規建てを作らず見送る（手仕舞いは止めない・IADR-0617）: {Symbol} side={Side}",
+                trigger.Symbol, side);
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.ReferencePriceInvalid, judgedPrice, cancellationToken, seenReferences, policy.Reference)
+                .ConfigureAwait(false);
+        }
+
         var referencePrice = currentPrice ?? decision.ReferencePrice;
         if (referencePrice <= 0m)
         {
@@ -1577,4 +1595,13 @@ public sealed class TradeDecisionAppService(
 
         return allowed;
     }
+}
+
+/// <summary>
+/// 🔴 FR-04, FR-10, ADR-0003, #1529, IADR-0617: 権威ある現在値の供給が無い構成で、LLM の参照価格による新規建てを許すか（構成
+/// <c>TradeDecision:AllowUnanchoredEntryPrice</c>。既定 false＝見送る）。true は検証用の明示の opt-in（従前の挙動）。
+/// </summary>
+public sealed record UnanchoredEntryPriceOptions(bool Allow)
+{
+    public const string ConfigKey = "TradeDecision:AllowUnanchoredEntryPrice";
 }

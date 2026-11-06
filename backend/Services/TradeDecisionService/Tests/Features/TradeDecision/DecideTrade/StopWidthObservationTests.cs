@@ -130,7 +130,7 @@ public class StopWidthObservationTests
         var logger = new StateLogger();
         var service = new AppSvc(
             new FixedLlm(BuyJson), new FakePolicy(), new FakeSizing(), new FakeClock(), logger,
-            currentPrice: new FakeCurrentPrice(new CurrentPriceReading(102m, Known)));
+            currentPrice: new FakeCurrentPrice(new CurrentPriceReading(102m, Known)), unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         var decision = await service.DecideAsync(ScheduledAapl());
 
@@ -160,7 +160,7 @@ public class StopWidthObservationTests
     public async Task 現在値の供給が無ければ差は0で値幅と倍率は不明と書く_否定形()
     {
         var logger = new StateLogger();
-        var service = new AppSvc(new FixedLlm(BuyJson), new FakePolicy(), new FakeSizing(), new FakeClock(), logger);
+        var service = new AppSvc(new FixedLlm(BuyJson), new FakePolicy(), new FakeSizing(), new FakeClock(), logger, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         var decision = await service.DecideAsync(ScheduledAapl());
 
@@ -185,7 +185,7 @@ public class StopWidthObservationTests
         var logger = new StateLogger();
         var service = new AppSvc(
             new FixedLlm(llmOutput), new FakePolicy(), new FakeSizing(), new FakeClock(), logger,
-            currentPrice: new FakeCurrentPrice(new CurrentPriceReading(102m, Known)));
+            currentPrice: new FakeCurrentPrice(new CurrentPriceReading(102m, Known)), unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         var decision = await service.DecideAsync(ScheduledAapl());
 
@@ -202,7 +202,7 @@ public class StopWidthObservationTests
         var service = new AppSvc(
             new FixedLlm(BuyJson), new FakePolicy(), new FakeSizing(Context with { StageCapitalRemaining = 0m }),
             new FakeClock(), logger,
-            currentPrice: new FakeCurrentPrice(new CurrentPriceReading(102m, Known)));
+            currentPrice: new FakeCurrentPrice(new CurrentPriceReading(102m, Known)), unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         var decision = await service.DecideAsync(ScheduledAapl());
 
@@ -220,7 +220,7 @@ public class StopWidthObservationTests
             new FixedLlm("""{"action":"Sell","rationale":"利益確定","referencePrice":102,"stopLossDistancePerShare":2}"""),
             new FakePolicy(), new FakeSizing(), new FakeClock(), logger,
             currentPrice: new FakeCurrentPrice(new CurrentPriceReading(102m, Known)),
-            heldPosition: new LongHeld(10));
+            heldPosition: new LongHeld(10), unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         var decision = await service.DecideAsync(ScheduledAapl());
 

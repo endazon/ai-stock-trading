@@ -17,6 +17,16 @@ public interface IPositionDriftAdoptionController
     // `unknown`／`client:<azp>` になる。**省略できない引数**にして渡し忘れを型で止める。
     Task<PositionDriftAdoptionResult> AdoptAsync(
         string symbol, Market market, string reason, string onBehalfOf, CancellationToken cancellationToken = default);
+
+    // 取り込みの要求（確認コードつき）。
+    //
+    // NFR-06, FR-14, UC-06, #1552, IADR-0615: secondFactorCode は利用者が確認の画面に入れた認証アプリの 6 桁（任意・空は null）。
+    // 提供側が確かめる（ボットは確かめず、ログ・応答に出さない）。既定の実装はコードを捨てて従来の要求を送る（試験の偽物を壊さない）。
+    // 実装（Http*・Grpc*）は必ず上書きし、REST の本文・gRPC の要求の既存の欄で運ぶ。
+    Task<PositionDriftAdoptionResult> AdoptAsync(
+        string symbol, Market market, string reason, string onBehalfOf, string? secondFactorCode,
+        CancellationToken cancellationToken = default) =>
+        AdoptAsync(symbol, market, reason, onBehalfOf, cancellationToken);
 }
 
 // FR-10, FR-11, UC-06, #871: 取り込み要求の結果。
