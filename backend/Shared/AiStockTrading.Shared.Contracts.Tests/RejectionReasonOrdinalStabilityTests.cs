@@ -56,6 +56,8 @@ public class RejectionReasonOrdinalStabilityTests
         { RejectionReason.PreCloseEntryCutoff, 33 },
         // T-10-2936, FR-10, FR-19, #1397, IADR-0562: テーマごとの同時保有の上限。**末尾へ追加**している。
         { RejectionReason.ThemeConcentrationExceeded, 34 },
+        // FR-10, #1533, IADR-0616 決定4: 発注意図の数値が値域の外。**末尾へ追加**している。
+        { RejectionReason.OrderIntentInvalid, 35 },
     };
 
     [Theory]

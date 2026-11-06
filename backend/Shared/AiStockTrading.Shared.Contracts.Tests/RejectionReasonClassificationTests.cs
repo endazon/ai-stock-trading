@@ -77,6 +77,8 @@ public class RejectionReasonClassificationTests
     [InlineData(RejectionReason.PreCloseEntryCutoff, RejectionReasonClass.A)]
     // T-10-2936, FR-10, FR-19, #1397, IADR-0562: テーマの同時保有の上限は上限の正常作動（A）。クラス C ではない。
     [InlineData(RejectionReason.ThemeConcentrationExceeded, RejectionReasonClass.A)]
+    // FR-10, #1533, IADR-0616 決定4: 発注意図の数値が値域の外は系の入力の欠陥（B）。統制違反には数えない。
+    [InlineData(RejectionReason.OrderIntentInvalid, RejectionReasonClass.B)]
     public void 上限超過と停止中の拒否はクラスAとBに分かれる(
         RejectionReason reason, RejectionReasonClass expected)
     {

@@ -26,4 +26,16 @@ public interface IRiskSettingsStore
     /// （<see cref="ProductTypeSettingsRevision.Fresh"/>）。デプロイ直後でも設定を手で保存せずに verdict を発行できる。
     /// </summary>
     long EnsureProductTypesRevision();
+
+    /// <summary>
+    /// 🔴 FR-20, #1533, IADR-0616 決定 3: <b>保存されている</b>設定（段階の正を台帳へ寄せる継ぎ目の内側の値）。段 2 の継ぎ目は
+    /// <see cref="GetCurrent"/> の段階を台帳の定義で置き換えるため、段階の変更の Before はこちらから取る。既定は <see cref="GetCurrent"/>。
+    /// </summary>
+    RiskManagementSettings GetStored() => GetCurrent();
+
+    /// <summary>
+    /// 🔴 FR-20, #1533, IADR-0616 決定 3: <b>段階を書く</b>保存。段 2 の継ぎ目は <see cref="Save"/> では保存値の段階を動かさないため、
+    /// 段階を変えてよい保存はこちらを通す。本番の呼び手は <c>RiskSettingsService.UpdateStage</c>（＝遷移の受理）だけ。既定は <see cref="Save"/>。
+    /// </summary>
+    void SaveWithStage(RiskManagementSettings settings) => Save(settings);
 }

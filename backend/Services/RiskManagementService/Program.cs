@@ -74,9 +74,17 @@ builder.Services.Configure<SimulatorProfileOptions>(
 var simulatorProfileEnabled = builder.Configuration.GetSection(SimulatorProfileOptions.SectionName)
     .Get<SimulatorProfileOptions>()?.Enabled == true;
 builder.Services.AddScoped<EfRiskSettingsStore>();
+// 🔴 FR-20, ADR-0008, #1533, IADR-0616 決定3: 審査が読む運用段階の正を段階ゲートの台帳へ寄せる（段 1＝食い違いを記録・段 2＝台帳の定義で読む）。
+var stageSourceMode = StageSourceModeConfig.From(builder.Configuration[StageSourceModeConfig.ConfigKey]);
+builder.Services.AddScoped<StageGateBoundRiskSettingsStore>(sp => new StageGateBoundRiskSettingsStore(
+    sp.GetRequiredService<EfRiskSettingsStore>(),
+    sp.GetRequiredService<IStageGateStore>(),
+    sp.GetRequiredService<RiskManagementService.Domain.StageGatePolicy>(),
+    stageSourceMode,
+    sp.GetRequiredService<ILogger<StageGateBoundRiskSettingsStore>>()));
 builder.Services.AddScoped<IRiskSettingsStore>(sp => simulatorProfileEnabled
-    ? new SimulatorProfileRiskSettingsStore(sp.GetRequiredService<EfRiskSettingsStore>())
-    : sp.GetRequiredService<EfRiskSettingsStore>());
+    ? new SimulatorProfileRiskSettingsStore(sp.GetRequiredService<StageGateBoundRiskSettingsStore>())
+    : sp.GetRequiredService<StageGateBoundRiskSettingsStore>());
 builder.Services.AddScoped<IKillSwitchStore, EfKillSwitchStore>();
 // FR-10, FR-14, ADR-0009: 取引の一時停止（pause）状態。kill switch と同型・別状態（別テーブル）。
 builder.Services.AddScoped<IPauseStore, EfPauseStore>();
