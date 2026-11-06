@@ -20,6 +20,7 @@
 #      オーナー用の資格のファイルの引数。秘密は持たない）を環境変数 AST_PUT_EXTERNAL_SECRET で与える。末尾に
 #      `cloud/ast/ast-owner-totp secret` を足して呼ぶ。例:
 #        AST_PUT_EXTERNAL_SECRET='bash ../microservices-platform/deploy/cloud/vault/put-external-secret.sh --live --operator-file <…>.age --identity <…>'
+#   前置きは空白で区切って読む（引用符は解釈しない）。🔶 パス・引数に空白を含めない（呼び方の確定のときに直す）。
 #   既に登録されているかは、ESO が写した k8s の Secret の有無で見る。
 #
 # 環境変数: KUBECTL（既定 kubectl。k3s は `k3s kubectl`）・AST_NAMESPACE（既定 ai-stock-trading）・AST_TOTP_ISSUER（既定 ai-stock-trading）
@@ -105,6 +106,8 @@ printf '\033[3J\033[2J\033[H'
 
 if [ "$openbao" -eq 1 ]; then
 	# ESO に同期を求め、写し終える（同期した版が変わる）まで待つ。待ちきれなければ作り直しをせず、手で確かめる手順を示す。
+	# 🔶 写し終えたことは ExternalSecret の status.syncedResourceVersion が変わることで見る。OpenBao の値が前と同じなら
+	#    ESO は Secret を書き換えず、版は変わらない（待ちきって 1 で終わる＝止まる側。新しい乱数を書くのでふつうは起きない）。
 	before="$(k get externalsecret "$SECRET_NAME" -o 'jsonpath={.status.syncedResourceVersion}' 2>/dev/null || true)"
 	k annotate externalsecret "$SECRET_NAME" "force-sync=$(date +%s)" --overwrite >/dev/null
 	synced=0
@@ -114,7 +117,8 @@ if [ "$openbao" -eq 1 ]; then
 		sleep "${AST_TOTP_SYNC_INTERVAL:-2}"
 	done
 	if [ "$synced" -ne 1 ]; then
-		echo "ERROR: ESO の同期を確かめられませんでした。kubectl -n ${NS} get externalsecret ${SECRET_NAME} で SecretSynced を確かめ、" >&2
+		echo "ERROR: ESO の同期を確かめられませんでした（同期した版が変わらない。値が前と同じなら同期の版は変わらない）。" >&2
+		echo "       kubectl -n ${NS} get externalsecret ${SECRET_NAME} で SecretSynced を確かめ、" >&2
 		echo "       risk-management と report の Pod を作り直してください（登録は OpenBao に入っています）。" >&2
 		exit 1
 	fi

@@ -440,6 +440,12 @@ jobs:
             [ "$(mode OwnerSecondFactor__Mode "$o")" = 'value: "Audit" ' ] || fail "既定または values-local の第 2 要素が段 1（Audit）でない。"
             if grep -qE '^ +- name: RiskControls__KillSwitch__Precondition$' <<<"$o"; then fail "既定または values-local に kill switch の前提条件の段が描かれた（既定は Report）。"; fi
           done
+          # 陰性対照: 基盤と共有の client secret の置き場（remoteKey）が空なら描画で止まる（空の key で同期させない）。
+          if err="$(helm template ast "$CHART" -f "$CHART/values-cloud.yaml" -f "$CHART/ci/values-cloud-digests.fixture.yaml" \
+                --set externalSecrets.appSecrets.sharedClientSecrets.remoteKey= 2>&1)"; then
+            fail "sharedClientSecrets.remoteKey が空なのに描画が通った。"
+          fi
+          grep -q 'sharedClientSecrets.remoteKey が要ります' <<<"$err" || fail "remoteKey が空のときの失敗の理由が違う: $err"
           echo "values-cloud secrets: refs=$(grep -c . <<<"$refs") externalsecrets=$(grep -c . <<<"$targets") connections=$conns"
       # NFR, #1548, IADR-0608 決定 1: values-cloud は values.yaml に直接重ねる。Helm は extraEnv のリストを置き換えるので、
       # values.yaml に足した env を values-cloud の同じサービスへ写し忘れると、クラウドの描画から黙って落ちる。

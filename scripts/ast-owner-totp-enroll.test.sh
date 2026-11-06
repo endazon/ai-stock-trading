@@ -97,6 +97,11 @@ check "--openbao: 登録済みで --rotate なしは 5（書かない）" "$([ "
 
 reset; touch "$STATE/es-stuck"; rc="$(AST_PUT_EXTERNAL_SECRET="$PUT" AST_TOTP_SYNC_WAIT=2 AST_TOTP_SYNC_INTERVAL=0 run --live --openbao)"
 check "--openbao: 同期を確かめられなければ 1 で、Pod を作り直さない" "$([ "$rc" = 1 ] && ! grep -q 'delete pod' "$STATE/calls.log" && echo 0 || echo 1)"
+check "--openbao: 同期を確かめられないときは、値が同じなら版が変わらない旨を出す" "$(grep -qF '値が前と同じなら同期の版は変わらない' "$STATE/out.log" && echo 0 || echo 1)"
+
+reset; rc="$(run --help)"
+check "--help は 2 で、使い方の 3 行（--live・--openbao・status）を切らずに出す" \
+	"$([ "$rc" = 2 ] && grep -qF 'ast-owner-totp-enroll.sh --live [--rotate]' "$STATE/out.log" && grep -qF -- '--live --openbao [--rotate]' "$STATE/out.log" && grep -qF 'ast-owner-totp-enroll.sh status' "$STATE/out.log" && echo 0 || echo 1)"
 
 reset; rc="$(run status)"
 check "status は 0" "$([ "$rc" = 0 ] && echo 0 || echo 1)"
