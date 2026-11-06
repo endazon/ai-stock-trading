@@ -263,6 +263,13 @@ jobs:
         if: ${{ !cancelled() }}
         run: node scripts/check-banned-settled-cash-sources.js
 
+      # NFR / #1566 / IADR-0624: advisory の識別子（`GHSA-` で始まるもの）は、公開の第三者 advisory の
+      # allowlist にあるものだけを許す。非公開の指摘の識別子を公開のファイルへ書かない（利用者裁定 2026-11-06）。
+      # 検査器は非公開の識別子を持たない（allowlist だけの形）。前置きの無い断片は捕まえない（残余）。
+      - name: Check advisory ids
+        if: ${{ !cancelled() }}
+        run: node scripts/check-advisory-ids.js
+
       # NFR / #357 / IADR-0168: Wolverine のテストハーネスの**素の入口** `host.TrackActivity()` を止める。
       # 素の入口は**既定 5 秒の壁時計**で打ち切るため、ソリューション全体の並列実行では
       # スケジューリング遅延だけで超え、flaky failure になる（実測 6 秒・#357）。

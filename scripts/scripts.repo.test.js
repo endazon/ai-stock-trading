@@ -2134,6 +2134,78 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     assert.deepStrictEqual(bscs.checkTree(pathBscs.resolve(__dirname, '..')), []);
   });
 
+  // --- check-advisory-ids.js: advisory の識別子は公開の第三者 allowlist だけを許す（NFR / #1566 / IADR-0624） ---
+  //
+  // 本検査は allowlist だけの形である（非公開の識別子を検査器にも試験にも書かない）。
+  // **陰性対照の架空の識別子は、ここで組み立てる**（同じ文字の繰り返しで、実在しない形が明らかなもの）。
+  // 字面で書くと、実ツリーの検査を自分で赤にする。
+  const pathAid = require('path');
+  const aid = require('./check-advisory-ids.js');
+  const fakeHead = 'w'.repeat(4);
+  const fakeFull = ['GHSA', fakeHead, fakeHead, fakeHead].join('-');
+  const fakeShort = ['GHSA', fakeHead].join('-');
+
+  ok('check-advisory-ids: allowlist は公開の第三者 12 件ちょうどで、すべて GHSA の完全形', () => {
+    assert.strictEqual(aid.ALLOWLIST.length, 12);
+    assert.strictEqual(new Set(aid.ALLOWLIST).size, 12);
+    for (const id of aid.ALLOWLIST) assert.match(id, /^GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}$/);
+  });
+
+  ok('check-advisory-ids: allowlist の完全形と短縮形は許す', () => {
+    const id = aid.ALLOWLIST[0];
+    const head = id.split('-').slice(0, 2).join('-');
+    assert.deepStrictEqual(aid.findViolations(`依存の既知脆弱性（${id}）`), []);
+    assert.deepStrictEqual(aid.findViolations(`# ${head}: 依存の更新`), []);
+    assert.deepStrictEqual(aid.findViolations(`https://github.com/advisories/${id.toLowerCase()}`), []);
+  });
+
+  ok('check-advisory-ids: 陰性対照 — allowlist に無い架空の識別子（完全形）を検出する', () => {
+    const hits = aid.findViolations(`a\n# Refs ${fakeFull}\n`);
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].line, 2);
+    assert.strictEqual(hits[0].id, fakeFull);
+  });
+
+  ok('check-advisory-ids: 陰性対照 — allowlist に無い架空の識別子（短縮形・ファイル名の形）を検出する', () => {
+    assert.strictEqual(aid.findViolations(`# ${fakeShort}: 説明`).length, 1);
+    assert.strictEqual(aid.findViolations(`specs/20990101_${fakeShort}_topic.md`).length, 1);
+  });
+
+  ok('check-advisory-ids: 陰性対照 — 先頭の区画だけ allowlist と同じでも、完全形が違えば検出する', () => {
+    const head = aid.ALLOWLIST[0].split('-')[1];
+    assert.strictEqual(aid.findViolations(['GHSA', head, fakeHead, fakeHead].join('-')).length, 1);
+  });
+
+  ok('check-advisory-ids: 小文字の前置きも検出する', () => {
+    assert.strictEqual(aid.findViolations(fakeFull.toLowerCase()).length, 1);
+  });
+
+  ok('check-advisory-ids: 識別子でない例示（GHSA-...）は検出しない', () => {
+    assert.deepStrictEqual(aid.findViolations('URL(https://github.com/advisories/GHSA-...)を含む'), []);
+  });
+
+  ok('check-advisory-ids: checkTree は追跡下のファイルを見て、架空の識別子で赤になる', () => {
+    const fsAid = require('fs');
+    const osAid = require('os');
+    const { execFileSync: exAid } = require('child_process');
+    const dir = fsAid.mkdtempSync(pathAid.join(osAid.tmpdir(), 'ast-advisory-ids-'));
+    try {
+      exAid('git', ['init', '-q'], { cwd: dir });
+      fsAid.writeFileSync(pathAid.join(dir, 'ok.md'), `${aid.ALLOWLIST[1]}\n`);
+      fsAid.writeFileSync(pathAid.join(dir, 'ng.sh'), `# x\n# ${fakeFull}\n`);
+      fsAid.writeFileSync(pathAid.join(dir, 'untracked.md'), `${fakeFull}\n`);
+      exAid('git', ['add', 'ok.md', 'ng.sh'], { cwd: dir });
+      const v = aid.checkTree(dir);
+      assert.deepStrictEqual(v.map((x) => [x.file, x.line]), [['ng.sh', 2]]);
+    } finally {
+      fsAid.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  ok('実ツリー: allowlist に無い advisory の識別子が無い（#1566 の回帰）', () => {
+    assert.deepStrictEqual(aid.checkTree(pathAid.resolve(__dirname, '..')), []);
+  });
+
   // --- check-tracked-session-timeout.js: 素の TrackActivity() の遮断（NFR / #357 / IADR-0168） ---
   //
   // #357 の flaky は `Wolverine.Tracking.TrackedSession` の**既定 5 秒**を、並列実行時の
