@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [NFR, IADR-0011, IADR-0324, IADR-0496, IADR-0098]
 author: claude (Claude Code)
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-06
 ---
 
 # IADR-0612: 単体実行向けの認証の既定を Production で使わせない
@@ -48,3 +48,13 @@ updated: 2026-11-05
 
 1. 認証を持たない発信者（trade-decision・notification・backtest）の token エンドポイントは `global.authAuthority` から導く。受け手が上の確かめで単体実行向けのレルムを拒むため、そのレルムのトークンは受け手で通らない（発信者の側では止めていない）。
 2. values-cloud（別のセッション）は `global.authAuthority` を配備のレルムへ明示する必要がある。
+
+## ［2026-11-06 追記 / #1557］イメージのビルド時の codegen には、無害な仮の Authority を与える
+
+- **見落とし**: `backend/Dockerfile` の build 段の Wolverine の `codegen write` は、ホストを組み立てるので本決定の守りを通る。build 段は環境名が Production（sdk イメージの既定）で `Auth:Authority` を持たないため、例外で止まり（exit 134）、イメージが作れなかった（基盤の submodule の更新 MSP#2463 の Images で発覚。AST の CI はイメージを作らない）。
+- **是正**: codegen の行にだけ `Auth__Authority=https://codegen.invalid/realms/codegen` を前置する。
+  - `.invalid` は名前解決しない予約の TLD で、単体実行向けのレルムを指さない。codegen は Start しないので接続しない。生成物は値に依存しない。
+  - 守りは変えない。`ENV` にしないので、稼働のイメージには残らない。環境名も変えない（配線が変わり、生成物がずれ得る）。
+  - codegen の実行を検知して守りを飛ばす形は採らない（起動の引数で守りが外れる経路を作らない）。
+- **固定**: `StandaloneRealmGuardTests` で次を確かめる。Dockerfile の codegen の行が仮の値を渡し、その値が `.invalid`・単体実行向けでなく、Production の守りを通ること。`ENV` に置かないこと。値の無い Production は従来どおり止まること。
+- **手元の実走**: Wolverine を配線する 11 サービスすべてで、Dockerfile と同じ形の codegen が rc=0 になった。値なしでは RiskManagementService で exit 134 を再現した。
