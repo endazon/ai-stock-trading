@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-05, FR-14, UC-06, NFR-04, NFR-01, ADR-0003, ADR-0009, IADR-0051, IADR-0057, IADR-0211, IADR-0356, IADR-0398, IADR-0420, IADR-0428, IADR-0481, IADR-0284, IADR-0557]
 author: claude (Claude Code)
 created: 2026-10-21
-updated: 2026-10-21
+updated: 2026-11-07
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md（FR-10・受け入れ基準・NFR-04）
   - planning:projects/ai-stock-trading/07_adr/ADR-0009_pause-resume-and-lockout-states.md（決定 3・4）
@@ -20,7 +20,7 @@ related_specs:
 
 - 状態: **Accepted**
 - 日付: 2026-10-21
-- 決定者: オーナー裁定（2026-10-21。多層防御の強化。参照 GHSA-pvmh-cvmf-pvcp の一部）。実装の形は Claude Code。
+- 決定者: オーナー裁定（2026-10-21。多層防御の強化。参照 非公開の指摘（AST）の一部）。実装の形は Claude Code。
 
 ## 起点・関連
 
@@ -110,3 +110,5 @@ related_specs:
   現時点でリスク管理への受信を絞る NetworkPolicy は無い。将来置くときは発注執行からの 8080 を許可すること。
 - 照会の後・送信までの数 ms のあいだに入った停止は見ない（審査と本照会の 2 段で窓を狭めたが 0 にはしない）。
 - 日次損失ロックアウトは本照会の対象外（審査が止める。オーナー裁定の範囲は利用者が手で入れる kill switch と一時停止の 2 つ）。
+
+［2026-11-07 追記 / #1566］利用者裁定により、非公開の指摘の識別子を中立表記へ置換（決定内容は不変）

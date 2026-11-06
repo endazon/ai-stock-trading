@@ -1,20 +1,20 @@
 ---
-title: 連結ローカルの起動器にメッシュ参入（サイドカー注入）の受け口を足し、再実行で引き継ぐ。OpenD は常に注入対象外（Refs GHSA-j4qv-2w99-xg5p）
+title: 連結ローカルの起動器にメッシュ参入（サイドカー注入）の受け口を足し、再実行で引き継ぐ。OpenD は常に注入対象外（Refs 非公開の指摘（MSP））
 type: spec
 status: done
 related_ids: [NFR, IADR-0570, IADR-0314, IADR-0283, IADR-0457, IADR-0439]
 author: claude (Claude Code)
 created: 2026-10-23
-updated: 2026-10-23
+updated: 2026-11-07
 ---
 
-# 仕様書: 起動器のメッシュ参入の受け口と引き継ぎ（Refs GHSA-j4qv-2w99-xg5p）
+# 仕様書: 起動器のメッシュ参入の受け口と引き継ぎ（Refs 非公開の指摘（MSP））
 
 > 本仕様書は実装着手前に作成した（着手 2026-10-23。AST `origin/develop` `cacfa796`）。
 
 ## 起点（トレーサビリティ）
 
-- 起点: Refs GHSA-j4qv-2w99-xg5p（基盤側の段 PR4a＝MSP#2092 がメッシュの mTLS の既定を STRICT にした。
+- 起点: Refs 非公開の指摘（MSP）（基盤側の段 PR4a＝MSP#2092 がメッシュの mTLS の既定を STRICT にした。
   基盤の IADR-0590 のフォローアップ 1「AST の配備スクリプトが `mesh.sidecarInjection.enabled` を再実行で引き継げるようにする」）。非機能＝ `NFR`。
 - IADR: 新規 **IADR-0570**。IADR-0314（Proposed）へ日付つきの追記（決定 2 の描画条件の改め。本文は書き換えない）。
 - 計画との矛盾: なし（AST の計画はメッシュを定めず、基盤の再利用〔計画 ADR-0001〕に乗る。本変更は AST をメッシュへ入れる受け口であり、既定は変えない）。
@@ -72,3 +72,5 @@ CronJob の従来型サイドカーの Job 完了（IADR-0314 の残余リスク
   chart の `enabled` は OpenD の注釈と CronJob の注釈しか変えないためである。`enabled` に結ぶと、切り替えるたびに OpenD の
   Pod テンプレートが変わり作り直される。
 - その代わり、注釈を初めて描く配備では `opend.enabled=true` の OpenD が 1 度だけ作り直される（PR 本文の配備前の手順）。
+
+［2026-11-07 追記 / #1566］利用者裁定により、非公開の指摘の識別子を中立表記へ置換（ファイル名を含む。決定内容は不変）

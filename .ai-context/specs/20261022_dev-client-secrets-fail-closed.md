@@ -1,20 +1,20 @@
 ---
-title: 連結ローカルの起動器は、機密クライアント 5 件の secret が開発用の値なら止まる（fail-closed・明示の opt-in でだけ許す。Refs GHSA-pcf9-8mh4-8wgh）
+title: 連結ローカルの起動器は、機密クライアント 5 件の secret が開発用の値なら止まる（fail-closed・明示の opt-in でだけ許す。Refs 非公開の指摘（AST））
 type: spec
 status: done
 related_ids: [NFR, IADR-0098, IADR-0109, IADR-0341, IADR-0051, IADR-0093, IADR-0323, IADR-0485]
 author: claude (Claude Code)
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-11-07
 ---
 
-# 仕様書: 起動器の開発用の secret を fail-closed にする（Refs GHSA-pcf9-8mh4-8wgh）
+# 仕様書: 起動器の開発用の secret を fail-closed にする（Refs 非公開の指摘（AST））
 
 > 本仕様書は実装着手前に作成した（着手 2026-10-22。AST `origin/develop` `40de5a61`）。
 
 ## 起点（トレーサビリティ）
 
-- 起点: Refs GHSA-pcf9-8mh4-8wgh（オーナー裁定 2026-10-21。既定を fail-closed にする）。非機能＝ `NFR`。
+- 起点: Refs 非公開の指摘（AST）（オーナー裁定 2026-10-21。既定を fail-closed にする）。非機能＝ `NFR`。
 - IADR: **IADR-0098 に日付つきの追記**（決定 3 の改め。凍結記録の規約に従い本文は書き換えない）。新規 IADR は作らない。
 - 計画との矛盾: なし（計画は開発用の資格の扱いを定めていない）。
 
@@ -23,7 +23,7 @@ updated: 2026-10-22
 1. `scripts/k8s-local-deploy.sh`: `[0/5]`（イメージを作る前）に `ast_dev_client_secret_guard` を足す。対象は 5 件
    （`service-auth-client-secret`・`discord-owner-auth-client-secret`・`kb-auth-client-secret`・`kb-reader-auth-client-secret`・`llm-auth-client-secret`）。
    開発用の値・確かめられない値があれば止める。opt-in は `--allow-dev-client-secrets` / `ALLOW_DEV_CLIENT_SECRETS=1`。
-2. `scripts/k8s-local-deploy.test.sh`: T-pcf9-01〜09。
+2. `scripts/k8s-local-deploy.test.sh`: T-devsec-01〜09。
 3. IADR-0098 の追記と索引の行、chart README・`scripts/README.md`・`infra/README.md`。
 
 **範囲外（基盤側。オーナーへ報告する）**: 基盤の `scripts/lib/dev-client-secret-guard.sh` の `DEV_CLIENT_SECRET_GUARDED`・
@@ -63,12 +63,12 @@ updated: 2026-10-22
 
 ## 受け入れ基準
 
-- [x] AC-1: 対象は 5 件ちょうどで、開発用の値は 5 件とも非空・互いに違う（T-pcf9-01）
-- [x] AC-2: 従来経路の新規環境で env が無ければ止まり、空既定のキーは名指さない（T-pcf9-02）。開発用でない値なら進む（T-pcf9-03）
-- [x] AC-3: env・既存の値のどちらから来た開発用の値でも止まる。Secret は在るがキーが無いときも既定値で判断する（T-pcf9-04・05・05b）
-- [x] AC-4: ESO 所有で Secret が無ければ止まり、稼働中の値で判定し env は見ない（T-pcf9-06・07）
-- [x] AC-5: 明示の opt-in（フラグ・`=1`）だけが通し、警告する。`=true` は opt-in ではない（T-pcf9-08）
-- [x] AC-6: イメージを作る前に判定し、止まったら進まない（T-pcf9-09）
+- [x] AC-1: 対象は 5 件ちょうどで、開発用の値は 5 件とも非空・互いに違う（T-devsec-01）
+- [x] AC-2: 従来経路の新規環境で env が無ければ止まり、空既定のキーは名指さない（T-devsec-02）。開発用でない値なら進む（T-devsec-03）
+- [x] AC-3: env・既存の値のどちらから来た開発用の値でも止まる。Secret は在るがキーが無いときも既定値で判断する（T-devsec-04・05・05b）
+- [x] AC-4: ESO 所有で Secret が無ければ止まり、稼働中の値で判定し env は見ない（T-devsec-06・07）
+- [x] AC-5: 明示の opt-in（フラグ・`=1`）だけが通し、警告する。`=true` は opt-in ではない（T-devsec-08）
+- [x] AC-6: イメージを作る前に判定し、止まったら進まない（T-devsec-09）
 - [x] AC-7: 開発用の値・試験の値のどれも標準出力・標準エラーに出ない（各 T の「値を出さない」）
 - [x] 変異: 比較を外す → 11 件赤／opt-in を常に真にする → 6 件赤／問い合わせを `index` 単独へ戻す（スタブはキーが無いと `<no value>` を返す）→ 3 件赤
 
@@ -87,3 +87,5 @@ updated: 2026-10-22
 ## 検証（実施記録）
 
 - `bash scripts/k8s-local-deploy.test.sh`、`REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js`、helm.yml の起動器の検査、文書系検査
+
+［2026-11-07 追記 / #1566］利用者裁定により、非公開の指摘の識別子を中立表記へ置換（ファイル名を含む。決定内容は不変）

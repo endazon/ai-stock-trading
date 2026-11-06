@@ -28,7 +28,7 @@
 #   - 明示的な空指定で前回の非空値を消す場合は中断し、--force-empty-values でのみ強制できる
 #   - helm upgrade の後、OpenD を除く Deployment へ rollout restart が呼ばれる
 #
-# 検証する不変条件（NFR, IADR-0570。Refs GHSA-j4qv-2w99-xg5p）:
+# 検証する不変条件（NFR, IADR-0570。Refs 非公開の指摘（MSP））:
 #   - AST_MESH_INJECTION=1|0 を明示すれば mesh.sidecarInjection.enabled をその値で渡す（有効なら excludeOpend=true も）
 #   - 未指定の再実行は現行のリリースの値を引き継ぎ、新規・未宣言では helm へ何も足さない（従来どおり）
 #   - 有効なら名前空間へ注入ラベルを貼り、明示の 0 なら剥がし、それ以外は触らない
@@ -65,7 +65,7 @@ case "${1:-} ${2:-}" in
     [ -f "$f" ] || { echo "Error from server (NotFound): secrets \"$name\" not found" >&2; exit 1; }
     for a in "$@"; do
       case "$a" in
-        # GHSA-pcf9: 1 キーの値（base64 のまま）。実の kubectl と同じく、キーが無いとき
+        # 非公開の指摘（AST）: 1 キーの値（base64 のまま）。実の kubectl と同じく、キーが無いとき
         # `{{index .data "k"}}` は `<no value>` を出し、`{{with index .data "k"}}…{{end}}` は空を出す。
         go-template={{*index\ .data*)
           k="${a#*\"}"; k="${k%%\"*}"
@@ -1002,15 +1002,15 @@ given_release_values 'discord:
 run_resolve_with_mode
 assert_contains 'T-795-10 非 ESO: discord.bot.guildId を引き継ぐ' "$OVERRIDES" 'discord.bot.guildId=111111111111111111'
 
-# T-pvmh-01（IADR-0568・Refs GHSA-pvmh-cvmf-pvcp）: 従来経路でブローカの資格情報の Secret が無ければ、ast-secrets に触れる前に止まる
+# T-rmqcred-01（IADR-0568・Refs 非公開の指摘（AST））: 従来経路でブローカの資格情報の Secret が無ければ、ast-secrets に触れる前に止まる
 given_secret "absent"
 AST_ESO=0; export AST_ESO
 run_prepare
-assert_eq       'T-pvmh-01 非 ESO・ブローカの Secret なし: 非 0' "$RC" "1"
-assert_contains 'T-pvmh-01 非 ESO・ブローカの Secret なし: 名指す' "$ERR" 'ast-rabbitmq-users'
-[ -f "$STATE/created" ] && ng 'T-pvmh-01 非 ESO: ast-secrets を作らない' '止まる前に create secret が呼ばれた' || ok 'T-pvmh-01 非 ESO: ast-secrets を作らない'
-# T-pvmh-02: ESO 所有では、管理外の同名 Secret を名指して止める（ESO が所有しにいく対象に入っている）
-assert_contains 'T-pvmh-02 ESO 所有の対象に入る' "${AST_ESO_TARGET_SECRETS[*]}" 'ast-rabbitmq-users'
+assert_eq       'T-rmqcred-01 非 ESO・ブローカの Secret なし: 非 0' "$RC" "1"
+assert_contains 'T-rmqcred-01 非 ESO・ブローカの Secret なし: 名指す' "$ERR" 'ast-rabbitmq-users'
+[ -f "$STATE/created" ] && ng 'T-rmqcred-01 非 ESO: ast-secrets を作らない' '止まる前に create secret が呼ばれた' || ok 'T-rmqcred-01 非 ESO: ast-secrets を作らない'
+# T-rmqcred-02: ESO 所有では、管理外の同名 Secret を名指して止める（ESO が所有しにいく対象に入っている）
+assert_contains 'T-rmqcred-02 ESO 所有の対象に入る' "${AST_ESO_TARGET_SECRETS[*]}" 'ast-rabbitmq-users'
 unset AST_ESO
 
 # ---- #1351: Recreate へ移る Deployment に残る rollingUpdate を upgrade の前に外す ----------
@@ -1132,7 +1132,7 @@ main_body="$(sed -n '/^AST_HELM_VALUE_ARGS=(/,/^helm upgrade --install/p' "$ROOT
 assert_contains 'T-1351-07 順序: 移行の段を upgrade と同じ値で呼ぶ' "$main_body" 'ast_migrate_recreate_strategy "${AST_HELM_VALUE_ARGS[@]}"'
 assert_contains 'T-1351-07 順序: その後に upgrade する' "$main_body" 'helm upgrade --install "$RELEASE" deploy/helm/ai-stock-trading -n "$NS" "${AST_HELM_VALUE_ARGS[@]}"'
 
-# ---- NFR, IADR-0098（2026-10-22 追記・Refs GHSA-pcf9-8mh4-8wgh）: 機密クライアントの secret の fail-closed ----
+# ---- NFR, IADR-0098（2026-10-22 追記・Refs 非公開の指摘（AST））: 機密クライアントの secret の fail-closed ----
 printf '\nk8s-local-deploy.sh: 機密クライアントの secret が開発用の値なら止める（IADR-0098 追記）\n'
 
 GUARDED_KEYS="service-auth-client-secret discord-owner-auth-client-secret kb-auth-client-secret kb-reader-auth-client-secret llm-auth-client-secret"
@@ -1172,106 +1172,106 @@ assert_no_values() {
   assert_eq "$1" "$leaked" ''
 }
 
-# T-pcf9-01: 対象は 5 件ちょうど（svc・owner・kb-writer・kb-reader・llm-caller）。開発用の値はどれも空でなく互いに違う。
+# T-devsec-01: 対象は 5 件ちょうど（svc・owner・kb-writer・kb-reader・llm-caller）。開発用の値はどれも空でなく互いに違う。
 got_keys="$(for spec in "${AST_DEV_GUARDED_CLIENT_SECRETS[@]}"; do printf '%s ' "${spec%%|*}"; done)"
-assert_eq 'T-pcf9-01 対象: 5 件' "$got_keys" "$GUARDED_KEYS "
+assert_eq 'T-devsec-01 対象: 5 件' "$got_keys" "$GUARDED_KEYS "
 uniq_n="$(for k in $GUARDED_KEYS; do dev_of "$k"; echo; done | sort -u | grep -c .)"
-assert_eq 'T-pcf9-01 開発用の値: 5 件とも非空で互いに違う' "$uniq_n" "5"
+assert_eq 'T-devsec-01 開発用の値: 5 件とも非空で互いに違う' "$uniq_n" "5"
 
-# T-pcf9-02: 従来経路の新規環境・env なし → 既定（svc / owner は開発用の値）で止まる
+# T-devsec-02: 従来経路の新規環境・env なし → 既定（svc / owner は開発用の値）で止まる
 given_guard absent
 run_guard
-assert_eq       'T-pcf9-02 新規・env なし: 非 0' "$RC" "1"
-assert_contains 'T-pcf9-02 新規・env なし: svc を名指す' "$ERR" 'service-auth-client-secret ($SERVICEAUTH_CLIENTSECRET)'
-assert_contains 'T-pcf9-02 新規・env なし: owner を名指す' "$ERR" 'discord-owner-auth-client-secret ($DISCORD_OWNERAUTH_CLIENTSECRET)'
-assert_missing  'T-pcf9-02 新規・env なし: 空既定の kb は名指さない（空は開発用の値ではない）' "$ERR" 'kb-auth-client-secret'
-assert_no_values 'T-pcf9-02 値を出さない'
+assert_eq       'T-devsec-02 新規・env なし: 非 0' "$RC" "1"
+assert_contains 'T-devsec-02 新規・env なし: svc を名指す' "$ERR" 'service-auth-client-secret ($SERVICEAUTH_CLIENTSECRET)'
+assert_contains 'T-devsec-02 新規・env なし: owner を名指す' "$ERR" 'discord-owner-auth-client-secret ($DISCORD_OWNERAUTH_CLIENTSECRET)'
+assert_missing  'T-devsec-02 新規・env なし: 空既定の kb は名指さない（空は開発用の値ではない）' "$ERR" 'kb-auth-client-secret'
+assert_no_values 'T-devsec-02 値を出さない'
 
-# T-pcf9-03: 従来経路・svc / owner に開発用でない値 → 進む
+# T-devsec-03: 従来経路・svc / owner に開発用でない値 → 進む
 given_guard absent
 export SERVICEAUTH_CLIENTSECRET="$NONDEV" DISCORD_OWNERAUTH_CLIENTSECRET="$NONDEV"
 run_guard
-assert_eq 'T-pcf9-03 開発用でない値: 0' "$RC" "0"
-assert_no_values 'T-pcf9-03 値を出さない'
+assert_eq 'T-devsec-03 開発用でない値: 0' "$RC" "0"
+assert_no_values 'T-devsec-03 値を出さない'
 
-# T-pcf9-04: 従来経路・env で kb-reader に開発用の値（宣言から導いた値）→ 止まる
+# T-devsec-04: 従来経路・env で kb-reader に開発用の値（宣言から導いた値）→ 止まる
 given_guard absent
 export SERVICEAUTH_CLIENTSECRET="$NONDEV" DISCORD_OWNERAUTH_CLIENTSECRET="$NONDEV"
 export KB_READER_AUTH_CLIENTSECRET="$(dev_of kb-reader-auth-client-secret)"
 run_guard
-assert_eq       'T-pcf9-04 env の開発用の値: 非 0' "$RC" "1"
-assert_contains 'T-pcf9-04 env の開発用の値: kb-reader を名指す' "$ERR" 'kb-reader-auth-client-secret'
-assert_no_values 'T-pcf9-04 値を出さない'
+assert_eq       'T-devsec-04 env の開発用の値: 非 0' "$RC" "1"
+assert_contains 'T-devsec-04 env の開発用の値: kb-reader を名指す' "$ERR" 'kb-reader-auth-client-secret'
+assert_no_values 'T-devsec-04 値を出さない'
 
-# T-pcf9-05: 従来経路・env なしで既存の Secret に開発用の値（llm-caller）→ 止まる。既存値が開発用でなければ進む
+# T-devsec-05: 従来経路・env なしで既存の Secret に開発用の値（llm-caller）→ 止まる。既存値が開発用でなければ進む
 given_guard present
 given_data service-auth-client-secret "$NONDEV"
 given_data discord-owner-auth-client-secret "$NONDEV"
 given_data llm-auth-client-secret "$(dev_of llm-auth-client-secret)"
 run_guard
-assert_eq       'T-pcf9-05 既存の開発用の値: 非 0' "$RC" "1"
-assert_contains 'T-pcf9-05 既存の開発用の値: llm-caller を名指す' "$ERR" 'llm-auth-client-secret'
+assert_eq       'T-devsec-05 既存の開発用の値: 非 0' "$RC" "1"
+assert_contains 'T-devsec-05 既存の開発用の値: llm-caller を名指す' "$ERR" 'llm-auth-client-secret'
 given_data llm-auth-client-secret "$NONDEV"
 run_guard
-assert_eq 'T-pcf9-05 既存が開発用でない: 0' "$RC" "0"
+assert_eq 'T-devsec-05 既存が開発用でない: 0' "$RC" "0"
 
-# T-pcf9-05b: 従来経路・Secret は在るがキーが無い（env なし）→ sync_ast_secrets は既定値（svc は開発用の値）を書くので止まる
+# T-devsec-05b: 従来経路・Secret は在るがキーが無い（env なし）→ sync_ast_secrets は既定値（svc は開発用の値）を書くので止まる
 given_guard present
 given_data discord-owner-auth-client-secret "$NONDEV"
 run_guard
-assert_eq       'T-pcf9-05b キーなし・env なし: 非 0' "$RC" "1"
-assert_contains 'T-pcf9-05b キーなし・env なし: svc を名指す' "$ERR" 'service-auth-client-secret'
-assert_missing  'T-pcf9-05b キーなし・env なし: 値のある owner は名指さない' "$ERR" 'discord-owner-auth-client-secret'
+assert_eq       'T-devsec-05b キーなし・env なし: 非 0' "$RC" "1"
+assert_contains 'T-devsec-05b キーなし・env なし: svc を名指す' "$ERR" 'service-auth-client-secret'
+assert_missing  'T-devsec-05b キーなし・env なし: 値のある owner は名指さない' "$ERR" 'discord-owner-auth-client-secret'
 # 起動器が出す問い合わせは「キーが無ければ空」の形である（`index` 単独は `<no value>` を出し、すり抜ける）。
-assert_contains 'T-pcf9-05b 問い合わせ: with で包む' "$(declare -f ast_secret_data_b64)" '{{with index .data'
+assert_contains 'T-devsec-05b 問い合わせ: with で包む' "$(declare -f ast_secret_data_b64)" '{{with index .data'
 
-# T-pcf9-06: ESO 所有・Secret が無い → 確かめられないので止まる（env は見ない）
+# T-devsec-06: ESO 所有・Secret が無い → 確かめられないので止まる（env は見ない）
 given_guard absent
 AST_ESO_MODE=1
 export SERVICEAUTH_CLIENTSECRET="$NONDEV"
 run_guard
-assert_eq       'T-pcf9-06 ESO・Secret なし: 非 0' "$RC" "1"
-assert_contains 'T-pcf9-06 ESO・Secret なし: 確かめられないと言う' "$ERR" '確かめられない'
+assert_eq       'T-devsec-06 ESO・Secret なし: 非 0' "$RC" "1"
+assert_contains 'T-devsec-06 ESO・Secret なし: 確かめられないと言う' "$ERR" '確かめられない'
 
-# T-pcf9-07: ESO 所有・稼働中の値が開発用（kb-writer）→ 止まる。env に開発用でない値があっても使わない
+# T-devsec-07: ESO 所有・稼働中の値が開発用（kb-writer）→ 止まる。env に開発用でない値があっても使わない
 given_guard present
 AST_ESO_MODE=1
 for k in $GUARDED_KEYS; do given_data "$k" "$NONDEV"; done
 given_data kb-auth-client-secret "$(dev_of kb-auth-client-secret)"
 export KB_AUTH_CLIENTSECRET="$NONDEV"
 run_guard
-assert_eq       'T-pcf9-07 ESO・稼働中が開発用: 非 0' "$RC" "1"
-assert_contains 'T-pcf9-07 ESO・稼働中が開発用: kb-writer を名指す' "$ERR" 'kb-auth-client-secret'
-assert_no_values 'T-pcf9-07 値を出さない'
+assert_eq       'T-devsec-07 ESO・稼働中が開発用: 非 0' "$RC" "1"
+assert_contains 'T-devsec-07 ESO・稼働中が開発用: kb-writer を名指す' "$ERR" 'kb-auth-client-secret'
+assert_no_values 'T-devsec-07 値を出さない'
 # 陰性対照: 全件が開発用でなければ進む。ESO では env の開発用の値も見ない（ESO は env を使わない）
 given_data kb-auth-client-secret "$NONDEV"
 export SERVICEAUTH_CLIENTSECRET="$(dev_of service-auth-client-secret)"
 run_guard
-assert_eq 'T-pcf9-07 ESO・全件が開発用でない: 0（env は見ない）' "$RC" "0"
+assert_eq 'T-devsec-07 ESO・全件が開発用でない: 0（env は見ない）' "$RC" "0"
 
-# T-pcf9-08: 明示の opt-in だけが通す（フラグ・ALLOW_DEV_CLIENT_SECRETS=1）。`true` 等は opt-in ではない
+# T-devsec-08: 明示の opt-in だけが通す（フラグ・ALLOW_DEV_CLIENT_SECRETS=1）。`true` 等は opt-in ではない
 given_guard absent
 ALLOW_DEV_CLIENT_SECRETS_FLAG=1
 run_guard
-assert_eq       'T-pcf9-08 フラグ: 0' "$RC" "0"
-assert_contains 'T-pcf9-08 フラグ: 大きく警告する' "$ERR" '!!! WARNING'
-assert_no_values 'T-pcf9-08 値を出さない'
+assert_eq       'T-devsec-08 フラグ: 0' "$RC" "0"
+assert_contains 'T-devsec-08 フラグ: 大きく警告する' "$ERR" '!!! WARNING'
+assert_no_values 'T-devsec-08 値を出さない'
 given_guard absent
 export ALLOW_DEV_CLIENT_SECRETS=1
 run_guard
-assert_eq 'T-pcf9-08 env=1: 0' "$RC" "0"
+assert_eq 'T-devsec-08 env=1: 0' "$RC" "0"
 given_guard absent
 export ALLOW_DEV_CLIENT_SECRETS=true
 run_guard
-assert_eq 'T-pcf9-08 env=true: 非 0（1 だけが opt-in）' "$RC" "1"
+assert_eq 'T-devsec-08 env=true: 非 0（1 だけが opt-in）' "$RC" "1"
 unset ALLOW_DEV_CLIENT_SECRETS SERVICEAUTH_CLIENTSECRET DISCORD_OWNERAUTH_CLIENTSECRET KB_AUTH_CLIENTSECRET KB_READER_AUTH_CLIENTSECRET
 
-# T-pcf9-09: 起動器の本体は、イメージを作る前に確かめて、止まったら進まない（順序の固定）
+# T-devsec-09: 起動器の本体は、イメージを作る前に確かめて、止まったら進まない（順序の固定）
 pre_build="$(sed -n '/^echo "==> \[0\/5\]/,/k8s-local-images.sh/p' "$ROOT_DIR/scripts/k8s-local-deploy.sh")"
-assert_contains 'T-pcf9-09 順序: イメージを作る前に確かめる' "$pre_build" 'ast_dev_client_secret_guard || exit 1'
-assert_contains 'T-pcf9-09 順序: 供給経路を先に決める' "$pre_build" 'resolve_ast_eso_mode'
+assert_contains 'T-devsec-09 順序: イメージを作る前に確かめる' "$pre_build" 'ast_dev_client_secret_guard || exit 1'
+assert_contains 'T-devsec-09 順序: 供給経路を先に決める' "$pre_build" 'resolve_ast_eso_mode'
 # 未知のオプションにならない（引数の解釈）
-assert_contains 'T-pcf9-09 引数: --allow-dev-client-secrets を受け付ける' \
+assert_contains 'T-devsec-09 引数: --allow-dev-client-secrets を受け付ける' \
   "$(sed -n '/^while \[ \$# -gt 0 \]/,/^done/p' "$ROOT_DIR/scripts/k8s-local-deploy.sh")" '--allow-dev-client-secrets) ALLOW_DEV_CLIENT_SECRETS_FLAG=1'
 
 printf '\nk8s-local-deploy.sh: メッシュ参入の受け口と引き継ぎ（IADR-0570）\n'

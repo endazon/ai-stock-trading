@@ -133,7 +133,7 @@ spec:
       {{- /* #627, IADR-0314 決定2: OpenD は独自プロトコル（TCP 11111・常駐 1 セッション）であり、
              HTTP でないためメッシュ mTLS/ルーティングの恩恵が無い。Envoy 傍受で常駐 TCP 接続の
              挙動が変わるリスクの方が上回るため、メッシュ参入時も既定でサイドカー注入対象外にする。
-             NFR, IADR-0570（Refs GHSA-j4qv-2w99-xg5p）: 注釈は mesh.sidecarInjection.enabled に依らず excludeOpend だけで描く。
+             NFR, IADR-0570（Refs 非公開の指摘（MSP））: 注釈は mesh.sidecarInjection.enabled に依らず excludeOpend だけで描く。
              注入の切り替えで OpenD の Pod テンプレートが変わらない＝作り直されない（認証済みのセッションを保つ）。
              名前空間の注入ラベルを chart の外（起動器・手）で貼っても、OpenD の作り直しでサイドカーが入らない。 */}}
       {{- if .Values.mesh.sidecarInjection.excludeOpend }}

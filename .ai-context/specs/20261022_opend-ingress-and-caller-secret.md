@@ -1,23 +1,23 @@
 ---
-title: 常駐 OpenD の 2 つの口への到達を NetworkPolicy で絞り、認証サイドカーに呼び出し元の共有シークレットの検証を足す（多層防御・Refs GHSA-57gc-27c7-gvwm）
+title: 常駐 OpenD の 2 つの口への到達を NetworkPolicy で絞り、認証サイドカーに呼び出し元の共有シークレットの検証を足す（多層防御・Refs 非公開の指摘（AST））
 type: spec
 status: done
 related_ids: [NFR, ADR-0002, ADR-0024, IADR-0566, IADR-0314, IADR-0321, IADR-0322, IADR-0341, IADR-0060]
 author: claude (Claude Code)
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-11-07
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md（前提条件 1）
   - planning:projects/ai-stock-trading/07_adr/ADR-0024_opend-unattended-restart-conditional.md（決定 3・4）
 ---
 
-# 仕様書: 常駐 OpenD への到達の制限と認証サイドカーの呼び出し元検証（Refs GHSA-57gc-27c7-gvwm）
+# 仕様書: 常駐 OpenD への到達の制限と認証サイドカーの呼び出し元検証（Refs 非公開の指摘（AST））
 
 > 本仕様書は実装着手前に作成した（着手 2026-10-21。AST `origin/develop` `40de5a61`）。
 
 ## 起点（トレーサビリティ）
 
-- 起点: Refs GHSA-57gc-27c7-gvwm（オーナー裁定 2026-10-21）。非機能（多層防御・最小権限）＝ `NFR`。
+- 起点: Refs 非公開の指摘（AST）（オーナー裁定 2026-10-21）。非機能（多層防御・最小権限）＝ `NFR`。
 - 関連 ADR: 計画 ADR-0002 前提条件 1（OpenD 経由の発注）、ADR-0024 決定 3・4（OpenD の再起動の最小化）。
 - 新規 IADR: **IADR-0566**（方式の選択。mTLS との比較を含む）。
 - 計画との矛盾: なし（計画は OpenD の到達の制限・呼び出し元の検証の方式を定めていない。ADR-0001 の基盤無改修とは、基盤の構成〔values〕の拡張点で対応する）。
@@ -111,3 +111,5 @@ plan_refs:
 - `dotnet test backend/Services/OpendAuthGateway/Tests/OpendAuthGateway.Tests.csproj` / `dotnet test backend/Bff/AiStockTrading.Bff.Endpoints.Tests/`
 - `.github/workflows/helm.yml` の全ステップを手元の helm v4.2.1 で実行（新設の 1 ステップを含む）
 - `bash scripts/k8s-local-deploy.test.sh`、`REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js`、文書系検査
+
+［2026-11-07 追記 / #1566］利用者裁定により、非公開の指摘の識別子を中立表記へ置換（ファイル名を含む。決定内容は不変）

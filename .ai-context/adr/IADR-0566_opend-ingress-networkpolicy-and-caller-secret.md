@@ -5,12 +5,12 @@ status: Accepted
 related_ids: [NFR, ADR-0002, ADR-0024, ADR-0001, IADR-0053, IADR-0060, IADR-0094, IADR-0314, IADR-0320, IADR-0321, IADR-0322, IADR-0341]
 author: claude (Claude Code)
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-11-07
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md（前提条件 1）
   - planning:projects/ai-stock-trading/07_adr/ADR-0024_opend-unattended-restart-conditional.md（決定 3・4＝再起動の最小化）
 related_specs:
-  - ../specs/20261022_GHSA-57gc_opend-ingress-and-caller-secret.md
+  - ../specs/20261022_opend-ingress-and-caller-secret.md
 ---
 
 # IADR-0566: 常駐 OpenD への到達の制限と認証サイドカーの呼び出し元検証（多層防御）
@@ -19,16 +19,16 @@ related_specs:
 
 - 状態: **Accepted**
 - 日付: 2026-10-22
-- 決定者: オーナー裁定 2026-10-21（Refs GHSA-57gc-27c7-gvwm）。方式の選択（本 IADR）は実装が決めた。実装は Claude Code。
+- 決定者: オーナー裁定 2026-10-21（Refs 非公開の指摘（AST））。方式の選択（本 IADR）は実装が決めた。実装は Claude Code。
 
 ## 起点・関連
 
-- 起点: Refs GHSA-57gc-27c7-gvwm（多層防御の強化・最小権限）。
+- 起点: Refs 非公開の指摘（AST）（多層防御の強化・最小権限）。
 - 前提（覆さない）: IADR-0320 / [IADR-0322](IADR-0322_opend-auth-sidecar-command-allowlist.md)（認証サイドカーの形・閉じた 3 コマンド）、
   [IADR-0321](IADR-0321_opend-auth-bff-sole-authorization-point.md)（利用者の認可は BFF が唯一の点）、[IADR-0314](IADR-0314_mesh-sidecar-injection-switch.md) 決定 2（OpenD はメッシュのサイドカー注入の対象外）、
   [IADR-0060](IADR-0060_opend-production-cutover-gates.md)（常駐 OpenD の chart）、IADR-0094 / [IADR-0341](IADR-0341_screen-only-eso-wiring-local-profile.md)（秘密情報は ESO で供給）、
   計画 ADR-0024 決定 3・4（OpenD の再起動を最小にする）。
-- 仕様書: `.ai-context/specs/20261022_GHSA-57gc_opend-ingress-and-caller-secret.md`
+- 仕様書: `.ai-context/specs/20261022_opend-ingress-and-caller-secret.md`
 
 ## コンテキスト
 
@@ -111,3 +111,5 @@ related_specs:
    強制されないクラスタでは、呼び出し元を絞るのは共有シークレットの 1 段になる。配備時に、許していない Pod からの接続が時間切れになることで確かめる（仕様書の確認手順）。
 2. メッシュ参入（IADR-0314）か証明書の系が整ったら、呼び出し元の検証を mTLS（案 B / C）へ寄せるかを見直す。
 3. 基盤側の対の変更（BFF の env と Secret の同期・BFF の NetworkPolicy の egress〔基盤の本番像で `networkPolicy.enabled=true` のとき〕）は基盤のリポジトリで行う。
+
+［2026-11-07 追記 / #1566］利用者裁定により、非公開の指摘の識別子を中立表記へ置換（決定内容は不変）

@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-14, UC-06, UC-07, ADR-0003, ADR-0009]
 author: endazon (with Claude Code)
 created: 2026-07-20
-updated: 2026-10-22
+updated: 2026-11-07
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0009_pause-resume-and-lockout-states.md
@@ -125,7 +125,7 @@ owner クライアント・TokenEndpoint・ast-secrets 既定が揃っても、B
 認証を増やさない）はそのまま生きる —— 導出元が MSP レルムになるだけで、owner クライアントは MSP レルム側に同名・同 dev
 secret で宣言される（MSP#1372）。単体 E2E（AST レルム）では従来どおり。
 
-## ［2026-10-22 追記 / Refs GHSA-pcf9-8mh4-8wgh］開発用の値は既定で止め、明示の opt-in でだけ許す（決定 3 の改め）
+## ［2026-10-22 追記 / Refs 非公開の指摘（AST）］開発用の値は既定で止め、明示の opt-in でだけ許す（決定 3 の改め）
 
 決定 3 は「dev の資格は起動器と docker-compose の dev 既定で解決する」とした。多層防御の強化として、**連結ローカルの起動器
 （`scripts/k8s-local-deploy.sh`）は既定を fail-closed に改める**。決定 1・2・4 と docker-compose（単体起動）の扱いは変えない。
@@ -141,4 +141,6 @@ secret で宣言される（MSP#1372）。単体 E2E（AST レルム）では従
   値を新たに複写しない。比較は base64 の表現どうしで、復号も表示もしない。
 - **基盤側の対**: 基盤の `dev-client-secret-guard` と `--check-dev-secrets` の対象（現在は管理用の 3 クライアント）へ AST の 5 件を加えるのは
   基盤のリポジトリの変更である（Keycloak の側と Vault の種の側の判定。本追記の範囲外）。
-- 根拠と試験: 仕様書 `.ai-context/specs/20261022_GHSA-pcf9_dev-client-secrets-fail-closed.md`、`scripts/k8s-local-deploy.test.sh`（T-pcf9-*）。
+- 根拠と試験: 仕様書 `.ai-context/specs/20261022_dev-client-secrets-fail-closed.md`、`scripts/k8s-local-deploy.test.sh`（T-devsec-*）。
+
+［2026-11-07 追記 / #1566］利用者裁定により、非公開の指摘の識別子を中立表記へ置換（決定内容は不変）

@@ -5,7 +5,7 @@ status: done
 related_ids: [FR-10, FR-05, FR-14, UC-06, NFR-04, ADR-0003, ADR-0009, IADR-0567, IADR-0051, IADR-0420, IADR-0211, IADR-0398, IADR-0356, IADR-0481, IADR-0284]
 author: claude (Claude Code)
 created: 2026-10-21
-updated: 2026-10-21
+updated: 2026-11-07
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md（FR-10 本文「kill switch・日次損失ロックアウト・一時停止は…いずれも手仕舞い（Close）と損切りは止めない」・受け入れ基準「kill switch 起動後、新規発注が一切行われない」「一時停止中でも手仕舞い・損切りは止まらない」・NFR-04「障害時は安全側に倒す（新規発注停止）」）
   - planning:projects/ai-stock-trading/07_adr/ADR-0009_pause-resume-and-lockout-states.md（決定 3・4）
@@ -15,7 +15,7 @@ plan_refs:
 # 仕様書: 発注直前の停止状態の最終照会（fail-closed）
 
 > 本仕様書は実装着手前に作成した（着手 2026-10-21。AST `origin/develop` `40de5a61`・計画 `origin/main` `55e464a`）。
-> 多層防御の強化。参照は GHSA-pvmh-cvmf-pvcp（一部）。オーナー裁定 2026-10-21。
+> 多層防御の強化。参照は非公開の指摘（AST）（一部）。オーナー裁定 2026-10-21。
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -84,3 +84,5 @@ plan_refs:
 `ServiceAuth__ClientId` / `ServiceAuth__ClientSecret`（`ast-secrets` の `service-auth-client-id` / `-secret`）、`docker-compose.yml` に同じ値と token エンドポイント。
 `values-local.yaml` は発注執行の `extraEnv` を上書きしていないため既定を継ぐ（写すと Helm のリスト置換で既定の env を落とす危険が増えるだけ）。描画は T-10-2973（`helm.yml`）で固定した。
 試験の写像の訂正: T-10-2970 は `TradingHaltEndpointTests` / `HttpTradingHaltSourceTests`（`ReadContractWireFormatTests` は変更していない）。
+
+［2026-11-07 追記 / #1566］利用者裁定により、非公開の指摘の識別子を中立表記へ置換（決定内容は不変）

@@ -5,11 +5,11 @@ status: Accepted
 related_ids: [NFR, ADR-0001, IADR-0314, IADR-0283, IADR-0457, IADR-0439]
 author: claude (Claude Code)
 created: 2026-10-23
-updated: 2026-10-23
+updated: 2026-11-07
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md（基盤の再利用。メッシュは基盤の構成に乗る）
 related_specs:
-  - ../specs/20261023_GHSA-j4qv_mesh-injection-handover.md
+  - ../specs/20261023_mesh-injection-handover.md
 ---
 
 # IADR-0570: 起動器のメッシュ参入の受け口と引き継ぎ
@@ -22,12 +22,12 @@ related_specs:
 
 ## 起点・関連
 
-- 起点: Refs GHSA-j4qv-2w99-xg5p（多層防御の強化。基盤のメッシュの mTLS の既定を STRICT にした段の前提を AST 側で整える）。
+- 起点: Refs 非公開の指摘（MSP）（多層防御の強化。基盤のメッシュの mTLS の既定を STRICT にした段の前提を AST 側で整える）。
 - 前提: [IADR-0314](IADR-0314_mesh-sidecar-injection-switch.md)（chart の設定点 `mesh.sidecarInjection.*`。既定 off）。
 - 関連: [IADR-0283](IADR-0283_deploy-value-preservation-and-kb-realm-fix.md)（起動器は `--reuse-values` を使わず、値ごとに前回値を引き継ぐ）、
   [IADR-0457](IADR-0457_deploy-changed-services-selection.md)（作り直すイメージの絞り込みと restart の範囲）、
   [IADR-0439](IADR-0439_helm-release-drift-read-only-check.md)（配備の前後の差の確認。OpenD の差は終了コード 3）。
-- 作業仕様書: [20261023_GHSA-j4qv_mesh-injection-handover](../specs/20261023_GHSA-j4qv_mesh-injection-handover.md)。
+- 作業仕様書: [20261023_mesh-injection-handover](../specs/20261023_mesh-injection-handover.md)。
 
 ## コンテキスト
 
@@ -89,3 +89,5 @@ related_specs:
     平文で出す想定である（**実測要**。PoC の手順で確かめる）。`platform-infra` 宛の非 HTTP も IADR-0314 決定 3 のまま実測要。
 - 検証: `scripts/k8s-local-deploy.test.sh` の T-mesh-01〜11、`.github/workflows/helm.yml` の IADR-0570 の検査（注入の有無で
   OpenD の描画を丸ごと突き合わせる。陰性対照つき）。いずれも変異で赤になることを確かめた。
+
+［2026-11-07 追記 / #1566］利用者裁定により、非公開の指摘の識別子を中立表記へ置換（決定内容は不変）

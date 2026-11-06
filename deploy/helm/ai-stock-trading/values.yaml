@@ -13,7 +13,7 @@ global:
     pullPolicy: IfNotPresent
   # 共有インフラ（MSP platform-infra）への接続既定。ExternalName エイリアス（下記 infraAliases）で
   # 素のサービス名を platform-infra の FQDN へ解決する。
-  # NFR, IADR-0568（Refs GHSA-pvmh-cvmf-pvcp）: ブローカ（基盤 platform-infra の RabbitMQ）への接続。**サービスごとのユーザー**
+  # NFR, IADR-0568（Refs 非公開の指摘（AST））: ブローカ（基盤 platform-infra の RabbitMQ）への接続。**サービスごとのユーザー**
   # （<usernamePrefix><サービス名>。例 ast-trade-decision）で接続する。ユーザーと権限は基盤が作る（MSP の
   # deploy/local/rabbitmq-setup/users.txt・reconcile-users.sh）。パスワードは Secret credentialsSecretName（キー = ユーザー名）から読む。
   # ESO 所有（externalSecrets.enabled=true）では templates/external-secrets.yaml が Vault ai-stock-trading/rabbitmq-users を同期する。

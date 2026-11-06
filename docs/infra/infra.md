@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [NFR-03, NFR-05, NFR-07, NFR-14, NFR]
 adrs: [ADR-0001, ADR-0006]
 iadrs: [IADR-0052, IADR-0060, IADR-0094, IADR-0314, IADR-0570]
-specs: [20260909_627_mesh-sidecar-injection-switch, 20261023_GHSA-j4qv_mesh-injection-handover]
+specs: [20260909_627_mesh-sidecar-injection-switch, 20261023_mesh-injection-handover]
 issues: [#24, #282, #627]
 -->
 

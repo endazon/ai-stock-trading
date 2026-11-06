@@ -5,7 +5,7 @@ status: Proposed
 related_ids: [NFR]
 author: endazon (with Claude Code)
 created: 2026-09-09
-updated: 2026-10-23
+updated: 2026-11-07
 plan_refs: []
 ---
 
@@ -148,7 +148,7 @@ HTTP 呼び出し（`trade-decision-service` の LlmGateway、`report-service`/`
     `mesh.sidecarInjection.enabled` の本番既定を `true` へ変更する追加 IADR／PR を起票する
     （本 IADR 自体は「設定点の新設」の決定として Accepted 化してよいが、**既定値の反転は別決定**とする）。
 
-## ［2026-10-23 追記 / Refs GHSA-j4qv-2w99-xg5p］OpenD の注釈は `enabled` に依らず描く（決定 2 の描画条件の改め）
+## ［2026-10-23 追記 / Refs 非公開の指摘（MSP）］OpenD の注釈は `enabled` に依らず描く（決定 2 の描画条件の改め）
 
 [IADR-0570](IADR-0570_mesh-injection-deploy-handover.md) が決定 2 の描画条件を「`enabled` かつ `excludeOpend`」から
 「`excludeOpend`」へ改めた。連結ローカルの起動器（`namespace.create=false`）では注入を決めるのが名前空間のラベルであり、
@@ -160,3 +160,5 @@ HTTP 呼び出し（`trade-decision-service` の LlmGateway、`report-service`/`
 
 - Supersedes: なし
 - Superseded by: なし
+
+［2026-11-07 追記 / #1566］利用者裁定により、非公開の指摘の識別子を中立表記へ置換（決定内容は不変）
