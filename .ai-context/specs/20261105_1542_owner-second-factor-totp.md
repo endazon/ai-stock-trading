@@ -48,3 +48,10 @@ plan_refs:
 ## 範囲外
 
 - ボットの確認の画面での 6 桁の入力・提供側への受け渡し（続き）。段 2 への切り替え。ボットの権限の分割（#1528 の後）。
+
+## ［2026-11-06 追記 / #1552］古くなった記述の読み替え（本文は書き換えない）
+
+- **決定 2・3 は決定 7 で置き換わった。** 門は処理関数の頭ではなく、サービスが書き込みの直前に呼ぶ（`RiskSecondFactor.BeforeCommit` が callback を返す。`RiskSecondFactor.Require` という関数は無い）。報告書は `ReportAppService.Confirm` が、確定へ遷移し得るときだけ呼ぶ。
+- **決定 5 の profile は 3 つ。** values.yaml・values-local.yaml に加え、values-cloud.yaml にも同じ env がある（#1550 の検査が抜けを止める）。
+- **受け入れ基準の `ast-owner-totp-enroll.test.sh 19 件` は、その時点の件数である。** 試験は後から増えている（values-cloud の確認・helm の描画）。件数は導出値で腐るため、以後の記録には書かない。
+- ボットの 6 桁の入力（範囲外の 1 つ目）は #1552（仕様書 `20261106_1552_bot-second-factor-input`）。

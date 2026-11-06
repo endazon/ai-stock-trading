@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Json;
 using NotificationService.Features.Notifications;
 using Microsoft.Extensions.Logging;
+using System.Text.Json.Serialization;
 
 namespace NotificationService.Infrastructure.ExternalServices;
 
@@ -21,19 +22,23 @@ public sealed class HttpPauseController(
     : IPauseController
 {
     public Task<PauseResult> PauseAsync(string reason, CancellationToken cancellationToken = default) =>
-        PostAsync("/risk-controls/pause", reason, "一時停止", cancellationToken);
+        PostAsync("/risk-controls/pause", reason, null, "一時停止", cancellationToken);
 
     public Task<PauseResult> ResumeAsync(string reason, CancellationToken cancellationToken = default) =>
-        PostAsync("/risk-controls/resume", reason, "再開", cancellationToken);
+        ResumeAsync(reason, null, cancellationToken);
+
+    // NFR-06, #1552, IADR-0615: 再開だけが確認コードを運ぶ（一時停止は止める向きのため運ばない＝ADR-0009 の非対称）。
+    public Task<PauseResult> ResumeAsync(string reason, string? secondFactorCode, CancellationToken cancellationToken = default) =>
+        PostAsync("/risk-controls/resume", reason, secondFactorCode, "再開", cancellationToken);
 
     private async Task<PauseResult> PostAsync(
-        string path, string reason, string operation, CancellationToken cancellationToken)
+        string path, string reason, string? secondFactorCode, string operation, CancellationToken cancellationToken)
     {
         try
         {
             // FR-11・ADR-0009: 理由必須。actor は Risk 側が認証済みトークン（preferred_username）から採る。
             using var response = await httpClient
-                .PostAsJsonAsync(path, new PauseRequest(reason), cancellationToken)
+                .PostAsJsonAsync(path, new PauseRequest(reason, secondFactorCode), cancellationToken)
                 .ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
@@ -155,7 +160,8 @@ public sealed class HttpPauseController(
     internal static string TimedOutMessage(string operation) => $"取引の{operation}がタイムアウトしました（状態は不明です）";
 
     // Risk 側 PauseRequest と同形（理由必須）。
-    private sealed record PauseRequest(string Reason);
+    // NFR-06, #1552, IADR-0615: 確認コードは null なら欄ごと送らない（本文は従来と同じ）。値はログに出さない。
+    private sealed record PauseRequest(string Reason, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SecondFactorCode = null);
 
     // Risk 側 PauseState の必要部分のみを受ける射影（Paused のみ利用する）。
     private sealed record PauseStateView(bool Paused);

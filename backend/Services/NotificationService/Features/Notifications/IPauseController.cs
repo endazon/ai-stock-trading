@@ -13,6 +13,14 @@ public interface IPauseController
     // 一時停止の解除。pause のみ解除する（kill switch・日次損失ロックアウトは解除しない）。
     Task<PauseResult> ResumeAsync(string reason, CancellationToken cancellationToken = default);
 
+    // 一時停止の解除（確認コードつき）。
+    //
+    // NFR-06, FR-14, UC-06, #1552, IADR-0615: secondFactorCode は利用者が確認の画面に入れた認証アプリの 6 桁（任意・空は null）。
+    // 提供側が確かめる（ボットは確かめず、ログ・応答に出さない）。既定の実装はコードを捨てて従来の要求を送る（試験の偽物を壊さない）。
+    // 実装（Http*・Grpc*）は必ず上書きし、REST の本文・gRPC の要求の既存の欄で運ぶ。
+    Task<PauseResult> ResumeAsync(string reason, string? secondFactorCode, CancellationToken cancellationToken = default) =>
+        ResumeAsync(reason, cancellationToken);
+
     // 稼働状態の参照（表示専用）。3 統制の状態・優先順位・段階・当日損益・上限使用率・ポジションを取得する。
     Task<RiskStatusResult> GetStatusAsync(CancellationToken cancellationToken = default);
 }

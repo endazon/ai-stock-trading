@@ -37,8 +37,12 @@ public sealed class GrpcStageGateController(
         return HttpStageGateController.ToStatusResult(view);
     }
 
+    public Task<StageTransitionCommandResult> RequestTransitionAsync(
+        int targetStage, string onBehalfOf, CancellationToken cancellationToken = default) =>
+        RequestTransitionAsync(targetStage, onBehalfOf, null, cancellationToken);
+
     public async Task<StageTransitionCommandResult> RequestTransitionAsync(
-        int targetStage, string onBehalfOf, CancellationToken cancellationToken = default)
+        int targetStage, string onBehalfOf, string? secondFactorCode, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(onBehalfOf);
 
@@ -47,6 +51,9 @@ public sealed class GrpcStageGateController(
             TargetStage = NotificationGrpcWire.ToProtoStage(targetStage),
             OnBehalfOf = onBehalfOf,
         };
+        // NFR-06, #1552, IADR-0615: 確認コードは入れたときだけ載せる（欄は optional。null を代入すると例外）。値はログに出さない。
+        if (secondFactorCode is not null)
+            request.SecondFactorCode = secondFactorCode;
         var outcome = await transport.Calls.CallOnceAsync(
             "段階遷移", options => transport.OwnerWrite.RequestStageTransitionAsync(request, options), cancellationToken).ConfigureAwait(false);
 

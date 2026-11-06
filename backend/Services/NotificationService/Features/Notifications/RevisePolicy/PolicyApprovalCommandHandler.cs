@@ -28,7 +28,12 @@ public sealed class PolicyApprovalCommandHandler(
         "監視銘柄の入れ替えは適用していません（この操作では確定していないため）。"
         + "この版を既に確定していて入れ替えがまだ適用されていないなら、設定画面から変更してください。";
 
-    public async Task<PolicyApprovalResult> HandleAsync(DiscordCommandContext context, CancellationToken cancellationToken = default)
+    public async Task<PolicyApprovalResult> HandleAsync(
+        DiscordCommandContext context,
+        // NFR-06, FR-14, #1552, IADR-0615: 確認の画面で入れた認証アプリの 6 桁（任意・空は null）。確かめるのは提供側で、
+        // ボットは運ぶだけ（ログ・応答に出さない）。
+        string? secondFactorCode = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
 
@@ -50,7 +55,7 @@ public sealed class PolicyApprovalCommandHandler(
 
         // ① 確定（既存の経路。版番号ガード・OnBehalfOf・二重押下の吸収は ReportCommandHandler が持つ）。
         var confirm = await reportHandler
-            .HandleAsync(context with { RawCommand = $"/report approve {key} {version}" }, cancellationToken)
+            .HandleAsync(context with { RawCommand = $"/report approve {key} {version}" }, secondFactorCode, cancellationToken)
             .ConfigureAwait(false);
         // #1029, IADR-0433（2026-09-26 追記）: 窓口の二重押下の吸収（層1）はプロセスの中の状態で、同じプロセスで先に `/report approve`
         // した版や、照会に失敗した後の押し直しもここへ来る（再起動の後なら決定 7 の回復で適用される）。適用を試みなかったことを

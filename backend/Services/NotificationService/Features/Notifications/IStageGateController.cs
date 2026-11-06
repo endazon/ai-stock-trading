@@ -25,6 +25,15 @@ public interface IStageGateController
     Task<StageTransitionCommandResult> RequestTransitionAsync(
         int targetStage, string onBehalfOf, CancellationToken cancellationToken = default);
 
+    // 段階遷移の要求（確認コードつき）。提供側が確かめるのは昇格だけ（差し戻しは止める向きのため null を渡す）。
+    //
+    // NFR-06, FR-14, UC-06, #1552, IADR-0615: secondFactorCode は利用者が確認の画面に入れた認証アプリの 6 桁（任意・空は null）。
+    // 提供側が確かめる（ボットは確かめず、ログ・応答に出さない）。既定の実装はコードを捨てて従来の要求を送る（試験の偽物を壊さない）。
+    // 実装（Http*・Grpc*）は必ず上書きし、REST の本文・gRPC の要求の既存の欄で運ぶ。
+    Task<StageTransitionCommandResult> RequestTransitionAsync(
+        int targetStage, string onBehalfOf, string? secondFactorCode, CancellationToken cancellationToken = default) =>
+        RequestTransitionAsync(targetStage, onBehalfOf, cancellationToken);
+
     // 撤退基準の評価（安全側＝HaltNewEntries 成立時に Risk が kill switch を自動起動）。実降格は行わず提案のみ返る。
     Task<StageGateStatusResult> EvaluateWithdrawalAsync(CancellationToken cancellationToken = default);
 }

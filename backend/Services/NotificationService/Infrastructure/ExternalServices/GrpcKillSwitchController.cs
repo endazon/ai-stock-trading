@@ -18,8 +18,17 @@ public sealed class GrpcKillSwitchController(
             cancellationToken);
 
     public Task<KillSwitchResult> DisengageAsync(string reason, CancellationToken cancellationToken = default) =>
-        ChangeAsync("解除", options => transport.OwnerWrite.DisengageKillSwitchAsync(new RiskProto.KillSwitchChangeRequest { Reason = reason }, options),
-            cancellationToken);
+        DisengageAsync(reason, null, cancellationToken);
+
+    // NFR-06, #1552, IADR-0615: 解除だけが確認コードを運ぶ（起動は止める向き＝ADR-0009 の非対称）。
+    public Task<KillSwitchResult> DisengageAsync(string reason, string? secondFactorCode, CancellationToken cancellationToken = default)
+    {
+        var request = new RiskProto.KillSwitchChangeRequest { Reason = reason };
+        // NFR-06, #1552, IADR-0615: 確認コードは入れたときだけ載せる（欄は optional。null を代入すると例外）。値はログに出さない。
+        if (secondFactorCode is not null)
+            request.SecondFactorCode = secondFactorCode;
+        return ChangeAsync("解除", options => transport.OwnerWrite.DisengageKillSwitchAsync(request, options), cancellationToken);
+    }
 
     private async Task<KillSwitchResult> ChangeAsync(
         string operation,

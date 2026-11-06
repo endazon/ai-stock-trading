@@ -27,6 +27,9 @@ public sealed class PositionDriftAdoptionCommandHandler(
         DiscordCommandContext context,
         string? confirmationPhrase,
         string? adoptionReason,
+        // NFR-06, FR-14, #1552, IADR-0615: 確認の画面で入れた認証アプリの 6 桁（任意・空は null）。確かめるのは提供側で、
+        // ボットは運ぶだけ（ログ・応答に出さない）。
+        string? secondFactorCode = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -74,7 +77,7 @@ public sealed class PositionDriftAdoptionCommandHandler(
         // FR-11, #871, IADR-0240 決定11, IADR-0383: **多層認証が解決した操作者を onBehalfOf で運ぶ**
         // （`auth.Actor`＝Keycloak 利用者名。コマンド文字列からは採らない）。理由文は前後の空白だけを落として送る。
         var result = await controller
-            .AdoptAsync(symbol, market, adoptionReason.Trim(), auth.Actor!, cancellationToken)
+            .AdoptAsync(symbol, market, adoptionReason.Trim(), auth.Actor!, secondFactorCode, cancellationToken)
             .ConfigureAwait(false);
 
         logger.LogInformation(
