@@ -42,14 +42,22 @@ concurrency:
   group: claude-coding-${{ github.event.issue.number || github.event.pull_request.number }}
   cancel-in-progress: false
 
+# NFR: ワークフロー単位は読むだけにする。書き込み（ブランチの push・PR / issue へのコメント）は
+# claude ジョブの permissions が持つ。このジョブは git push するので、checkout の資格情報は残す。
+permissions:
+  contents: read
+
 jobs:
   claude:
-    # @claude を含むイベントのみ起動する
+    # @claude を含むイベントのみ起動する。
+    # NFR: 加えて、**本文の書き手**が OWNER / MEMBER / COLLABORATOR のときだけ起動する
+    # （起動した人ではなく、AI が読む本文を書いた人で判定する。issues の assigned では両者が異なる）。
+    # 各句に author_association の判定を必ず置くこと（scripts/scripts.repo.test.js が句ごとに固定する）。
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
     runs-on: ubuntu-latest
     # ハングした実装セッションが上限まで回り続けるのを防ぐ。
     # レビュー（20 分）より長めに取る（実装はビルド・テストを伴うため）。
@@ -65,7 +73,7 @@ jobs:
       actions: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           # 実装リポの checkout / push には既定の GITHUB_TOKEN を使う（上の
@@ -81,7 +89,7 @@ jobs:
       # 検証(build/test)を @claude セッション内で実走するための SDK 準備。
       # 技術スタックに合わせて書き換える（既定は C#/.NET 10。ci.example.yml と揃える。
       # 他スタックは actions/setup-node / actions/setup-python 等に置き換える）。
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: "10.0.403" # #1478: 厳密な版（"10.0.x" は配布元の 409 で導入できない）。全箇所で同じ値であることを scripts.repo.test.js が見る
 
@@ -112,7 +120,7 @@ jobs:
 
       - name: Run Claude Code
         id: claude
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@4845bacbb38b3c4b15d948f035349786f678e068 # v1.0.267
         # gh CLI（Issue 発行等）を既定トークンで認証する。gh は GH_TOKEN/GITHUB_TOKEN を参照する。
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -160,10 +168,13 @@ jobs:
           # 停止する不具合が出ており（HOWTO 付録3）、レビュー用と同じ (b) に揃える。
           # 【記法】この値も空白区切りでトークン化される。**1 行・二重引用符でくくる**こと
           # （改行して書くと後続行が別の引数になり、指示が壊れる）。
+          # 【最小化（NFR）】実装用からは find と sed を外し、node は `node scripts/` の前置の形だけを許す
+          # （基盤の claude-coding.yml の最小化に揃えた。レビュー用の `node:*` / `sed:*` との差は
+          # check-ai-workflow-config.js の CODING_NARROWED_TOOLCHAIN / REVIEW_ONLY_BASH が宣言する）。広げるときは IADR を改定すること。
           claude_args: |
             --model ${{ steps.model.outputs.model }}
-            --append-system-prompt "この実行は単一セッション内で完結させること。サブエージェント（Task ツールによる spawn。.claude/agents/ 定義の起動を含む）は使用しない。CI では Task が許可されておらず、呼び出しは必ず拒否されるうえ、拒否が 1 件でも記録されるとジョブは失敗する。作業の分割は自分の作業順序として扱い、Read / Grep / Glob / Bash / GitHub MCP ツールで自分自身が順に実施すること。また cd でディレクトリを移動しないこと（cd は許可リストに無く、cd <サブディレクトリ> && git log の形は後続が許可済みでも先頭で拒否される）。サブディレクトリの履歴は git log -- <パス> の形で参照すること。"
-            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git ls-tree:*),Bash(git ls-files:*),Bash(git fetch:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(find:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(sed:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(which:*),Bash(yq:*),Bash(helm template:*),Bash(helm lint:*),Bash(mkdir:*),Bash(gh issue create:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_pull_request,mcp__github__get_issue_comments,mcp__github__get_pull_request_reviews,mcp__github__search_issues,mcp__github__list_sub_issues,mcp__github__list_workflow_runs,mcp__github__actions_list,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*),Bash(dotnet ef:*),Bash(dotnet --version),Bash(dotnet --info),Bash(npm ci:*),Bash(npm run:*),Bash(npm --prefix:*),Bash(bash scripts/k8s-local-deploy.test.sh:*),Bash(bash deploy/opend/entrypoint.test.sh:*),Bash(bash scripts/cutover-count-reconcile.test.sh:*)"
+            --append-system-prompt "この実行は単一セッション内で完結させること。サブエージェント（Task ツールによる spawn。.claude/agents/ 定義の起動を含む）は使用しない。CI では Task が許可されておらず、呼び出しは必ず拒否されるうえ、拒否が 1 件でも記録されるとジョブは失敗する。作業の分割は自分の作業順序として扱い、Read / Grep / Glob / Bash / GitHub MCP ツールで自分自身が順に実施すること。また cd でディレクトリを移動しないこと（cd は許可リストに無く、cd <サブディレクトリ> && git log の形は後続が許可済みでも先頭で拒否される）。サブディレクトリの履歴は git log -- <パス> の形で参照すること。ファイルの列挙は Glob を、置換は Edit を使うこと（find と sed は許可されていない）。node は node scripts/<ファイル> の形（リポジトリの scripts/ 配下のスクリプトを実行する形）だけが使え、node -e や他の場所のスクリプトは拒否される。"
+            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git ls-tree:*),Bash(git ls-files:*),Bash(git fetch:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(which:*),Bash(yq:*),Bash(helm template:*),Bash(helm lint:*),Bash(mkdir:*),Bash(gh issue create:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_pull_request,mcp__github__get_issue_comments,mcp__github__get_pull_request_reviews,mcp__github__search_issues,mcp__github__list_sub_issues,mcp__github__list_workflow_runs,mcp__github__actions_list,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node scripts/:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*),Bash(dotnet ef:*),Bash(dotnet --version),Bash(dotnet --info),Bash(npm ci:*),Bash(npm run:*),Bash(npm --prefix:*),Bash(bash scripts/k8s-local-deploy.test.sh:*),Bash(bash deploy/opend/entrypoint.test.sh:*),Bash(bash scripts/cutover-count-reconcile.test.sh:*)"
 
       # 権限拒否の可視化（安全弁）。claude-code-review.example.yml と同じ内容に保つこと。
       #

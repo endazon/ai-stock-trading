@@ -34,19 +34,24 @@ concurrency:
   group: integration-e2e-${{ github.ref }}
   cancel-in-progress: false
 
+# NFR: ワークフロー単位は読むだけにする（リポジトリ既定の権限に頼らない）。書き込みが要るジョブは
+# ジョブの permissions で足す（ci-failure-issue.yml を呼ぶ report-failure ジョブ等）。
+permissions:
+  contents: read
+
 jobs:
   integration-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # NFR / IADR-0208: NuGet のグローバルパッケージをキャッシュする（ci.yml と同じキー）。
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
           restore-keys: nuget-${{ runner.os }}-
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: "10.0.403" # #1478: 厳密な版（"10.0.x" は配布元の 409 で導入できない）。全箇所で同じ値であることを scripts.repo.test.js が見る
       # 自動起票が本当に動くかを実測するための入口（IADR-0208 残余リスク）。
@@ -91,7 +96,7 @@ jobs:
       # 原因はダンプのスタックで見る（`dotnet-dump analyze <file>` → `clrstack -all`）。
       - name: Upload hang dumps
         if: ${{ !cancelled() && steps.tests.outcome == 'failure' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: integration-hang-dumps
           path: |
@@ -110,7 +115,7 @@ jobs:
       # 本検査（skip 由来の未実走）とは別物である。取り違えて外さないこと。
       #
       # テストが赤くても評価する（skip と失敗は独立した観測）。テスト step 自体が走らなかったとき（force_failure）だけ走らない。
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
         with:
           node-version: "22"
