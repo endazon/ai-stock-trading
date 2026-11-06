@@ -37,8 +37,12 @@ RUN dotnet build "${SERVICE_PROJECT}" -c Release --no-restore
 # 🔴 **写しなので黙ってずれ得る。** `scripts/scripts.repo.test.js` が本行を実ファイルから抜き出して実走し、
 # `wiringOf()` の判定と突き合わせる（ずれたら赤くなる）。パイプの終了コードは後段のものなので、
 # 前段が 0 行を出したとき（＝全行がコメント）も else 枝へ落ちる。
+# 🔴 NFR, #1557, IADR-0612（2026-11-06 追記）: build 段は環境名が Production（sdk イメージの既定）で、`Auth:Authority` を持たない。
+# #1529 の守り（StandaloneRealmGuard）はホストの組み立てで例外を投げるので、codegen の行にだけ無害な仮の Authority を与える
+# （`.invalid` は名前解決しない予約の TLD・単体実行向けのレルムを指さない。codegen は Start しないので接続しない。生成物は値に依存しない）。
+# 守りそのものは弱めない（稼働の起動では配備の値が要る）。ENV にしない（稼働のイメージへ残さない）。環境名も変えない（配線が変わる）。
 RUN if grep -Ev '^[[:space:]]*(//|\*|/\*)' "$(dirname "${SERVICE_PROJECT}")/Program.cs" | grep -Eq 'UseWolverine[[:space:]]*\('; then \
-      dotnet run --project "${SERVICE_PROJECT}" -c Release --no-build -- codegen write; \
+      Auth__Authority=https://codegen.invalid/realms/codegen dotnet run --project "${SERVICE_PROJECT}" -c Release --no-build -- codegen write; \
     else \
       echo "skip codegen: $(dirname "${SERVICE_PROJECT}")/Program.cs does not wire Wolverine"; \
     fi
