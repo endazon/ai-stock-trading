@@ -1,5 +1,6 @@
 extern alias RiskManagementWorker;
 
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using System.Collections.Concurrent;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
@@ -200,6 +201,8 @@ public class ScheduledCycleRedeliveryTests
                 opts.Services.AddSingleton<IDailyPolicyProvider, FakePolicy>();
                 opts.Services.AddSingleton<ISizingContextProvider, FakeSizing>();
                 opts.Services.AddScoped<AppSvc>();
+                // FR-04, #1529, IADR-0617: 現在値の供給を持たない試験の前提（参照価格での新規建て）を明示の opt-in で与える（既定は見送り）。
+                opts.Services.AddSingleton(new UnanchoredEntryPriceOptions(Allow: true));
                 opts.Services.AddSingleton<BusinessMetrics>();
                 opts.Services.AddSingleton<NewsCollectionStatusStore>();
                 opts.Services.AddSingleton<ITradeDecisionFailureReporter>(failures);

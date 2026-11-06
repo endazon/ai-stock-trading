@@ -155,7 +155,8 @@ public class TradeDecisionPromptBuilderTests
 
         var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, retrieved);
 
-        // フェンスは開始と終了の 2 本だけ（本文が 3 本目を持ち込んでいない）。
+        // フェンスは開始と終了の 2 本だけ（本文が 3 本目を持ち込んでいない）。#1529, IADR-0618: 方針の節の 2 本を除いて数える。
+        prompt = prompt.Replace(TradeDecisionPromptBuilder.PolicySection(Policy), string.Empty, StringComparison.Ordinal);
         CountLinesStartingWith(prompt, "```").Should().Be(2);
         // **バッククォート 3 連そのものが本文から消えている**ことまで見る。行頭一致だけだと
         // 「JSON 符号化が改行を潰しているから偶然 2 本に見える」状態と区別が付かない
@@ -770,7 +771,13 @@ public class TradeDecisionPromptBuilderTests
         var entryBasisRuleLine = $"{TradeDecisionPromptBuilder.OutputEntryBasisRule}{Environment.NewLine}";
         prompt.Should().Contain(entryBasisFields).And.Contain(entryBasisRuleLine);
 
+        // #1529, IADR-0618: 方針の節は本文を 1 行 1 件の JSON 文字列でフェンスと境界語の中に置くよう変えた。従前の素の形へ戻して比べる。
+        var policySection = TradeDecisionPromptBuilder.PolicySection(Policy);
+        prompt.Should().Contain(policySection);
+        var legacyPolicySection = $"# 確定済み日報の方針（{Policy.Date:yyyy-MM-dd}）{Environment.NewLine}{Policy.Summary}{Environment.NewLine}{Environment.NewLine}";
+
         Normalize(prompt
+                .Replace(policySection, legacyPolicySection, StringComparison.Ordinal)
                 .Replace(noneSection, string.Empty, StringComparison.Ordinal)
                 .Replace(watchlistSection, string.Empty, StringComparison.Ordinal)
                 .Replace(priceContextLines, string.Empty, StringComparison.Ordinal)
@@ -808,8 +815,9 @@ public class TradeDecisionPromptBuilderTests
         {
             var prompt = TradeDecisionPromptBuilder.Build(ScheduledAapl(), policy, Context, currentPrice: 217.5m, held: held);
 
+            // #1529, IADR-0618: 本文は 1 行 1 件の JSON 文字列でフェンスと境界語の中に置く（文言は変えない）。
             Normalize(ExtractSection(prompt, "# 確定済み日報の方針（2026-09-18）")).TrimEnd()
-                .Should().Be($"# 確定済み日報の方針（2026-09-18）\n{policy.Summary}");
+                .Should().Be(Normalize(TradeDecisionPromptBuilder.PolicySection(policy)).TrimEnd());
             CountOccurrences(prompt, policy.Summary).Should().Be(1);
             // 方針の節は保有状況節より前にあり、保有状況節が方針を言い換えることはない。
             prompt.IndexOf(policy.Summary, StringComparison.Ordinal)

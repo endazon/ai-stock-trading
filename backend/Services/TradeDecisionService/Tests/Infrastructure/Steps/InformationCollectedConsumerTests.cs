@@ -163,6 +163,8 @@ public class InformationCollectedConsumerTests
                 opts.Services.AddSingleton<IDailyPolicyProvider, FakePolicy>();
                 opts.Services.AddSingleton<ISizingContextProvider, FakeSizing>();
                 opts.Services.AddScoped<AppSvc>();
+                // FR-04, #1529, IADR-0617: 現在値の供給を持たない試験の前提（参照価格での新規建て）を明示の opt-in で与える（既定は見送り）。
+                opts.Services.AddSingleton(new UnanchoredEntryPriceOptions(Allow: true));
                 // NFR-07, #287, IADR-0255: 業務メトリクスはハンドラの**必須依存**である。
                 // 本番では AddAiStockTradingObservability が登録する（BusinessMetricsWiringTests が固定）。
                 opts.Services.AddSingleton<BusinessMetrics>();

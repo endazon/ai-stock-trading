@@ -801,4 +801,54 @@ public class RiskEvaluatorTests
 
         result.Reasons.Should().NotContain(RejectionReason.StageShortSellReleaseUnmet);
     }
+
+    // 🔴 FR-10, #1533, IADR-0616 決定4: 審査に入る数値の値域の検査。換算率 0 は名目額を 0 に見せ、金額の上限を全て素通りさせる。
+    public static TheoryData<string> InvalidEntries => new() { "quantity0", "quantityNeg", "price0", "priceNeg", "fx0", "fxNeg", "stop0", "atrNeg", "side" };
+
+    [Theory]
+    [MemberData(nameof(InvalidEntries))]
+    public void 値域の外の数値を持つ新規建ては拒否される(string field)
+    {
+        var ok = Buy();
+        var intent = field switch
+        {
+            "quantity0" => ok with { Quantity = 0 },
+            "quantityNeg" => ok with { Quantity = -10 },
+            "price0" => ok with { Price = 0m },
+            "priceNeg" => ok with { Price = -1m },
+            "fx0" => ok with { FxRateToBase = 0m },
+            "fxNeg" => ok with { FxRateToBase = -1m },
+            "stop0" => ok with { StopLossPrice = 0m },
+            "atrNeg" => ok with { Atr14 = -1m },
+            "side" => ok with { Side = (TradeSide)99 },
+            _ => throw new ArgumentOutOfRangeException(nameof(field)),
+        };
+
+        var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), Snapshot());
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.OrderIntentInvalid);
+    }
+
+    [Fact]
+    public void 換算率0の新規建ては金額の上限が効かない形でも拒否される()
+    {
+        // 1 注文上限を桁で超える注文でも、換算率 0 なら名目額（基準通貨）は 0 になる。値域の検査がこれを止める。
+        var result = RiskEvaluator.Evaluate(Buy(quantity: 1_000_000) with { FxRateToBase = 0m }, DefaultSettings(), Snapshot());
+
+        result.Reasons.Should().Contain(RejectionReason.OrderIntentInvalid);
+    }
+
+    [Fact]
+    public void 正しい数値の新規建ては値域の検査で止まらない() =>
+        RiskEvaluator.Evaluate(Buy(), DefaultSettings(), Snapshot()).Reasons.Should().NotContain(RejectionReason.OrderIntentInvalid);
+
+    [Fact]
+    public void 決済は数量だけを確かめ_価格や換算率では止めない()
+    {
+        RiskEvaluator.Evaluate(Close() with { FxRateToBase = 0m, Price = 0m }, DefaultSettings(), Snapshot())
+            .Reasons.Should().NotContain(RejectionReason.OrderIntentInvalid, "手仕舞いは止めない（FR-10）");
+        RiskEvaluator.Evaluate(Close(quantity: 0), DefaultSettings(), Snapshot())
+            .Reasons.Should().Contain(RejectionReason.OrderIntentInvalid, "0 株の決済は送るものが無い");
+    }
 }

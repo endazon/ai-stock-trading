@@ -43,7 +43,7 @@ public class StopWidthFloorTests
         StateLogger? logger = null) =>
         new(new FixedLlm(llmOutput), new FakePolicy(), new FakeSizing(context ?? Context), new FakeClock(),
             logger ?? new StateLogger(),
-            currentPrice: currentPrice, heldPosition: held, stopWidthFloor: floor);
+            currentPrice: currentPrice, heldPosition: held, stopWidthFloor: floor, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
     // ================================================================================================
     // 純関数

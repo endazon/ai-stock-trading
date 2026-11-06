@@ -1,5 +1,6 @@
 extern alias RiskManagementWorker;
 
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Features.TradeDecision;
@@ -160,7 +161,7 @@ public class InFlightCloseBeforeLlmTests
             llm, new FakePolicy(), new FakeSizing(context ?? Context()), new FakeClock(), NullLogger<AppSvc>.Instance,
             options: new DecisionOrchestrationOptions { EnableScreening = true },
             currentPrice: new FakeCurrentPrice(AaplPrice), heldPosition: heldPosition ?? new FakeHeld(held, workingUnknown), fxRate: fx,
-            skipReporter: skips, forgoneReporter: forgone, entryBlockers: blockers, inFlightCloses: inFlight);
+            skipReporter: skips, forgoneReporter: forgone, entryBlockers: blockers, inFlightCloses: inFlight, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
         return new Probe(service, llm, inFlight, forgone, skips);
     }
 

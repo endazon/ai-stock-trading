@@ -132,7 +132,7 @@ public class HeldExitAlwaysJudgedInPromptTests
         var options = new DecisionOrchestrationOptions { EnableScreening = true, ScreeningContextBudgetChars = 150_000 };
         var service = new AppSvc(
             llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
-            options: options, heldPosition: new FakeHeld(10), watchlist: new FakeWatchlist());
+            options: options, heldPosition: new FakeHeld(10), watchlist: new FakeWatchlist(), unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         var decision = await service.DecideAsync(Trigger("GOOGL", exitOnly: true), TestContext.Current.CancellationToken);
 
@@ -171,7 +171,8 @@ public class HeldExitAlwaysJudgedInPromptTests
         var policy = new DailyPolicy(new DateOnly(2026, 10, 10), "押し目で買う");
         var trigger = Trigger("GOOGL", exitOnly: true);
         var news = new RetrievedContext("記事", new string('あ', 100), SourceUri: null, 0.5, ["google-news"], Now);
-        var exactBudget = 750 + policy.Summary.Length + TradeDecisionPromptBuilder.WatchlistSection(trigger, null).Length
+        var exactBudget = 750 + TradeDecisionPromptBuilder.PolicySection(policy).Length + // #1529, IADR-0618: 方針の節そのものの長さ
+            TradeDecisionPromptBuilder.WatchlistSection(trigger, null).Length
             + 400 + ScreeningContextAssembler.PriceContextReserveChars + ScreeningContextAssembler.NewsStatusReserveChars
             + ScreeningContextAssembler.HeldExitRuleReserveChars
             // #1384, IADR-0558 決定 7: 建てた条件の要約の行の予約も銘柄ごとの保護分に入る。

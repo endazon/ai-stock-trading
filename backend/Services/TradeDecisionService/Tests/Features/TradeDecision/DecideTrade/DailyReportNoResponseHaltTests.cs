@@ -1,6 +1,7 @@
 extern alias RiskManagementWorker;
 extern alias ReportWorker;
 
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -104,7 +105,7 @@ public class DailyReportNoResponseHaltTests
         var notifier = new CountingUnconfirmedNotifier();
         var service = new AppSvc(
             llm, new FixedPolicy(Policy(halted: true)), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
-            unconfirmedNotifier: notifier, skipReporter: skips, forgoneReporter: forgone);
+            unconfirmedNotifier: notifier, skipReporter: skips, forgoneReporter: forgone, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         var decision = await service.DecideAsync(
             kind == "scheduled" ? Scheduled() : PriceMovement(), TestContext.Current.CancellationToken);
@@ -124,7 +125,7 @@ public class DailyReportNoResponseHaltTests
         var forgone = new RecordingForgone();
         var service = new AppSvc(
             llm, new FixedPolicy(Policy(halted: false)), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
-            forgoneReporter: forgone);
+            forgoneReporter: forgone, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
 
         await service.DecideAsync(PriceMovement(), TestContext.Current.CancellationToken);
 

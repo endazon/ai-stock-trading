@@ -30,7 +30,7 @@ builder.Services.AddSerilog((_, logConfig) =>
 builder.Services.AddAiStockTradingObservability(builder.Configuration, ServiceName);
 
 // ADR-0004（platform）: Keycloak 認証（費用計上・照会）。
-builder.Services.AddAiStockTradingAuth(builder.Configuration);
+builder.Services.AddAiStockTradingAuth(builder.Configuration, builder.Environment);
 
 // ADR-0001（Database per Service）, IADR-0027: 費用統制専有 DB（cost_control_svc）。
 var connStr = builder.Configuration.GetConnectionString("DefaultConnection")

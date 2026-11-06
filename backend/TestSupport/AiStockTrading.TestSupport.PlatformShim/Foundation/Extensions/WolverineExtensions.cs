@@ -241,7 +241,19 @@ public static class WolverineExtensions
             options.Discovery.IncludeAssembly(assembly);
         }
 
-        options.UseRabbitMq(new Uri(connectionString ?? DefaultRabbitMqConnectionString))
+        // NFR, NFR-18, #1535, IADR-0621 決定4: amqps のときは、サーバ証明書の CA に加えて**名前**も照合する。
+        // RabbitMQ.Client は amqps の URI を受けると名前の不一致を既定で受け入れる（基盤の IADR-0591 決定 5 の実測）。
+        // 受け入れてよい誤りを空に戻し、ServerName を URI の host にする（基盤の UsePlatformRabbitMq と同じ）。平文のときは何も変えない。
+        var uri = new Uri(connectionString ?? DefaultRabbitMqConnectionString);
+        options.UseRabbitMq(factory =>
+            {
+                factory.Uri = uri;
+                if (factory.Ssl.Enabled)
+                {
+                    factory.Ssl.AcceptablePolicyErrors = System.Net.Security.SslPolicyErrors.None;
+                    factory.Ssl.ServerName = uri.Host;
+                }
+            })
             .AutoProvision()
             .UseConventionalRouting(convention => convention
                 // IADR-0129 決定 1: サービス名を前置してキューを分離する。

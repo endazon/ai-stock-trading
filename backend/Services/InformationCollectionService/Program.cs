@@ -38,7 +38,7 @@ builder.Services.AddAiStockTradingObservability(builder.Configuration, ServiceNa
 // NFR（セキュリティ）, #456, IADR-0176 決定1: Keycloak OIDC/JWT 認証。**run-once は業務操作であり無認証で公開しない。**
 // 本サービスは長らく `/health/*` と introspection しか持たない前提で認証を登録していなかったが、#121 で
 // run-once トリガ（収集サイクルの起動）を足した際に認可が付かないまま残っていた（#450 の横断調査で発覚）。
-builder.Services.AddAiStockTradingAuth(builder.Configuration);
+builder.Services.AddAiStockTradingAuth(builder.Configuration, builder.Environment);
 
 // liveness ヘルスチェック（DB を持たない）。
 builder.Services.AddAiStockTradingHealthChecks();

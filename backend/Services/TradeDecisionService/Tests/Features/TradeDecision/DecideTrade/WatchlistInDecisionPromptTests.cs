@@ -289,7 +289,8 @@ public class WatchlistInDecisionPromptTests
         // #1035, IADR-0451: 銘柄行は値動きの行の予約（PriceContextReserveChars）ぶん 400→700 へ底上げした。
         // #1081, IADR-0455: ニュースの状態の行の予約（NewsStatusReserveChars）ぶん 700→900 へ底上げした。
         // #1292, IADR-0523 決定 2: 保有の手仕舞いの固定文の行の予約（HeldExitRuleReserveChars）ぶん底上げした。
-        var exactBudget = 750 + Policy.Summary.Length + unknownChars + 400 + ScreeningContextAssembler.PriceContextReserveChars
+        var exactBudget = 750 + TradeDecisionPromptBuilder.PolicySection(Policy).Length + // #1529, IADR-0618: 方針の節そのものの長さ
+            unknownChars + 400 + ScreeningContextAssembler.PriceContextReserveChars
             + ScreeningContextAssembler.NewsStatusReserveChars + ScreeningContextAssembler.HeldExitRuleReserveChars
             // #1384, IADR-0558 決定 7: 建てた条件の要約の行の予約（HeldEntryBasisReserveChars）ぶん底上げした。
             + ScreeningContextAssembler.HeldEntryBasisReserveChars
@@ -359,7 +360,7 @@ public class WatchlistInDecisionPromptTests
             llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
             // 二段（一次スクリーニング → 本判断）で両方のプロンプトを捕まえる。
             options: DecisionOrchestrationOptions.Default with { EnableScreening = true, ScreeningContextBudgetChars = budget },
-            watchlist: watchlist);
+            watchlist: watchlist, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
         return (service, llm);
     }
 

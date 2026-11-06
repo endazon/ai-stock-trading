@@ -319,7 +319,7 @@ function preambleOf(text) {
  * @param {{ k: number }|null} decl  冒頭の申告（生成物の除外数 K を使う）
  * @returns {{ sentence: string, generated: boolean }[]}
  */
-function findNotReadAdmissions(text, decl) {
+function findNotReadAdmissions(text, decl, unreadable = []) {
   const k = decl ? decl.k : 0;
   const scope = `${preambleOf(text)}\n${confirmedSections(normalize(text))}`;
   const out = [];
@@ -335,6 +335,13 @@ function findNotReadAdmissions(text, decl) {
     // 計画書は読む対象のファイルではない（🔍 の「計画書は未検証」と同じ扱い）。ただし計画書とテスト等を並べた文は数える
     // （生成物と同じ規則。#1346 の AI レビュー 🟢）
     if (new RegExp(PLAN_DOC.source).test(bare) && !NON_GENERATED_TARGET.test(bare.replace(PLAN_DOC, ''))) continue;
+    // #1546: レビューする側が読めない秘密系の設定ファイル（N から差し引いた分）だけについての文は数えない。
+    const names = unreadable.map((f) => f.split('/').pop());
+    if (names.some((nm) => sentence.includes(nm))) {
+      let rest = sentence;
+      for (const nm of names) rest = rest.split(nm).join('');
+      if (!NON_GENERATED_TARGET.test(rest.replace(/`/g, ''))) continue;
+    }
     const generated = GENERATED_WORD.test(sentence) || new RegExp(GENERATED_TOKENS.source).test(sentence);
     if (generated && k > 0) {
       const rest = sentence.replace(GENERATED_TOKENS, '').replace(/生成物|自動生成/g, '');
@@ -391,6 +398,18 @@ function mentionsRun(text, cmd) {
   return confirmedSections(text).includes(cmd);
 }
 
+/**
+ * レビューする側が**読めない**変更ファイル（#1546）。レビューの実行環境の `.claude/settings.json` は秘密系の設定
+ * （`Read(./**\/.env.*)` ほか）を deny しており、`.env`・`.env.*` の basename に当たるファイルは決定的に読めない。
+ * 下限の N からこれを機械的に差し引く。判定の根拠は CHANGED_FILES のパターンだけで、レビュー本文の自己申告には頼らない。
+ * 差し引いたファイルは検査器のログに出し、オーケストレータの監査で人間側が読む（deny の側は緩めない）。
+ */
+const REVIEWER_UNREADABLE_BASENAME = /^\.env(?:\..+)?$/;
+
+function reviewerUnreadable(changedFiles) {
+  return (changedFiles || []).filter((f) => REVIEWER_UNREADABLE_BASENAME.test(f.split('/').pop()));
+}
+
 /** CHANGED_FILES（改行区切り）を配列にする。空行は捨てる。 */
 function parseChangedFiles(raw) {
   return String(raw || '')
@@ -411,15 +430,18 @@ function findFloorViolations(body, changedFiles) {
   const text = normalize(body);
 
   const decl = parseReadDeclaration(text);
+  // #1546: レビューする側が読めない秘密系の設定ファイルの数（CHANGED_FILES から機械的に数える）。
+  const s = reviewerUnreadable(changedFiles).length;
   if (!decl || decl.m === null) {
     problems.push(
       '下限「変更ファイルは全部読む」: 本文に「変更 N ファイル中 M ファイルを読んだ」の申告が無い' +
         (decl ? `（N=${decl.n} は在るが、読んだ件数 M が数字で書かれていない）` : '')
     );
-  } else if (decl.m + decl.k < decl.n) {
+  } else if (decl.m + decl.k + s < decl.n) {
     problems.push(
       `下限「変更ファイルは全部読む」: 変更 ${decl.n} ファイル中 ${decl.m} ファイルしか読んでいない` +
-        (decl.k ? `（生成物の除外 ${decl.k} を足しても ${decl.m + decl.k}）` : '')
+        (decl.k ? `（生成物の除外 ${decl.k} を足しても ${decl.m + decl.k}）` : '') +
+        (s ? `（レビューする側が読めない秘密系の設定 ${s} ファイルを差し引いても足りない）` : '')
     );
   }
 
@@ -428,8 +450,8 @@ function findFloorViolations(body, changedFiles) {
   }
 
   // 申告の数を満たすときだけ見る（満たさなければ上の (a) がすでに赤。同じ欠落を 2 度数えない）
-  if (decl && decl.m !== null && decl.m + decl.k >= decl.n) {
-    for (const { sentence, generated } of findNotReadAdmissions(text, decl)) {
+  if (decl && decl.m !== null && decl.m + decl.k + s >= decl.n) {
+    for (const { sentence, generated } of findNotReadAdmissions(text, decl, reviewerUnreadable(changedFiles))) {
       problems.push(
         `下限「変更ファイルは全部読む」の自己申告: ${decl.m} ファイルを読んだと申告したが、本文が精読していないと書いている —— 「${sentence.slice(0, 120)}」` +
           (generated && !decl.k ? '（生成物なら、冒頭で「生成物 K ファイルを除外」と申告して M から外す）' : '')
@@ -594,6 +616,32 @@ function selfTest() {
     assert.deepStrictEqual(findFloorViolations(selectReviewBody(events), []), []);
   });
 
+  // #1546: レビューする側が読めない秘密系の設定ファイル（.env / .env.*）は N から機械的に差し引く。
+  T('下限: .env.example だけが読めていない場合は緑（CHANGED_FILES から差し引く）', () => {
+    const changed = ['.env.example', 'scripts/a.js', 'docs/b.md'];
+    const body = review('変更 3 ファイル中 2 ファイルを読んだ（生成物の除外なし）。`.env.example` は権限で読めていない。') +
+      '\n### 確認できたこと\n- scripts.test.js: 全件成功\n';
+    assert.deepStrictEqual(findFloorViolations(body, changed), []);
+  });
+
+  T('下限: .env.example 以外を読み落とした場合は従来どおり赤', () => {
+    const changed = ['.env.example', 'scripts/a.js', 'docs/b.md'];
+    const body = review('変更 3 ファイル中 1 ファイルを読んだ（生成物の除外なし）。') + '\n### 確認できたこと\n- scripts.test.js: 全件成功\n';
+    const v = findFloorViolations(body, changed);
+    assert.strictEqual(v.length, 1);
+    assert.match(v[0], /3 ファイル中 1/);
+    // 読めない設定ファイルと並べて、他のファイルを読んでいないと書いた文も従来どおり赤
+    const mixed = review('変更 3 ファイル中 2 ファイルを読んだ。`.env.example` と docs/b.md は読めていない。') + '\n### 確認できたこと\n- scripts.test.js: 全件成功\n';
+    assert.strictEqual(findFloorViolations(mixed, changed).length, 1);
+  });
+
+  T('下限: .env.example が CHANGED_FILES に無ければ N は変わらない', () => {
+    const body = review('変更 2 ファイル中 1 ファイルを読んだ（生成物の除外なし）。');
+    assert.strictEqual(findFloorViolations(body, ['src/a.cs', 'src/b.cs']).length, 1);
+    assert.strictEqual(findFloorViolations(body, null).length, 1);
+    assert.deepStrictEqual(reviewerUnreadable(['src/.envrc', 'docs/env.md', 'a/.env', 'b/.env.local']), ['a/.env', 'b/.env.local']);
+  });
+
   console.log(`[check-review-verdict] self-test OK（${n} 件）`);
 }
 
@@ -631,6 +679,13 @@ function main(argv) {
       warn(
         '[check-review-verdict] CHANGED_FILES が未設定または空のため、差分の種類に応じた下限' +
           '（helm lint / helm template / scripts.test.js）の判定だけを skip する（fail-open）。'
+      );
+    }
+    const unreadable = reviewerUnreadable(changed);
+    if (unreadable.length) {
+      console.log(
+        `[check-review-verdict] 下限の N から、レビューする側が読めない秘密系の設定 ${unreadable.length} ファイルを差し引く` +
+          `（オーケストレータの監査で人間側が読む）: ${unreadable.join(', ')}`
       );
     }
     const floor = findFloorViolations(selectReviewBody(events), changed.length ? changed : null);
@@ -680,6 +735,7 @@ module.exports = {
   findFloorAdmissions,
   findNotReadAdmissions,
   findFloorViolations,
+  reviewerUnreadable,
   parseChangedFiles,
   confirmedSections,
   selfTest,

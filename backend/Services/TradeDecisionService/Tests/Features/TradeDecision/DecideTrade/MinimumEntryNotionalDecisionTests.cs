@@ -1,5 +1,6 @@
 extern alias RiskManagementWorker;
 
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Features.TradeDecision;
@@ -136,7 +137,7 @@ public class MinimumEntryNotionalDecisionTests
         var service = new AppSvc(
             llm, new FakePolicy(), new FakeSizing(context), new FakeClock(), NullLogger<AppSvc>.Instance,
             currentPrice: new FakeCurrentPrice(price), heldPosition: held, skipReporter: skips, heldReporter: heldReporter,
-            forgoneReporter: forgone, minimumEntryNotional: options, fxRate: fxRate);
+            forgoneReporter: forgone, minimumEntryNotional: options, fxRate: fxRate, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
         return new Probe(service, llm, forgone, heldReporter, skips);
     }
 

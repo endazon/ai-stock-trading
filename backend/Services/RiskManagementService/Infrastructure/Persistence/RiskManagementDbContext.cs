@@ -113,6 +113,8 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
             e.Property(r => r.Id).ValueGeneratedNever();
             e.Property(r => r.Actor).HasMaxLength(256);
             e.Property(r => r.Reason).HasMaxLength(1024);
+            // 🔴 #1534, IADR-0620: 版は並行トークン（更新時に読んだ版との一致を要求する。並行する他方は DbUpdateConcurrencyException）。
+            e.Property(r => r.Version).IsConcurrencyToken();
         });
 
         mb.Entity<PauseRow>(e =>

@@ -18,8 +18,11 @@ public sealed class StageGateService(
     IRiskSettingsStore settingsStore,
     KillSwitchService killSwitch,
     ShortSellReleaseSourceInventory releaseSources,
-    IClock clock)
+    IClock clock,
+    RiskSettingsService? stageSettingsSync = null)
 {
+    // 🔴 FR-20, ADR-0008, #1533, IADR-0616 決定2: 遷移の受理で、審査が読む設定の段階をゲートの定義へそろえる（本番は DI が渡す）。
+    // 未指定（null）は台帳だけを書く従前の形（設定の段階を持たない既存の試験の前提）。
     // FR-20, FR-13, SC-02, #423, §4.1 条件 3, IADR-0164 決定4: **最小取引件数だけが設定値である。**
     //
     // `StageGatePolicy` は DI の singleton であり、段階別の資金上限・撤退倍率という「運用中に変わらない
@@ -169,6 +172,10 @@ public sealed class StageGateService(
 
             ledgerStore.Append(result.Transition);
 
+            // 🔴 #1533, IADR-0616 決定2: 設定の段階（審査・サイジングが読む）を遷移先の定義へそろえる。設定の口からは段階を変えない（決定1）。
+            stageSettingsSync?.SyncStageFromGate(
+                policy.SettingsFor(result.Transition.ToStage), result.Transition.ApprovedBy, result.Transition.Reason);
+
             // FR-20, ADR-0008, IADR-0103, #164: 受理された差し戻し（降格）で実DD の観測窓を区切る。
             // 実DD は単調非減少で累積するため、リセット経路が無いと「撤退 → 降格 → 再昇格」の直後に過去の実DD で
             // 撤退が恒久的に再発火する。差し戻しは再検証のやり直しであり、観測もそこで区切るのが ADR-0008 の意図に合う。
@@ -230,5 +237,32 @@ public sealed class StageGateService(
         }
 
         return new WithdrawalEvaluationOutcome(assessment, newlyEngaged);
+    }
+}
+
+/// <summary>
+/// NFR, FR-20, #1533, IADR-0616: 審査が読む運用段階の正の段（構成 <c>RiskControls:StageSource</c>）。
+/// </summary>
+public enum StageSourceMode
+{
+    /// <summary>段 1（既定）: 設定の段階で審査し、台帳との食い違いを記録する。</summary>
+    Report = 0,
+
+    /// <summary>段 2: 台帳の現段階の定義で審査する。</summary>
+    Enforce = 1,
+}
+
+/// <summary>NFR, #1533, IADR-0616: 段の構成の読み取り。空は段 1。知らない値は起動で止める。</summary>
+public static class StageSourceModeConfig
+{
+    public const string ConfigKey = "RiskControls:StageSource";
+
+    public static StageSourceMode From(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return StageSourceMode.Report;
+        if (Enum.TryParse<StageSourceMode>(value.Trim(), ignoreCase: false, out var mode) && Enum.IsDefined(mode))
+            return mode;
+        throw new InvalidOperationException($"{ConfigKey} は Report か Enforce です（値: {value}）。");
     }
 }

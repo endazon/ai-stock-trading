@@ -1,5 +1,6 @@
 extern alias RiskManagementWorker;
 
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using System.Diagnostics;
 using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Common.Abstractions;
@@ -86,7 +87,7 @@ public class FinnhubQuoteTimeoutDecisionTests
             retrieval: null, options: null, profitability: null, profitabilityOptions: null,
             unconfirmedNotifier: null, currentPrice: currentPrice, fxRate: null, heldPosition: new FakeHeld(),
             retrievalSourcePolicy: null, statusNotifier: null, screeningReporter: null,
-            skipReporter: reporter);
+            skipReporter: reporter, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
     }
 
     private static SizingContext Context() =>

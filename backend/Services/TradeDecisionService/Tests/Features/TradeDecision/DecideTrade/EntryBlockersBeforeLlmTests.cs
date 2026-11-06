@@ -1,5 +1,6 @@
 extern alias RiskManagementWorker;
 
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Features.TradeDecision;
@@ -133,7 +134,7 @@ public class EntryBlockersBeforeLlmTests
         var service = new AppSvc(
             llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
             heldPosition: held, skipReporter: skips, heldReporter: heldReporter, forgoneReporter: forgone,
-            entryBlockers: blockers);
+            entryBlockers: blockers, unanchoredEntryPrice: new UnanchoredEntryPriceOptions(Allow: true));
         return new Probe(service, llm, forgone, heldReporter, skips);
     }
 

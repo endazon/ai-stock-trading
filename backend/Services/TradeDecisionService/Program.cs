@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Infrastructure.Composable.Http;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Infrastructure.ExternalServices;
 using TradeDecisionService.Features.TradeDecision;
@@ -83,6 +84,12 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 // fail-safe: LlmGateway:Auth 未設定なら何も付けない＝本変更前とバイト等価。
 // リトライはゲートウェイ側が一元化する（MSP/ADR-0010）ため呼び出し側では重ねない。
 builder.Services.AddHttpClient("llm", c => c.Timeout = ParseTimeout(builder.Configuration["LlmGateway:TimeoutSeconds"]))
+    // NFR, NFR-18, #1535, IADR-0621 決定5: https のゲートウェイは基盤の CA で検証する（名前の不一致・CA なしは拒む・平文へ戻らない）。
+    // http の URL（経路 B）には何も効かない。外部 API の HttpClient には付けない。
+    .ConfigurePrimaryHttpMessageHandler(sp =>
+        PlatformInfraCaTrust.CreateHandler(
+            sp.GetRequiredService<IConfiguration>()[PlatformInfraCaTrust.PathKey],
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(PlatformInfraCaTrust))))
     .AddAiStockTradingPlatformRealmToken(
         builder.Configuration, LlmGatewayAuth.SectionName, LlmGatewayAuth.TokenClientName);
 builder.Services.AddSingleton<PlaceholderLlmCompletionClient>();
@@ -626,6 +633,10 @@ builder.Services.AddScoped<ILlmCostHaltGate>(sp =>
     http.BaseAddress = uri;
     return new HttpLlmCostHaltGate(http, sp.GetRequiredService<ILogger<HttpLlmCostHaltGate>>());
 });
+// 🔴 FR-04, FR-10, ADR-0003, #1529, IADR-0617: 現在値の供給が無い構成で、LLM の参照価格による新規建てを作らない（既定 false＝見送る）。
+// true は検証用の明示の opt-in（従前の挙動）。手仕舞いは止めない。
+builder.Services.AddSingleton(new UnanchoredEntryPriceOptions(
+    builder.Configuration.GetValue(UnanchoredEntryPriceOptions.ConfigKey, defaultValue: false)));
 builder.Services.AddScoped<TradeDecisionAppService>();
 
 // FR-04, FR-15, NFR（費用）, ADR-0033 決定2/決定4/決定5, #632, IADR-0318: Stage 0 の記録（AI 判断の記録・再生）。
