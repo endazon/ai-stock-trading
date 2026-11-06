@@ -15,6 +15,8 @@
  *
  * 照合の規則:
  *   - 完全形（前置きの後に英数字 4 文字の区画が 3 つ）は allowlist と完全一致するときだけ許す。
+ *   - 2 区画の形（先頭の 2 区画だけ）は、allowlist の完全形の先頭 2 区画と一致するときだけ許す
+ *     （先頭の区画だけで照合すると、2 区画目が何であっても通ってしまう）。
  *   - 短縮形（先頭の区画だけで、後ろに区画が続かない）は、allowlist の先頭の区画と一致するときだけ許す。
  *   - 大文字小文字は区別しない（小文字の前置きも拾う）。
  *   - `GHSA-...` のような例示（英数字 4 文字が続かないもの）は識別子ではないので拾わない。
@@ -60,13 +62,14 @@ const ALLOWLIST = [
   'GHSA-v5pm-xwqc-g5wc',
 ];
 
-/** 拾う形。完全形を先に試し、区画が続かなければ短縮形として扱う。 */
-const ID_SOURCE = 'GHSA-([0-9a-z]{4})(?:-([0-9a-z]{4})-([0-9a-z]{4}))?(?![0-9a-z])';
+/** 拾う形。完全形 → 2 区画の形 → 短縮形の順に、区画が続く限り長く取る。 */
+const ID_SOURCE = 'GHSA-([0-9a-z]{4})(?:-([0-9a-z]{4})(?:-([0-9a-z]{4}))?)?(?![0-9a-z])';
 
 function buildAllow(allowlist = ALLOWLIST) {
   const full = new Set(allowlist.map((s) => s.toLowerCase()));
   const head = new Set(allowlist.map((s) => s.toLowerCase().split('-')[1]));
-  return { full, head };
+  const two = new Set(allowlist.map((s) => s.toLowerCase().split('-').slice(0, 3).join('-')));
+  return { full, two, head };
 }
 
 /** 1 ファイル分の違反を返す（行番号付き）。 */
@@ -78,7 +81,11 @@ function findViolations(text, allowlist = ALLOWLIST) {
     let m;
     while ((m = re.exec(line)) !== null) {
       const id = m[0].toLowerCase();
-      const ok = m[2] ? allow.full.has(id) : allow.head.has(m[1].toLowerCase());
+      const ok = m[3]
+        ? allow.full.has(id)
+        : m[2]
+          ? allow.two.has(id)
+          : allow.head.has(m[1].toLowerCase());
       if (!ok) hits.push({ line: i + 1, id: m[0] });
     }
   });

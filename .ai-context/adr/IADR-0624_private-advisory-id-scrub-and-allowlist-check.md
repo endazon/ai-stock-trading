@@ -51,7 +51,7 @@ plan_refs: []
    - 起動器と試験: `scripts/k8s-local-deploy.sh`・`scripts/k8s-local-deploy.test.sh`。
    - CI: `.github/workflows/helm.yml`。
    - 文書の frontmatter: `docs/infra/infra.md`・`docs/operations/operations.md`。
-4. **再混入を止める検査器 `scripts/check-advisory-ids.js`。** 追跡下の全ファイルの本文で `GHSA-` で始まる識別子を拾い（大文字小文字を区別しない）、公開の第三者 advisory 12 件の allowlist にあるものだけを許す。完全形は allowlist と完全一致、短縮形（先頭の区画だけ）は allowlist の先頭の区画と一致するときだけ許す。1 件でも外れれば exit 1。`git ls-files` が失敗したら exit 1（黙って 0 件検査にしない）。CI は `ci.yml` の `static-checks` ジョブ、試験は `scripts/scripts.repo.test.js`（陰性対照つき）。
+4. **再混入を止める検査器 `scripts/check-advisory-ids.js`。** 追跡下の全ファイルの本文で `GHSA-` で始まる識別子を拾い（大文字小文字を区別しない）、公開の第三者 advisory 12 件の allowlist にあるものだけを許す。完全形は allowlist と完全一致、2 区画の形（先頭の 2 区画だけ）は allowlist の完全形の先頭 2 区画と一致するとき、短縮形（先頭の区画だけ）は allowlist の先頭の区画と一致するときだけ許す。1 件でも外れれば exit 1。`git ls-files` が失敗したら exit 1（黙って 0 件検査にしない）。CI は `ci.yml` の `static-checks` ジョブ、試験は `scripts/scripts.repo.test.js`（陰性対照つき）。
 5. **allowlist に足す規則。** 公開済みの第三者 advisory（依存パッケージの既知脆弱性）を新たに引くときだけ、理由を添えて足す。自リポジトリ・基盤の非公開の指摘は足さない（中立表記で書く）。
 
 ## 理由

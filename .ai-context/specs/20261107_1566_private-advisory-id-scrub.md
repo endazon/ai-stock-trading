@@ -1,7 +1,7 @@
 ---
 title: 公開のファイルから非公開の指摘の識別子を除き、advisory の識別子の再混入を allowlist の検査器で止める
 type: spec
-status: accepted
+status: done
 related_ids: [NFR, IADR-0624, IADR-0098, IADR-0314, IADR-0566, IADR-0567, IADR-0568, IADR-0570]
 author: claude (Claude Code)
 created: 2026-11-07
@@ -56,7 +56,7 @@ plan_refs: []
 ### 2. 再混入を止める検査器 `scripts/check-advisory-ids.js`
 
 - 追跡下の全ファイル（`git ls-files`）の本文で、`GHSA-` で始まる識別子を拾う（大文字小文字を区別しない）。
-- **allowlist だけの形にする。** 許すのは公開の第三者 advisory 12 件だけ。完全形は allowlist と完全一致、短縮形（先頭 4 文字だけ）は allowlist の先頭の区画と一致するときだけ許す。それ以外は 1 件でも exit 1。
+- **allowlist だけの形にする。** 許すのは公開の第三者 advisory 12 件だけ。完全形は allowlist と完全一致、2 区画の形（先頭の 2 区画だけ）は allowlist の完全形の先頭 2 区画と一致するとき、短縮形（先頭 4 文字だけ）は allowlist の先頭の区画と一致するときだけ許す。それ以外は 1 件でも exit 1。
 - 非公開の識別子は検査器にも試験にも書かない。ハッシュ照合は入れない（利用者裁定）。
 - 前置きなしの断片はこの形では捕まらない（残余。IADR-0624）。
 - バイナリ（NUL を含むファイル）は飛ばす。`git ls-files` が失敗したら exit 1（黙って 0 件検査にしない）。
@@ -87,8 +87,8 @@ plan_refs: []
 
 - `scripts/scripts.repo.test.js` に次を置く。
   - allowlist が 12 件ちょうどで、すべて GHSA の形であること。
-  - allowlist の完全形・短縮形を許すこと。
-  - allowlist に無い架空の識別子（同じ文字の繰り返し。実在しない形が明らかなもの）を完全形・短縮形とも検出すること（陰性対照）。架空の識別子は試験の中で組み立て、ファイルの字面には置かない（実ツリーの検査を自分で赤にしない）。
+  - allowlist の完全形・2 区画の形・短縮形を許すこと。
+  - allowlist に無い架空の識別子（同じ文字の繰り返し。実在しない形が明らかなもの）を完全形・短縮形とも検出すること（陰性対照）。先頭の区画が allowlist と同じで 2 区画目が違う 2 区画の形も検出すること（陰性対照。先頭の区画は公開の allowlist から取る）。架空の識別子は試験の中で組み立て、ファイルの字面には置かない（実ツリーの検査を自分で赤にしない）。
   - 小文字の前置きも検出すること。
   - `GHSA-...` のような識別子でない例示は検出しないこと。
   - 実ツリーで 0 件であること。
@@ -108,6 +108,7 @@ plan_refs: []
 - 置換後のツリー（コミット済みの HEAD）を非公開の識別子の一覧で引き直した: 前置きつき 0 件・前置きなしの断片 0 件・識別子の後ろの区画 0 件・ファイル名 0 件。部分文字列の緩い走査で残る一致はすべて無関係な語（`Grpc…` の綴りの一部）で、識別子ではない。
 - 公開の第三者 advisory の識別子は 12 種がそのまま残る（すべて allowlist にある）。
 - `node scripts/check-advisory-ids.js`（OK）、`check-doc-links`・`check-trace-blocks`・`gen-knowledge-graph --check`・`check-test-traceability`・`check-adr-index-addendum-loss`（宣言 1 件）・`check-cross-repo-refs`・`check-plan-id-qualification`・`check-commit-messages`・`check-reading-budget`・`check-workflow-job-refs`・`check-action-versions` が緑。
+- AI レビューの指摘で、2 区画の形を先頭の区画だけで照合していた穴を塞いだ（陰性対照を追加。旧い照合では赤になることを確かめた）。
 - `check-adr-index-sync`: IADR-0567 は本文の識別子を置換したが、索引行には識別子が無く要約も変わらないため、索引行を変えない（本記録のコミットで宣言する）。
 - `bash scripts/k8s-local-deploy.test.sh`: 310 passed / 0 failed。
 - `REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js`: 新設の試験は全件緑。手元では既存の 1 件（過去の索引追随漏れの実コミットでの回帰）が落ちるが、develop の素の作業ツリーでも同じく落ち、develop の CI（`scripts-tests`）では緑である。本作業と無関係（手元の環境差）。

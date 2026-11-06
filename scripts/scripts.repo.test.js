@@ -2176,6 +2176,26 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     assert.strictEqual(aid.findViolations(['GHSA', head, fakeHead, fakeHead].join('-')).length, 1);
   });
 
+  ok('check-advisory-ids: 2 区画の形は、allowlist の完全形の先頭 2 区画と一致すれば許す', () => {
+    const two = aid.ALLOWLIST[2].split('-').slice(0, 3).join('-');
+    assert.deepStrictEqual(aid.findViolations(`依存の既知脆弱性（${two}）`), []);
+    assert.deepStrictEqual(aid.findViolations(`${two.toLowerCase()}_topic`), []);
+  });
+
+  ok('check-advisory-ids: 陰性対照 — 先頭の区画が allowlist と同じで 2 区画目が違う 2 区画の形を検出する', () => {
+    // 先頭の区画は公開の allowlist から取り、2 区画目は架空（同じ文字の繰り返し）にして組み立てる。
+    const head = aid.ALLOWLIST[2].split('-')[1];
+    const fakeTwo = ['GHSA', head, fakeHead].join('-');
+    const hits = aid.findViolations(`# Refs ${fakeTwo}: 説明`);
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].id, fakeTwo);
+    // 別の allowlist の 2 区画目と組み合わせても、同じ完全形の先頭 2 区画でなければ検出する
+    const otherSecond = aid.ALLOWLIST[3].split('-')[2];
+    assert.strictEqual(aid.findViolations(['GHSA', head, otherSecond].join('-')).length, 1);
+    // 3 区画目が識別子の区画にならない後続（短い語）でも、2 区画の形として照合する
+    assert.strictEqual(aid.findViolations(`${fakeTwo}-ab`).length, 1);
+  });
+
   ok('check-advisory-ids: 小文字の前置きも検出する', () => {
     assert.strictEqual(aid.findViolations(fakeFull.toLowerCase()).length, 1);
   });
