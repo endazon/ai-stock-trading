@@ -35,6 +35,7 @@ public class DiscordConfirmationModalsTests
     public static TheoryData<string, Modal> LooseningModals() => new()
     {
         { "kill switch の解除", DiscordConfirmationModals.KillSwitchDisengage() },
+        { "kill switch の解除（版つき）", DiscordConfirmationModals.KillSwitchDisengage("42") },
         { "取引の再開", DiscordConfirmationModals.Resume() },
         { "段階の昇格", DiscordConfirmationModals.StagePromote("2") },
         { "GFV 停止の解除", DiscordConfirmationModals.GfvClear() },
@@ -92,9 +93,43 @@ public class DiscordConfirmationModalsTests
             DiscordConfirmationModals.ReportApproveModalPrefix, DiscordConfirmationModals.PolicyApproveModalPrefix,
             DiscordConfirmationModals.GfvClearModalId, DiscordConfirmationModals.DriftAdoptModalPrefix,
             DiscordConfirmationModals.KillSwitchEngageModalId, DiscordConfirmationModals.KillSwitchDisengageModalId,
+            DiscordConfirmationModals.KillSwitchDisengageModalPrefix,
         ];
         foreach (var a in prefixes)
             prefixes.Where(b => b != a).Should().NotContain(b => b.StartsWith(a, StringComparison.Ordinal), $"{a} は他の ID の接頭辞にならない");
+    }
+
+    // FR-10, FR-14, #1561, IADR-0620: 解除の確認の画面は、照会した版を ID に載せ、送信の受け取りが版を解除の要求へ添える。
+    // 版の形でない値（照会の失敗・壊れた ID）は版なしの画面＝従来の ID（段 1 では従来どおり通る）。
+    [Theory]
+    [InlineData("42", "ast-ks-off-m-42")]
+    [InlineData(" 7 ", "ast-ks-off-m-7")]
+    [InlineData(null, "ast-killswitch-disengage-modal")]
+    [InlineData("", "ast-killswitch-disengage-modal")]
+    [InlineData("abc", "ast-killswitch-disengage-modal")]
+    [InlineData("12345678901234567890", "ast-killswitch-disengage-modal")]
+    public void 解除の画面の_ID_は版の形のときだけ版を載せる(string? version, string expected)
+    {
+        DiscordConfirmationModals.KillSwitchDisengage(version).CustomId.Should().Be(expected);
+    }
+
+    [Fact]
+    public void 版つきの解除の画面の送信だけが版を運ぶ()
+    {
+        DiscordConfirmationModals.Route(DiscordConfirmationModals.KillSwitchDisengageModalPrefix + "42", Inputs())!.ExpectedVersion.Should().Be("42");
+        DiscordConfirmationModals.Route(DiscordConfirmationModals.KillSwitchDisengageModalId, Inputs())!.ExpectedVersion
+            .Should().BeNull("版なしの画面（照会の失敗・旧版のボタン）は前提条件なし");
+        DiscordConfirmationModals.Route(DiscordConfirmationModals.KillSwitchEngageModalId, Inputs())!.ExpectedVersion
+            .Should().BeNull("起動（止める向き）は版を運ばない");
+    }
+
+    // 版（19 桁まで）を載せたボタン・画面の ID は Discord の上限 100 文字に収まる。モーダルの接頭辞はボタンの接頭辞より長くない。
+    [Fact]
+    public void 版つきの解除の_ID_は上限に収まる()
+    {
+        DiscordConfirmationModals.KillSwitchDisengageModalPrefix.Length
+            .Should().BeLessThanOrEqualTo(DiscordNetBotGateway.KillSwitchDisengageButtonPrefix.Length);
+        (DiscordNetBotGateway.KillSwitchDisengageButtonPrefix.Length + 19).Should().BeLessThanOrEqualTo(100);
     }
 
     // ボタンの CustomId（100 文字まで）に収まった値は、モーダルの ID にも必ず収まる。
@@ -171,6 +206,10 @@ public class DiscordConfirmationModalsTests
     [InlineData("ast-drift-adopt-modal-us")]
     [InlineData("ast-drift-adopt-modal--AAPL")]
     [InlineData("ast-drift-adopt-modal-us-")]
+    [InlineData("ast-ks-off-m-")]
+    [InlineData("ast-ks-off-m-abc")]
+    [InlineData("ast-ks-off-m--1")]
+    [InlineData("ast-ks-off-m-12345678901234567890")]
     public void 書式外の_ID_は振り分けない(string modalId) =>
         DiscordConfirmationModals.Route(modalId, Inputs()).Should().BeNull();
 

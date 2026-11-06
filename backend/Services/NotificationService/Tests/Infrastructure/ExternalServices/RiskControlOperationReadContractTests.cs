@@ -250,6 +250,39 @@ public class RiskControlOperationReadContractTests
         doc.RootElement.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(["symbol", "market", "reason", "onBehalfOf"]);
     }
 
+    // 🔴 FR-10, FR-14, #1561, IADR-0620: ボットが解除の確認を出すときに読む kill switch の版（GET /risk-controls/status の
+    // killSwitchVersion）も、送り手の本物の型を直列化した応答から読める（改名で黙って「版なし」へ落ちない）。
+    [Fact]
+    public async Task kill_switch_の版は送り手の本物の稼働状態の型を直列化した応答から読める()
+    {
+        // 受け手も同名の射影（HttpPauseController.RiskStatusView）を持つため、送り手だけの型（ActiveTradingControl）も明示する。
+        var view = StatusWithCapital(1_000_000m, 50_000m, 100_000m) with
+        {
+            KillSwitchVersion = "17",
+            ActiveControl = RiskStatus.ActiveTradingControl.None,
+        };
+
+        var version = await new HttpKillSwitchController(Client(view), NullLogger<HttpKillSwitchController>.Instance).GetVersionAsync();
+
+        version.Should().Be("17");
+    }
+
+    // 🔴 FR-10, #1561, IADR-0620（逆向き）: Bot が送る解除の本文は、送り手の本物の要求型で読むと理由・確認コード・見た版がそのまま届く。
+    [Fact]
+    public async Task 解除の要求本文は送り手の本物の要求型で見た版を読める()
+    {
+        var capture = new CapturingHandler();
+        var controller = new HttpKillSwitchController(
+            new HttpClient(capture) { BaseAddress = new Uri("http://risk-management-service") },
+            NullLogger<HttpKillSwitchController>.Instance);
+
+        await controller.DisengageAsync("再開", "123456", "17");
+
+        capture.Path.Should().Be("/risk-controls/kill-switch/disengage");
+        JsonSerializer.Deserialize<RiskFeatures.KillSwitchRequest>(capture.Body, Web)
+            .Should().Be(new RiskFeatures.KillSwitchRequest("再開", "123456", "17"));
+    }
+
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>

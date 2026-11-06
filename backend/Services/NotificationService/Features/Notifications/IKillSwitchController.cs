@@ -20,6 +20,19 @@ public interface IKillSwitchController
     // 実装（Http*・Grpc*）は必ず上書きし、REST の本文・gRPC の要求の既存の欄で運ぶ。
     Task<KillSwitchResult> DisengageAsync(string reason, string? secondFactorCode, CancellationToken cancellationToken = default) =>
         DisengageAsync(reason, cancellationToken);
+
+    // 全停止の解除（確認コードと見た状態の版つき）。
+    //
+    // FR-10, FR-14, #1561, IADR-0620: expectedVersion は確認を出したときに照会した kill switch の版（null は前提条件なし＝従来）。
+    // 提供側は、渡された版が今の版と違えば 409 で何も変えない（段に依らない）。段 2 は版の無い解除を 428 で拒む。
+    // 既定の実装は版を捨てて従来の口へ委ねる（試験の偽物を壊さない）。実装（Http*・Grpc*）は必ず上書きする。
+    Task<KillSwitchResult> DisengageAsync(
+        string reason, string? secondFactorCode, string? expectedVersion, CancellationToken cancellationToken = default) =>
+        DisengageAsync(reason, secondFactorCode, cancellationToken);
+
+    // FR-10, FR-14, #1561, IADR-0620: 今の kill switch の版（稼働状態の照会の kill_switch_version）。照会に失敗したら null
+    // （確認と解除は版なしで従来どおり進む。段 1 では通る）。既定の実装は null（試験の偽物を壊さない）。
+    Task<string?> GetVersionAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
 }
 
 // FR-14: kill switch 操作の結果。Engaged は操作後の状態。失敗時は Succeeded=false とし、

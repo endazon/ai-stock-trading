@@ -58,7 +58,8 @@ internal sealed class NotificationGrpcCalls(TimeSpan timeout, int maxAttempts, I
         catch (RpcException ex)
         {
             _logger.LogWarning("{Operation} の gRPC 呼び出しに失敗（{Status}・再試行しない）。", operation, ex.StatusCode);
-            return GrpcCallOutcome<TResponse>.Failed(ex.StatusCode, ex.Status.Detail);
+            // FR-10, #1561: 提供側が末尾の metadata に添えた機械可読な印（REST の本文の code）。
+            return GrpcCallOutcome<TResponse>.Failed(ex.StatusCode, ex.Status.Detail, ex.Trailers?.GetValue(ErrorCodeTrailer));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -158,6 +159,9 @@ internal sealed class NotificationGrpcCalls(TimeSpan timeout, int maxAttempts, I
             ? outcome.Detail
             : null;
 
+    /// <summary>FR-10, #1561: 提供側（リスク管理）が REST の本文の <c>code</c> を運ぶ末尾の metadata の名前。</summary>
+    internal const string ErrorCodeTrailer = "ast-error-code";
+
     /// <summary>REST の 401/403 と同じ注記（各 Http* アダプタと同じ文言）。</summary>
     internal const string OwnerHint = "（Bot の owner クライアント設定・trading-owner ロール割当を確認してください）";
 }
@@ -166,11 +170,11 @@ internal sealed class NotificationGrpcCalls(TimeSpan timeout, int maxAttempts, I
 /// gRPC の 1 回の呼び出しの結果。成功なら <see cref="Response"/>、失敗なら <see cref="Status"/>（<c>OK</c> 以外）と、提供側が添えた詳細
 /// （<see cref="Detail"/>。書き込みの受理不能の理由＝REST の <c>error</c>。空なら <c>null</c>）。
 /// </summary>
-internal readonly record struct GrpcCallOutcome<T>(T? Response, StatusCode Status, string? Detail = null)
+internal readonly record struct GrpcCallOutcome<T>(T? Response, StatusCode Status, string? Detail = null, string? ErrorCode = null)
     where T : class
 {
     internal static GrpcCallOutcome<T> Ok(T response) => new(response, StatusCode.OK);
 
-    internal static GrpcCallOutcome<T> Failed(StatusCode status, string? detail = null) =>
-        new(null, status, string.IsNullOrWhiteSpace(detail) ? null : detail);
+    internal static GrpcCallOutcome<T> Failed(StatusCode status, string? detail = null, string? errorCode = null) =>
+        new(null, status, string.IsNullOrWhiteSpace(detail) ? null : detail, string.IsNullOrWhiteSpace(errorCode) ? null : errorCode);
 }

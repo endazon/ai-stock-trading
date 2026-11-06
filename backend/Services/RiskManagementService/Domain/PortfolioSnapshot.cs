@@ -125,6 +125,12 @@ public record PortfolioSnapshot
     public bool KillSwitchEngaged { get; init; }
 
     /// <summary>
+    /// FR-10, FR-14, #1561, IADR-0620: <see cref="KillSwitchEngaged"/> と同じ読み出しの kill switch の版（表示と解除の前提条件に添える値）。
+    /// 審査は読まない。
+    /// </summary>
+    public string? KillSwitchVersion { get; init; }
+
+    /// <summary>
     /// 取引の一時停止（pause）。利用者が手動で発動し、期限を持たず `/resume` まで継続する軽い統制（ADR-0009）。
     /// kill switch と同じく新規建て（エントリー）のみを止め、手仕舞い（Close）・損切りは止めない。
     /// 日次損失ロックアウト（IADR-0008）とは別状態で、`/resume` は本状態のみを解除する。

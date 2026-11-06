@@ -64,6 +64,8 @@ public sealed class PortfolioSnapshotBuilder(
             Account = accountObservations.GetCurrent(),
             GoodFaithViolations = goodFaithViolations?.GetTally(),
             KillSwitchEngaged = killSwitch.Engaged,
+            // #1561, IADR-0620: 状態と版は同じ読み出しから取る（照会の間に書かれても組が食い違わない）。
+            KillSwitchVersion = killSwitch.Version,
             TradingPaused = pause.Paused,
             InformationDegradedBlocksNewEntries = informationDegradation.BlocksNewEntries,
         };

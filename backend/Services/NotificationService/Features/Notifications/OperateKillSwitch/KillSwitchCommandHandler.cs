@@ -21,6 +21,8 @@ public sealed class KillSwitchCommandHandler(
         // NFR-06, FR-14, #1552, IADR-0615: 確認の画面で入れた認証アプリの 6 桁（任意・空は null）。確かめるのは提供側で、
         // ボットは運ぶだけ（ログ・応答に出さない）。
         string? secondFactorCode = null,
+        // FR-10, FR-14, #1561, IADR-0620: 確認を出したときに照会した kill switch の版（null は前提条件なし）。解除にだけ添える。
+        string? expectedVersion = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -65,13 +67,25 @@ public sealed class KillSwitchCommandHandler(
         // 起動・解除いずれも冪等（既に当該状態なら Risk が現状態を返すのみ）。
         var result = command.Kind == BotCommandKind.KillSwitchEngage
             ? await controller.EngageAsync(reason, cancellationToken).ConfigureAwait(false)
-            : await controller.DisengageAsync(reason, secondFactorCode, cancellationToken).ConfigureAwait(false);
+            : await controller.DisengageAsync(reason, secondFactorCode, expectedVersion, cancellationToken).ConfigureAwait(false);
 
         logger.LogInformation(
             "kill switch 操作を実行しました（Actor={Actor}・Kind={Kind}・Succeeded={Succeeded}・Engaged={Engaged}）。",
             auth.Actor, command.Kind, result.Succeeded, result.Engaged);
 
         return KillSwitchCommandResult.Executed(result);
+    }
+
+    /// <summary>
+    /// FR-10, FR-14, #1561, IADR-0620: 解除の確認を出す前に、今の kill switch の版を照会する（確認のボタンと画面に載せ、解除の要求へ添える）。
+    /// 多層認証はここでも掛ける（許可外へ状態を漏らさない）。照会に失敗したら null（確認と解除は版なしで従来どおり進む）。
+    /// </summary>
+    public async Task<string?> GetDisengageVersionAsync(DiscordCommandContext context, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (!DiscordCommandAuthorizer.Authorize(context, options).IsAllowed)
+            return null;
+        return await controller.GetVersionAsync(cancellationToken).ConfigureAwait(false);
     }
 }
 

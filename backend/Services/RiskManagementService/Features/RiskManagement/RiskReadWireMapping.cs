@@ -211,6 +211,9 @@ public static class RiskReadWireMapping
             response.LockoutReleaseOn = ToWire(releaseOn);
         if (view.MaxDailyOrderAmount is { } maxDaily)
             response.MaxDailyOrderAmount = ToWire(maxDaily);
+        // FR-10, FR-14, #1561, IADR-0620: kill switch の版。
+        if (view.KillSwitchVersion is { } killSwitchVersion)
+            response.KillSwitchVersion = killSwitchVersion;
         return response;
     }
 

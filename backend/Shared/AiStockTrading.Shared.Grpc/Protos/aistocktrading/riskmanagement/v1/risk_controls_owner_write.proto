@@ -44,6 +44,8 @@ message KillSwitchChangeRequest {
   string reason = 1;
   // NFR-06, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP の 6 桁）。末尾に追加（任意）。
   optional string second_factor_code = 2;
+  // FR-10, FR-14, #1561, IADR-0620: 見た状態の版（REST の expectedVersion と同じ）。末尾に追加（任意。未指定は前提条件なし）。
+  optional string expected_version = 3;
 }
 
 message KillSwitchChangeResponse {

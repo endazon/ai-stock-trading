@@ -33,6 +33,9 @@ internal static class DiscordConfirmationModals
     // モーダルの識別子。IADR-0097: 操作ごとに分け、送信の受け取りが ID（接頭辞）の一致だけで種別を確定できるようにする。
     internal const string KillSwitchEngageModalId = "ast-killswitch-modal";
     internal const string KillSwitchDisengageModalId = "ast-killswitch-disengage-modal";
+
+    // FR-10, FR-14, #1561, IADR-0620: 版つきの解除の確認の画面（"<prefix><version>"。版は 10 進の数字だけ）。版の無い ID（上）も従来どおり受ける。
+    internal const string KillSwitchDisengageModalPrefix = "ast-ks-off-m-";
     internal const string GfvClearModalId = "ast-gfv-clear-modal";
     internal const string DriftAdoptModalPrefix = "ast-drift-adopt-modal-";
 
@@ -52,10 +55,11 @@ internal static class DiscordConfirmationModals
             .Build();
 
     // IADR-0097: 解除も起動と同じくフレーズを求める（確認ボタンのみでは解除しない）。
-    internal static Modal KillSwitchDisengage() =>
+    // FR-10, #1561: 版があれば ID に載せる（送信の受け取りが解除の要求へ添える）。版の形でなければ版なしの ID。
+    internal static Modal KillSwitchDisengage(string? version = null) =>
         WithSecondFactor(new ModalBuilder()
             .WithTitle("停止の解除")
-            .WithCustomId(KillSwitchDisengageModalId)
+            .WithCustomId(KillSwitchVersions.Normalize(version) is { } v ? KillSwitchDisengageModalPrefix + v : KillSwitchDisengageModalId)
             .AddTextInput("確認フレーズを入力してください", KillSwitchPhraseInputId, required: true))
             .Build();
 
@@ -128,6 +132,11 @@ internal static class DiscordConfirmationModals
             return new(ConfirmationKind.KillSwitchEngage, "/killswitch", valueOf(KillSwitchPhraseInputId), null, null);
         if (modalId == KillSwitchDisengageModalId)
             return new(ConfirmationKind.KillSwitchDisengage, "/killswitch off", valueOf(KillSwitchPhraseInputId), null, code);
+        if (modalId.StartsWith(KillSwitchDisengageModalPrefix, StringComparison.Ordinal))
+            // FR-10, #1561, IADR-0620: 版の形でなければ書式外（版を推測しない）。
+            return KillSwitchVersions.Normalize(modalId[KillSwitchDisengageModalPrefix.Length..]) is { } version
+                ? new(ConfirmationKind.KillSwitchDisengage, "/killswitch off", valueOf(KillSwitchPhraseInputId), null, code, version)
+                : null;
         if (modalId == ResumeModalId)
             return new(ConfirmationKind.Resume, "/resume", null, null, code);
         if (modalId == GfvClearModalId)
@@ -197,7 +206,7 @@ internal enum ConfirmationKind
 /// NFR-06, #1552: 振り分けの結果。🔴 <see cref="ToString"/> は確認コード・確認フレーズ・理由を出さない（ログに紛れ込ませない）。
 /// </summary>
 internal sealed record ConfirmationSubmission(
-    ConfirmationKind Kind, string RawCommand, string? Phrase, string? Reason, string? SecondFactorCode)
+    ConfirmationKind Kind, string RawCommand, string? Phrase, string? Reason, string? SecondFactorCode, string? ExpectedVersion = null)
 {
     public override string ToString() => $"{Kind} {RawCommand}";
 }

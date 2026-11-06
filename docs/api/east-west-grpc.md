@@ -3,13 +3,13 @@ title: east-west gRPC（サービス間の同期呼び出し）通信仕様書
 type: api-spec
 status: draft
 created: 2026-09-11
-updated: 2026-10-30
+updated: 2026-11-06
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16, FR-01, FR-02, FR-07, FR-13, FR-15, FR-14, NFR-06]
 adrs: [ADR-0001, ADR-0047, ADR-0052, MSP:ADR-0029, MSP:ADR-0075]
-iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491, IADR-0493, IADR-0521, IADR-0522, IADR-0556, IADR-0557, IADR-0559, IADR-0425, IADR-0467, IADR-0528, IADR-0535, IADR-0567, IADR-0582, IADR-0604]
+iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491, IADR-0493, IADR-0521, IADR-0522, IADR-0556, IADR-0557, IADR-0559, IADR-0425, IADR-0467, IADR-0528, IADR-0535, IADR-0567, IADR-0582, IADR-0604, IADR-0620]
 specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate, 20261006_1181_report-opening-inventory, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261017_1388_grpc-late-routes-held-symbols-asof-policy, 20261017_1391_grpc-order-execution-read-surface, 20261030_1510_grpc-addendum-3-trading-halt-cost-halt]
 issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181, #243, #1388, #1391, #1510]
 -->
@@ -357,6 +357,7 @@ Discord ボット（通知サービス）の**読み取り 6 本と書き込み 
 | `NOT_FOUND` | レビュー局面・確定・差し戻しの対象が無い／入れ替え案ではない（REST の 404） | REST の 404 と同じ文言 |
 | `FAILED_PRECONDITION` | 入れ替え案の版で確定されていない（読み取りの REST の 409）／書き込みの受理不能（REST の 422: GFV の解除対象なし・乖離の取り込みの受理不能・報告書の作り直しで中核の入力を取得できない） | REST と同じ文言（提供側の説明をそのまま見せる） |
 | `ABORTED` | 書き込みの競合（REST の 409: 版の不一致・確定済み・記録済み・案の作成後に監視銘柄が変わった・作り直しの間の改訂） | REST の 409 と同じ扱い（確定していない・1 件も適用していない） |
+| 拒否の印（末尾の metadata `ast-error-code`） | kill switch の解除の拒否で、REST の本文の `code` と同じ語を運ぶ: `operator_hold`（`ABORTED`。SSH の経路の保持）・`version_conflict`（`ABORTED`。見た版が今の版と違う）・`precondition_required`（`FAILED_PRECONDITION`。段 2 の版なしの解除＝REST の 428） | 印で文言を分ける（REST と同じ文言）。印の無い解除の `ABORTED` は旧版の提供側の保持の拒否として読む |
 | `INVALID_ARGUMENT` | 会話キー・版・理由・代理される利用者の誤り（REST の 400） | 失敗（書き込みは提供側の説明を見せる） |
 | `RESOURCE_EXHAUSTED` / `INTERNAL` | 方針の改訂・報告書の作り直しの 1 日の上限（REST の 429。別々の枠）／AI の案を作れなかった（REST の 502） | 案なし・作り直していない（提供側の説明を見せる） |
 | `UNIMPLEMENTED` | 提供側が古い（配備順の窓） | 失敗＝実行していない（会話キーの一覧は候補なし。REST の旧一覧への退避は持たない） |

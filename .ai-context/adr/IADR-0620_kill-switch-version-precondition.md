@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-14, FR-13, ADR-0009, ADR-0003, IADR-0012]
 author: claude (Claude Code)
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-06
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10・FR-14)
 ---
@@ -54,3 +54,10 @@ kill switch の発動・解除は現在の状態を見ずに上書きする。�
 1. Discord ボット（gRPC）と画面（BFF）が版を送るよう改めること。段 2 の前提（オーナーの判断で上げる）。
 2. （2026-11-06 に解消）時刻の tick を版にしていたときの ABA は、単調増加の版の列で塞いだ。
 3. `KillSwitchState.Revision` は照会の JSON に出さない（`JsonIgnore`。版は `version` の文字列だけを見せる）。残余 1（画面・ボットが版を送る作業）のときに、照会・要求の DTO を `KillSwitchState` から切り離し、内部の値と公開の形を分ける。
+
+## ［2026-11-06 追記 / #1561］残余 1 のボットの側を行った
+
+- **ボットは解除の確認を出すときに版を照会し、確認の画面の送信で解除の要求へ添える。** 版は稼働状態の照会（REST の `GET /risk-controls/status` の `killSwitchVersion`・gRPC の `GetRiskStatus` の `kill_switch_version`）から読む（`GET /kill-switch` はボットの許可表〔IADR-0622〕に無いため、許可表にある照会へ載せた）。照会に失敗したら版なしで送る（段 1 では従来どおり通る）。起動には添えない。
+- **gRPC の解除は `expected_version` を受け**、REST と同じ順（決定 2d）で判定する。決定 2b の「前提条件なしの書き込み（gRPC）」は、版が無いときだけに当たる。
+- **gRPC の拒否は末尾の metadata `ast-error-code` に REST の本文の `code` を載せる**（`operator_hold`・`version_conflict` は `ABORTED`、`precondition_required` は `FAILED_PRECONDITION`＝REST の 428 の写しを足した）。
+- 詳細は仕様書 [`20261106_1561_bot-kill-switch-version`](../specs/20261106_1561_bot-kill-switch-version.md)。**残余 1 のうち画面（BFF）の側と残余 3 は残る。** 段 2（`Require`）はクラウドの値の変更（#1560）で入れる。

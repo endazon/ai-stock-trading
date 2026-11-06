@@ -46,7 +46,8 @@ public sealed class RiskControlsOwnerWriteGrpcService(
         Proto.KillSwitchChangeRequest request, ServerCallContext context)
     {
         var reply = await RiskWriteGrpcReplies.RunAsync(Logger, () =>
-            EngageKillSwitchEndpoint.Handle(new KillSwitchRequest(request.Reason), killSwitch, context.GetHttpContext()));
+            EngageKillSwitchEndpoint.Handle(
+                new KillSwitchRequest(request.Reason, ExpectedVersion: ExpectedVersionOf(request)), killSwitch, context.GetHttpContext()));
         return new Proto.KillSwitchChangeResponse { Engaged = reply.ValueOrThrow<KillSwitchState>().Engaged };
     }
 
@@ -54,7 +55,8 @@ public sealed class RiskControlsOwnerWriteGrpcService(
         Proto.KillSwitchChangeRequest request, ServerCallContext context)
     {
         var reply = await RiskWriteGrpcReplies.RunAsync(Logger, () =>
-            DisengageKillSwitchEndpoint.Handle(new KillSwitchRequest(request.Reason, SecondFactorOf(request.HasSecondFactorCode, request.SecondFactorCode)), killSwitch, context.GetHttpContext()));
+            DisengageKillSwitchEndpoint.Handle(new KillSwitchRequest(
+                request.Reason, SecondFactorOf(request.HasSecondFactorCode, request.SecondFactorCode), ExpectedVersionOf(request)), killSwitch, context.GetHttpContext()));
         return new Proto.KillSwitchChangeResponse { Engaged = reply.ValueOrThrow<KillSwitchState>().Engaged };
     }
 
@@ -130,6 +132,10 @@ public sealed class RiskControlsOwnerWriteGrpcService(
     // NFR-06, #1542, IADR-0615: proto の任意の第 2 要素（未指定は null＝REST の項目の省略と同じ）。
     internal static string? SecondFactorOf(bool has, string value) => has ? value : null;
 
+    // FR-10, FR-14, #1561, IADR-0620: proto の任意の版（未指定は null＝REST の expectedVersion の省略と同じ）。
+    internal static string? ExpectedVersionOf(Proto.KillSwitchChangeRequest request) =>
+        request.HasExpectedVersion ? request.ExpectedVersion : null;
+
     // 線上の列挙 → C#（**名前で**写す）。未指定・未知は null ＝ REST の項目の省略（処理関数が 400 にする）。
     internal static TradingStage? ToStage(Proto.TradingStage value) => value switch
     {
@@ -182,6 +188,8 @@ internal static class RiskWriteGrpcReplies
         StatusCodes.Status404NotFound => StatusCode.NotFound,
         StatusCodes.Status409Conflict => StatusCode.Aborted,
         StatusCodes.Status422UnprocessableEntity => StatusCode.FailedPrecondition,
+        // FR-10, #1561, IADR-0620: 前提条件（版）の無い解除の拒否（段 2）。REST の 428 と同じ分類（前提を満たさない）。
+        StatusCodes.Status428PreconditionRequired => StatusCode.FailedPrecondition,
         StatusCodes.Status429TooManyRequests => StatusCode.ResourceExhausted,
         _ => StatusCode.Internal,
     };
@@ -192,8 +200,32 @@ internal static class RiskWriteGrpcReplies
         internal T ValueOrThrow<T>() where T : class =>
             Status == StatusCodes.Status200OK && Value is T value ? value : throw ToRpcException();
 
-        internal RpcException ToRpcException() =>
-            new(new Status(Status == StatusCodes.Status200OK ? StatusCode.Internal : ToGrpcStatus(Status), ErrorOf(Value) ?? string.Empty));
+        internal RpcException ToRpcException()
+        {
+            var status = new Status(Status == StatusCodes.Status200OK ? StatusCode.Internal : ToGrpcStatus(Status), ErrorOf(Value) ?? string.Empty);
+            // FR-10, #1561, IADR-0620: REST の本文の機械可読な `code`（operator_hold・version_conflict・precondition_required）を
+            // 末尾の metadata で運ぶ。同じ ABORTED（409）でも、受け手が保持と版の競合を見分けられる。値は固定の語だけ（入力を含まない）。
+            var trailers = new Metadata();
+            if (CodeOf(Value) is { } code)
+                trailers.Add(ErrorCodeTrailer, code);
+            return new RpcException(status, trailers);
+        }
+    }
+
+    /// <summary>FR-10, #1561: REST の <c>code</c> を運ぶ末尾の metadata の名前。</summary>
+    internal const string ErrorCodeTrailer = "ast-error-code";
+
+    // REST の本文の `code`（機械可読な印）。ProblemDetails の拡張も同じく最上位の項目として読む。
+    internal static string? CodeOf(object? value)
+    {
+        if (value is null)
+            return null;
+
+        var json = JsonSerializer.SerializeToElement(value, value.GetType(), Web);
+        return json.ValueKind == JsonValueKind.Object
+            && json.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.String
+                ? code.GetString()
+                : null;
     }
 
     // REST の本文の `error`（利用者向けの文言）。匿名型・名前付きの型のどちらも JSON の項目名で読む。

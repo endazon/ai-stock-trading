@@ -36,6 +36,9 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     // IADR-0097: 起動・解除でモーダル ID を分離する（送信ハンドラが ID 一致だけで種別を確定でき、誤操作の余地が無い）。
     private const string KillSwitchEngageButtonId = "ast-killswitch-engage-confirm";
     private const string KillSwitchDisengageButtonId = "ast-killswitch-disengage-confirm";
+
+    // FR-10, FR-14, #1561, IADR-0620: 版つきの解除の確認ボタン（"<prefix><version>"）。版を照会できなければ上の版なしのボタン。
+    internal const string KillSwitchDisengageButtonPrefix = "ast-ks-off-b-";
     // モーダルの ID と入力欄の ID は DiscordConfirmationModals が持つ（#1552: どの画面に確認コードの欄があるかを試験で固定する）。
 
     // FR-10, ADR-0009: 一時停止/再開の確認ボタン（確認フレーズは求めない＝pause は可逆のため）。
@@ -554,14 +557,24 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
             return;
         }
 
-        var builder = new ComponentBuilder().WithButton(
-            isOff ? "停止を解除する" : "全取引を停止する",
-            isOff ? KillSwitchDisengageButtonId : KillSwitchEngageButtonId,
-            ButtonStyle.Danger);
+        if (!isOff)
+        {
+            await command.RespondTextAsync(
+                "本当に全取引を停止しますか？",
+                new ComponentBuilder().WithButton("全取引を停止する", KillSwitchEngageButtonId, ButtonStyle.Danger).Build()).ConfigureAwait(false);
+            return;
+        }
 
-        await command.RespondTextAsync(
-            isOff ? "本当に停止を解除しますか？" : "本当に全取引を停止しますか？",
-            builder.Build()).ConfigureAwait(false);
+        // FR-10, FR-14, #1561, IADR-0620: 解除は、確認を出す時点の kill switch の版を照会してボタンに載せる（見た状態の版を解除の要求へ添える）。
+        // 照会は応答の期限（3 秒）を越え得るので先に Defer する。照会に失敗したら版なしのボタン（段 1 では従来どおり通る）。
+        await command.DeferAsync(ephemeral: true).ConfigureAwait(false);
+        var version = KillSwitchVersions.Normalize(await _handler.GetDisengageVersionAsync(context).ConfigureAwait(false));
+        await command.FollowupTextAsync(
+            "本当に停止を解除しますか？",
+            new ComponentBuilder().WithButton(
+                "停止を解除する",
+                version is null ? KillSwitchDisengageButtonId : KillSwitchDisengageButtonPrefix + version,
+                ButtonStyle.Danger).Build()).ConfigureAwait(false);
     }
 
     // FR-10, ADR-0009: /pause・/resume → 確認ボタンを提示する（確認フレーズは求めない）。ここでは Risk を呼ばない。
@@ -731,6 +744,14 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
                 return;
 
             default:
+                // FR-10, FR-14, #1561, IADR-0620: 版つきの解除の確認ボタン → 版つきの確認の画面（版は送信で解除の要求へ添える）。
+                if (component.Data.CustomId.StartsWith(KillSwitchDisengageButtonPrefix, StringComparison.Ordinal))
+                {
+                    await component.RespondWithModalAsync(DiscordConfirmationModals.KillSwitchDisengage(
+                        component.Data.CustomId[KillSwitchDisengageButtonPrefix.Length..])).ConfigureAwait(false);
+                    return;
+                }
+
                 // FR-10, #871, IADR-0423: 乖離の取り込みの確認ボタン → 理由＋確認フレーズのモーダル（確認ボタンのみでは取り込まない）。
                 if (component.Data.CustomId.StartsWith(DriftAdoptButtonPrefix, StringComparison.Ordinal))
                 {
@@ -809,8 +830,9 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         {
             case ConfirmationKind.KillSwitchEngage:
             case ConfirmationKind.KillSwitchDisengage:
+                // FR-10, #1561, IADR-0620: 版は版つきの解除の画面だけが持つ（起動・版なしの画面は null）。
                 await modal.FollowupTextAsync(ResponseTextOf(
-                    await _handler.HandleAsync(context, submission.Phrase, code).ConfigureAwait(false))).ConfigureAwait(false);
+                    await _handler.HandleAsync(context, submission.Phrase, code, submission.ExpectedVersion).ConfigureAwait(false))).ConfigureAwait(false);
                 return;
 
             case ConfirmationKind.GfvClear:

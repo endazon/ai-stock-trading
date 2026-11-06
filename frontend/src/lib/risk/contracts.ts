@@ -196,6 +196,9 @@ export interface RiskStatusView {
   capitalBaselineObservationMissing: boolean;
   // 上が true のとき、最後に観測できた取引日（米国東部の暦日・DateOnly）。false なら null。
   capitalBaselineLatestTradingDay: string | null;
+  // FR-10, FR-14, #1561, IADR-0620: kill switch の版（`GET /risk-controls/kill-switch` の `version` と同じ値）。
+  // Discord ボットが解除の確認を出すときに読み、解除の要求へ添える。画面はまだ使わない（画面が版を送る作業は別）。
+  killSwitchVersion?: string | null;
 }
 
 // ---- 空売りの現況（GET /risk-controls/short-selling） ----
