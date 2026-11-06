@@ -102,3 +102,13 @@ plan_refs: []
 ## 未決事項
 
 - なし。
+
+## 検証（実施記録・2026-11-07）
+
+- 置換後のツリー（コミット済みの HEAD）を非公開の識別子の一覧で引き直した: 前置きつき 0 件・前置きなしの断片 0 件・識別子の後ろの区画 0 件・ファイル名 0 件。部分文字列の緩い走査で残る一致はすべて無関係な語（`Grpc…` の綴りの一部）で、識別子ではない。
+- 公開の第三者 advisory の識別子は 12 種がそのまま残る（すべて allowlist にある）。
+- `node scripts/check-advisory-ids.js`（OK）、`check-doc-links`・`check-trace-blocks`・`gen-knowledge-graph --check`・`check-test-traceability`・`check-adr-index-addendum-loss`（宣言 1 件）・`check-cross-repo-refs`・`check-plan-id-qualification`・`check-commit-messages`・`check-reading-budget`・`check-workflow-job-refs`・`check-action-versions` が緑。
+- `check-adr-index-sync`: IADR-0567 は本文の識別子を置換したが、索引行には識別子が無く要約も変わらないため、索引行を変えない（本記録のコミットで宣言する）。
+- `bash scripts/k8s-local-deploy.test.sh`: 310 passed / 0 failed。
+- `REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js`: 新設の試験は全件緑。手元では既存の 1 件（過去の索引追随漏れの実コミットでの回帰）が落ちるが、develop の素の作業ツリーでも同じく落ち、develop の CI（`scripts-tests`）では緑である。本作業と無関係（手元の環境差）。
+- `dotnet build backend/backend.slnx`（警告 0・エラー 0）と `dotnet test backend/backend.slnx`（22 アセンブリ・失敗 0）。C# は無改修で、回帰の確認として走らせた。
