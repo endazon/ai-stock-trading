@@ -37,7 +37,7 @@ plan_refs:
 
 - 与えたサービスだけ、そのサービスの `DB_USERNAME`・`DB_PASSWORD` をその Secret から読む（接続文字列の組み方は IADR-0608 決定 3 のまま）。
 - 描画で止める誤り: 片方だけ（利用者名とパスワードを別の資格から組まない）・DB を持たないサービス（`services.<名前>.db` が無い）・2 つが別の Secret
-  （ESO は 1 つの置き場から 1 つの Secret へ写す）。
+  （ESO は 1 つの置き場から 1 つの Secret へ写す）。どれも Deployment の側（`deployment.yaml`）で止め、ESO が無効でも効く。ExternalSecret の側にも同じ検めを置く。
 - 既定（`values.yaml`）とローカル（`values-local.yaml`）は与えない。描画はバイト等価（実測。helm.yml が既定・ローカルにサービスごとの部品が現れないことを固定する）。
 
 ### 決定 2 — ExternalSecret は `externalSecrets.serviceDbCredentials`（`enabled`・`remoteKeyPrefix`）で、dbCredentials を持つサービスごとに 1 つ描く

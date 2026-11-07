@@ -569,6 +569,8 @@ jobs:
           must_fail "パスワードだけ" "usernameSecret と passwordSecret を一緒に" --set services.audit.dbCredentials.usernameSecret=null
           must_fail "DB を持たないサービス" "DB を持つサービス" --set services.backtest.dbCredentials.usernameSecret.name=x --set services.backtest.dbCredentials.usernameSecret.key=username --set services.backtest.dbCredentials.passwordSecret.name=x --set services.backtest.dbCredentials.passwordSecret.key=password
           must_fail "別々の Secret" "同じ Secret に" --set services.audit.dbCredentials.usernameSecret.name=other
+          # ESO が無効でも（ExternalSecret を描かなくても）、chart の側（deployment.yaml）が別々の Secret を止める。
+          must_fail "別々の Secret（ESO 無効）" "同じ Secret に" --set externalSecrets.enabled=false --set services.audit.dbCredentials.usernameSecret.name=other
           must_fail "置き場の接頭辞が空" "remoteKeyPrefix が要ります" --set externalSecrets.serviceDbCredentials.remoteKeyPrefix=
           echo "ok: values-cloud の 7 つのサービスはそれぞれ自分の DB の資格を読み（$seen）、既定・values-local は変わらない"
       # NFR, #1548, IADR-0608 決定 1: values-cloud は values.yaml に直接重ねる。Helm は extraEnv のリストを置き換えるので、

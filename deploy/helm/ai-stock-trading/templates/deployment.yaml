@@ -409,6 +409,9 @@ spec:
             {{- if and $svcDbc (or (not $svcDbc.usernameSecret) (not $svcDbc.passwordSecret)) }}
             {{- fail (printf "services.%s.dbCredentials は usernameSecret と passwordSecret を一緒に与えてください（利用者名とパスワードを別の資格から組まない。IADR-0630）。" $name) }}
             {{- end }}
+            {{- if and $svcDbc (ne (toString $svcDbc.usernameSecret.name) (toString $svcDbc.passwordSecret.name)) }}
+            {{- fail (printf "services.%s.dbCredentials の usernameSecret と passwordSecret は同じ Secret にしてください（1 つのサービスの資格を 1 つの Secret に置く。IADR-0630）。" $name) }}
+            {{- end }}
             {{- $dbPasswordSecret := $svcDbc.passwordSecret | default $g.db.passwordSecret }}
             {{- $dbUsernameSecret := $svcDbc.usernameSecret | default $g.db.usernameSecret }}
             {{- if $svc.db }}
