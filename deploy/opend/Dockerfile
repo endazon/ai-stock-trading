@@ -11,14 +11,17 @@
 #
 #    ビルド（scripts/opend-build.sh 推奨）:
 #      docker build -t k3d-local/ai-stock-trading/opend:latest \
-#        --build-arg OPEND_TARBALL="moomoo_OpenD_10.8.6818_Ubuntu18.04.tar.gz" deploy/opend
+#        --build-arg OPEND_TARBALL="moomoo_OpenD_10.8.6818_Ubuntu18.04.tar.gz" \
+#        --build-arg OPEND_TARBALL_SHA256="<deploy/opend/opend-tarball.sha256 の値>" deploy/opend
 #
 # 実起動には moomoo 口座（SIMULATE 可）が要る。実弾は撃たない（クライアントが TrdEnv.SIMULATE を選ぶ・IADR-0016）。
 # ---------------------------------------------------------------------------
 # Ubuntu18.04 ビルドのバイナリ。22.04(jammy) 上でも glibc 前方互換で動く見込み（要検証）。
 # ベースは docker.io ではなく mcr.microsoft.com を使う（nerdctl の Docker Hub 認証ヘルパ失敗を回避。
 # 他イメージ同様 mcr は pull 可能）。runtime-deps:8.0-jammy は Ubuntu 22.04 最小＋C/C++ ランタイム native 依存。
-FROM mcr.microsoft.com/dotnet/runtime-deps:8.0-jammy
+# 🔴 NFR, IADR-0639: 基底イメージは digest で固定する（2026-11-07 時点の 8.0-jammy の manifest list の digest）。
+# 更新は Dependabot（.github/dependabot.yml の docker・/deploy/opend）が digest ごと提案する。
+FROM mcr.microsoft.com/dotnet/runtime-deps:8.0-jammy@sha256:6c2897cdeeeab455da2601403cf9f64ca2d8726e3419ffc312f2accf527a059b
 
 # コマンドライン OpenD の実行時依存。ssl/crypto/curl/protobuf は同梱 .so で解決するため、
 # ベース未収録の共有ライブラリのみ追加する。不足時は `ldd OpenD` を見て追加する。
@@ -28,9 +31,15 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # ビルドコンテキストの tar.gz を取り込み、コマンドライン版（GUI の AppImage ではない内側フォルダ）を /opt/opend へ。
+# 🔴 NFR, IADR-0639: 展開の前に sha256 を照合する。期待値（OPEND_TARBALL_SHA256。64 桁の 16 進）が無い・合わないときはビルドを止める。
+#   期待値はリポジトリの deploy/opend/opend-tarball.sha256（版ごとに 1 行。レビューを経て入る）から scripts/opend-build.sh が渡す。
 ARG OPEND_TARBALL
+ARG OPEND_TARBALL_SHA256
 COPY ${OPEND_TARBALL} /tmp/opend.tar.gz
-RUN mkdir -p /tmp/x && tar -xzf /tmp/opend.tar.gz -C /tmp/x \
+RUN printf '%s' "${OPEND_TARBALL_SHA256}" | grep -Eq '^[0-9a-f]{64}$' \
+      || (echo "ERROR: OPEND_TARBALL_SHA256（配布物の sha256・64 桁の小文字の 16 進）が要ります（deploy/opend/opend-tarball.sha256）" >&2 && exit 1) \
+    && echo "${OPEND_TARBALL_SHA256}  /tmp/opend.tar.gz" | sha256sum -c - \
+    && mkdir -p /tmp/x && tar -xzf /tmp/opend.tar.gz -C /tmp/x \
     # 内側の「コマンドライン」フォルダ（GUI=*-GUI_* を除外）に OpenD 実行ファイルがある。
     && CLI_DIR="$(dirname "$(find /tmp/x -type f -name OpenD ! -path '*-GUI_*' | head -1)")" \
     && test -n "$CLI_DIR" || (echo "ERROR: コマンドライン OpenD が見つかりません（tar 構成を確認）" >&2 && exit 1) \

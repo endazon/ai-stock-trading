@@ -18,4 +18,16 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
+  <!-- 🔴 NFR, IADR-0639: 依存の既知の脆弱性の監査（NuGet Audit）。単独時・submodule 配置時のどちらにも効かせる（親の値を弱めない）。
+       - 直接の依存だけでなく推移的な依存も見る（NuGetAuditMode=all）。警告は low から出す（NuGetAuditLevel=low）。
+       - high（NU1903）と critical（NU1904）は復元の失敗にする＝ build・test・publish・イメージのビルド（backend/Dockerfile の
+         dotnet restore）が止まる。moderate 以下は警告のまま（TreatWarningsAsErrors は false のまま）。
+       - 脆弱性の情報源（nuget.org）に届かないときは NU1900 の警告で、止めない（復元そのものが届かなければ別に失敗する）。
+       字面は scripts/helm-pod-security.test.js が固定する。 -->
+  <PropertyGroup>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+    <WarningsAsErrors>$(WarningsAsErrors);NU1903;NU1904</WarningsAsErrors>
+  </PropertyGroup>
 </Project>

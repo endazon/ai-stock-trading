@@ -50,11 +50,9 @@ RUN dotnet publish "${SERVICE_PROJECT}" -c Release -o /app --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:1a48394b6f29d3a32c79d9edecd4abda0ecbe8776d567dbfc4590ed6979c740c AS runtime
 ARG SERVICE_DLL
-# dev/E2E 目的の軽量 healthcheck プローブ（compose の healthcheck が /health/ready を叩く・IADR-0049）。
-# 本番配備は platform（#24）の管掌。aspnet 既定タグは Debian ベースで apt を持つ。
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
+# 🔴 NFR, IADR-0639: 稼働のイメージに HTTP の取得の道具（curl 等）を入れない（基底イメージに無いものを足さない）。
+# k8s の probe は kubelet の httpGet（イメージの中の道具を使わない）。compose の healthcheck（IADR-0049）は基底イメージの bash の
+# /dev/tcp で /health/ready を読む（docker-compose.yml）。`scripts/helm-pod-security.test.js` が本段に apt / curl が無いことを固定する。
 WORKDIR /app
 COPY --from=build /app ./
 # ヘルスチェック（/health/live・/health/ready）と各サービスの HTTP サーフェスは 8080 で待受ける。

@@ -42,6 +42,8 @@ public class CostControlHaltReadContractTests
             NullLogger<HttpLlmCostHaltGate>.Instance);
 
         (await gate.IsHaltedAsync(TestContext.Current.CancellationToken)).Should().Be(halted);
+        // NFR-13, IADR-0639: 段 Report / Enforce の関所が使う 3 値の読み（読めたら値。null は読めない）も同じ本文から読める。
+        (await gate.ReadHaltedAsync(TestContext.Current.CancellationToken)).Should().Be(halted);
     }
 
     private sealed class StubHandler(string body) : HttpMessageHandler

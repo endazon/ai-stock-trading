@@ -1,4 +1,4 @@
-using AiStockTrading.Shared.Infrastructure.Composable.Http;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Tls;
 using ReportService.Common.Abstractions;
 using ReportService.Infrastructure.ExternalServices;
 using ReportService.Features.Reports;

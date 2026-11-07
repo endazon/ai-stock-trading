@@ -1,4 +1,4 @@
-using AiStockTrading.Shared.Infrastructure.Composable.Http;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Tls;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;

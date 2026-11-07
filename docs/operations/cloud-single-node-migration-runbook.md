@@ -9,7 +9,7 @@ updated: 2026-11-07
 <!-- trace:
 ids: [FR-04, FR-08, NFR, NFR-03, NFR-05, NFR-06, FR-10]
 adrs: [ADR-0006, ADR-0024, ADR-0073, ADR-0076, ADR-0078, ADR-0080]
-iadrs: [IADR-0637, IADR-0632, IADR-0631, IADR-0630, IADR-0629, IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627, IADR-0633]
+iadrs: [IADR-0639, IADR-0637, IADR-0632, IADR-0631, IADR-0630, IADR-0629, IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627, IADR-0633]
 specs: [20261107_s2s-per-service-clients, 20261107_message-origin-asymmetric-signature, 20261107_cloud-openbao-tls-store, 20261107_cloud-opend-isolation-netpol, 20261107_cloud-db-per-service-users, 20261107_cloud-keycloak-tls, 20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
 issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471, MSP#2495]
 -->
@@ -74,8 +74,10 @@ issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471, M
 ## 3. OpenD のイメージを作る（ノードの上で）
 
 1. 配布物（`moomoo_OpenD_<版>_Ubuntu18.04.tar.gz`）を、moomoo の公式の配布元から取得する。
-2. **ビルドの前に sha256 を記録する。** `sha256sum moomoo_OpenD_*.tar.gz` の出力を、版・取得日と一緒に運用の記録へ残す。
-   - 次に作り直すときは、同じ版なら同じ値になることを確かめてから使う。
+2. **ビルドの前に sha256 をリポジトリの記録と照合する。** 記録は `deploy/opend/opend-tarball.sha256`（版ごとに 1 行）である。
+   - 記録に無い版なら、`sha256sum moomoo_OpenD_*.tar.gz` の 1 行を足す PR を出し、マージしてからビルドする。公式の配布元が値を示していれば突き合わせ、合わなければ使わない。
+   - `scripts/opend-build.sh` は記録に無い版・値が合わない配布物ではビルドしない。Dockerfile も展開の前に同じ値で照合する。
+   - 初めて取得した版の値は、取得したときの配布物を正とするしかない（公式の値が無い場合）。同じ版を取り直したら同じ値になることを確かめる。
 3. ノードで `scripts/opend-build.sh <tar.gz のパス>` を実行してイメージを作る（手順の詳細は [deploy/opend の README](../../deploy/opend/README.md) の 1)）。
 4. 作ったイメージをノードの containerd へ取り込む（`ctr -n k8s.io images import` ほか）。
    - 取り込んだ後の digest を §4 のファイルへ書く。
@@ -278,6 +280,10 @@ bash scripts/ast-message-origin-keygen.sh --live
 - [ ] digest の参照で全 Pod が起動している（§4 の 5）。
 - [ ] 基盤への接続が TLS で通っている: DB・ブローカの接続の失敗と、LLM ゲートウェイの証明書の検証の失敗がログに無い。
 - [ ] 取引判断のログ（判断の記録）の `ragContext` が `not-configured` で、判断が失敗していない。
+- [ ] 取引判断が月次 LLM 費用の停止を読めている: 取引判断のログに「費用統制の停止を読めません」が続いていない。
+  - クラウドは読めないときに閉じる側へ倒す（`CostControl__HaltQuery__UnavailableMode=Enforce`）。最後に読めた時から 15 分（`CostControl__HaltQuery__GraceSeconds`）を過ぎても読めなければ、LLM を呼ぶ前に判断を見送る。損切り・利用者の手仕舞い・閉場前の手仕舞いは止まらない。
+  - 費用統制を直せないまま判断を続ける必要があるときだけ、`values-cloud.yaml` の値を `Report`（判断を止めず記録だけ）へ替えて helm を再実行する。直したら `Enforce` へ戻す。
+  - 後ろ盾は 2 つある。基盤の LLM ゲートウェイの当日の費用の上限（基盤の構成）と、LLM の提供者のコンソールの月の上限である。**提供者のコンソールの月の上限は、オーナーが設定する**（リポジトリでは設定できない）。
 
 ## 9. 初週の確認
 
@@ -286,12 +292,10 @@ bash scripts/ast-message-origin-keygen.sh --live
 - [ ] **場中に再認証が繰り返されたら、シンガポールで作り直す。** 無人の運用が成り立たないため。
   - 繰り返されたかの判断は、記録した回数と時刻でオーナーが行う。
 - [ ] 月曜の寄り付きで新規建てが拒否されていない（日曜の口座照会が成功している）。
-- [ ] Pod のセキュリティの段を上げる: 段 2（`podSecurity.stage: 2`・PSA の enforce は baseline）で 1 日以上、起動・判断・発注・日報が通ったら、段 3（非 root）へ上げる。
-  - 上げるときは `values-cloud.yaml` の `podSecurity.stage: 3` と `podSecurity.admission.enforce: restricted` を一緒に替える。
-  - OpenD は実機で確かめてから `opend.podSecurity.stage: 3` にする（chart の README「必須の前提」）。
-  - 戻すときは段を下げて helm を再実行する。
-  - **期限: 稼働を始めてから 7 日以内**に、Worker の段 3 と `podSecurity.readOnlyRootFilesystem: true` を一緒に上げる（段 2 のまま root で動かし続けない）。
-    上げられない理由が見つかったら、その日のうちに記録し、期限を引き直す。
+- [ ] Pod のセキュリティの段を確かめる: Worker は**稼働の前から**段 3（`podSecurity.stage: 3`・非 root）と `podSecurity.readOnlyRootFilesystem: true` で動く（`values-cloud.yaml`）。PSA の enforce は baseline。
+  - 初日に、起動・判断・発注・日報が通り、Worker のログに一時ファイル・書き込みの拒否（`Read-only file system`・`UnauthorizedAccessException`）が出ていないことを確かめる。
+  - 落ちたら、`values-cloud.yaml` の `podSecurity.stage: 2` と `readOnlyRootFilesystem: false` を一緒に戻して helm を再実行し、原因を記録する（戻したまま稼働を続けない。直して段 3 へ戻す）。
+  - OpenD は実機で確かめてから `opend.podSecurity.stage: 3` にする（chart の README「必須の前提」）。OpenD も段 3 にしたら、`podSecurity.admission.enforce: restricted` へ上げる。
 
 ## 10. 戻し方（クラウドから自宅へ）
 

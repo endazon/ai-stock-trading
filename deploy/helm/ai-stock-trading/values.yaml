@@ -39,7 +39,7 @@ global:
   # NFR, NFR-05, IADR-0629（基盤の MSP:IADR-0693 の受け手）: 認可サーバー（Keycloak）への通信を TLS で検証する（opt-in。既定は描かない＝従来のまま）。
   #   有効にすると: authAuthority が https:// でなければ描画で止める。認証を持つサービス（auth: true）へ Auth__RequireHttpsMetadata=true を渡す
   #   （アプリは https でない Authority を起動で拒む）。全 Worker に基盤の CA（global.infraCa）を /etc/platform-infra-ca へマウントし、
-  #   信頼ストアへ足す（SSL_CERT_DIR=/etc/ssl/certs:/etc/platform-infra-ca。既定のストアを先に残す。ブローカと同じ 1 つ）。
+  #   場所を PlatformInfraCa__CertificatePath で渡す（基盤の宛先だけがアプリの中で信頼する。システムの信頼ストアへは足さない。IADR-0639）。
   #   トークンの取得先（ServiceAuth__TokenEndpoint・Discord の OwnerAuth・LLM ゲートウェイの Authority）は authAuthority から導く。
   #   クラウド（values-cloud.yaml）だけが有効にする。既定・ローカル（values-local）は平文の in-cluster のまま。
   authTls:
@@ -151,6 +151,9 @@ global:
     # NFR-05, #1560, IADR-0623: CA の写しを Secret から読む（クラウドは ESO が cloud/shared/platform-infra-ca から作る）。
     #   与えるときは configMap を空にする（併用は描画で止める）。既定は空＝従来の ConfigMap。
     secretName: ""
+    # 🔴 NFR, IADR-0639: 基盤の CA をシステムの信頼ストア（SSL_CERT_DIR）へも足すか。既定 false＝足さない（基盤の宛先だけがアプリの中で
+    #   基盤の CA を信頼し、外部 API の TLS は公開の CA だけで検証する）。true は切り戻しの時だけ（外部 API でも基盤の CA を信頼する）。
+    addToSystemTrust: false
 
 namespace:
   create: true

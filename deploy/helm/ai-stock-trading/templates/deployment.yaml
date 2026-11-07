@@ -320,19 +320,18 @@ spec:
                   name: {{ $mq.credentialsSecretName }}
                   key: {{ printf "%s%s" $mq.usernamePrefix $name }}
             {{- if $mqTls }}
-            {{- /* NFR, NFR-18, #1535, IADR-0621 決定2: amqps（TLS）。サーバ証明書の CA は信頼ストアへ足す（.NET は SSL_CERT_DIR の各
-                   ディレクトリの証明書を読む。既定の /etc/ssl/certs を先に残すので、外部の公開 CA の検証は変わらない）。名前の照合は
-                   UseAiStockTradingRabbitMq が外さない（決定 4）。 */}}
+            {{- /* NFR, NFR-18, #1535, IADR-0621 決定2: amqps（TLS）。名前の照合は UseAiStockTradingRabbitMq が外さない（決定 4）。
+                   🔴 IADR-0639: サーバ証明書は基盤の CA（下の PlatformInfraCa__CertificatePath）で、ブローカの接続だけが検証する。 */}}
             - name: RabbitMq__ConnectionString
               value: {{ printf "amqps://%s%s:$(RABBITMQ_PASSWORD)@%s:%v" $mq.usernamePrefix $name $mq.host $mq.tls.port | quote }}
-            - name: SSL_CERT_DIR
-              value: "/etc/ssl/certs:/etc/platform-infra-ca"
             {{- else }}
             - name: RabbitMq__ConnectionString
               value: {{ printf "amqp://%s%s:$(RABBITMQ_PASSWORD)@%s:%v" $mq.usernamePrefix $name $mq.host $mq.port | quote }}
             {{- end }}
-            {{- if and $authTls (not $mqTls) }}
-            {{- /* NFR, IADR-0629: 認可サーバーの証明書の検証に基盤の CA を信頼ストアへ足す（上の amqps の段が描くときは同じ値なので描かない＝二重にしない）。 */}}
+            {{- if and (or $mqTls $authTls) $infraCa.addToSystemTrust }}
+            {{- /* 🔴 NFR, IADR-0639: 基盤の CA をシステムの信頼ストアへ足すのは**切り戻しの時だけ**（global.infraCa.addToSystemTrust。既定 false）。
+                   足すと外部 API（Discord・Finnhub ほか）の TLS でも基盤の CA を信頼する。基盤の宛先（ブローカ・認可サーバー・LLM ゲートウェイ）は
+                   アプリが CA の場所（PlatformInfraCa__CertificatePath）から宛先ごとに検証するので、通常は要らない。 */}}
             - name: SSL_CERT_DIR
               value: "/etc/ssl/certs:/etc/platform-infra-ca"
             {{- end }}
@@ -346,7 +345,8 @@ spec:
               value: "Passive"
             {{- end }}
             {{- if $infraCaMount }}
-            {{- /* NFR, NFR-18, #1535, IADR-0621 決定5: LLM ゲートウェイの HttpClient（llm・report-llm）が信頼する基盤の CA の場所。 */}}
+            {{- /* NFR, NFR-18, #1535, IADR-0621 決定5, IADR-0639: 基盤の宛先だけが信頼する基盤の CA の場所（LLM ゲートウェイの HttpClient・
+                   認可サーバーのメタデータとトークンの取得・ブローカの amqps）。DB は接続文字列の Root Certificate で同じ CA を使う。 */}}
             - name: PlatformInfraCa__CertificatePath
               value: {{ printf "/etc/platform-infra-ca/%s" $infraCa.caKey | quote }}
             {{- end }}

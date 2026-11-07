@@ -1,3 +1,4 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Tls;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -47,7 +48,9 @@ public static class ServiceAuthExtensions
         if (!options.IsEnabled)
             return false;
 
-        services.AddHttpClient(TokenClientName, c => c.Timeout = TimeSpan.FromSeconds(10));
+        // 🔴 NFR, NFR-05, IADR-0639: トークンの取得先（認可サーバー）は基盤の CA で検証する（CA の場所が設定されているときだけ。外部 API には効かない）。
+        services.AddHttpClient(TokenClientName, c => c.Timeout = TimeSpan.FromSeconds(10))
+            .TrustPlatformInfraCa();
         services.TryAddSingleton<IServiceAccessTokenProvider>(sp => new ClientCredentialsTokenProvider(
             sp.GetRequiredService<IHttpClientFactory>().CreateClient(TokenClientName),
             options,

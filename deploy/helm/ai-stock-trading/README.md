@@ -231,7 +231,10 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
 - **認可サーバー（Keycloak）への通信を TLS で検証する**（[IADR-0629](../../../.ai-context/adr/IADR-0629_cloud-keycloak-tls-receiver.md)。基盤の MSP:IADR-0693 の受け手）:
   values-cloud は `global.authAuthority=https://keycloak:8443/realms/platform` と `global.authTls.enabled=true`。有効なら Authority が
   `https://` でない・`global.infraCa` が無いときは描画で止め、全 Worker（DB・ブローカを使わないものも）に基盤の CA をマウントして
-  `SSL_CERT_DIR=/etc/ssl/certs:/etc/platform-infra-ca` を 1 つだけ描き、認証を持つサービスへ `Auth__RequireHttpsMetadata=true` を渡す。
+  場所（`PlatformInfraCa__CertificatePath`）を渡し、認証を持つサービスへ `Auth__RequireHttpsMetadata=true` を渡す。
+  🔴 基盤の CA は**基盤の宛先だけ**（認可サーバーのメタデータとトークンの取得・ブローカの amqps・LLM ゲートウェイ）がアプリの中で信頼する
+  （[IADR-0639](../../../.ai-context/adr/IADR-0639_runtime-image-and-trust-hardening.md)）。システムの信頼ストア（`SSL_CERT_DIR`）へは足さないので、
+  外部 API（Discord・Finnhub ほか）の TLS は公開の CA だけで検証する。`global.infraCa.addToSystemTrust=true` は切り戻しの時だけ。
   トークンの取得先は Authority から導く。`global.authValidIssuers`（既定は空）は移行の間だけ旧の発行元を足す（外す時期は
   [認可サーバーの TLS Runbook](../../../docs/operations/cloud-keycloak-tls-runbook.md) の段 6）。
   🔴 Keycloak を呼ぶ Worker を足したら、基盤の `deploy/cloud/infra/networkpolicy.yaml` の Keycloak の入りの一覧にも足すよう基盤へ依頼する。

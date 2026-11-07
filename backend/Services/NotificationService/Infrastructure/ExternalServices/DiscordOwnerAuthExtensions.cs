@@ -1,4 +1,5 @@
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Tls;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -33,7 +34,9 @@ internal static class DiscordOwnerAuthExtensions
         if (!options.IsEnabled)
             return builder; // fail-safe: 未設定ならトークンを付けない（→ 401）。
 
-        builder.Services.AddHttpClient(TokenClientName, c => c.Timeout = TimeSpan.FromSeconds(10));
+        // 🔴 NFR, NFR-05, IADR-0639: トークンの取得先（認可サーバー）は基盤の CA で検証する（CA の場所が設定されているときだけ。外部 API には効かない）。
+        builder.Services.AddHttpClient(TokenClientName, c => c.Timeout = TimeSpan.FromSeconds(10))
+            .TrustPlatformInfraCa();
 
         return builder.AddHttpMessageHandler(sp => new ServiceTokenHandler(
             new ClientCredentialsTokenProvider(
@@ -69,7 +72,9 @@ internal static class DiscordOwnerAuthExtensions
             return services;
         }
 
-        services.AddHttpClient(TokenClientName, c => c.Timeout = TimeSpan.FromSeconds(10));
+        // 🔴 NFR, NFR-05, IADR-0639: トークンの取得先（認可サーバー）は基盤の CA で検証する（CA の場所が設定されているときだけ。外部 API には効かない）。
+        services.AddHttpClient(TokenClientName, c => c.Timeout = TimeSpan.FromSeconds(10))
+            .TrustPlatformInfraCa();
         services.AddSingleton(sp => new DiscordOwnerGrpcCredentials(new ClientCredentialsTokenProvider(
             sp.GetRequiredService<IHttpClientFactory>().CreateClient(TokenClientName),
             options,

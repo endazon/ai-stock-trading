@@ -7,10 +7,20 @@ namespace TradeDecisionService.Features.TradeDecision;
 // 100% 到達後も LLM を呼び続けていた。判断の合流点（DecideAsync）がこの口を読み、Halted なら LLM の前で見送る。
 //
 // 実体は費用統制サービスの GET /costs/state（情報収集と同じ口・同じ s2s）。安全既定は NoOp（常に停止していない＝従来どおり）。
-// 照会の失敗・不正応答も「停止していない」へ倒す（IADR-0031 と同じ判断: 費用統制の一時障害で取引判断全体を止めるのは過大。
-// 月次予算は緩変で短時間の不達では超過しにくい）。
+// 🔴 NFR-13, IADR-0639: 照会できないときの扱いは段（CostControl:HaltQuery:UnavailableMode）で決める。
+//   Off（既定）: 「停止していない」へ倒す（IADR-0031 / IADR-0582 の従来の判断）。
+//   Report    : 倒す向きは Off と同じ。最後に読めた時から猶予（CostControl:HaltQuery:GraceSeconds。既定 900 秒）を過ぎたら、Enforce なら
+//               停止として扱うことをログに出す。
+//   Enforce   : 猶予の間は最後に読めた値を使い、猶予を過ぎても読めなければ停止として扱う（fail-closed。LLM を呼ばない）。クラウドの既定。
 public interface ILlmCostHaltGate
 {
-    /// <summary>月次 LLM 費用上限の 100% に達して停止中（Halted）か。照会できないときは false。</summary>
+    /// <summary>月次 LLM 費用上限の 100% に達して停止中（Halted）か。照会できないときの扱いは段による（上の説明）。</summary>
     Task<bool> IsHaltedAsync(CancellationToken cancellationToken = default);
+}
+
+// NFR-13, IADR-0639: 費用統制の 1 回の照会の結果。読めれば停止かどうか、読めなければ null（失敗・タイムアウト・欠落・不正な本文）。
+// 呼び出し元自身の取り消しは伝播する。
+public interface ILlmCostHaltReader
+{
+    Task<bool?> ReadHaltedAsync(CancellationToken cancellationToken = default);
 }

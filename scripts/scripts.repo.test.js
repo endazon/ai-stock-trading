@@ -5575,7 +5575,10 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       ['ast-operator-hold は秘密ではない', /ast-operator-hold[\s\S]{0,40}秘密ではない/],
       ['初週の確認（再認証の回数と時刻・作り直しの基準）', /再認証[\s\S]*回数と時刻[\s\S]*シンガポールで作り直す/],
       ['ArgoCD を使わない', /ArgoCD は使わない/],
-      ['OpenD の tar の sha256 を記録してからビルド', /ビルドの前に sha256 を記録する/],
+      // NFR, IADR-0639: 記録はリポジトリの deploy/opend/opend-tarball.sha256。ビルドの道具も Dockerfile も照合する。
+      ['OpenD の tar の sha256 をリポジトリの記録と照合してからビルド', /ビルドの前に sha256 をリポジトリの記録と照合する[\s\S]*deploy\/opend\/opend-tarball\.sha256/],
+      // NFR-13, IADR-0639: 費用の停止を読めないときの段（Enforce）と、提供者の月の上限（オーナーの設定）。
+      ['費用の停止を読めないとき閉じる側へ倒す・提供者の月の上限はオーナー', /CostControl__HaltQuery__UnavailableMode=Enforce[\s\S]*提供者のコンソールの月の上限は、オーナーが設定する/],
       ['初回の SMS 認証（kubectl attach）', /kubectl -n ai-stock-trading attach -it deploy\/opend/],
       ['取引パスワードをクラスタに置かない', /取引パスワードはクラスタに置かない/],
       ['秘密の値を表示しない・引数に書かない', /秘密の値を画面に表示しない・コマンドの引数に書かない/],
