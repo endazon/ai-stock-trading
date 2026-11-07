@@ -7,13 +7,17 @@ using System.Text.Json.Serialization;
 namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Messaging;
 
 /// <summary>
-/// 🔴 NFR, FR-10, IADR-0627 決定 2: 統制の入力になるメッセージの発行元の印（HMAC-SHA256。発行元のサービスごとの鍵）。
+/// 🔴 NFR, FR-10, IADR-0633 決定 1・2（IADR-0627 決定 2 を置き換える）: 統制の入力になるメッセージの発行元の署名
+/// （ECDSA P-256 / SHA-256。発行元は自分の<b>秘密の鍵</b>で署名し、受け手は確かめる発行元の<b>公開の鍵</b>だけを持つ）。
 /// <para>
-/// 印の対象は <b>型・メッセージ ID・発行元・時刻・本文の正規形</b>である（<see cref="Canonical"/>）。
+/// 署名の対象は <b>型・メッセージ ID・発行元・時刻・本文の正規形</b>である（<see cref="Canonical(string, Type, Guid, string, long, object)"/>）。
 /// 文字列は長さを前置して区切りの偽装を防ぐ。本文の正規形は固定の設定の JSON で、decimal の末尾のゼロ・時刻のオフセットを
-/// 正規化する（Wolverine の直列化の往復で値の表し方が変わっても印は合う。往復は試験で型ごとに固定する）。
+/// 正規化する（Wolverine の直列化の往復で値の表し方が変わっても署名は合う。往復は試験で型ごとに固定する）。
 /// </para>
-/// <para>鍵の値は例外・ログに出さない。</para>
+/// <para>
+/// 受け手の構成（公開の鍵だけ）からは署名できない（<see cref="Sign"/> は null）。公開の鍵の欄に秘密の鍵を、署名の鍵の欄に
+/// 公開の鍵を与えると例外（起動で止める）。鍵の値は例外・ログに出さない。
+/// </para>
 /// </summary>
 public sealed class MessageOriginSignature
 {
@@ -26,50 +30,79 @@ public sealed class MessageOriginSignature
     /// <summary>発行の時刻（UTC の ticks）。</summary>
     public const string TimeHeader = "ast-origin-at";
 
-    /// <summary>印（<c>v1.</c> ＋ base64）。</summary>
-    public const string SignatureHeader = "ast-origin-sig";
+    /// <summary>署名（<c>v2.</c> ＋ base64。旧い HMAC の印 <see cref="MessageOriginLegacyHmac.SignatureHeader"/> とは別の見出し）。</summary>
+    public const string SignatureHeader = "ast-origin-sig2";
 
     /// <summary>正準形の版。</summary>
-    public const string Version = "v1";
+    public const string Version = "v2";
 
-    /// <summary>鍵の最小の長さ（バイト）。</summary>
-    public const int MinKeyBytes = 32;
+    /// <summary>曲線 P-256（secp256r1）の OID。</summary>
+    public const string CurveOid = "1.2.840.10045.3.1.7";
+
+    // IEEE P1363 の固定長（r ‖ s。P-256 は 32 + 32 バイト）。
+    private const int SignatureBytes = 64;
 
     private static readonly JsonSerializerOptions BodyOptions = CreateBodyOptions();
 
-    private readonly IReadOnlyDictionary<string, byte[]> _keys;
-    private readonly IReadOnlyDictionary<string, byte[]> _previousKeys;
+    private readonly string? _signingIssuer;
+    private readonly LockedKey? _signingKey;
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<LockedKey>> _verifyKeys;
 
-    private MessageOriginSignature(IReadOnlyDictionary<string, byte[]> keys, IReadOnlyDictionary<string, byte[]> previousKeys)
+    private MessageOriginSignature(
+        string? signingIssuer, LockedKey? signingKey, IReadOnlyDictionary<string, IReadOnlyList<LockedKey>> verifyKeys)
     {
-        _keys = keys;
-        _previousKeys = previousKeys;
+        _signingIssuer = signingIssuer;
+        _signingKey = signingKey;
+        _verifyKeys = verifyKeys;
     }
 
     /// <summary>
-    /// 発行元ごとの鍵（base64）から作る。空の値は「鍵なし」として扱う。
-    /// 🔴 与えられているのに読めない・短い鍵は例外（起動で止める。黙って印なしへ倒さない）。
+    /// 鍵から作る。<paramref name="verifyKeys"/>・<paramref name="previousVerifyKeys"/> は発行元 → 公開の鍵（SubjectPublicKeyInfo DER の
+    /// base64）、<paramref name="signingKey"/> は <paramref name="signingIssuer"/> の秘密の鍵（PKCS#8 DER の base64）。空の値は「鍵なし」。
+    /// 🔴 与えられているのに読めない・P-256 でない・秘密と公開を取り違えた鍵は例外（起動で止める。黙って署名なしへ倒さない）。
     /// </summary>
     public static MessageOriginSignature Create(
-        IReadOnlyDictionary<string, string?>? keys, IReadOnlyDictionary<string, string?>? previousKeys = null) =>
-        new(DecodeAll(keys, "Keys"), DecodeAll(previousKeys, "PreviousKeys"));
-
-    /// <summary>この発行元の鍵があるか（印を作れる・確かめられる）。</summary>
-    public bool HasKey(string issuerId) => _keys.ContainsKey(issuerId);
-
-    /// <summary>印を作る（現在の鍵だけで）。鍵が無ければ null。</summary>
-    public string? Sign(Type messageType, Guid messageId, string issuerId, long utcTicks, object message)
+        IReadOnlyDictionary<string, string?>? verifyKeys,
+        IReadOnlyDictionary<string, string?>? previousVerifyKeys = null,
+        string? signingIssuer = null,
+        string? signingKey = null)
     {
-        if (!_keys.TryGetValue(issuerId, out var key))
-            return null;
-        return $"{Version}.{Convert.ToBase64String(Mac(key, messageType, messageId, issuerId, utcTicks, message))}";
+        var verify = new Dictionary<string, List<LockedKey>>(StringComparer.Ordinal);
+        AddVerifyKeys(verify, verifyKeys, "VerifyKeys");
+        AddVerifyKeys(verify, previousVerifyKeys, "PreviousVerifyKeys");
+        LockedKey? signer = null;
+        if (!string.IsNullOrWhiteSpace(signingKey))
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(signingIssuer);
+            signer = new LockedKey(ImportPrivate(signingKey));
+        }
+
+        return new MessageOriginSignature(
+            signer is null ? null : signingIssuer,
+            signer,
+            verify.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<LockedKey>)kv.Value, StringComparer.Ordinal));
     }
 
-    /// <summary>印が合うか（現在の鍵、次に前の鍵）。比較は固定時間。鍵が無ければ false。</summary>
+    /// <summary>この発行元として署名できるか（その発行元の秘密の鍵を持つ）。</summary>
+    public bool CanSign(string issuerId) => _signingKey is not null && string.Equals(_signingIssuer, issuerId, StringComparison.Ordinal);
+
+    /// <summary>この発行元の署名を確かめる公開の鍵があるか。</summary>
+    public bool HasVerifyKey(string issuerId) => _verifyKeys.ContainsKey(issuerId);
+
+    /// <summary>署名を作る（自分の秘密の鍵で）。その発行元の秘密の鍵が無ければ null。</summary>
+    public string? Sign(Type messageType, Guid messageId, string issuerId, long utcTicks, object message)
+    {
+        if (!CanSign(issuerId))
+            return null;
+        var data = Encoding.UTF8.GetBytes(Canonical(Version, messageType, messageId, issuerId, utcTicks, message));
+        return $"{Version}.{Convert.ToBase64String(_signingKey!.Sign(data))}";
+    }
+
+    /// <summary>署名が合うか（現在の公開の鍵、次に入れ替えの間だけの前の公開の鍵）。鍵が無ければ false。</summary>
     public bool Matches(Type messageType, Guid messageId, string issuerId, long utcTicks, object message, string signature)
     {
         var prefix = Version + ".";
-        if (!signature.StartsWith(prefix, StringComparison.Ordinal))
+        if (!signature.StartsWith(prefix, StringComparison.Ordinal) || !_verifyKeys.TryGetValue(issuerId, out var keys))
             return false;
 
         byte[] presented;
@@ -82,21 +115,31 @@ public sealed class MessageOriginSignature
             return false;
         }
 
-        if (_keys.TryGetValue(issuerId, out var key)
-            && CryptographicOperations.FixedTimeEquals(presented, Mac(key, messageType, messageId, issuerId, utcTicks, message)))
-            return true;
+        if (presented.Length != SignatureBytes)
+            return false;
 
-        return _previousKeys.TryGetValue(issuerId, out var previous)
-            && CryptographicOperations.FixedTimeEquals(presented, Mac(previous, messageType, messageId, issuerId, utcTicks, message));
+        var data = Encoding.UTF8.GetBytes(Canonical(Version, messageType, messageId, issuerId, utcTicks, message));
+        foreach (var key in keys)
+        {
+            if (key.Verify(data, presented))
+                return true;
+        }
+
+        return false;
     }
 
-    /// <summary>正準形（試験用に公開する）。</summary>
-    public static string Canonical(Type messageType, Guid messageId, string issuerId, long utcTicks, object message)
+    /// <summary>正準形（署名の版の）。試験用に公開する。</summary>
+    public static string Canonical(Type messageType, Guid messageId, string issuerId, long utcTicks, object message) =>
+        Canonical(Version, messageType, messageId, issuerId, utcTicks, message);
+
+    /// <summary>正準形。先頭の版で印の方式を分ける（版をまたいで流用させない）。</summary>
+    public static string Canonical(string version, Type messageType, Guid messageId, string issuerId, long utcTicks, object message)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(version);
         ArgumentNullException.ThrowIfNull(messageType);
         ArgumentNullException.ThrowIfNull(message);
         var sb = new StringBuilder();
-        sb.Append(Version);
+        sb.Append(version);
         Field(sb, Text(messageType.FullName));
         Field(sb, messageId.ToString("D"));
         Field(sb, Text(issuerId));
@@ -108,8 +151,108 @@ public sealed class MessageOriginSignature
     /// <summary>本文の正規形（固定の設定の JSON）。</summary>
     public static string Body(Type messageType, object message) => JsonSerializer.Serialize(message, messageType, BodyOptions);
 
-    private static byte[] Mac(byte[] key, Type messageType, Guid messageId, string issuerId, long utcTicks, object message) =>
-        HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(Canonical(messageType, messageId, issuerId, utcTicks, message)));
+    private static void AddVerifyKeys(Dictionary<string, List<LockedKey>> target, IReadOnlyDictionary<string, string?>? source, string name)
+    {
+        if (source is null)
+            return;
+        foreach (var (issuer, value) in source)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                continue;
+            if (!target.TryGetValue(issuer, out var list))
+                target[issuer] = list = [];
+            list.Add(new LockedKey(ImportPublic(value, $"MessageOrigin:{name}:{issuer}")));
+        }
+    }
+
+    private static ECDsa ImportPrivate(string value)
+    {
+        const string name = "MessageOrigin:SigningKey";
+        var bytes = Decode(value, name);
+        var key = ECDsa.Create();
+        try
+        {
+            key.ImportPkcs8PrivateKey(bytes, out var read);
+            if (read != bytes.Length)
+                throw new CryptographicException();
+        }
+        catch (CryptographicException)
+        {
+            key.Dispose();
+            throw new InvalidOperationException(
+                $"{name} が PKCS#8 の秘密の鍵（P-256）として読めません（公開の鍵を与えていないか確かめてください。値は表示しません）。");
+        }
+
+        return RequireP256(key, name);
+    }
+
+    private static ECDsa ImportPublic(string value, string name)
+    {
+        var bytes = Decode(value, name);
+        var key = ECDsa.Create();
+        try
+        {
+            key.ImportSubjectPublicKeyInfo(bytes, out var read);
+            if (read != bytes.Length)
+                throw new CryptographicException();
+        }
+        catch (CryptographicException)
+        {
+            key.Dispose();
+            throw new InvalidOperationException(
+                $"{name} が公開の鍵（SubjectPublicKeyInfo・P-256）として読めません（受け手に秘密の鍵を渡していないか確かめてください。値は表示しません）。");
+        }
+
+        return RequireP256(key, name);
+    }
+
+    private static ECDsa RequireP256(ECDsa key, string name)
+    {
+        if (key.ExportParameters(false).Curve.Oid?.Value != CurveOid)
+        {
+            key.Dispose();
+            throw new InvalidOperationException($"{name} の曲線が P-256 ではありません（値は表示しません）。");
+        }
+
+        return key;
+    }
+
+    private static byte[] Decode(string value, string name)
+    {
+        try
+        {
+            return Convert.FromBase64String(value.Trim());
+        }
+        catch (FormatException)
+        {
+            throw new InvalidOperationException($"{name} が base64 として読めません（値は表示しません）。");
+        }
+    }
+
+    // ECDsa の実体はスレッド安全を約していないので、1 つの鍵の操作を直列にする（受け手のハンドラ・送り手は並ぶ）。
+    private sealed class LockedKey(ECDsa key)
+    {
+        private readonly Lock _gate = new();
+
+        public byte[] Sign(byte[] data)
+        {
+            lock (_gate)
+                return key.SignData(data, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+        }
+
+        public bool Verify(byte[] data, byte[] signature)
+        {
+            try
+            {
+                lock (_gate)
+                    return key.VerifyData(data, signature, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+            }
+            catch (CryptographicException)
+            {
+                return false;
+            }
+        }
+    }
 
     private static void Field(StringBuilder sb, string value) => sb.Append('|').Append(value);
 
@@ -129,38 +272,6 @@ public sealed class MessageOriginSignature
         options.Converters.Add(new TicksDateTimeConverter());
         options.MakeReadOnly(populateMissingResolver: true);
         return options;
-    }
-
-    private static Dictionary<string, byte[]> DecodeAll(IReadOnlyDictionary<string, string?>? source, string name)
-    {
-        var result = new Dictionary<string, byte[]>(StringComparer.Ordinal);
-        if (source is null)
-            return result;
-
-        foreach (var (issuer, value) in source)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-                continue;
-
-            byte[] key;
-            try
-            {
-                key = Convert.FromBase64String(value.Trim());
-            }
-            catch (FormatException)
-            {
-                throw new InvalidOperationException(
-                    $"MessageOrigin:{name}:{issuer} が base64 として読めません（値は表示しません）。");
-            }
-
-            if (key.Length < MinKeyBytes)
-                throw new InvalidOperationException(
-                    $"MessageOrigin:{name}:{issuer} が短すぎます（{MinKeyBytes} バイト以上の乱数を base64 で与えてください。値は表示しません）。");
-
-            result[issuer] = key;
-        }
-
-        return result;
     }
 
     // 末尾のゼロを落とす（10.50 と 10.5 を同じ値に。注文の承認の印と同じ規則）。
