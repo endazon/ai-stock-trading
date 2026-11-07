@@ -94,6 +94,7 @@ issues: [MSP#2492]
 - Keycloak を呼ぶ Worker（Authority・トークンの取得先を持つもの）を足したら、**基盤（MSP）へその一覧に足すよう依頼する**。足さなければ、そのサービスの起動・呼び出しが落ちる。
 - 取引ユニットの CI（helm.yml の「Assert values-cloud authorization server TLS」）は、CA を持つ Worker の集合を同じ 11 個の一覧と比べる。足すとこの検査が赤になるので、一覧を直すときに基盤への依頼も出す。
 - 新しい Worker は chart の `services` に足せば CA のマウントと `PlatformInfraCa__CertificatePath` が付く（個別の設定は要らない）。
+- 認可サーバー・LLM ゲートウェイなど基盤の宛先へ **HttpClient を新しく足すときは `.TrustPlatformInfraCa()` を付ける**（`SSL_CERT_DIR` は既定で描かないので、付けないと TLS で落ちる）。切り戻しは `global.infraCa.addToSystemTrust=true`。
 
 ## 証明書の更新
 

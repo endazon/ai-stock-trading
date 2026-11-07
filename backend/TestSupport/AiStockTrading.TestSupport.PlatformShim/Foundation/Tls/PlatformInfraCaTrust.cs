@@ -15,6 +15,8 @@ namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Tls;
 //
 // 🔴 IADR-0639: 基盤の CA を**システムの信頼ストアへは足さない**（chart は既定で SSL_CERT_DIR を描かない）。外部 API（Discord・Finnhub ほか）の
 // HttpClient は既定のハンドラのまま＝公開の CA だけで検証し、基盤の CA が発行した証明書を受けない。
+// 🔴 **基盤の宛先へ HttpClient を新しく足すときは `.TrustPlatformInfraCa()` を付ける**（付けないと基盤の CA の証明書を受けず TLS で落ちる）。
+// 切り戻し（基盤の CA をシステムの信頼ストアへも足す）は chart の `global.infraCa.addToSystemTrust=true`（外部 API でも信頼するので一時だけ）。
 //
 // 判定:
 //   1. 既定の検証（システムの信頼ストア）で誤りが無ければ受ける。

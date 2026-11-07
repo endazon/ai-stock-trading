@@ -328,6 +328,7 @@ bash scripts/ast-message-origin-keygen.sh --live
 3. **すぐに上げられないとき（直る版が無い・上げると壊れる）だけ、その advisory 1 件を一時的に抑止する。**
    - ルートの `Directory.Build.props` に、advisory の URL で 1 件ずつ足す。**パッケージ単位や警告の番号ごとの抑止はしない**（他の advisory まで黙る）。
    - **期限と理由を必ず書く。** 期限は 30 日以内を目安にし、過ぎたら外すか、理由を更新して延ばす PR を出す。
+   - **抑止の根拠（直る版が無い・影響しない理由・期限）は、その PR で実装 ADR に記録する。** コメントだけで済ませない。
 
    ```xml
    <ItemGroup>
