@@ -101,6 +101,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(StageTransitioned), "AiStockTrading.Shared.Contracts.Events.StageTransitioned")]
         // #464, ADR-0028 決定2: GFV 違反による停止の解除（誰が・いつ・どの記録に対して）。
         [InlineData(typeof(GoodFaithViolationsCleared), "AiStockTrading.Shared.Contracts.Events.GoodFaithViolationsCleared")]
+        // NFR-06, IADR-0626 決定 3: 危険な操作の確認コードを確かめた結果（操作・対象・結果・停止の状態。コードは載せない）。
+        [InlineData(typeof(OwnerSecondFactorChecked), "AiStockTrading.Shared.Contracts.Events.OwnerSecondFactorChecked")]
         // #465, ADR-0027 決定1/決定4: 借株料の日次の計上額と、**計上できなかった日**（別イベント）。
         [InlineData(typeof(BorrowFeeAccrued), "AiStockTrading.Shared.Contracts.Events.BorrowFeeAccrued")]
         [InlineData(typeof(BorrowFeeAccrualUnavailable), "AiStockTrading.Shared.Contracts.Events.BorrowFeeAccrualUnavailable")]

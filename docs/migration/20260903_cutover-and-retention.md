@@ -103,6 +103,7 @@ issues: [#346, #344, #204, #137, #141, #342, #24, #339, #849, #1028, planning#28
 | risk_management_svc | lockout | state | Id（単一行） | EngagedAt | 日次損失ロックアウト（行なし＝未発動） |
 | risk_management_svc | order_activity | ledger | DecisionId | PlacedAt | 相場操縦検知用の注文活動 |
 | risk_management_svc | order_screening_observations | ledger | DecisionId | ObservedAtUtc | 発注審査の観測（統制違反件数の供給元） |
+| risk_management_svc | owner_second_factor_state | state | Id（単一行） | UpdatedAt | 危険な操作の確認コードの失敗の数・停止・使った段（行なし＝未使用。引き継がないと停止が解ける） |
 | risk_management_svc | pause | state | Id（単一行） | ChangedAt | 一時停止（行なし＝未停止） |
 | risk_management_svc | position_drift_adoptions | ledger | Id | AdoptedAtUtc | 利用者が承認した乖離の取り込み（取引台帳の一部。約定とは別の追記専用行） |
 | risk_management_svc | position_drift_state | state | Id（単一行） | UpdatedAt | ブローカ突合の乖離状態 |

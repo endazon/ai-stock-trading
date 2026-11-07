@@ -266,11 +266,22 @@ builder.Services.AddSingleton(builder.Configuration.GetSection(OperatorKillSwitc
     .Get<OperatorKillSwitchHoldOptions>() ?? new OperatorKillSwitchHoldOptions());
 // NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）。既定は Off（段 1 = Audit・段 2 = Enforce は構成で選ぶ）。
 // シークレットは Secret ast-owner-totp の optional の参照（scripts/ast-owner-totp-enroll.sh が作る）。
+// 🔴 IADR-0626 決定 1・3: 状態（最後の段・失敗の数・停止）は本サービスの DB（owner_second_factor_state）に 1 つだけ持ち、
+// 報告書の確定の分も /risk-controls/owner-second-factor/verify で本サービスが確かめる。結果は監査・通知へ発行する。
+var ownerSecondFactorOptions = builder.Configuration
+    .GetSection(AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions.SectionName)
+    .Get<AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions>()
+    ?? new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions();
+builder.Services.AddSingleton<AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.IOwnerSecondFactorVerifier>(sp =>
+    new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.TotpOwnerSecondFactorVerifier(
+        ownerSecondFactorOptions,
+        new EfOwnerSecondFactorStateStore(sp.GetRequiredService<IServiceScopeFactory>(), sp.GetRequiredService<TimeProvider>()),
+        sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger("OwnerSecondFactor"),
+        new RiskManagementService.Infrastructure.ExternalServices.MessageBusOwnerSecondFactorObserver(sp.GetRequiredService<IServiceScopeFactory>())));
 builder.Services.AddSingleton(sp => new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorGate(
-    builder.Configuration.GetSection(AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions.SectionName)
-        .Get<AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions>()
-        ?? new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions(),
-    TimeProvider.System,
+    ownerSecondFactorOptions,
+    sp.GetRequiredService<AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.IOwnerSecondFactorVerifier>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger("OwnerSecondFactor")));
 builder.Services.AddScoped<KillSwitchService>();
 // 🔴 FR-10, ADR-0009, IADR-0567 決定 2: 発注執行が送る直前に読む停止の状態（審査と同じストア）。

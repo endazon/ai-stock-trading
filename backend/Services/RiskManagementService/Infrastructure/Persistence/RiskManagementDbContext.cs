@@ -16,6 +16,9 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
 
     public DbSet<LockoutRow> Lockout => Set<LockoutRow>();
 
+    // NFR-06, FR-14, IADR-0626 決定 1: 危険な操作の第 2 要素の状態（単一行・報告書と共有）。
+    public DbSet<OwnerSecondFactorStateRow> OwnerSecondFactorState => Set<OwnerSecondFactorStateRow>();
+
     public DbSet<SettingsChangeRow> SettingsChangeLog => Set<SettingsChangeRow>();
 
     public DbSet<ApprovedOrderRow> ApprovedOrders => Set<ApprovedOrderRow>();
@@ -103,6 +106,18 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
             e.Property(r => r.Id).ValueGeneratedNever();
             e.Property(r => r.Json).HasColumnType("jsonb").IsRequired();
             // 楽観的排他制御: Version を並行トークンとして扱う（更新時に一致を要求）。
+            e.Property(r => r.Version).IsConcurrencyToken();
+        });
+
+        // NFR-06, FR-14, IADR-0626 決定 1: 第 2 要素の状態（単一行）。版は並行トークン。
+        mb.Entity<OwnerSecondFactorStateRow>(e =>
+        {
+            e.ToTable("owner_second_factor_state");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Id).ValueGeneratedNever();
+            e.Property(r => r.SecretFingerprint).HasMaxLength(64).IsRequired();
+            e.Property(r => r.LastAcceptedOperation).HasMaxLength(64);
+            e.Property(r => r.LastAcceptedTarget).HasMaxLength(128);
             e.Property(r => r.Version).IsConcurrencyToken();
         });
 

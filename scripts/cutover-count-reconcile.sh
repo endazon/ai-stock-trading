@@ -70,6 +70,7 @@ risk_management_svc	kill_switch	state	ChangedAt	-
 risk_management_svc	lockout	state	EngagedAt	-
 risk_management_svc	order_activity	ledger	PlacedAt	-
 risk_management_svc	order_screening_observations	ledger	ObservedAtUtc	-
+risk_management_svc	owner_second_factor_state	state	UpdatedAt	-
 risk_management_svc	pause	state	ChangedAt	-
 risk_management_svc	position_drift_adoptions	ledger	AdoptedAtUtc	-
 risk_management_svc	position_drift_state	state	UpdatedAt	-

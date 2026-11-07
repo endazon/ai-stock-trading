@@ -12,6 +12,8 @@
 #   4. risk-management と report の Pod を作り直させる（新しいシークレットを読む）。
 # 🔴 シークレットの値は表示しない（QR だけ）・ファイルに残さない・プロセスの引数に載せない。`qrencode` が無ければ何も作らずに 4 で終わる。
 # 🔴 既に Secret があれば作り直さない（`--rotate` を付けたときだけ。旧い登録は使えなくなる）。
+# 🔶 NFR-06, IADR-0626: 確認コードの失敗が重なって「手動の解除まで閉じた」ときの解除も `--rotate` で行う（シークレットが変わると、
+#    リスク管理の DB の失敗の数と停止は新しく始まる。Pod の作り直しでは解けない）。
 #
 # --openbao（クラウド。NFR-05, ADR-0080, #1560, IADR-0623 決定 5）: 2 の代わりに、基盤の put-external-secret.sh の**標準入力へだけ**
 #   シークレットを流し、OpenBao の cloud/ast/ast-owner-totp（property secret）へ書く。k8s の Secret は ESO が写す

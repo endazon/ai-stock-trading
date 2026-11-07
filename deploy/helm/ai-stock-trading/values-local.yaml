@@ -447,10 +447,9 @@ services:
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
       # NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）を提供側で確かめる。段 1 は Audit（記録だけ・操作を止めない）。
       # 段 2 で Enforce にする（確かめられない操作を 403 で拒む）。シークレットは scripts/ast-owner-totp-enroll.sh が作る Secret ast-owner-totp
-      # （chart・ESO・ArgoCD の管理の外）を optional で読む。Secret が無ければ Audit は「未構成」と記録するだけ。
+      # （chart・ESO・ArgoCD の管理の外）をリスク管理が optional で読む。
+      # IADR-0626 決定 1: 照合は状態の持ち主（リスク管理）が上の RiskManagement__BaseUrl の宛先で行うので、本サービスは Secret を読まない。
       - { name: OwnerSecondFactor__Mode, value: "Audit" }
-      - name: OwnerSecondFactor__Secret
-        secretKeyRef: { name: ast-owner-totp, key: secret, optional: true }
 
   # ============ ②実LLM ＋ 価格文脈(#236/IADR-0099) ＋ サイクル配線: trade-decision ============
   # FR-02/04/11, ADR-0003, IADR-0061/0088/0095/0099。LogPrompts は既定 ""（記録しない・安全側）。

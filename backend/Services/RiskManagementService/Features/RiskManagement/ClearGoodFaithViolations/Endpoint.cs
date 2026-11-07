@@ -33,7 +33,7 @@ internal static class ClearGoodFaithViolationsEndpoint
     {
         // NFR-06, FR-14, #1542, IADR-0615: GFV 停止の解除は危険な操作（第 2 要素。門は状態を変える直前にサービスが呼ぶ）。
         var outcome = svc.Clear(RiskControlEndpoints.ActorOf(http), req.Reason ?? string.Empty,
-            RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.GoodFaithViolationClear, req.SecondFactorCode));
+            RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.GoodFaithViolationClear, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorTargets.GoodFaithViolations, req.SecondFactorCode));
 
         if (!outcome.Accepted)
         {

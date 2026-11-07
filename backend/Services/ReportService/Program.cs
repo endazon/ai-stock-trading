@@ -65,11 +65,44 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<IReportStore, EfReportStore>();
 // NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）。既定は Off（段 1 = Audit・段 2 = Enforce は構成で選ぶ）。
-builder.Services.AddSingleton(sp => new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorGate(
-    builder.Configuration.GetSection(AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions.SectionName).Get<AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions>()
-        ?? new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions(),
-    TimeProvider.System,
-    sp.GetRequiredService<ILoggerFactory>().CreateLogger("OwnerSecondFactor")));
+// 🔴 IADR-0626 決定 1: `RiskManagement:BaseUrl` があれば、確かめは状態の持ち主（リスク管理）へ問い合わせる
+// （POST /risk-controls/owner-second-factor/verify。サービスの身元で呼ぶ。失敗の数・停止・再利用の判定は 2 サービスで 1 つ）。
+// 段（Audit / Enforce）は本サービスの構成のまま。宛先が無いとき、Audit だけはプロセスの中の状態で確かめ（単体の実行）、
+// Enforce は拒む（閉じる向き）。宛先があるとき、本サービスは TOTP のシークレットを使わない（照合はリスク管理）。
+builder.Services.AddSingleton(sp =>
+{
+    var options = builder.Configuration.GetSection(AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions.SectionName).Get<AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions>()
+        ?? new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorOptions();
+    var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("OwnerSecondFactor");
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+    {
+        // 🔴 IADR-0626 決定 1（2026-11-07 追記）: Enforce で宛先が無い・読めないなら、プロセスの中の状態へ落とさず、
+        // 確かめられないもの（Unavailable）として危険な操作を拒む（失敗の数が 2 サービスで別々になり、上限が実質 2 倍になるため）。
+        if (options.Mode == AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorMode.Enforce)
+        {
+            logger.LogError(
+                "{Marker} 段は Enforce ですが RiskManagement:BaseUrl が無いか読めません。確認コードを要する操作をすべて拒みます。",
+                AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorGate.LogMarker);
+            return new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorGate(
+                options, new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.UnavailableOwnerSecondFactorVerifier(), logger);
+        }
+
+        if (options.Mode != AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorMode.Off)
+        {
+            logger.LogWarning(
+                "{Marker} RiskManagement:BaseUrl が無いため、確かめの状態をこのプロセスの中に持ちます（リスク管理と共有しません）。",
+                AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorGate.LogMarker);
+        }
+
+        return new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorGate(options, sp.GetRequiredService<TimeProvider>(), logger);
+    }
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk-ledger");
+    http.BaseAddress = uri;
+    return new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorGate(
+        options, new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.RemoteOwnerSecondFactorVerifier(http, logger), logger);
+});
 builder.Services.AddScoped<AppSvc>();
 
 // FR-09, UC-03, ADR-0003, IADR-0240 決定11, #774: 確定要求の本文で運ばれる「代理される利用者」（OnBehalfOf）を

@@ -242,6 +242,16 @@ public static class AuditEntryFactory
             + $"—— **違反記録そのものは失効しません**: {e.Reason}"),
         AuditSerialization.Serialize(e), e.ClearedAt, recordedAt);
 
+    // NFR-06, FR-14, FR-11, IADR-0626 決定 3・4: 危険な操作の確認コードを確かめた結果（成功・失敗・使用済み・停止中）。
+    // 操作と対象を要約に出し、「どの確かめが何に使われたか」を監査から追えるようにする。コードはイベントに無い。
+    // 相関は "owner-second-factor" の決定的 GUID で束ねる（注文相関を持たない統制操作）。
+    public static AuditEntry From(OwnerSecondFactorChecked e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(OwnerSecondFactorChecked), AuditCorrelation.From("owner-second-factor"), Symbol: null,
+        Truncate($"確認コードの確かめ {e.Outcome}: {e.Operation}（{e.Target}）"
+            + $"・連続の失敗 {e.ConsecutiveFailures}・停止 {e.LockoutCount} 回"
+            + (e.ManualUnlockRequired ? "・手動の解除まで閉じている" : e.LockedUntil is { } until ? $"・{until:O} まで停止" : string.Empty)),
+        AuditSerialization.Serialize(e), e.CheckedAt, recordedAt);
+
     // FR-10, FR-11, SC-03, #465, ADR-0027 決定1, IADR-0183: 借株料の**日次の計上額**。
     //
     // ADR-0027 決定1 は「**日次の計上額は監査ログへ残す**」と定める ——

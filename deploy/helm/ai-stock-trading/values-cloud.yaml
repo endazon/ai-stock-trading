@@ -312,12 +312,11 @@ services:
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
-      # NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（values.yaml の同じ行の写し。extraEnv は配列で丸ごと置き換わるため、
-      # ここに無いとクラウドの profile では段も Secret ast-owner-totp も読まれず、門は Off のままになる）。
+      # NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素の段（extraEnv は配列で丸ごと置き換わるため、ここに無いと門は Off のままになる）。
       # 🔴 段 2（IADR-0623 決定 3）: 確かめられない危険な操作を 403 で拒む。
+      # 🔴 IADR-0626 決定 1: 照合は状態の持ち主（リスク管理）が上の RiskManagement__BaseUrl の宛先で行うので、本サービスは
+      # Secret ast-owner-totp を読まない（宛先が無ければ Enforce は拒む）。
       - { name: OwnerSecondFactor__Mode, value: "Enforce" }
-      - name: OwnerSecondFactor__Secret
-        secretKeyRef: { name: ast-owner-totp, key: secret, optional: true }
   trade-decision:
     extraEnv:
       - { name: Reports__BaseUrl, value: "http://report-service:8080" }

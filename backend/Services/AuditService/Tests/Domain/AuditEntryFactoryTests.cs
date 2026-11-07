@@ -788,6 +788,27 @@ public class AuditEntryFactoryTests
         entry.Detail.Should().Contain("PurchaseAmountInBase").And.Contain("OccurredOn");
     }
 
+    // NFR-06, FR-14, FR-11, IADR-0626 決定 3・4: 確認コードの確かめは、操作・対象・結果・停止の状態の粒度で監査へ残る。
+    [Fact]
+    public void OwnerSecondFactorChecked_は操作と対象と停止の状態を残す()
+    {
+        var e = new OwnerSecondFactorChecked(
+            "ReportConfirm", "report:2026-11-06@v1", "Invalid", 0, 2, RecordedAt.AddMinutes(30), false, true, RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("OwnerSecondFactorChecked");
+        entry.Summary.Should().Contain("Invalid").And.Contain("ReportConfirm").And.Contain("report:2026-11-06@v1").And.Contain("停止 2 回");
+        entry.Detail.Should().Contain("LockedUntil");
+        entry.OccurredAt.Should().Be(e.CheckedAt);
+    }
+
+    [Fact]
+    public void OwnerSecondFactorChecked_は手動の解除まで閉じたことを要約に出す() =>
+        AuditEntryFactory.From(
+                new OwnerSecondFactorChecked("TradingResume", "trading-pause", "Invalid", 0, 4, null, true, true, RecordedAt), Id, RecordedAt)
+            .Summary.Should().Contain("手動の解除まで閉じている");
+
     // FR-19, FR-11, UC-06, #464, ADR-0028 決定2, IADR-0182:
     // 解除は「誰が・いつ・どの記録に対して」の粒度で監査へ残る。
     [Fact]
