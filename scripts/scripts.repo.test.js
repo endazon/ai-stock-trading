@@ -5253,6 +5253,41 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.match(helmBlockProblems1248(oldPlace).join('\n'), /旧【計画書の場所】/);
     });
   }
+  // --- NFR, IADR-0642: 2 回目以後の push でも、この head の全差分を読み直させる ---
+  // track_progress: true の組み込みプロンプトは過去の AI レビュー本文を <comments> に載せる。基盤の同じ構成で、
+  // 2 回目以後の push のレビューが前回以後のコミットだけを読み、下限を割り続けた（MSP#2509 で 5 回）。
+  // 【検証の下限】節から、前回の結果を流用しない・head の全ファイルを読み直す・前回以後だけは下限を満たさない、
+  // の 3 つが消えたら止める。
+  {
+    const fs0642 = require('fs');
+    const path0642 = require('path');
+    const wf0642 = fs0642.readFileSync(path0642.resolve(__dirname, '../.github/workflows/claude-code-review.yml'), 'utf8');
+    const rereadProblems0642 = (text) => {
+      const start = text.indexOf('          prompt: |\n');
+      assert.ok(start >= 0, 'claude-code-review.yml から prompt: | を切り出せない（書式が変わったら本試験を直す）');
+      const i = text.indexOf('【検証の下限・最重要】', start);
+      if (i < 0) return ['prompt に【検証の下限・最重要】節が無い'];
+      const j = text.indexOf('\n\n', i);
+      const block = text.slice(i, j < 0 ? undefined : j).replace(/\n +/g, ''); // 折り返しを繋いで読む
+      const problems = [];
+      for (const word of ['前回のレビュー（スティッキーコメント・過去のコメント）の結果を流用しない',
+        'push のたびに', 'この head の `git diff origin/develop...HEAD` の全ファイルを読み直す',
+        '前回以後のコミットだけを読むのは下限を満たさない', 'M に数えるのは、このセッションで読んだファイルだけ']) {
+        if (!block.includes(word)) problems.push(`【検証の下限】節に「${word}」が無い`);
+      }
+      return problems;
+    };
+    ok('claude-code-review.yml[IADR-0642]: 【検証の下限】節が、push のたびに head の全差分を読み直させ、前回の結果の流用を禁じる', () => {
+      assert.deepStrictEqual(rereadProblems0642(wf0642), []);
+    });
+    ok('claude-code-review.yml[IADR-0642]: 陰性対照（流用の禁止・読み直し・前回以後だけの禁止・M の数え方を消す）はそれぞれ赤になる', () => {
+      assert.match(rereadProblems0642(wf0642.replace('の結果を流用しない。**', '。**')).join('\n'), /流用しない/);
+      assert.match(rereadProblems0642(wf0642.replace('の全ファイルを読み直す。', 'を読む。')).join('\n'), /読み直す/);
+      assert.match(rereadProblems0642(wf0642.replace('前回以後のコミットだけを読むのは', '前回以後のコミットを読むのは')).join('\n'), /前回以後/);
+      assert.match(rereadProblems0642(wf0642.replace('M に数えるのは、このセッションで読んだファイルだけである。', '')).join('\n'), /このセッション/);
+      assert.match(rereadProblems0642(wf0642.replaceAll('【検証の下限・最重要】', '【削除】')).join('\n'), /節が無い/);
+    });
+  }
   // --- NFR, #1315, IADR-0208 決定 1 / IADR-0190 決定 4: AI レビューの prompt の【検証の下限】節を固定する ---
   // 5.5 系への切替後、レビューが下限の検証（scripts.test.js 全件・文書系の検査器・全ファイルの読了）を
   // 自分で省くようになった（#1315 の点検）。節が黙って消える・要の語が抜ける・案内するコマンドが
