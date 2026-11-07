@@ -2,7 +2,7 @@
 title: サービス間の認証の身元をサービスごとに分け、口ごとに呼んでよいサービスを限る（クラウド）
 type: spec
 status: in-progress
-related_ids: [NFR, NFR-05, NFR-06, FR-14, ADR-0047, ADR-0080, IADR-0637, IADR-0611, IADR-0626, IADR-0623, IADR-0051, MSP:IADR-0689, MSP:IADR-0699]
+related_ids: [NFR, NFR-05, NFR-06, FR-14, ADR-0047, ADR-0080, IADR-0637, IADR-0611, IADR-0626, IADR-0623, IADR-0051, MSP:IADR-0689, MSP:IADR-0700]
 author: claude (Claude Code)
 created: 2026-11-07
 updated: 2026-11-07
