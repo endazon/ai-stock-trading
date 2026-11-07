@@ -121,8 +121,8 @@ builder.Services.AddSingleton(sp =>
     {
         var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("report-binding");
         http.BaseAddress = uri;
-        source = new MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal.HttpWatchlistProposalSource(
-            http, sp.GetRequiredService<ILogger<MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal.HttpWatchlistProposalSource>>());
+        source = new MarketMonitorService.Infrastructure.ExternalServices.HttpWatchlistProposalSource(
+            http, sp.GetRequiredService<ILogger<MarketMonitorService.Infrastructure.ExternalServices.HttpWatchlistProposalSource>>());
     }
 
     return new MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal.WatchlistProposalBindingGate(

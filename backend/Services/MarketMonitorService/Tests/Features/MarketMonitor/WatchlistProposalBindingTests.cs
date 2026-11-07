@@ -1,3 +1,5 @@
+extern alias ReportWorker;
+
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -7,6 +9,7 @@ using Grpc.Core;
 using Grpc.Net.Client;
 using MarketMonitorService.Domain;
 using MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal;
+using MarketMonitorService.Infrastructure.ExternalServices;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -15,6 +18,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using Proto = AiStockTrading.Shared.Grpc.MarketMonitor.V1;
+using ReportRevise = ReportWorker::ReportService.Features.Reports.RevisePolicy;
+using ReportWatchlist = ReportWorker::ReportService.Features.Reports.WatchlistProposal;
 
 namespace MarketMonitorService.Tests;
 
@@ -139,22 +144,39 @@ public class WatchlistProposalBindingTests
             .Should().Be("/reports/policy-revisions/watchlist-proposal/binding?periodKey=daily-2026-09-28&version=3");
     }
 
+    // 報告書の JSON 設定（Web の既定＋列挙は名前。ReportService の Program と同じ。送り手の固定は報告書の試験が持つ）。
+    private static readonly JsonSerializerOptions ReportWire =
+        new(JsonSerializerDefaults.Web) { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
+
+    // IADR-0420: 結び付きの照会の応答は、報告書の本物の応答型（WatchlistProposalBindingView）を報告書の設定で直列化したものから読める。
     [Fact]
-    public async Task 照会の本文を案として読み読めなければ届かないとする()
+    public async Task 照会の応答は報告書の本物の型から読め読めなければ届かないとする()
     {
-        var body = """
-            {"proposal":{"attemptId":"6a1f2b3c-0000-4000-8000-000000000001","periodKey":"daily-2026-09-28","reportVersion":3,
-             "changes":[{"action":"add","symbol":"NVDA","reason":"AI 需要"}],
-             "snapshot":[{"symbol":"AAPL","market":"UnitedStates"}],"applyRecorded":false},"secondFactorEnforced":true}
-            """;
-        var ok = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") });
+        ReportWatchlist.WatchlistProposalBindingView sent = new(
+            new ReportWatchlist.WatchlistProposalView(
+                Guid.NewGuid(), "daily-2026-09-28", 3,
+                [new ReportRevise.WatchlistChangeView("add", "NVDA", "AI 需要")],
+                [new ReportWatchlist.WatchlistSnapshotEntryView("AAPL", "UnitedStates")],
+                ApplyRecorded: false),
+            SecondFactorEnforced: true);
+        var ok = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(sent, ReportWire), System.Text.Encoding.UTF8, "application/json"),
+        });
 
         var found = await Source(ok).FindAsync("daily-2026-09-28", 3, default);
 
         found.Status.Should().Be(WatchlistProposalLookupStatus.Found);
         found.Proposal!.Changes.Should().Equal(new BoundWatchlistChange("add", "NVDA"));
         found.Proposal.Snapshot.Should().Equal(new BoundWatchlistSnapshotEntry("AAPL", "UnitedStates"));
+        found.Proposal.ApplyRecorded.Should().BeFalse();
         found.Proposal.SecondFactorEnforced.Should().BeTrue();
+
+        var unknown = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(sent with { Proposal = sent.Proposal with { Snapshot = null } }, ReportWire)),
+        });
+        (await Source(unknown).FindAsync("k", 1, default)).Proposal!.Snapshot.Should().BeNull("照会できなかった監視銘柄を空に化けさせない");
 
         var broken = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"proposal\":null}") });
         (await Source(broken).FindAsync("k", 1, default)).Status.Should().Be(WatchlistProposalLookupStatus.Unavailable);

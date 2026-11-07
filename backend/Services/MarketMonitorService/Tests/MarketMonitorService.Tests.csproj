@@ -29,5 +29,7 @@
          移送先は Web SDK で `public partial class Program` を持つため、`Program` の曖昧（CS0433）を避けて extern alias で参照する
          （TradeDecisionService.Tests・AiStockTrading.IntegrationTests と同じ別名）。 -->
     <ProjectReference Include="..\..\RiskManagementService\RiskManagementService.csproj" Aliases="RiskManagementWorker" />
+    <!-- NFR-06, IADR-0634, IADR-0420: 結び付きの照会の契約テストが、報告書の本物の応答型（WatchlistProposalBindingView）を直列化して読む。 -->
+    <ProjectReference Include="..\..\ReportService\ReportService.csproj" Aliases="ReportWorker" />
   </ItemGroup>
 </Project>
