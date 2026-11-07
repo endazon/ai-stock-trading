@@ -1,5 +1,5 @@
 ---
-title: IADR-0631 クラウドの名前空間のストア（SecretStore openbao）を、基盤の OpenBao の TLS の口（https・8443）へ向け、同じ名前空間の ConfigMap openbao-ca の CA で検証する。宛先が https でない・CA が無ければ描画で止める。基盤の併存の段の後に当てる
+title: IADR-0632 クラウドの名前空間のストア（SecretStore openbao）を、基盤の OpenBao の TLS の口（https・8443）へ向け、同じ名前空間の ConfigMap openbao-ca の CA で検証する。宛先が https でない・CA が無ければ描画で止める。基盤の併存の段の後に当てる
 type: impl-adr
 status: Accepted
 related_ids: [NFR, NFR-05, ADR-0080, IADR-0623, MSP:IADR-0696, MSP:IADR-0689]
@@ -10,7 +10,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (NFR-05)
 ---
 
-# IADR-0631: 名前空間のストアを基盤の OpenBao の TLS の口へ向ける
+# IADR-0632: 名前空間のストアを基盤の OpenBao の TLS の口へ向ける
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 

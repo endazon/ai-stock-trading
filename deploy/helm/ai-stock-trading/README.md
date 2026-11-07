@@ -219,7 +219,7 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   ExternalSecret で写す（`ast-db-credentials`・`ast-rabbitmq-users`・`ast-secrets`・`ast-owner-totp`・`ast-message-origin-keys`・`moomoo-credentials`・`moomoo-rsa`・
   CA の写し `platform-infra-ca`）。例外は `ast-operator-hold`（秘密ではない SSH からの停止の切り替え。管理の外）。
   - ストアの宛先は基盤の OpenBao の TLS の口（`https://openbao.openbao.svc:8443`）で、`externalSecrets.openbaoStore.caProvider`（values-cloud は
-    同じ名前空間の ConfigMap `openbao-ca` の `ca.crt`。基盤の `tls-cert.sh` が置く）で受け口を検証する（IADR-0631。基盤の MSP:IADR-0696）。
+    同じ名前空間の ConfigMap `openbao-ca` の `ca.crt`。基盤の `tls-cert.sh` が置く）で受け口を検証する（IADR-0632。基盤の MSP:IADR-0696）。
     `create=true` で宛先が https でない・`caProvider` が欠けると描画で止める。
   - `global.db.usernameSecret`: DB の利用者名も Secret から読む（`passwordSecret` と一緒に与える）。既定は与えない＝`global.db.username` を描く。
   - `services.<名前>.dbCredentials.usernameSecret` / `passwordSecret`（IADR-0630。基盤の MSP:IADR-0695 の受け手）: DB の資格をサービスごとに上書きする

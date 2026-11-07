@@ -406,7 +406,7 @@ externalSecrets:
     authMountPath: kubernetes
     # ESO が作るトークンの対象者（基盤の role は audience=vault を要求する）。
     audiences: [vault]
-    # NFR-05, IADR-0631: 受け口の CA（create=true のとき必須。server も https が必須）。type は ConfigMap か Secret。
+    # NFR-05, IADR-0632: 受け口の CA（create=true のとき必須。server も https が必須）。type は ConfigMap か Secret。
     caProvider:
       type: ConfigMap
       name: ""

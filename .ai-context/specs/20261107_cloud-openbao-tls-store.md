@@ -1,8 +1,8 @@
 ---
 title: クラウドの名前空間のストア（SecretStore openbao）を、基盤の OpenBao の TLS の口（https）へ向け、受け口の CA で検証する（取引ユニットの段）
 type: spec
-status: in-progress
-related_ids: [NFR, NFR-05, ADR-0080, IADR-0623, IADR-0631, MSP:IADR-0696, MSP:IADR-0689]
+status: accepted
+related_ids: [NFR, NFR-05, ADR-0080, IADR-0623, IADR-0632, MSP:IADR-0696, MSP:IADR-0689]
 author: claude (Claude Code)
 created: 2026-11-07
 updated: 2026-11-07
@@ -19,7 +19,7 @@ plan_refs:
   この名前空間に ConfigMap `openbao-ca`（キー `ca.crt`）として置く。基盤の手順書 `docs/operations/cloud-openbao-tls-runbook.md` の段 3 にあたる。
 - 本 PR は **MSP#2495 の後に当てる**前提である（基盤の併存の段〔平文と TLS の両方を受ける〕の後に、このストアを https にする）。
 - 非機能の番号: 計画の非機能要件表に通信の暗号化の番号は無い。起点は裸の `NFR` とし、秘密の保管の `NFR-05` を併記する（ESO が写す値の全部が流れる通信）。
-- 決定は [IADR-0631](../adr/IADR-0631_cloud-openbao-store-tls.md)。
+- 決定は [IADR-0632](../adr/IADR-0632_cloud-openbao-store-tls.md)。
 
 ## 1. 現状（develop `08634c6ab`）
 
