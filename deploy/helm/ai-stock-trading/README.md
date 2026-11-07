@@ -217,6 +217,13 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   - `global.db.usernameSecret`: DB の利用者名も Secret から読む（`passwordSecret` と一緒に与える）。既定は与えない＝`global.db.username` を描く。
   - `global.infraCa.secretName`: CA を Secret から mount する（`configMap` との併用は描画で止める）。既定は空＝ConfigMap。
   - `externalSecrets.deletionPolicy`・`dbCredentials`・`ownerTotp`・`infraCa`・`appSecrets.clientIds`・`appSecrets.sharedClientSecrets`: 既定はどれも無効・空。
+- **認可サーバー（Keycloak）への通信を TLS で検証する**（[IADR-0629](../../../.ai-context/adr/IADR-0629_cloud-keycloak-tls-receiver.md)。基盤の MSP:IADR-0693 の受け手）:
+  values-cloud は `global.authAuthority=https://keycloak:8443/realms/platform` と `global.authTls.enabled=true`。有効なら Authority が
+  `https://` でない・`global.infraCa` が無いときは描画で止め、全 Worker（DB・ブローカを使わないものも）に基盤の CA をマウントして
+  `SSL_CERT_DIR=/etc/ssl/certs:/etc/platform-infra-ca` を 1 つだけ描き、認証を持つサービスへ `Auth__RequireHttpsMetadata=true` を渡す。
+  トークンの取得先は Authority から導く。`global.authValidIssuers`（既定は空）は移行の間だけ旧の発行元を足す（外す時期は
+  [認可サーバーの TLS Runbook](../../../docs/operations/cloud-keycloak-tls-runbook.md) の段 6）。
+  🔴 Keycloak を呼ぶ Worker を足したら、基盤の `deploy/cloud/infra/networkpolicy.yaml` の Keycloak の入りの一覧にも足すよう基盤へ依頼する。
 - **守りは段 2 で始める**（#1560 / IADR-0623 決定 3・IADR-0627）: `global.orderApprovalSigning`・`messageOrigin`・`ownerTokenBinding`・`ownerBotScope` は `Enforce`、
   risk-management・report の `OwnerSecondFactor__Mode` は `Enforce`、risk-management の `RiskControls__KillSwitch__Precondition` は `Require`。
 - 既定（本番）と `values-local.yaml` の描画は、これらの部品を入れる前と 1 バイトも変わらない（`helm.yml` が digest・DB_PASSWORD・

@@ -32,6 +32,19 @@ global:
   # 🔴 NFR, #1529, IADR-0612: 認証のレルム（Authority）。**既定は空で、未設定なら描画で止まる**（単体実行向けのレルムを既定にしない）。
   #   配備の values で必ず明示する（values-local は platform。クラウドは values-cloud）。
   authAuthority: ""
+  # NFR, NFR-05, IADR-0629（基盤の MSP:IADR-0693 の受け手）: 認可サーバー（Keycloak）への通信を TLS で検証する（opt-in。既定は描かない＝従来のまま）。
+  #   有効にすると: authAuthority が https:// でなければ描画で止める。認証を持つサービス（auth: true）へ Auth__RequireHttpsMetadata=true を渡す
+  #   （アプリは https でない Authority を起動で拒む）。全 Worker に基盤の CA（global.infraCa）を /etc/platform-infra-ca へマウントし、
+  #   信頼ストアへ足す（SSL_CERT_DIR=/etc/ssl/certs:/etc/platform-infra-ca。既定のストアを先に残す。ブローカと同じ 1 つ）。
+  #   トークンの取得先（ServiceAuth__TokenEndpoint・Discord の OwnerAuth・LLM ゲートウェイの Authority）は authAuthority から導く。
+  #   クラウド（values-cloud.yaml）だけが有効にする。既定・ローカル（values-local）は平文の in-cluster のまま。
+  authTls:
+    enabled: false
+  # NFR, IADR-0629: トークンの iss として追加で受ける発行元（カンマ・空白区切り。既定は空＝描かない）。認証を持つサービスへ
+  #   Auth__ValidIssuers を渡す（Authority のメタデータの発行元に足すだけで、発行元の検証は弱めない）。
+  #   🔴 認可サーバーの TLS への移行の間だけ使う（旧の発行元 http://keycloak:8080/realms/platform）。外す時期は手順書
+  #   docs/operations/cloud-keycloak-tls-runbook.md（基盤の段 6）。
+  authValidIssuers: ""
   # 🔴 NFR, #1529, IADR-0612: ASPNETCORE_ENVIRONMENT=Production の認証を持つサービスは、単体実行向けのレルム（ai-stock-trading。
   #   infra/keycloak/realm-export.json）を指す Authority では起動しない。意図して使うときだけ true にする（env Auth__AllowStandaloneRealm=true を描く）。
   allowStandaloneRealm: false

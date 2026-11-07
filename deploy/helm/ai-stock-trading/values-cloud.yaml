@@ -26,6 +26,7 @@
 #   ここはスイッチを入れるだけにする。DB は VerifyFull＋基盤の CA、ブローカは amqps:5671、LLM ゲートウェイは https
 #   （基盤の CA で検証。外部 API は従来のシステムの信頼のまま）。CA は名前空間 ai-stock-trading の ConfigMap
 #   platform-infra-ca（キー ca.crt）から読む。無いと Pod は起動しない（平文へ戻らない）。写し方は手順書の §5。
+#   認可サーバー（Keycloak）も https:8443 で同じ CA で検証する（global.authTls。IADR-0629）。
 #
 # ★ イメージ: ノードでビルドして取り込み、digest で固定する（レジストリを持たない）。
 #   digest はノードで書き出したファイル（コミットしない）から重ねる。欠けたら描画で止まる（global.image.requireDigest）。
@@ -39,9 +40,19 @@ global:
     # 自前のイメージに digest が無ければ描画で止める（IADR-0608 決定 2）。
     requireDigest: true
   # 🔴 明示する（chart の既定は空になり、未設定なら描画で止まる）。クラウドの基盤の Keycloak の issuer と同じ値:
-  #   基盤の最小構成は KC_HOSTNAME=http://keycloak:8080・realm platform で、AST の名前空間からは ExternalName の keycloak で引く
-  #   （infraAliases）。トークンの iss がこの値と一致しないと検証で落ちる。
-  authAuthority: http://keycloak:8080/realms/platform
+  #   基盤の最小構成は KC_HOSTNAME=https://keycloak:8443・realm platform で（MSP:IADR-0693。平文の口は持たない）、AST の名前空間からは
+  #   ExternalName の keycloak で引く（infraAliases）。トークンの iss がこの値と一致しないと検証で落ちる。
+  #   トークンの取得先（ServiceAuth__TokenEndpoint・Discord の OwnerAuth・LLM ゲートウェイの Authority）はこの値から導く（chart）。
+  authAuthority: https://keycloak:8443/realms/platform
+  # NFR, NFR-05, IADR-0629: 認可サーバーへの通信を TLS で検証する。https でない Authority はアプリが起動で拒み
+  #   （Auth__RequireHttpsMetadata=true）、サーバ証明書は基盤の CA（下の infraCa。DB・ブローカと同じ CA）で検証する。
+  #   全 11 サービスが CA を持つ（DB・ブローカを使わないサービスも。描画の検査 helm.yml が固定する）。
+  #   🔴 Keycloak を呼ぶサービスを足したら、基盤（MSP）の deploy/cloud/infra/networkpolicy.yaml の Keycloak の入りの一覧（label app）にも
+  #   足すよう MSP へ依頼する。足さなければ、そのサービスの起動・呼び出しが落ちる（手順書 docs/operations/cloud-keycloak-tls-runbook.md）。
+  #   稼働中の構成を移す間だけ、旧の発行元を --set-string global.authValidIssuers=http://keycloak:8080/realms/platform で足す
+  #   （ここには書かない。外す時期は手順書の段 6）。
+  authTls:
+    enabled: true
   # 🔴 段 2（IADR-0610 / 0611 / 0622）。鍵の Secret が無ければ注文の承認の発行元・受け手の Pod は起動しない（Enforce は非 optional）。
   orderApprovalSigning:
     mode: Enforce

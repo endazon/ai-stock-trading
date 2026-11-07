@@ -393,6 +393,74 @@ jobs:
           done
           if grep -q 'values-cloud' deploy/argocd/application.yaml; then fail "ArgoCD の Application が values-cloud を参照している（最初の稼働では使わない）。"; fi
           echo "values-cloud: images=$(grep -c . <<<"$images") connections=$conns tls-db=$full amqps=$amqps https-gateway=$gws"
+      # NFR, NFR-05, IADR-0629（基盤の MSP:IADR-0693 の受け手）: クラウドの認可サーバー（Keycloak）への通信を TLS にする。
+      # 1. values-cloud の 11 個の Worker（基盤の Keycloak の入りの一覧と同じ集合）が、基盤の CA を 1 つだけマウントし、
+      #    SSL_CERT_DIR（/etc/ssl/certs を先に残す）を 1 つだけ持つ。DB・ブローカの TLS を外しても同じ（認可サーバーの TLS だけで CA が付く）。
+      # 2. values-cloud の Keycloak の URL（Authority・トークンの取得先）はすべて https://keycloak:8443/realms/platform で始まり、平文の URL は無い。
+      #    認証を持つサービスには Auth__RequireHttpsMetadata=true が付く。追加の発行元は既定で描かず、与えたときだけ描く。
+      # 3. https でない Authority・CA の設定の欠落は描画で止まる。
+      # 4. 既定と values-local には TLS の部品（RequireHttpsMetadata・ValidIssuers・8443）が現れず、Authority は従来の平文のまま。
+      # 🔴 Worker を足したら下の一覧と、基盤（MSP）の deploy/cloud/infra/networkpolicy.yaml の Keycloak の入りの一覧の両方を足す（手順書）。
+      - name: Assert values-cloud authorization server TLS (https・CA)
+        run: |
+          set -eu  # pipefail は付けない（grep -q が先に閉じると前段の SIGPIPE で偽になる）。入力は here-string で渡す。
+          fail() { echo "::error::$1"; exit 1; }
+          cloud="$CHART/values-cloud.yaml"
+          fixture="$CHART/ci/values-cloud-digests.fixture.yaml"
+          kc='https://keycloak:8443/realms/platform'
+          expected="audit-service backtest-service configuration-service cost-control-service information-collection-service market-monitor-service notification-service order-execution-service report-service risk-management-service trade-decision-service"
+          # Deployment ごとに: CA のマウントの数・SSL_CERT_DIR の数・値の違う SSL_CERT_DIR の数・CA のボリュームの数。
+          summ() { awk '
+            function flush() { if (k == "Deployment") printf "%s mount=%d ssl=%d sslbad=%d vol=%d\n", n, m, s, sb, v; k = ""; n = ""; m = 0; s = 0; sb = 0; v = 0; sv = 0 }
+            /^---/ { flush(); next }
+            /^kind:/ { k = $2 }
+            k == "Deployment" && n == "" && /^  name:/ { n = $2 }
+            /mountPath: \/etc\/platform-infra-ca$/ { m++ }
+            sv { if ($0 !~ /value: "\/etc\/ssl\/certs:\/etc\/platform-infra-ca"$/) sb++; sv = 0 }
+            /^ +- name: SSL_CERT_DIR$/ { s++; sv = 1 }
+            /^        - name: platform-infra-ca$/ { v++ }
+            END { flush() }' <<<"$1"; }
+          workers() {
+            local rows names
+            rows="$(summ "$1" | grep -- '-service ' || true)"
+            names="$(awk '{print $1}' <<<"$rows" | sort | tr '\n' ' ' | sed 's/ $//')"
+            [ "$names" = "$expected" ] || fail "$2: CA を確かめる Worker の集合が一覧と違う: $names"
+            bad="$(grep -v ' mount=1 ssl=1 sslbad=0 vol=1$' <<<"$rows" || true)"
+            [ -z "$bad" ] || fail "$2: 基盤の CA（マウント 1・SSL_CERT_DIR 1）を持たない Worker がある: $bad"
+          }
+          out="$(helm template ast "$CHART" -f "$cloud" -f "$fixture")"
+          workers "$out" "values-cloud"
+          noext="$(helm template ast "$CHART" -f "$cloud" -f "$fixture" --set global.db.tls.enabled=false --set global.rabbitmq.tls.enabled=false)"
+          workers "$noext" "values-cloud（DB・ブローカの TLS なし）"
+          urls="$(grep -oE 'value: "[a-z]+://keycloak[^"]*"' <<<"$out" || true)"
+          [ "$(grep -c . <<<"$urls" || true)" -ge 11 ] || fail "values-cloud の Keycloak の URL の抽出が痩せた: $urls"
+          badurl="$(grep -vF "value: \"$kc" <<<"$urls" || true)"
+          [ -z "$badurl" ] || fail "values-cloud に https://keycloak:8443 でない Keycloak の URL がある: $badurl"
+          if grep -q 'http://keycloak' <<<"$out"; then fail "values-cloud の描画に Keycloak の平文の URL が現れた。"; fi
+          toks="$(grep -A1 -E '^ +- name: (ServiceAuth__TokenEndpoint|Notifications__Discord__OwnerAuth__TokenEndpoint)$' <<<"$out" | grep -c "value: \"$kc/protocol/openid-connect/token\"" || true)"
+          tokn="$(grep -cE '^ +- name: (ServiceAuth__TokenEndpoint|Notifications__Discord__OwnerAuth__TokenEndpoint)$' <<<"$out" || true)"
+          [ "$tokn" -ge 8 ] && [ "$tokn" = "$toks" ] || fail "values-cloud のトークンの取得先 $tokn 件のうち https は $toks 件。"
+          auths="$(grep -cE '^ +- name: Auth__Authority$' <<<"$out" || true)"
+          req="$(grep -A1 -E '^ +- name: Auth__RequireHttpsMetadata$' <<<"$out" | grep -c 'value: "true"' || true)"
+          [ "$auths" -ge 8 ] && [ "$auths" = "$req" ] || fail "values-cloud の Auth__Authority $auths 件のうち RequireHttpsMetadata=true は $req 件。"
+          if grep -q 'name: Auth__ValidIssuers$' <<<"$out"; then fail "values-cloud の既定の描画に追加の発行元が現れた（移行の間だけ --set-string で足す）。"; fi
+          mig="$(helm template ast "$CHART" -f "$cloud" -f "$fixture" --set-string global.authValidIssuers=http://keycloak:8080/realms/platform)"
+          vi="$(grep -A1 -E '^ +- name: Auth__ValidIssuers$' <<<"$mig" | grep -c 'value: "http://keycloak:8080/realms/platform"' || true)"
+          [ "$vi" = "$auths" ] || fail "移行の間の追加の発行元が認証を持つ $auths サービスのうち $vi 件にしか描かれない。"
+          if err="$(helm template ast "$CHART" -f "$cloud" -f "$fixture" --set global.authAuthority=http://keycloak:8080/realms/platform 2>&1)"; then
+            fail "global.authTls.enabled で https でない Authority の描画が通った。"
+          fi
+          grep -q 'global.authAuthority は https:// で始めてください' <<<"$err" || fail "https でない Authority の失敗の理由が違う: $err"
+          if helm template ast "$CHART" -f "$cloud" -f "$fixture" --set global.infraCa.secretName= --set global.db.tls.enabled=false --set global.rabbitmq.tls.enabled=false > /dev/null 2>&1; then
+            fail "global.authTls.enabled で CA の設定が無いのに描画が通った。"
+          fi
+          for prof in "" "-f $CHART/values-local.yaml"; do
+            o="$(helm template ast "$CHART" $prof --set global.authAuthority="$CI_AUTH_AUTHORITY")"
+            if grep -Eq 'Auth__RequireHttpsMetadata|Auth__ValidIssuers|keycloak:8443' <<<"$o"; then fail "既定または values-local（${prof:-既定}）に認可サーバーの TLS の部品が現れた。"; fi
+            a="$(grep -A1 -E '^ +- name: Auth__Authority$' <<<"$o" | grep -oE 'value: "[^"]*"' | sort -u)"
+            [ "$a" = "value: \"$CI_AUTH_AUTHORITY\"" ] || fail "既定または values-local（${prof:-既定}）の Authority が変わった: $a"
+          done
+          echo "values-cloud auth TLS: workers=11 urls=$(grep -c . <<<"$urls") token-endpoints=$toks require-https=$req/$auths"
       # NFR-05, NFR-06, ADR-0080, #1560, IADR-0623: クラウドの秘密は OpenBao から ESO で写し、守りは段 2 で始める。
       # 1. 描画が参照する Secret（secretKeyRef・volume）は、ast-operator-hold（秘密ではない停止の切り替え）を除き、どれも
       #    ExternalSecret の同期先である（手で作る Secret が残らない）。ExternalSecret はどれも名前空間の SecretStore openbao を使う。
@@ -458,8 +526,9 @@ jobs:
         run: |
           set -eu  # pipefail は付けない（grep -q が先に閉じると前段の SIGPIPE で偽になる）。入力は here-string で渡す。
           fail() { echo "::error::$1"; exit 1; }
-          # NFR, #1529, IADR-0612: 既定の authAuthority は空で描画が止まるため、本番の既定の側にも配備の値を与えて描く（values-cloud は明示済みで同じ値）。
-          names() { helm template ast "$CHART" --set global.authAuthority="$CI_AUTH_AUTHORITY" "$@" -s templates/deployment.yaml \
+          # NFR, #1529, IADR-0612: 既定の authAuthority は空で描画が止まるため、本番の既定の側には配備の値を与えて描く。
+          # NFR, IADR-0629: values-cloud は https の Authority と global.authTls を宣言しているので上書きしない（--set は -f より常に勝つ）。
+          names() { helm template ast "$CHART" "$@" -s templates/deployment.yaml \
             | awk '/^  name: /{svc=$2} /^            - name: /{print svc" "$3}' | sort -u; }
           excluded="$(cat <<'TABLE'
           # ニュースの RAG（MSP の knowledge ユニット）を持ち込まない（オーナーの決定 2026-11-05・IADR-0608 決定 4）。KB の宛先が空＝no-op。
@@ -485,7 +554,7 @@ jobs:
           TABLE
           )"
           excluded="$(sed 's/^ *//' <<<"$excluded" | grep -v '^#' | grep . || true)"
-          names > /tmp/env-prod.txt
+          names --set global.authAuthority="$CI_AUTH_AUTHORITY" > /tmp/env-prod.txt
           names -f "$CHART/values-cloud.yaml" -f "$CHART/ci/values-cloud-digests.fixture.yaml" > /tmp/env-cloud.txt
           prod_count="$(wc -l < /tmp/env-prod.txt)"
           [ "$prod_count" -ge 100 ] || fail "env 名の抽出が $prod_count 件しか取れなかった（deployment.yaml のインデント変更で awk が破綻した可能性。抽出が壊れると常に緑になる）。"

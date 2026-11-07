@@ -69,8 +69,13 @@ function ok(name, fn) {
 }
 
 function render(args) {
-  // NFR, #1529, IADR-0612: chart の既定の global.authAuthority は空で、未設定なら描画で止まる。配備のレルムを明示して描く（後ろの args が勝つ）。
-  return spawnSync(HELM, ['template', 'ast', CHART, '--set', 'global.authAuthority=http://keycloak:8080/realms/platform', ...args], { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  // NFR, #1529, IADR-0612: chart の既定の global.authAuthority は空で、未設定なら描画で止まる。配備のレルムを明示して描く。
+  // NFR, IADR-0629: --set は -f より常に勝つ（並びの後先に依らない）。レルムを宣言するプロファイル（values-cloud は https の
+  // Authority と global.authTls）を重ねるときは上書きしない（http で上書きすると認可サーバーの TLS の検査で描画が止まる）。
+  const files = args.filter((a, i) => args[i - 1] === '-f');
+  const declares = files.some((f) => /^\s+authAuthority:\s*\S/m.test(fs.readFileSync(path.resolve(REPO_ROOT, f), 'utf8')));
+  const base = declares ? [] : ['--set', 'global.authAuthority=http://keycloak:8080/realms/platform'];
+  return spawnSync(HELM, ['template', 'ast', CHART, ...base, ...args], { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 }
 function mustRender(args) {
   const r = render(args);
