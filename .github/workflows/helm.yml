@@ -393,7 +393,7 @@ jobs:
           done
           if grep -q 'values-cloud' deploy/argocd/application.yaml; then fail "ArgoCD の Application が values-cloud を参照している（最初の稼働では使わない）。"; fi
           echo "values-cloud: images=$(grep -c . <<<"$images") connections=$conns tls-db=$full amqps=$amqps https-gateway=$gws"
-      # NFR, NFR-05, IADR-0628（基盤の MSP:IADR-0693 の受け手）: クラウドの認可サーバー（Keycloak）への通信を TLS にする。
+      # NFR, NFR-05, IADR-0629（基盤の MSP:IADR-0693 の受け手）: クラウドの認可サーバー（Keycloak）への通信を TLS にする。
       # 1. values-cloud の 11 個の Worker（基盤の Keycloak の入りの一覧と同じ集合）が、基盤の CA を 1 つだけマウントし、
       #    SSL_CERT_DIR（/etc/ssl/certs を先に残す）を 1 つだけ持つ。DB・ブローカの TLS を外しても同じ（認可サーバーの TLS だけで CA が付く）。
       # 2. values-cloud の Keycloak の URL（Authority・トークンの取得先）はすべて https://keycloak:8443/realms/platform で始まり、平文の URL は無い。
@@ -527,7 +527,7 @@ jobs:
           set -eu  # pipefail は付けない（grep -q が先に閉じると前段の SIGPIPE で偽になる）。入力は here-string で渡す。
           fail() { echo "::error::$1"; exit 1; }
           # NFR, #1529, IADR-0612: 既定の authAuthority は空で描画が止まるため、本番の既定の側には配備の値を与えて描く。
-          # NFR, IADR-0628: values-cloud は https の Authority と global.authTls を宣言しているので上書きしない（--set は -f より常に勝つ）。
+          # NFR, IADR-0629: values-cloud は https の Authority と global.authTls を宣言しているので上書きしない（--set は -f より常に勝つ）。
           names() { helm template ast "$CHART" "$@" -s templates/deployment.yaml \
             | awk '/^  name: /{svc=$2} /^            - name: /{print svc" "$3}' | sort -u; }
           excluded="$(cat <<'TABLE'

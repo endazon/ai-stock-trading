@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.TestSupport.PlatformShim.Tests;
 
-// NFR, NFR-05, IADR-0628（基盤の MSP:IADR-0693 の受け手）: 認可サーバーへの通信を TLS で検証する切り替え。
+// NFR, NFR-05, IADR-0629（基盤の MSP:IADR-0693 の受け手）: 認可サーバーへの通信を TLS で検証する切り替え。
 // 既定・ローカルは従来どおり（RequireHttpsMetadata=false・追加の発行元なし）。クラウドは chart の global.authTls が
 // Auth:RequireHttpsMetadata=true と https の Authority を与える。true なのに https でなければ起動で止まる。
 public class AuthRequireHttpsMetadataTests
@@ -52,7 +52,7 @@ public class AuthRequireHttpsMetadataTests
         options.Authority.Should().Be("https://keycloak:8443/realms/platform");
     }
 
-    // IADR-0628: https を求めたのに Authority が https でなければ、登録の時点（サービスの起動）で止まる。平文へ黙って倒さない。
+    // IADR-0629: https を求めたのに Authority が https でなければ、登録の時点（サービスの起動）で止まる。平文へ黙って倒さない。
     // Authority が無いとき（コードの既定の http）も止まる。
     [Theory]
     [InlineData("http://keycloak:8080/realms/platform")]
@@ -63,7 +63,7 @@ public class AuthRequireHttpsMetadataTests
     {
         var act = Register(Config(("Auth:Authority", authority), (AuthExtensions.RequireHttpsMetadataConfigKey, "true")));
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*https*IADR-0628*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*https*IADR-0629*");
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public class AuthRequireHttpsMetadataTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*true か false*");
     }
 
-    // IADR-0628: 移行の間だけ旧の発行元を足す（カンマ・空白区切り）。空は足さない（既定と同じ）。
+    // IADR-0629: 移行の間だけ旧の発行元を足す（カンマ・空白区切り）。空は足さない（既定と同じ）。
     [Fact]
     public void Auth_ValidIssuersを与えると追加の発行元として受ける()
     {

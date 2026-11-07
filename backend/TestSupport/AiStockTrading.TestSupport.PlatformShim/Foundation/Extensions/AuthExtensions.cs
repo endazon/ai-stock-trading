@@ -44,13 +44,13 @@ public static class AiStockTradingAuthPolicies
 
 public static class AuthExtensions
 {
-    // NFR, NFR-05, IADR-0628（基盤の MSP:IADR-0693 の受け手）: メタデータ・鍵（JWKS）の取得に HTTPS を求めるかの構成キー。
+    // NFR, NFR-05, IADR-0629（基盤の MSP:IADR-0693 の受け手）: メタデータ・鍵（JWKS）の取得に HTTPS を求めるかの構成キー。
     // 未設定・false は従来どおり（クラスタの中の平文の認可サーバー）。true のとき Authority が https でなければ**登録の時点で例外**
     // （＝サービスの起動で止まる。JwtBearer 自身の拒否は最初の要求の時点であり、起動では止まらない）。サーバ証明書の検証は
     // システムの信頼ストア（chart の global.authTls が SSL_CERT_DIR に基盤の CA を足す）が行う。
     public const string RequireHttpsMetadataConfigKey = "Auth:RequireHttpsMetadata";
 
-    // NFR, IADR-0628: トークンの iss として追加で受ける発行元（カンマ・空白区切り。未設定・空は足さない）。JwtBearer は
+    // NFR, IADR-0629: トークンの iss として追加で受ける発行元（カンマ・空白区切り。未設定・空は足さない）。JwtBearer は
     // Authority のメタデータの発行元を常に受理集合へ併合するので、これは「足す」だけで発行元の検証は弱めない。
     // 🔴 認可サーバーの TLS への移行の間だけ旧の発行元（http）を足す（手順書 cloud-keycloak-tls-runbook の段 6 で外す）。
     public const string ValidIssuersConfigKey = "Auth:ValidIssuers";
@@ -77,9 +77,9 @@ public static class AuthExtensions
             .AddJwtBearer(options =>
             {
                 options.Authority = authority;
-                // NFR, IADR-0628: 既定は false（クラスタの中の平文）。クラウドは true（https でなければ上で起動を止めている）。
+                // NFR, IADR-0629: 既定は false（クラスタの中の平文）。クラウドは true（https でなければ上で起動を止めている）。
                 options.RequireHttpsMetadata = requireHttpsMetadata;
-                // NFR, IADR-0628: 移行の間だけ受ける旧の発行元。既定（空）では触らない＝メタデータの発行元だけ。
+                // NFR, IADR-0629: 移行の間だけ受ける旧の発行元。既定（空）では触らない＝メタデータの発行元だけ。
                 if (validIssuers.Length > 0)
                     options.TokenValidationParameters.ValidIssuers = validIssuers;
                 options.TokenValidationParameters.ValidateAudience = false;
@@ -137,7 +137,7 @@ public static class AuthExtensions
         return services;
     }
 
-    // NFR, IADR-0628: Auth:RequireHttpsMetadata を読む。true なのに Authority が https でなければ例外（fail-fast。基盤の
+    // NFR, IADR-0629: Auth:RequireHttpsMetadata を読む。true なのに Authority が https でなければ例外（fail-fast。基盤の
     // MSP の ResolveRequireHttpsMetadata と同じ型）。真偽値でない値も例外（黙って false へ倒さない）。
     internal static bool ResolveRequireHttpsMetadata(IConfiguration config, string authority)
     {
@@ -146,13 +146,13 @@ public static class AuthExtensions
             return false;
         if (!bool.TryParse(raw, out var require))
             throw new InvalidOperationException(
-                $"{RequireHttpsMetadataConfigKey} は true か false です（{raw}。IADR-0628）。");
+                $"{RequireHttpsMetadataConfigKey} は true か false です（{raw}。IADR-0629）。");
         if (!require)
             return false;
         if (!Uri.TryCreate(authority, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
             throw new InvalidOperationException(
                 $"{RequireHttpsMetadataConfigKey}=true ですが、認可サーバーの Authority が https ではありません（{authority}）。"
-                + "Auth:Authority を https にしてください（IADR-0628）。");
+                + "Auth:Authority を https にしてください（IADR-0629）。");
         return true;
     }
 

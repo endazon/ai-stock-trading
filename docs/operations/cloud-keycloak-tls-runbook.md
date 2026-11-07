@@ -9,7 +9,7 @@ updated: 2026-11-07
 <!-- trace:
 ids: [NFR, NFR-05]
 adrs: [ADR-0006, ADR-0080]
-iadrs: [IADR-0628, IADR-0621, IADR-0623, IADR-0612, MSP:IADR-0693]
+iadrs: [IADR-0629, IADR-0621, IADR-0623, IADR-0612, MSP:IADR-0693]
 specs: [20261107_cloud-keycloak-tls]
 issues: [MSP#2492]
 -->

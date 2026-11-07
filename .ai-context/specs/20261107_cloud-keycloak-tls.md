@@ -2,7 +2,7 @@
 title: クラウドの認可サーバー（Keycloak）への通信を TLS にする（取引ユニットの受け手の段。https の Authority・全 Worker に基盤の CA・起動で止める・移行の間の旧の発行元）
 type: spec
 status: accepted
-related_ids: [NFR, NFR-05, ADR-0006, ADR-0080, IADR-0628, IADR-0621, IADR-0623, IADR-0612, IADR-0324, MSP:IADR-0693]
+related_ids: [NFR, NFR-05, ADR-0006, ADR-0080, IADR-0629, IADR-0621, IADR-0623, IADR-0612, IADR-0324, MSP:IADR-0693]
 author: claude (Claude Code)
 created: 2026-11-07
 updated: 2026-11-07
@@ -21,7 +21,7 @@ plan_refs:
 - 本 PR は基盤の段 4（取引ユニットを https にする）に当たる。**MSP#2492 が先にマージされる前提**である。
 - 非機能の番号: 計画の非機能要件表に通信の暗号化の番号は無い（`NFR-16` は差し替え・`NFR-18` はログの完全性で、基盤の番号とは意味が違う）。
   起点は裸の `NFR` とし、秘密の保管の `NFR-05` を併記する（クライアントの secret がトークンの取得で平文を流れなくなる）。
-- 決定は [IADR-0628](../adr/IADR-0628_cloud-keycloak-tls-receiver.md)。
+- 決定は [IADR-0629](../adr/IADR-0629_cloud-keycloak-tls-receiver.md)。
 
 ## 1. 現状（develop `c58d31173`。shallow ではない）
 

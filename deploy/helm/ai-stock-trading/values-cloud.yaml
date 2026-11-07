@@ -26,7 +26,7 @@
 #   ここはスイッチを入れるだけにする。DB は VerifyFull＋基盤の CA、ブローカは amqps:5671、LLM ゲートウェイは https
 #   （基盤の CA で検証。外部 API は従来のシステムの信頼のまま）。CA は名前空間 ai-stock-trading の ConfigMap
 #   platform-infra-ca（キー ca.crt）から読む。無いと Pod は起動しない（平文へ戻らない）。写し方は手順書の §5。
-#   認可サーバー（Keycloak）も https:8443 で同じ CA で検証する（global.authTls。IADR-0628）。
+#   認可サーバー（Keycloak）も https:8443 で同じ CA で検証する（global.authTls。IADR-0629）。
 #
 # ★ イメージ: ノードでビルドして取り込み、digest で固定する（レジストリを持たない）。
 #   digest はノードで書き出したファイル（コミットしない）から重ねる。欠けたら描画で止まる（global.image.requireDigest）。
@@ -44,7 +44,7 @@ global:
   #   ExternalName の keycloak で引く（infraAliases）。トークンの iss がこの値と一致しないと検証で落ちる。
   #   トークンの取得先（ServiceAuth__TokenEndpoint・Discord の OwnerAuth・LLM ゲートウェイの Authority）はこの値から導く（chart）。
   authAuthority: https://keycloak:8443/realms/platform
-  # NFR, NFR-05, IADR-0628: 認可サーバーへの通信を TLS で検証する。https でない Authority はアプリが起動で拒み
+  # NFR, NFR-05, IADR-0629: 認可サーバーへの通信を TLS で検証する。https でない Authority はアプリが起動で拒み
   #   （Auth__RequireHttpsMetadata=true）、サーバ証明書は基盤の CA（下の infraCa。DB・ブローカと同じ CA）で検証する。
   #   全 11 サービスが CA を持つ（DB・ブローカを使わないサービスも。描画の検査 helm.yml が固定する）。
   #   🔴 Keycloak を呼ぶサービスを足したら、基盤（MSP）の deploy/cloud/infra/networkpolicy.yaml の Keycloak の入りの一覧（label app）にも

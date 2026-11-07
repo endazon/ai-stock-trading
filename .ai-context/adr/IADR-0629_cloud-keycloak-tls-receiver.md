@@ -1,5 +1,5 @@
 ---
-title: IADR-0628 クラウドの認可サーバー（Keycloak）への通信を TLS にする受け手の段。values-cloud は https の Authority と global.authTls で、全 Worker に基盤の CA を信頼ストアへ足し、認証を持つサービスは https でない Authority で起動を止める。移行の間だけ旧の発行元を足す口を持つ
+title: IADR-0629 クラウドの認可サーバー（Keycloak）への通信を TLS にする受け手の段。values-cloud は https の Authority と global.authTls で、全 Worker に基盤の CA を信頼ストアへ足し、認証を持つサービスは https でない Authority で起動を止める。移行の間だけ旧の発行元を足す口を持つ
 type: impl-adr
 status: Accepted
 related_ids: [NFR, NFR-05, ADR-0006, ADR-0080, IADR-0621, IADR-0623, IADR-0612, IADR-0324, MSP:IADR-0693]
@@ -10,7 +10,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0080_cloud-poc-gate-in-cluster-credentials-and-pre-secret-reachability.md
 ---
 
-# IADR-0628: クラウドの認可サーバー（Keycloak）への通信の TLS（取引ユニットの受け手の段）
+# IADR-0629: クラウドの認可サーバー（Keycloak）への通信の TLS（取引ユニットの受け手の段）
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 > 計画リポジトリの ADR（`ADR-XXXX`）とは別系統（`IADR-XXXX`）とし、実装に閉じた決定を記録する。
@@ -21,6 +21,7 @@ plan_refs:
 
 ## 起点・関連
 
+- 採番: 起票時は IADR-0628。並行して開いた PR（#1581）が IADR-0628 を使ったため、push の時点の最大番号（開いている PR を含む）＋1 へ改番した（欠番の受容・IADR-0280）。
 - 基盤の側: MSP#2492・MSP:IADR-0693（Keycloak を HTTPS 8443 だけで受ける。証明書は OpenBao の `pki_cloud`＝DB・ブローカと同じ CA）。本 IADR はその手順書の段 4（取引ユニットを https にする）。
 - 前提: IADR-0621（基盤への接続の TLS。CA は `SSL_CERT_DIR` に足す）・IADR-0623（CA の写しは ESO が Secret `platform-infra-ca` に作る）・
   IADR-0612（Authority は配備の values で明示）・IADR-0324（Keycloak の URL は `global.authAuthority` の 1 つから導く）。
