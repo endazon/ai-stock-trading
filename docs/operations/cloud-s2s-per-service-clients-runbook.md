@@ -11,6 +11,7 @@ ids: [NFR, NFR-05, NFR-06]
 adrs: [ADR-0047, ADR-0080]
 iadrs: [IADR-0637, IADR-0626, IADR-0611, IADR-0623, MSP:IADR-0689, MSP:IADR-0699]
 specs: [20261107_s2s-per-service-clients]
+issues: []
 -->
 
 # 運用 Runbook: サービス間の認証をサービスごとの機密クライアントへ移す
