@@ -5,6 +5,7 @@ using ConfigurationService.Features.Assumptions.GetAssumptions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Grpc;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Wolverine;
@@ -48,7 +49,11 @@ builder.Services.AddScoped<AssumptionsService>();
 // ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。ハンドラは持たず、更新時の AssumptionsChanged 発行に用いる。
 // キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている（サービス側でトポロジを選ばない）。
 builder.Host.UseWolverine(opts =>
-    opts.UseAiStockTradingRabbitMq(ServiceName, builder.Configuration["RabbitMq:ConnectionString"]));
+{
+    opts.UseAiStockTradingRabbitMq(ServiceName, builder.Configuration["RabbitMq:ConnectionString"]);
+    // 🔴 NFR, FR-10, IADR-0627: 統制の入力になる型の発行元の印（送る側）と、受け手での確かめ（構成 MessageOrigin。段 2 で鍵が無ければ起動で止まる）。
+    opts.UseAiStockTradingMessageOrigin(ServiceName, builder.Configuration);
+});
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。

@@ -12,6 +12,7 @@ using AiStockTrading.Shared.KnowledgeBase.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Messaging;
 using Serilog;
 using Wolverine;
 using AppSvc = InformationCollectionService.Features.InformationCollection.RunCollectionCycle.InformationCollectionAppService;
@@ -273,7 +274,11 @@ builder.Services.AddScoped<ICostControlGate>(sp =>
 // ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。ハンドラは持たず、収集完了時の InformationCollected 発行に用いる。
 // キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている（サービス側でトポロジを選ばない）。
 builder.Host.UseWolverine(opts =>
-    opts.UseAiStockTradingRabbitMq(ServiceName, builder.Configuration["RabbitMq:ConnectionString"]));
+{
+    opts.UseAiStockTradingRabbitMq(ServiceName, builder.Configuration["RabbitMq:ConnectionString"]);
+    // 🔴 NFR, FR-10, IADR-0627: 統制の入力になる型の発行元の印（送る側）と、受け手での確かめ（構成 MessageOrigin。段 2 で鍵が無ければ起動で止まる）。
+    opts.UseAiStockTradingMessageOrigin(ServiceName, builder.Configuration);
+});
 
 // 定時ポーリング（収集→保存→イベント発行）。#121: run-once エンドポイントから解決できるよう singleton 登録し、
 // 同一インスタンスを HostedService としても起動する（Trigger=External では ExecuteAsync が巡回せず待機のみ）。

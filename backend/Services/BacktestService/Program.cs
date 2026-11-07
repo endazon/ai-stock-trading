@@ -5,6 +5,7 @@ using BacktestService.Infrastructure.ExternalServices;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Messaging;
 using Microsoft.Extensions.Options;
 using Serilog;
 using Wolverine;
@@ -41,7 +42,11 @@ builder.Services.AddAiStockTradingHealthChecks();
 // ADR-0013, IADR-0129, #688, IADR-0310 決定4: Wolverine（RabbitMQ）。**発行専用**（ハンドラは持たない）。
 // キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている（サービス側でトポロジを選ばない）。
 builder.Host.UseWolverine(opts =>
-    opts.UseAiStockTradingRabbitMq(ServiceName, builder.Configuration["RabbitMq:ConnectionString"]));
+{
+    opts.UseAiStockTradingRabbitMq(ServiceName, builder.Configuration["RabbitMq:ConnectionString"]);
+    // 🔴 NFR, FR-10, IADR-0627: 統制の入力になる型の発行元の印（送る側）と、受け手での確かめ（構成 MessageOrigin。段 2 で鍵が無ければ起動で止まる）。
+    opts.UseAiStockTradingMessageOrigin(ServiceName, builder.Configuration);
+});
 
 // 公開する HTTP 面はヘルスチェックと実効構成の自己申告のみで、いずれも無認可（メッシュ内部限定）である。
 // よって Keycloak 認証（AddAiStockTradingAuth）は登録しない。ただし共通ミドルウェア

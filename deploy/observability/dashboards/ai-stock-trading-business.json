@@ -339,6 +339,20 @@
           "legendFormat": "pending"
         }
       ]
+    },
+    {
+      "id": 23,
+      "title": "メッセージの発行元: 受け手で確かめられなかったメッセージ（1h あたり・型・理由・結果）",
+      "description": "統制の入力になるメッセージ（判断・口座・建玉・損切り到達・取消要求など）のうち、受け手で発行元を確かめられなかった件数。平常は 0。outcome=admitted は段 1 で記録して処理した分、outcome=rejected は段 2 で処理しなかった分。reason が missing / unverifiable なら鍵の配り漏れ、forbidden_issuer / mismatch / replayed なら発行元の偽装か改竄か再送を疑う。警報 AstMessageOriginRejected が上がる。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 91, "w": 24, "h": 7 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum by (type, reason, outcome) (increase(ast_messaging_origin_failures_total[1h]))",
+          "legendFormat": "{{type}} {{reason}} {{outcome}}"
+        }
+      ]
     }
   ]
 }

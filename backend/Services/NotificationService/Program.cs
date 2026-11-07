@@ -11,6 +11,7 @@ using NotificationService.Infrastructure.ExternalServices;
 using NotificationService.Infrastructure.Steps;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Messaging;
 using Serilog;
 using Wolverine;
 
@@ -277,10 +278,15 @@ builder.Services.AddSingleton<StopLossNotificationSuppressor>();
 // FR-09, FR-04, #1338, IADR-0535 決定4: 「処理中の決済が建玉を覆う」見送りの通知の畳み込み（サイクルをまたぐ記憶なので singleton）。
 builder.Services.AddSingleton<InFlightCloseForgoneNotificationSuppressor>();
 
-builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
-    ServiceName,
-    builder.Configuration["RabbitMq:ConnectionString"],
-    typeof(OrderExecutedNotificationHandler).Assembly));
+builder.Host.UseWolverine(opts =>
+{
+    opts.UseAiStockTradingRabbitMq(
+        ServiceName,
+        builder.Configuration["RabbitMq:ConnectionString"],
+        typeof(OrderExecutedNotificationHandler).Assembly);
+    // 🔴 NFR, FR-10, IADR-0627: 統制の入力になる型の発行元の印（送る側）と、受け手での確かめ（構成 MessageOrigin。段 2 で鍵が無ければ起動で止まる）。
+    opts.UseAiStockTradingMessageOrigin(ServiceName, builder.Configuration);
+});
 
 var app = builder.Build();
 

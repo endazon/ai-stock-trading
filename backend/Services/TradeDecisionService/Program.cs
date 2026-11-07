@@ -22,6 +22,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Grpc;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Messaging;
 using Serilog;
 using Wolverine;
 using Wolverine.Runtime;
@@ -744,6 +745,8 @@ builder.Host.UseWolverine(opts =>
         ServiceName,
         builder.Configuration["RabbitMq:ConnectionString"],
         typeof(PriceMovementDetectedHandler).Assembly);
+    // 🔴 NFR, FR-10, IADR-0627: 統制の入力になる型の発行元の印（送る側）と、受け手での確かめ（構成 MessageOrigin。段 2 で鍵が無ければ起動で止まる）。
+    opts.UseAiStockTradingMessageOrigin(ServiceName, builder.Configuration);
     opts.Policies.Add<ScheduledCycleTimeoutPolicy>();
     // 🔴 #1194, IADR-0505: 定時サイクルだけ、再試行の連鎖が consumer_timeout に収まる試行の上限にする（既定・経路B は再試行しない）。
     opts.Policies.Add<ScheduledCycleRetryPolicy>();
