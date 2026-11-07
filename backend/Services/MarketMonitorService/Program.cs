@@ -100,6 +100,34 @@ builder.Services.AddHttpClient("risk", c => c.Timeout = TimeSpan.FromSeconds(5))
 // **`RiskManagement:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば
 // 保有ポジションは gRPC で照会する（BaseUrl より優先）。不正な宛先は起動時に落とす。
 builder.Services.AddAiStockTradingRiskManagementGrpc(builder.Configuration);
+// 🔴 NFR-06, FR-13, FR-14, IADR-0634: 監視銘柄の入れ替えの適用を、報告書の台帳の「確定済み（第 2 要素つき）・未適用の案」へ結び付ける門。
+// 段は Watchlist:ProposalBinding:Mode（既定 Off。chart は Audit＝記録だけ・values-cloud は Enforce）。台帳は Reports:BaseUrl へ
+// サービスの身元（ServiceAuth）で照会する。宛先が無い・読めなければ照会は Unavailable（Enforce は拒む＝閉じる向き）。構成は解決時に読む。
+builder.Services.AddHttpClient("report-binding", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .AddAiStockTradingServiceToken(builder.Configuration);
+builder.Services.AddSingleton(sp =>
+{
+    var options = sp.GetRequiredService<IConfiguration>().GetSection(
+            MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal.WatchlistProposalBindingOptions.SectionName)
+        .Get<MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal.WatchlistProposalBindingOptions>()
+        ?? new MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal.WatchlistProposalBindingOptions();
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["Reports:BaseUrl"];
+    MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal.IWatchlistProposalSource source;
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+    {
+        source = new MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal.UnavailableWatchlistProposalSource();
+    }
+    else
+    {
+        var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("report-binding");
+        http.BaseAddress = uri;
+        source = new MarketMonitorService.Infrastructure.ExternalServices.HttpWatchlistProposalSource(
+            http, sp.GetRequiredService<ILogger<MarketMonitorService.Infrastructure.ExternalServices.HttpWatchlistProposalSource>>());
+    }
+
+    return new MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal.WatchlistProposalBindingGate(
+        options, source, sp.GetRequiredService<ILogger<MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal.WatchlistProposalBindingGate>>());
+});
 builder.Services.AddSingleton<PlaceholderPositionStore>();
 builder.Services.AddScoped<IPositionStore>(sp =>
 {

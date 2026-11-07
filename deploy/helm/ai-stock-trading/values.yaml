@@ -797,6 +797,11 @@ services:
     auth: true
     extraEnv:
       - { name: RiskManagement__BaseUrl, value: "" }
+      # 🔴 NFR-06, FR-13, FR-14, IADR-0634: 入れ替えの適用を、報告書の台帳の「確定済み（第 2 要素つき）・未適用の案」へ結び付けて確かめる。
+      #   Reports__BaseUrl は台帳の照会（サービスの身元。上の ServiceAuth）。空＝照会できない（Audit は記録だけ・Enforce は拒む）。
+      #   段は Off / Audit（段 1・記録だけ）/ Enforce（段 2・結び付かなければ 403）。values-cloud は Enforce。
+      - { name: Reports__BaseUrl, value: "" }
+      - { name: Watchlist__ProposalBinding__Mode, value: "Audit" }
       # IADR-0051: s2s 同期照会（open-positions）用の client_credentials。fail-safe: 未設定=認証なし→401→安全既定。
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }

@@ -203,6 +203,9 @@ services:
   market-monitor:
     extraEnv:
       - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }  # 建玉照会(HttpPositionStore)
+      # NFR-06, IADR-0634: 入れ替えの適用の結び付きの照会（報告書の台帳）。経路 B は段 1（記録だけ）。
+      - { name: Reports__BaseUrl, value: "http://report-service:8080" }
+      - { name: Watchlist__ProposalBinding__Mode, value: "Audit" }
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret

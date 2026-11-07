@@ -49,6 +49,19 @@ internal static partial class ApplyWatchlistProposalEndpoint
         if (changes is not null && changes.Any(c => c is null))
             return Results.BadRequest(new { error = "入れ替え（changes）の操作は add / remove に限ります。" });
 
+        // 🔴 NFR-06, FR-14, IADR-0634: 提供側で、確定済み（第 2 要素つき）・未適用の案と要求を結び付けて確かめる。
+        // Enforce で結び付かなければ 403（1 件も適用しない）。gRPC 面も同じ処理関数を通る。
+        // 🔴 門は必ず登録されている（無ければ例外＝ 500。黙って飛ばして適用しない）。段 Off は門の中で照会せずに通す。
+        var binding = http.RequestServices.GetRequiredService<WatchlistProposalBindingGate>();
+        var bound = await binding.CheckAsync(
+            proposalRef, expected?.Cast<MonitoredSymbol>().ToList(), changes?.Cast<ProposedWatchlistChange>().ToList(),
+            http.RequestAborted);
+        if (!bound.Allowed)
+            return Results.Json(new { error = WatchlistProposalBindingRejection.Message }, statusCode: StatusCodes.Status403Forbidden);
+        // 結び付いたら、適用と変更履歴には台帳の入れ替え（理由も台帳の確定済みの値）を使う（要求の理由は使わない）。
+        if (bound.BoundChanges is { } ledgerChanges)
+            changes = [.. ledgerChanges];
+
         // 期待値・入れ替えの欠落は ApplyProposal の検証が 400 にする（1 件も適用しない）。
         // PR #1027 の監査 L1（任意）: 変更履歴の理由に、どの経路で適用されたかを事実どおりに書く
         // （信頼クライアント＝Discord Bot の代理か、利用者のトークンで直接呼ばれたか）。

@@ -87,13 +87,33 @@ public sealed class EfPolicyRevisionLedger(ReportDbContext db) : IPolicyRevision
     // #1029, IADR-0432（追記）: WatchlistAppliedAt が同時実行のトークンのため、読んでから書くまでの間に内訳が記録されると
     // DbUpdateConcurrencyException を上げ得る（確定の遷移の直後に書くので実運用では起きない）。呼び手は best-effort として扱うこと
     // （現在の唯一の呼び手 ConfirmReport は例外を警告に留める）。
-    public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt)
+    public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt, bool secondFactorVerified = false)
     {
         var row = db.PolicyRevisionAttempts.Find(id);
         if (row is null || row.ProposalConfirmedAt is not null)
             return;
         row.ProposalConfirmedAt = confirmedAt;
+        row.ProposalSecondFactorVerified = secondFactorVerified;
         SaveOrDetach(row);
+    }
+
+    // NFR-06, IADR-0634 決定 8: 予約の時刻は同時実行のトークン（保存は「まだ予約が無い」行だけを更新する）。先に予約した書き手が勝つ。
+    public bool ReserveWatchlistApply(Guid id, DateTimeOffset reservedAt)
+    {
+        var row = db.PolicyRevisionAttempts.Find(id);
+        if (row is null || row.WatchlistApplyReservedAt is not null || row.WatchlistAppliedAt is not null)
+            return false;
+        row.WatchlistApplyReservedAt = reservedAt;
+        try
+        {
+            SaveOrDetach(row);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     public PolicyRevisionAttempt? FindProposed(string periodKey, int reportVersion) =>
@@ -192,12 +212,23 @@ public sealed class InMemoryPolicyRevisionLedger : IPolicyRevisionLedger
         }
     }
 
-    public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt)
+    public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt, bool secondFactorVerified = false)
     {
         lock (_gate)
         {
             if (_rows.TryGetValue(id, out var row) && row.ProposalConfirmedAt is null)
-                _rows[id] = row with { ProposalConfirmedAt = confirmedAt };
+                _rows[id] = row with { ProposalConfirmedAt = confirmedAt, ProposalSecondFactorVerified = secondFactorVerified };
+        }
+    }
+
+    public bool ReserveWatchlistApply(Guid id, DateTimeOffset reservedAt)
+    {
+        lock (_gate)
+        {
+            if (!_rows.TryGetValue(id, out var row) || row.WatchlistApplyReservedAt is not null || row.WatchlistAppliedAt is not null)
+                return false;
+            _rows[id] = row with { WatchlistApplyReservedAt = reservedAt };
+            return true;
         }
     }
 
@@ -241,6 +272,11 @@ public sealed class PolicyRevisionAttemptRow
     // #1025（PR #1027 の監査 M1）: 報告書がこの試行の版で確定された時刻。
     public DateTimeOffset? ProposalConfirmedAt { get; set; }
 
+    // NFR-06, IADR-0634 決定 7・8: 確定が第 2 要素で Verified だったか・入れ替えの適用の予約の時刻（1 回だけ）。
+    public bool ProposalSecondFactorVerified { get; set; }
+
+    public DateTimeOffset? WatchlistApplyReservedAt { get; set; }
+
     internal static PolicyRevisionAttemptRow From(PolicyRevisionAttempt a) => new()
     {
         Id = a.Id,
@@ -255,9 +291,12 @@ public sealed class PolicyRevisionAttemptRow
         WatchlistApplyJson = a.WatchlistApplyJson,
         WatchlistAppliedAt = a.WatchlistAppliedAt,
         ProposalConfirmedAt = a.ProposalConfirmedAt,
+        ProposalSecondFactorVerified = a.ProposalSecondFactorVerified,
+        WatchlistApplyReservedAt = a.WatchlistApplyReservedAt,
     };
 
     internal PolicyRevisionAttempt ToAttempt() =>
         new(Id, AttemptedAt, JstDate, Actor, PeriodKey, Outcome, ReportVersion, WatchlistChangesJson,
-            WatchlistSnapshotJson, WatchlistApplyJson, WatchlistAppliedAt, ProposalConfirmedAt);
+            WatchlistSnapshotJson, WatchlistApplyJson, WatchlistAppliedAt, ProposalConfirmedAt,
+            ProposalSecondFactorVerified, WatchlistApplyReservedAt);
 }

@@ -61,6 +61,8 @@ public sealed class WatchlistOwnerWriteGrpcService(
         var code = status switch
         {
             StatusCodes.Status400BadRequest => StatusCode.InvalidArgument,
+            // NFR-06, IADR-0634: 確定済みの案と結び付かない（Enforce）＝ 1 件も適用していない。
+            StatusCodes.Status403Forbidden => StatusCode.PermissionDenied,
             StatusCodes.Status404NotFound => StatusCode.NotFound,
             StatusCodes.Status409Conflict => StatusCode.Aborted,
             StatusCodes.Status422UnprocessableEntity => StatusCode.FailedPrecondition,
