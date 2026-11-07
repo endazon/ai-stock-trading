@@ -333,7 +333,6 @@ public class MessageOriginWiringTests
     [MemberData(nameof(Services))]
     public async Task 段2で旧い共有の鍵があれば起動で止まる(string serviceName)
     {
-        var issuer = MessageOriginCatalog.IssuerIdFor(serviceName);
         var full = FullConfig(serviceName, "Enforce");
         var withLegacy = new ConfigurationBuilder().AddConfiguration(full)
             .AddInMemoryCollection(new Dictionary<string, string?> { [$"MessageOrigin:Keys:{MessageOriginCatalog.AllIssuers[0]}"] = MessageOriginTestKeys.LegacyKey() })
@@ -342,7 +341,6 @@ public class MessageOriginWiringTests
         var act = async () => { using var host = await HostAsync(serviceName, withLegacy); };
 
         (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("旧い共有の鍵");
-        issuer.Should().NotBeEmpty();
     }
 
     // 発行しないサービスに秘密の鍵を置かない（段に依らず止める）。

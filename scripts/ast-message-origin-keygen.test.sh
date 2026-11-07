@@ -112,6 +112,10 @@ rc="$(run --live --rotate backtest)"
 [ "$rc" = 1 ] && grep -q -- '--rotate backtest' "$STATE/err" && ok "公開の鍵を書けなければ 1 で作り直しを案内する" || ng "公開の鍵の失敗: rc=$rc"
 
 rm -f "$STATE/fail-verify"
+# 書き込みが失敗した --rotate は置いた時刻を記録しない（再実行が窓に止められない）。
+[ ! -e "$STATE/cm/backtest" ] && ok "書き込みが失敗した --rotate は置いた時刻を記録しない" || ng "失敗した --rotate が時刻を記録した"
+rc="$(run --live --rotate backtest)"
+[ "$rc" = 0 ] && [ -s "$STATE/cm/backtest" ] && ok "書き込みが失敗した後の再実行は窓に止められず、成功したら記録する" || ng "失敗の後の再実行: rc=$rc"
 # 窓の中の再 --rotate（market-monitor は上で --rotate 済み＝置いた時刻が記録されている）。
 [ -s "$STATE/cm/market-monitor" ] && ok "--rotate は前の鍵を置いた時刻を記録する" || ng "置いた時刻が記録されていない"
 prev="$(store previous-verify market-monitor)"; sig="$(store signing market-monitor)"

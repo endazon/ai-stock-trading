@@ -122,14 +122,6 @@ for issuer in "${issuers[@]}"; do
     printf '%s' "$old" | "${PUT_CMD[@]}" --overwrite "$PREVIOUS_PATH" "$issuer" >/dev/null || rc=$?
     unset old
     [ "$rc" -eq 0 ] || { unset private public; echo "ERROR: $issuer の前の公開の鍵を残せませんでした（終了コード $rc。何も変えていません）。" >&2; exit 1; }
-    # 置いた時刻を記録する（値ではない）。記録できなければ止める（次の再 --rotate を止められなくなるため）。秘密の鍵はまだ変えていない。
-    now="$(date +%s)"
-    if "$KUBECTL_BIN" -n "$NAMESPACE" get configmap "$ROTATION_CONFIGMAP" -o name >/dev/null 2>&1; then
-      "$KUBECTL_BIN" -n "$NAMESPACE" patch configmap "$ROTATION_CONFIGMAP" --type merge -p "{\"data\":{\"$issuer\":\"$now\"}}" >/dev/null 2>&1 || rc=$?
-    else
-      "$KUBECTL_BIN" -n "$NAMESPACE" create configmap "$ROTATION_CONFIGMAP" --from-literal="$issuer=$now" >/dev/null 2>&1 || rc=$?
-    fi
-    [ "$rc" -eq 0 ] || { unset private public; echo "ERROR: $issuer の前の鍵を置いた時刻を記録できませんでした（前の鍵は残しました。鍵の組は変えていません）。" >&2; exit 1; }
     echo "前の公開の鍵を残しました: $issuer（$PREVIOUS_PATH。global.messageOrigin.previousVerify に足して当ててください）。"
   fi
 
@@ -149,6 +141,18 @@ for issuer in "${issuers[@]}"; do
     echo "ERROR: $issuer の秘密の鍵は書きましたが、公開の鍵を書けませんでした（終了コード $rc）。組が食い違っています。" >&2
     echo "       bash scripts/ast-message-origin-keygen.sh --live --rotate $issuer で組ごと作り直してください。" >&2
     exit 1
+  fi
+  # 🔴 前の鍵を置いた時刻を、秘密の鍵と公開の鍵の書き込みが両方とも成功した後にだけ記録する（値ではない）。
+  #    書き込みが失敗したときは記録しない（「置いたばかり」の記録だけが残って、窓の間の再実行が 8 で止められないように）。
+  #    記録できなければ止める（次の再 --rotate を窓で止められなくなるため）。
+  if [ "$rotate" -eq 1 ] && [ "$previous" -eq 1 ]; then
+    now="$(date +%s)"
+    if "$KUBECTL_BIN" -n "$NAMESPACE" get configmap "$ROTATION_CONFIGMAP" -o name >/dev/null 2>&1; then
+      "$KUBECTL_BIN" -n "$NAMESPACE" patch configmap "$ROTATION_CONFIGMAP" --type merge -p "{\"data\":{\"$issuer\":\"$now\"}}" >/dev/null 2>&1 || rc=$?
+    else
+      "$KUBECTL_BIN" -n "$NAMESPACE" create configmap "$ROTATION_CONFIGMAP" --from-literal="$issuer=$now" >/dev/null 2>&1 || rc=$?
+    fi
+    [ "$rc" -eq 0 ] || { echo "ERROR: $issuer の前の鍵を置いた時刻を記録できませんでした（鍵の組は作り直し済み。窓の中の再 --rotate を止められません）。" >&2; exit 1; }
   fi
   echo "書きました: $issuer（秘密の鍵と公開の鍵。値は表示しません）。"
 done
