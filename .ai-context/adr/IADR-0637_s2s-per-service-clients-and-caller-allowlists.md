@@ -2,7 +2,7 @@
 title: IADR-0637 サービス間の認証の身元をサービスごとの機密クライアントに分け、受け側は宛先（aud）を確かめ、口ごとに呼んでよいクライアント（azp）の一覧で限る。段は Off（既定）・Report・Enforce、移行の段だけ旧の共有クライアントを受ける
 type: impl-adr
 status: Accepted
-related_ids: [NFR, NFR-05, NFR-06, FR-14, ADR-0047, ADR-0080, IADR-0051, IADR-0611, IADR-0623, IADR-0626, MSP:IADR-0689]
+related_ids: [NFR, NFR-05, NFR-06, FR-14, ADR-0047, ADR-0080, IADR-0051, IADR-0611, IADR-0623, IADR-0626, MSP:IADR-0689, MSP:IADR-0699]
 author: claude (Claude Code)
 created: 2026-11-07
 updated: 2026-11-07
@@ -21,7 +21,7 @@ plan_refs:
 ## 起点・関連
 
 - 要求 **NFR-05**（秘匿は OpenBao）・**NFR-06**（危険な操作の第 2 要素）。身元の分離の番号は計画に無いので裸の `NFR` を併記する。
-- 基盤の側: realm にサービスごとの機密クライアントを足し、秘密を OpenBao の中で作る（基盤の作業仕様書 `20261107_s2s-per-service-clients`。MSP:IADR-0689 の延長）。
+- 基盤の側: realm にサービスごとの機密クライアントを足し、秘密を OpenBao の中で作る（MSP:IADR-0699。基盤の作業仕様書 `20261107_s2s-per-service-clients`。MSP:IADR-0689 の延長）。
 - 改めるもの: IADR-0611「サービスの分岐は aud / azp を見ない」（Enforce の段で見る）・IADR-0626 残る制約 4（確かめの口はどのサービスでも呼べる）。
 - 作業仕様書: `.ai-context/specs/20261107_s2s-per-service-clients.md`（呼び出しの母集合）。
 
