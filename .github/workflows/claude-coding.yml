@@ -52,26 +52,49 @@ jobs:
     # @claude を含むイベントのみ起動する。
     # NFR: 加えて、**本文の書き手**が OWNER / MEMBER / COLLABORATOR のときだけ起動する
     # （起動した人ではなく、AI が読む本文を書いた人で判定する。issues の assigned では両者が異なる）。
+    # NFR, IADR-0635: さらに、**対象の issue / PR の書き手**も同じ 3 つに限る（外の書き手の issue・PR の本文を読ませない。
+    # 呼んだのがコラボレーターでも、外の人の PR・issue では起動しない）。PR は**同じリポジトリのブランチ**に限る（フォークの head の
+    # コードを、書き込みのトークンの手の届く所でビルド・テストしない）。issue_comment の PR は、イベントに head が無いので
+    # 下の「Check the target pull request」の段で確かめる。
     # 各句に author_association の判定を必ず置くこと（scripts/scripts.repo.test.js が句ごとに固定する）。
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)) ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association) && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association) && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association) && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
     runs-on: ubuntu-latest
     # ハングした実装セッションが上限まで回り続けるのを防ぐ。
     # レビュー（20 分）より長めに取る（実装はビルド・テストを伴うため）。
     timeout-minutes: 45
+    # NFR, IADR-0635: contents: write は実装の成果（ブランチの git push・push_files）に要るので残す。
+    # id-token: write は外した。アクションは github_token を渡すとその値を使い、OIDC（App トークンへの交換）を求めない。
+    # Anthropic への認証も API キー／OAuth トークンで、workload identity・Bedrock・Vertex を使わない（使うなら IADR を改定して戻す）。
     permissions:
       contents: write
       pull-requests: write
       issues: write
-      id-token: write
       # claude-code-review.example.yml と同じ理由（mcp__github_ci__* サーバーの導入条件）。
       # 実装セッションでは、自分が出した PR の CI 失敗を自分で読んで直すために要る。
       # 注: ツール許可に additional_permissions は使わない（あれはアプリトークンのスコープ用）。
       actions: read
     steps:
+      # NFR, IADR-0635: issue_comment の対象が PR のとき、その PR が同じリポジトリのブランチであることを確かめる
+      # （イベントに head が無いので API で引く）。フォークの PR・確かめられないときは止める（閉じる向き）。値は env で受ける。
+      - name: Check the target pull request
+        if: github.event_name == 'issue_comment' && github.event.issue.pull_request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.repo.full_name // ""')" \
+            || { echo "::error::対象の PR を引けません（起動しません）。"; exit 1; }
+          if [ "$head" != "$REPOSITORY" ]; then
+            echo "::error::対象の PR の head が別のリポジトリ（フォーク）です。AI は起動しません。"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -122,8 +145,11 @@ jobs:
         id: claude
         uses: anthropics/claude-code-action@4845bacbb38b3c4b15d948f035349786f678e068 # v1.0.267
         # gh CLI（Issue 発行等）を既定トークンで認証する。gh は GH_TOKEN/GITHUB_TOKEN を参照する。
+        # NFR, IADR-0635: CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 で、AI が起動するサブプロセス（dotnet build / test・npm run など）の環境から
+        # Anthropic・クラウド・GitHub Actions の秘密を落とす（アクションの action.yml がこの値を CLI へ渡す。best-effort）。
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
         with:
           # 認証はどちらか一方のみ設定する（未設定の方は空文字で無視される）:
           #   サブスク = CLAUDE_CODE_OAUTH_TOKEN / API = ANTHROPIC_API_KEY
