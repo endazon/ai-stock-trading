@@ -134,9 +134,10 @@
 {{- /* #1527, IADR-0610: 承認の印の鍵を入れ替えたら作り直して新しい鍵を読む。 */ -}}
 {{- $oasReload := $.Values.global.orderApprovalSigning | default dict -}}
 {{- if has $name ($oasReload.services | default list) }}{{- $reloadSecrets = append $reloadSecrets $oasReload.secretName -}}{{- end }}
-{{- /* IADR-0627: メッセージの発行元の鍵を入れ替えたら作り直して新しい鍵を読む。 */ -}}
+{{- /* IADR-0633: メッセージの発行元の鍵を入れ替えたら作り直して新しい鍵を読む。 */ -}}
 {{- $moReload := $.Values.global.messageOrigin | default dict -}}
-{{- if hasKey ($moReload.services | default dict) $name }}{{- $reloadSecrets = append $reloadSecrets $moReload.secretName -}}{{- end }}
+{{- if has $name ($moReload.signers | default list) }}{{- $reloadSecrets = append $reloadSecrets $moReload.signingSecretName -}}{{- end }}
+{{- if hasKey ($moReload.verifiers | default dict) $name }}{{- $reloadSecrets = append $reloadSecrets $moReload.verifySecretName -}}{{- end }}
 {{- /* FR-15, NFR（費用）, ADR-0033 決定5, #1342, IADR-0537 決定5: Stage 0 の記録器の永続ボリューム（trade-decision だけ）。
        有効なら PVC（templates/pvc-stage0-recording.yaml）を mount し、状態の置き場 Stage0Recording__StateDirectory を
        <mountPath>/state として注入し、更新方式を Recreate にする。既定（無効）では何も描かない＝既定描画はバイト等価。
@@ -378,26 +379,56 @@ spec:
                   optional: true
                   {{- end }}
             {{- end }}
-            {{- /* 🔴 NFR, FR-10, IADR-0627: 統制の入力になるメッセージの発行元の印。global.messageOrigin.services のサービスにだけ、
-                   そのサービスに要る鍵だけを描く（他の発行元の鍵を持たせない）。鍵は Secret から読み、values に値を置かない。
-                   段 1（Report・既定）は optional（鍵が無くても起動する）。段 2（Enforce）は必須（無ければ Pod が起動しない）。 */}}
+            {{- /* 🔴 NFR, FR-10, IADR-0633: 統制の入力になるメッセージの発行元の署名。signers のサービスにだけ自分の秘密の鍵を、
+                   verifiers の受け手にだけ確かめる発行元の公開の鍵を描く（他の発行元の秘密の鍵を持たせない）。鍵は Secret から読み、values に値を置かない。
+                   段 1（Report・既定）は optional（鍵が無くても起動する）。段 2（Enforce）は必須（無ければ Pod が起動しない）。
+                   legacyHmac（旧い共有の鍵の HMAC。IADR-0627）は段 1 でだけ描ける（段 2 と併用すると止める）。 */}}
             {{- $mo := $g.messageOrigin | default dict }}
-            {{- if hasKey ($mo.services | default dict) $name }}
+            {{- $moSigns := has $name ($mo.signers | default list) }}
+            {{- $moVerifies := index ($mo.verifiers | default dict) $name | default list }}
+            {{- if or $moSigns $moVerifies }}
             {{- if not (has $mo.mode (list "Report" "Enforce")) }}
             {{- fail (printf "global.messageOrigin.mode は Report か Enforce です（値: %v）。" $mo.mode) }}
             {{- end }}
+            {{- $moLegacy := $mo.legacyHmac | default dict }}
+            {{- if and $moLegacy.enabled (eq $mo.mode "Enforce") }}
+            {{- fail "global.messageOrigin.legacyHmac.enabled は段 1（Report）でだけ使えます（段 2 では旧い共有の鍵を受け手に持たせない。IADR-0633）。" }}
+            {{- end }}
             - name: MessageOrigin__Mode
               value: {{ $mo.mode | quote }}
-            {{- range $issuer := (index $mo.services $name) }}
-            {{- /* env の名前はシェルの識別子に限る（#817）。発行元の識別子の - は _ で書き、アプリが - に戻して読む。 */}}
-            - name: MessageOrigin__Keys__{{ $issuer | replace "-" "_" }}
+            {{- if $moSigns }}
+            - name: MessageOrigin__SigningKey
               valueFrom:
                 secretKeyRef:
-                  name: {{ $mo.secretName }}
+                  name: {{ $mo.signingSecretName }}
+                  key: {{ $name }}
+                  {{- if eq $mo.mode "Report" }}
+                  optional: true
+                  {{- end }}
+            {{- end }}
+            {{- range $issuer := $moVerifies }}
+            {{- /* env の名前はシェルの識別子に限る（#817）。発行元の識別子の - は _ で書き、アプリが - に戻して読む。 */}}
+            - name: MessageOrigin__VerifyKeys__{{ $issuer | replace "-" "_" }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $mo.verifySecretName }}
                   key: {{ $issuer }}
                   {{- if eq $mo.mode "Report" }}
                   optional: true
                   {{- end }}
+            {{- end }}
+            {{- /* 記録だけの受け手（audit）には旧い共有の鍵を渡さない（共有の鍵を持てば、その Pod から全発行元を名乗れる）。 */}}
+            {{- if and $moLegacy.enabled (not (has $name ($moLegacy.skipServices | default list))) }}
+            {{- $legacyKeys := $moVerifies }}
+            {{- if $moSigns }}{{- $legacyKeys = append $legacyKeys $name }}{{- end }}
+            {{- range $issuer := ($legacyKeys | uniq | sortAlpha) }}
+            - name: MessageOrigin__Keys__{{ $issuer | replace "-" "_" }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $moLegacy.secretName }}
+                  key: {{ $issuer }}
+                  optional: true
+            {{- end }}
             {{- end }}
             {{- end }}
             {{- /* NFR-18, NFR-05, IADR-0630（基盤の MSP:IADR-0695 の受け手）: DB の資格はサービスごとに上書きできる

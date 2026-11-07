@@ -499,9 +499,16 @@ jobs:
           for m in Auth__OwnerToken__Mode Auth__OwnerBot__Mode OrderApprovalSigning__Mode OwnerSecondFactor__Mode MessageOrigin__Mode; do
             [ "$(mode "$m" "$out")" = 'value: "Enforce" ' ] || fail "values-cloud の $m が Enforce だけでない: $(mode "$m" "$out")"
           done
-          # NFR, FR-10, IADR-0627: メッセージの発行元の鍵は 8 サービスに、段 2 は必須（optional なし）で描く。鍵の Secret は ESO の同期先（上の refs ⊆ targets）。
-          [ "$(grep -cE '^ +- name: MessageOrigin__Mode$' <<<"$out" || true)" = 8 ] || fail "メッセージの発行元の段が 8 サービスに無い。"
-          if grep -A6 -E '^ +- name: MessageOrigin__Keys__[a-z_]+$' <<<"$out" | grep -q 'optional: true'; then fail "values-cloud の発行元の鍵が optional で描かれた（段 2 は必須）。"; fi
+          # NFR, FR-10, IADR-0633: メッセージの発行元の鍵は 9 サービス（発行元 7・費用統制・記録だけの監査）に、段 2 は必須（optional なし）で描く。
+          #   秘密の鍵は発行元の 7 サービスにだけ。旧い共有の鍵（MessageOrigin__Keys__*）は描かない。鍵の Secret は ESO の同期先（上の refs ⊆ targets）。
+          [ "$(grep -cE '^ +- name: MessageOrigin__Mode$' <<<"$out" || true)" = 9 ] || fail "メッセージの発行元の段が 9 サービスに無い。"
+          [ "$(grep -cE '^ +- name: MessageOrigin__SigningKey$' <<<"$out" || true)" = 7 ] || fail "発行元の秘密の鍵が 7 サービスちょうどに描かれていない。"
+          if grep -A6 -E '^ +- name: MessageOrigin__(SigningKey|VerifyKeys__[a-z_]+)$' <<<"$out" | grep -q 'optional: true'; then fail "values-cloud の発行元の鍵が optional で描かれた（段 2 は必須）。"; fi
+          if grep -qE '^ +- name: MessageOrigin__Keys__' <<<"$out"; then fail "values-cloud に旧い共有の鍵（HMAC）が描かれた（段 2 では使わない）。"; fi
+          if helm template ast "$CHART" -f "$CHART/values-cloud.yaml" -f "$CHART/ci/values-cloud-digests.fixture.yaml" \
+                --set global.messageOrigin.legacyHmac.enabled=true >/dev/null 2>&1; then
+            fail "段 2 と旧い共有の鍵の併用が描画で止まらない。"
+          fi
           [ "$(mode RiskControls__KillSwitch__Precondition "$out")" = 'value: "Require" ' ] || fail "values-cloud の kill switch の前提条件が Require でない。"
           [ "$(grep -cE '^ +- name: OwnerSecondFactor__Mode$' <<<"$out" || true)" = 2 ] || fail "第 2 要素の段が risk-management と report の 2 つに無い。"
           for prof in "" "-f $CHART/values-local.yaml"; do

@@ -60,7 +60,8 @@ global:
     mode: Enforce
   ownerBotScope:
     mode: Enforce
-  # 🔴 段 2（IADR-0627）。発行元の鍵（cloud/ast/ast-message-origin-keys）が無ければ、鍵を読むサービスの Pod は起動しない。
+  # 🔴 段 2（IADR-0633）。発行元の鍵（cloud/ast/ast-message-origin-{signing,verify}-keys）が無ければ、鍵を読むサービスの Pod は起動しない。
+  #   旧い共有の鍵（legacyHmac）は使わない（段 2 と併用すると描画で止まる）。
   messageOrigin:
     mode: Enforce
   # NFR-18, #1535, IADR-0621: 基盤の DB・ブローカへの接続を TLS にする（経路 B の values-local と同じスイッチ）。
@@ -139,11 +140,16 @@ externalSecrets:
     enabled: true
     targetName: ast-owner-totp
     remoteKey: ast/ast-owner-totp
-  # NFR, FR-10, IADR-0627: メッセージの発行元の鍵（キー＝発行元の識別子）。基盤の seed-secrets.sh の gen で OpenBao の中に作る（手順書 §5）。
-  messageOriginKeys:
+  # NFR, FR-10, IADR-0633: メッセージの発行元の鍵（キー＝発行元の識別子）。秘密の鍵と公開の鍵を別々に写す。
+  #   作り方は scripts/ast-message-origin-keygen.sh（オーナーが流す。値を表示せず基盤の put-external-secret.sh へ標準入力で渡す。手順書 §5）。
+  messageOriginSigningKeys:
     enabled: true
-    targetName: ast-message-origin-keys
-    remoteKey: ast/ast-message-origin-keys
+    targetName: ast-message-origin-signing-keys
+    remoteKey: ast/ast-message-origin-signing-keys
+  messageOriginVerifyKeys:
+    enabled: true
+    targetName: ast-message-origin-verify-keys
+    remoteKey: ast/ast-message-origin-verify-keys
   infraCa:
     enabled: true
     targetName: platform-infra-ca

@@ -5,8 +5,8 @@ using Xunit;
 
 namespace AiStockTrading.TestSupport.PlatformShim.Tests;
 
-// 🔴 NFR, FR-10, IADR-0627 決定 6: chart の global.messageOrigin.services（サービス → 渡す鍵）は、コードの要る鍵と一致する。
-// 足りなければ段 2 で起動しない。多ければ他の発行元の鍵を持たせる（その Pod から別の発行元を名乗れる）。どちらも赤にする。
+// 🔴 NFR, FR-10, IADR-0633 決定 3: chart の global.messageOrigin（signers ＝秘密の鍵を渡す発行元・verifiers ＝受け手 → 公開の鍵を渡す発行元）は、
+// コードの要る鍵と一致する。足りなければ段 2 で起動しない。秘密の鍵が多ければ発行しない Pod に秘密を置く。どちらも赤にする。
 public partial class MessageOriginChartTests
 {
     private static string RepoRoot()
@@ -19,41 +19,73 @@ public partial class MessageOriginChartTests
         throw new InvalidOperationException("リポジトリの根（backend/backend.slnx）が見つからない。");
     }
 
-    [GeneratedRegex(@"^  messageOrigin:\n(?:    .*\n|\s*#.*\n)*?    services:\n((?:      [a-z-]+: \[[a-z, -]*\]\n)+)", RegexOptions.Multiline)]
-    private static partial Regex ServicesBlock();
+    [GeneratedRegex(@"^  messageOrigin:\n((?:(?:    .*|\s*#.*|)\n)+)", RegexOptions.Multiline)]
+    private static partial Regex MessageOriginBlock();
+
+    [GeneratedRegex(@"^    signers: \[([a-z, -]*)\]$", RegexOptions.Multiline)]
+    private static partial Regex SignersLine();
+
+    [GeneratedRegex(@"^    verifiers:\n((?:(?:      [a-z-]+: \[[a-z, -]*\]|\s*#.*)\n)+)", RegexOptions.Multiline)]
+    private static partial Regex VerifiersBlock();
 
     [GeneratedRegex(@"^      ([a-z-]+): \[([a-z, -]*)\]$", RegexOptions.Multiline)]
     private static partial Regex ServiceLine();
 
-    private static Dictionary<string, string[]> ChartServices()
+    private static string[] List(string text) => text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+    private static (string[] Signers, Dictionary<string, string[]> Verifiers) Chart()
     {
         var values = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "helm", "ai-stock-trading", "values.yaml")).Replace("\r\n", "\n");
-        var block = ServicesBlock().Match(values);
-        block.Success.Should().BeTrue("values.yaml に global.messageOrigin.services が要る");
-        return ServiceLine().Matches(block.Groups[1].Value).ToDictionary(
-            m => m.Groups[1].Value,
-            m => m.Groups[2].Value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+        var block = MessageOriginBlock().Match(values);
+        block.Success.Should().BeTrue("values.yaml に global.messageOrigin が要る");
+        var signers = SignersLine().Match(block.Groups[1].Value);
+        signers.Success.Should().BeTrue("global.messageOrigin.signers が要る");
+        var verifiers = VerifiersBlock().Match(block.Groups[1].Value);
+        verifiers.Success.Should().BeTrue("global.messageOrigin.verifiers が要る");
+        return (
+            List(signers.Groups[1].Value),
+            ServiceLine().Matches(verifiers.Groups[1].Value).ToDictionary(m => m.Groups[1].Value, m => List(m.Groups[2].Value)));
     }
 
+    private static IEnumerable<string> AllServices() =>
+        MessageOriginCatalog.Rules.SelectMany(r => r.Issuers.Concat(r.Receivers))
+            .Concat(MessageOriginCatalog.RecordOnlyServices.Select(r => r.Service))
+            .Distinct(StringComparer.Ordinal);
+
     [Fact]
-    public void chartが各サービスへ渡す鍵はコードの要る鍵と一致する()
+    public void chartの秘密の鍵は発行元のサービスにだけ渡す()
     {
-        var chart = ChartServices();
-        var expected = new Dictionary<string, string[]>();
-        foreach (var issuer in MessageOriginCatalog.Rules.SelectMany(r => r.Issuers.Concat(r.Receivers)).Distinct())
-            expected[issuer] = [.. MessageOriginWiringExtensions.RequiredKeys(issuer)];
+        var (signers, _) = Chart();
 
-        chart.Keys.Should().BeEquivalentTo(expected.Keys);
-        foreach (var (service, keys) in expected)
-            chart[service].Should().BeEquivalentTo(keys, $"chart の {service} に渡す鍵");
+        signers.Should().BeEquivalentTo(AllServices().Where(MessageOriginWiringExtensions.RequiresSigningKey));
+        signers.Should().BeEquivalentTo(MessageOriginCatalog.AllIssuers);
     }
 
     [Fact]
-    public void values_cloudは段2で鍵をOpenBaoから写す()
+    public void chartが受け手へ渡す公開の鍵はコードの要る鍵と一致する()
+    {
+        var (_, verifiers) = Chart();
+        var expected = AllServices()
+            .Select(s => (Service: s, Keys: MessageOriginWiringExtensions.RequiredVerifyKeys(s)))
+            .Where(x => x.Keys.Count > 0)
+            .ToDictionary(x => x.Service, x => x.Keys);
+
+        verifiers.Keys.Should().BeEquivalentTo(expected.Keys);
+        foreach (var (service, keys) in expected)
+            verifiers[service].Should().BeEquivalentTo(keys, $"chart の {service} に渡す公開の鍵");
+    }
+
+    [Fact]
+    public void values_cloudは段2で2つの鍵をOpenBaoから写し旧い鍵を使わない()
     {
         var cloud = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "helm", "ai-stock-trading", "values-cloud.yaml")).Replace("\r\n", "\n");
 
         cloud.Should().MatchRegex(@"\n  messageOrigin:\n    mode: Enforce\n");
-        cloud.Should().MatchRegex(@"\n  messageOriginKeys:\n    enabled: true\n    targetName: ast-message-origin-keys\n    remoteKey: ast/ast-message-origin-keys\n");
+        cloud.Should().MatchRegex(
+            @"\n  messageOriginSigningKeys:\n    enabled: true\n    targetName: ast-message-origin-signing-keys\n    remoteKey: ast/ast-message-origin-signing-keys\n");
+        cloud.Should().MatchRegex(
+            @"\n  messageOriginVerifyKeys:\n    enabled: true\n    targetName: ast-message-origin-verify-keys\n    remoteKey: ast/ast-message-origin-verify-keys\n");
+        cloud.Should().NotContain("messageOriginKeys:");
+        cloud.Should().NotMatchRegex(@"\n +legacyHmac:", "values-cloud は旧い共有の鍵を有効にしない");
     }
 }

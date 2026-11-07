@@ -14,7 +14,7 @@ using Xunit;
 
 namespace AiStockTrading.TestSupport.PlatformShim.Tests;
 
-// 🔴 NFR, FR-10, IADR-0627 決定 2・3・4: Wolverine の配線を通して確かめる（送る側の印・受け手のハンドラの前の確かめ・起動の止め）。
+// 🔴 NFR, FR-10, IADR-0627 決定 2・3・4, IADR-0633 決定 2〜5: Wolverine の配線を通して確かめる（送る側の署名・受け手のハンドラの前の確かめ・起動の止め）。
 // 受け手のハンドラは本アセンブリの試験用（MessageOriginProbeHandler）。実ブローカへは繋がない。
 [Collection(nameof(MessageOriginProbeCollection))]
 public class MessageOriginWiringTests
@@ -22,23 +22,48 @@ public class MessageOriginWiringTests
     private const string OrderExecution = "ai-stock-trading.order-execution-service";
     private const string MarketMonitor = "ai-stock-trading.market-monitor-service";
 
-    private static readonly string MarketMonitorKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
-    private static readonly string RiskManagementKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
-    private static readonly string OrderExecutionKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
-
-    private static IConfiguration Config(string mode, params (string Issuer, string Key)[] keys)
+    // 構成: 段・自分の秘密の鍵（発行元のとき）・確かめる発行元の公開の鍵・旧い共有の鍵。
+    private static IConfiguration Config(
+        string mode, string? signingKey = null, IEnumerable<string>? verify = null, IEnumerable<(string Issuer, string Key)>? legacy = null,
+        bool underscore = false)
     {
         var values = new Dictionary<string, string?> { ["MessageOrigin:Mode"] = mode };
-        foreach (var (issuer, key) in keys)
+        if (signingKey is not null)
+            values["MessageOrigin:SigningKey"] = signingKey;
+        foreach (var issuer in verify ?? [])
+            values[$"MessageOrigin:VerifyKeys:{(underscore ? issuer.Replace('-', '_') : issuer)}"] = MessageOriginTestKeys.For(issuer).Public;
+        foreach (var (issuer, key) in legacy ?? [])
             values[$"MessageOrigin:Keys:{issuer}"] = key;
         return new ConfigurationBuilder().AddInMemoryCollection(values).Build();
     }
 
+    // 発注執行の役（自分の秘密の鍵＋確かめる発行元の公開の鍵）。
     private static IConfiguration ReceiverConfig(string mode) => Config(
         mode,
-        (MessageOriginCatalog.MarketMonitor, MarketMonitorKey),
-        (MessageOriginCatalog.RiskManagement, RiskManagementKey),
-        (MessageOriginCatalog.OrderExecution, OrderExecutionKey));
+        MessageOriginTestKeys.For(MessageOriginCatalog.OrderExecution).Private,
+        MessageOriginWiringExtensions.RequiredVerifyKeys(MessageOriginCatalog.OrderExecution));
+
+    // そのサービスに要る鍵を揃えた構成。
+    private static IConfiguration FullConfig(string serviceName, string mode, bool underscore = false)
+    {
+        var issuer = MessageOriginCatalog.IssuerIdFor(serviceName);
+        return Config(
+            mode,
+            MessageOriginWiringExtensions.RequiresSigningKey(issuer) ? MessageOriginTestKeys.For(issuer).Private : null,
+            MessageOriginWiringExtensions.RequiredVerifyKeys(issuer),
+            underscore: underscore);
+    }
+
+    private static Task<IHost> HostAsync(string serviceName, IConfiguration config) =>
+        Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
+            {
+                opts.PinDynamicTypeLoadMode();
+                opts.Discovery.IncludeType<MessageOriginProbeHandler>();
+                opts.UseAiStockTradingMessageOrigin(serviceName, config);
+                opts.StubAllExternalTransports();
+            })
+            .StartAsync();
 
     private static Task<IHost> ReceiverAsync(IConfiguration config) =>
         Host.CreateDefaultBuilder()
@@ -55,12 +80,10 @@ public class MessageOriginWiringTests
         (StopLossTriggered)MessageOriginSamples.Create(typeof(StopLossTriggered));
 
     // 損切り到達（発行元＝市場監視）の印つきの見出し。
-    private static DeliveryOptions SignedBy(string issuer, string key, object message)
+    private static DeliveryOptions SignedBy(string issuer, MessageOriginTestKeys.Pair pair, object message, MessageOriginLegacyHmac? legacy = null)
     {
         var envelope = new Envelope(message);
-        new MessageOriginSigningRule(
-            issuer, MessageOriginSignature.Create(new Dictionary<string, string?> { [issuer] = key }), TimeProvider.System)
-            .Modify(envelope);
+        new MessageOriginSigningRule(issuer, MessageOriginTestKeys.Signer(issuer, pair), TimeProvider.System, legacy).Modify(envelope);
         var options = new DeliveryOptions();
         foreach (var (k, v) in envelope.Headers)
             options.WithHeader(k, v!);
@@ -95,7 +118,7 @@ public class MessageOriginWiringTests
         MessageOriginProbeHandler.Reset();
         using var host = await ReceiverAsync(ReceiverConfig("Enforce"));
         var message = Trigger();
-        var signed = SignedBy(MessageOriginCatalog.MarketMonitor, MarketMonitorKey, message);
+        var signed = SignedBy(MessageOriginCatalog.MarketMonitor, MessageOriginTestKeys.For(MessageOriginCatalog.MarketMonitor), message);
 
         await InvokeAsync(host, message, signed);
         await InvokeAsync(host, message, signed);
@@ -107,12 +130,12 @@ public class MessageOriginWiringTests
     [Fact]
     public async Task 段2の受け手は許されない発行元の正しい印も渡さない()
     {
-        // 発注執行の鍵で正しく作った印でも、損切り到達の発行元（市場監視）ではない。
+        // 発注執行の秘密の鍵で正しく作った署名でも、損切り到達の発行元（市場監視）ではない。
         MessageOriginProbeHandler.Reset();
         using var host = await ReceiverAsync(ReceiverConfig("Enforce"));
         var message = Trigger();
 
-        await InvokeAsync(host, message, SignedBy(MessageOriginCatalog.OrderExecution, OrderExecutionKey, message));
+        await InvokeAsync(host, message, SignedBy(MessageOriginCatalog.OrderExecution, MessageOriginTestKeys.For(MessageOriginCatalog.OrderExecution), message));
 
         MessageOriginProbeHandler.Handled.Should().BeEmpty();
         await host.StopAsync();
@@ -123,12 +146,55 @@ public class MessageOriginWiringTests
     {
         MessageOriginProbeHandler.Reset();
         using var host = await ReceiverAsync(ReceiverConfig("Enforce"));
-        var signed = SignedBy(MessageOriginCatalog.MarketMonitor, MarketMonitorKey, Trigger());
+        var signed = SignedBy(MessageOriginCatalog.MarketMonitor, MessageOriginTestKeys.For(MessageOriginCatalog.MarketMonitor), Trigger());
 
         await InvokeAsync(host, MessageOriginSamples.Tampered(typeof(StopLossTriggered)), signed);
 
         MessageOriginProbeHandler.Handled.Should().BeEmpty();
         await host.StopAsync();
+    }
+
+    // 受け手の Pod が持つのは公開の鍵だけ。別の鍵の組（漏れた受け手が作れる最良のもの）で署名しても通らない。
+    [Fact]
+    public async Task 段2の受け手は許された発行元を名乗る別の鍵の署名を渡さない()
+    {
+        MessageOriginProbeHandler.Reset();
+        using var host = await ReceiverAsync(ReceiverConfig("Enforce"));
+        var message = Trigger();
+
+        await InvokeAsync(host, message, SignedBy(MessageOriginCatalog.MarketMonitor, MessageOriginTestKeys.NewPair(), message));
+
+        MessageOriginProbeHandler.Handled.Should().BeEmpty();
+        await host.StopAsync();
+    }
+
+    // 🔴 IADR-0633 決定 4: 旧い HMAC の印だけのメッセージは、段 1 では（記録して）処理し、段 2 では渡さない。
+    [Fact]
+    public async Task 旧い印だけのメッセージは段1で処理され段2で渡されない()
+    {
+        var legacyKey = MessageOriginTestKeys.LegacyKey();
+        var legacy = MessageOriginLegacyHmac.Create(new Dictionary<string, string?> { [MessageOriginCatalog.MarketMonitor] = legacyKey });
+        var envelope = new Envelope(Trigger());
+        new MessageOriginSigningRule(MessageOriginCatalog.MarketMonitor, MessageOriginSignature.Create(null), TimeProvider.System, legacy)
+            .Modify(envelope);
+        var options = new DeliveryOptions();
+        foreach (var (k, v) in envelope.Headers)
+            options.WithHeader(k, v!);
+
+        MessageOriginProbeHandler.Reset();
+        using (var report = await HostAsync(OrderExecution, Config(
+                   "Report", verify: [MessageOriginCatalog.MarketMonitor], legacy: [(MessageOriginCatalog.MarketMonitor, legacyKey)])))
+        {
+            await InvokeAsync(report, envelope.Message!, options);
+            MessageOriginProbeHandler.Handled.Should().ContainSingle();
+            await report.StopAsync();
+        }
+
+        MessageOriginProbeHandler.Reset();
+        using var enforce = await ReceiverAsync(ReceiverConfig("Enforce"));
+        await InvokeAsync(enforce, envelope.Message!, options);
+        MessageOriginProbeHandler.Handled.Should().BeEmpty();
+        await enforce.StopAsync();
     }
 
     [Fact]
@@ -164,10 +230,7 @@ public class MessageOriginWiringTests
             {
                 opts.PinDynamicTypeLoadMode();
                 opts.UseAiStockTradingRabbitMq(MarketMonitor, "amqp://guest:guest@localhost:5672");
-                opts.UseAiStockTradingMessageOrigin(MarketMonitor, Config(
-                    "Enforce",
-                    (MessageOriginCatalog.MarketMonitor, MarketMonitorKey),
-                    (MessageOriginCatalog.TradeDecision, OrderExecutionKey)));
+                opts.UseAiStockTradingMessageOrigin(MarketMonitor, FullConfig(MarketMonitor, "Enforce"));
                 opts.StubAllExternalTransports();
             })
             .StartAsync();
@@ -179,42 +242,42 @@ public class MessageOriginWiringTests
         sent.Should().NotBeEmpty();
         var verifier = new MessageOriginVerifier(
             MessageOriginMode.Enforce,
-            MessageOriginSignature.Create(new Dictionary<string, string?> { [MessageOriginCatalog.MarketMonitor] = MarketMonitorKey }),
+            MessageOriginSignature.Create(new Dictionary<string, string?>
+            {
+                [MessageOriginCatalog.MarketMonitor] = MessageOriginTestKeys.For(MessageOriginCatalog.MarketMonitor).Public,
+            }),
             TimeSpan.FromHours(24), TimeSpan.FromMinutes(5), TimeProvider.System,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<MessageOriginVerifier>.Instance);
         sent.Should().AllSatisfy(e =>
         {
             e.Headers[MessageOriginSignature.IssuerHeader].Should().Be(MessageOriginCatalog.MarketMonitor);
+            e.Headers.Should().NotContainKey(MessageOriginLegacyHmac.SignatureHeader, "段 2 では旧い印を付けない");
             verifier.Check(e).Should().Be(MessageOriginCheck.Valid);
         });
         await host.StopAsync();
     }
 
-    // 🔴 鍵が無いまま段 2 で起動すると止まる（fail-closed）。発行元・受け手のどちらの鍵が欠けても止まる。
+    // 🔴 鍵が無いまま段 2 で起動すると止まる（fail-closed）。自分の秘密の鍵・確かめる発行元の公開の鍵のどれが欠けても止まる。
     [Theory]
     [MemberData(nameof(Services))]
     public async Task 段2で要る鍵が1つでも無ければ起動で止まる(string serviceName)
     {
         var issuerId = MessageOriginCatalog.IssuerIdFor(serviceName);
-        var required = MessageOriginWiringExtensions.RequiredKeys(issuerId);
-        required.Should().NotBeEmpty();
+        var signs = MessageOriginWiringExtensions.RequiresSigningKey(issuerId);
+        var verify = MessageOriginWiringExtensions.RequiredVerifyKeys(issuerId);
+        (signs || verify.Count > 0).Should().BeTrue();
+        var signing = signs ? MessageOriginTestKeys.For(issuerId).Private : null;
 
-        foreach (var absent in required)
+        if (signs)
         {
-            var keys = required.Where(k => k != absent).Select(k => (k, OrderExecutionKey)).ToArray();
-            var act = async () =>
-            {
-                using var host = await Host.CreateDefaultBuilder()
-                    .UseWolverine(opts =>
-                    {
-                        opts.PinDynamicTypeLoadMode();
-                        opts.UseAiStockTradingMessageOrigin(serviceName, Config("Enforce", keys));
-                        opts.StubAllExternalTransports();
-                    })
-                    .StartAsync();
-            };
+            var act = async () => { using var host = await HostAsync(serviceName, Config("Enforce", null, verify)); };
+            (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("MessageOrigin:SigningKey");
+        }
 
-            (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain(absent);
+        foreach (var absent in verify)
+        {
+            var act = async () => { using var host = await HostAsync(serviceName, Config("Enforce", signing, verify.Where(k => k != absent))); };
+            (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain($"MessageOrigin:VerifyKeys:{absent}");
         }
     }
 
@@ -222,47 +285,88 @@ public class MessageOriginWiringTests
     [MemberData(nameof(Services))]
     public async Task 段2で要る鍵が揃えば起動する(string serviceName)
     {
-        var keys = MessageOriginWiringExtensions.RequiredKeys(MessageOriginCatalog.IssuerIdFor(serviceName))
-            .Select(k => (k, OrderExecutionKey)).ToArray();
-        using var host = await Host.CreateDefaultBuilder()
-            .UseWolverine(opts =>
-            {
-                opts.PinDynamicTypeLoadMode();
-                opts.UseAiStockTradingMessageOrigin(serviceName, Config("Enforce", keys));
-                opts.StubAllExternalTransports();
-            })
-            .StartAsync();
+        using var host = await HostAsync(serviceName, FullConfig(serviceName, "Enforce"));
         await host.StopAsync();
     }
 
-    // chart は env の名前をシェルの識別子にするため、発行元の識別子の - を _ で書く（MessageOrigin__Keys__trade_decision）。
+    // 🔴 段 2 では旧い共有の鍵を構成しただけで起動を止める（受け手に共有の鍵を持たせない）。
+    [Theory]
+    [MemberData(nameof(Services))]
+    public async Task 段2で旧い共有の鍵があれば起動で止まる(string serviceName)
+    {
+        var issuer = MessageOriginCatalog.IssuerIdFor(serviceName);
+        var full = FullConfig(serviceName, "Enforce");
+        var withLegacy = new ConfigurationBuilder().AddConfiguration(full)
+            .AddInMemoryCollection(new Dictionary<string, string?> { [$"MessageOrigin:Keys:{MessageOriginCatalog.AllIssuers[0]}"] = MessageOriginTestKeys.LegacyKey() })
+            .Build();
+
+        var act = async () => { using var host = await HostAsync(serviceName, withLegacy); };
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("旧い共有の鍵");
+        issuer.Should().NotBeEmpty();
+    }
+
+    // 発行しないサービスに秘密の鍵を置かない（段に依らず止める）。
+    [Theory]
+    [InlineData("ai-stock-trading.cost-control-service")]
+    [InlineData("ai-stock-trading.audit-service")]
+    [InlineData("ai-stock-trading.notification-service")]
+    public async Task 発行しないサービスに秘密の鍵があれば起動で止まる(string serviceName)
+    {
+        var act = async () => { using var host = await HostAsync(serviceName, Config("Report", MessageOriginTestKeys.NewPair().Private)); };
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("MessageOrigin:SigningKey");
+    }
+
+    // 記録だけの受け手（監査）には旧い共有の鍵を渡さない（共有の鍵から全発行元を名乗れる）。段 1 でも止める。
+    [Fact]
+    public async Task 監査に旧い共有の鍵があれば段1でも起動で止まる()
+    {
+        var act = async () =>
+        {
+            using var host = await HostAsync(
+                "ai-stock-trading.audit-service", Config("Report", legacy: [(MessageOriginCatalog.TradeDecision, MessageOriginTestKeys.LegacyKey())]));
+        };
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("記録だけの受け手");
+    }
+
+    // chart は env の名前をシェルの識別子にするため、発行元の識別子の - を _ で書く（MessageOrigin__VerifyKeys__trade_decision）。
     [Fact]
     public async Task 鍵の名前の下線は発行元の識別子のハイフンとして読む()
     {
-        var keys = MessageOriginWiringExtensions.RequiredKeys(MessageOriginCatalog.RiskManagement)
-            .Select(k => (k.Replace('-', '_'), OrderExecutionKey)).ToArray();
-        using var host = await Host.CreateDefaultBuilder()
-            .UseWolverine(opts =>
-            {
-                opts.PinDynamicTypeLoadMode();
-                opts.UseAiStockTradingMessageOrigin("ai-stock-trading.risk-management-service", Config("Enforce", keys));
-                opts.StubAllExternalTransports();
-            })
-            .StartAsync();
+        const string risk = "ai-stock-trading.risk-management-service";
+        using var host = await HostAsync(risk, FullConfig(risk, "Enforce", underscore: true));
         await host.StopAsync();
     }
 
     [Fact]
     public async Task 段1は鍵が無くても起動する()
     {
+        using var host = await HostAsync(OrderExecution, Config("Report"));
+        await host.StopAsync();
+    }
+
+    // 🔴 IADR-0633 決定 5: 監査は記録だけの受け手。段 2 でも、署名の無いメッセージを処理する（証跡を欠かさない）。
+    [Fact]
+    public async Task 監査は段2でも署名の無い表の型を処理する()
+    {
+        AuditProbeHandler.Reset();
         using var host = await Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
                 opts.PinDynamicTypeLoadMode();
-                opts.UseAiStockTradingMessageOrigin(OrderExecution, Config("Report"));
+                opts.Discovery.DisableConventionalDiscovery();
+                opts.Discovery.IncludeType<AuditProbeHandler>();
+                opts.UseAiStockTradingMessageOrigin("ai-stock-trading.audit-service", FullConfig("ai-stock-trading.audit-service", "Enforce"));
                 opts.StubAllExternalTransports();
             })
             .StartAsync();
+        host.Services.GetRequiredService<MessageOriginVerifier>().RecordOnly.Should().BeTrue();
+
+        await InvokeAsync(host, MessageOriginSamples.Create(typeof(OrderExecuted)));
+
+        AuditProbeHandler.Handled.Should().ContainSingle();
         await host.StopAsync();
     }
 
@@ -274,9 +378,10 @@ public class MessageOriginWiringTests
         act.Should().Throw<InvalidOperationException>();
     }
 
-    // 鍵を持つ（発行元か受け手の）サービス。監査・通知・前提条件は表の型を発行も確かめもしない。
+    // 鍵を持つ（発行元か受け手の）サービス。通知・前提条件は表の型を発行も確かめもしない。監査は公開の鍵だけを持つ。
     public static TheoryData<string> Services() =>
     [
+        "ai-stock-trading.audit-service",
         "ai-stock-trading.trade-decision-service",
         "ai-stock-trading.order-execution-service",
         "ai-stock-trading.market-monitor-service",
@@ -288,11 +393,21 @@ public class MessageOriginWiringTests
     ];
 
     [Theory]
-    [InlineData("ai-stock-trading.audit-service")]
     [InlineData("ai-stock-trading.notification-service")]
     [InlineData("ai-stock-trading.configuration-service")]
-    public void 表の型を発行も確かめもしないサービスは鍵が要らない(string serviceName) =>
-        MessageOriginWiringExtensions.RequiredKeys(MessageOriginCatalog.IssuerIdFor(serviceName)).Should().BeEmpty();
+    public void 表の型を発行も確かめもしないサービスは鍵が要らない(string serviceName)
+    {
+        var issuer = MessageOriginCatalog.IssuerIdFor(serviceName);
+        MessageOriginWiringExtensions.RequiresSigningKey(issuer).Should().BeFalse();
+        MessageOriginWiringExtensions.RequiredVerifyKeys(issuer).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void 監査は秘密の鍵を持たず表の発行元すべての公開の鍵だけを要る()
+    {
+        MessageOriginWiringExtensions.RequiresSigningKey("audit").Should().BeFalse();
+        MessageOriginWiringExtensions.RequiredVerifyKeys("audit").Should().BeEquivalentTo(MessageOriginCatalog.AllIssuers);
+    }
 }
 
 [CollectionDefinition(nameof(MessageOriginProbeCollection), DisableParallelization = true)]
@@ -312,4 +427,16 @@ public sealed class MessageOriginProbeHandler
     public void Handle(StopLossTriggered message) => HandledQueue.Enqueue(message);
 
     public void Handle(MessageOriginProbeOutside message) => HandledQueue.Enqueue(message);
+}
+
+// 試験用の監査の役（記録だけの受け手）。
+public sealed class AuditProbeHandler
+{
+    private static readonly ConcurrentQueue<object> HandledQueue = new();
+
+    public static IReadOnlyCollection<object> Handled => HandledQueue;
+
+    public static void Reset() => HandledQueue.Clear();
+
+    public void Handle(OrderExecuted message) => HandledQueue.Enqueue(message);
 }

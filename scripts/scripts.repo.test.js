@@ -83,6 +83,12 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     assert.strictEqual(r.status, 0, `${r.stdout || ''}${r.stderr || ''}`.slice(-3000));
   });
 
+  // --- NFR, FR-10, IADR-0633: メッセージの発行元の署名の鍵の組の生成（scripts/ast-message-origin-keygen.sh）の Bash 試験（基盤の口はスタブ） ---
+  ok('ast-message-origin-keygen.test.sh（鍵の組を作り、値を表示せずに入れる）が通る', () => {
+    const r = require('child_process').spawnSync('bash', ['scripts/ast-message-origin-keygen.test.sh'], { encoding: 'utf8', env: { ...process.env } });
+    assert.strictEqual(r.status, 0, `${r.stdout || ''}${r.stderr || ''}`.slice(-3000));
+  });
+
   // --- NFR, FR-10, #1530, IADR-0613: Discord を経ない停止（scripts/ast-trading-stop.sh）の Bash 試験 ---
   // 上と同じ理由で ci.yml の `run: bash` へは足さず、node の経路から起動する（kubectl はスタブ）。
   ok('ast-trading-stop.test.sh（Discord を経ない停止）が通る', () => {

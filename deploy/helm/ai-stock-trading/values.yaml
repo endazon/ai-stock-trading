@@ -81,27 +81,37 @@ global:
     secretName: ast-secrets
     secretKey: order-approval-signing-key
     services: [risk-management, order-execution]
-  # 🔴 NFR, FR-10, IADR-0627: 統制の入力になるメッセージ（判断・口座・建玉・損切り到達・取消要求など）の発行元の印（HMAC。発行元のサービスごとの鍵）。
-  #   発行元は自分の鍵で印を付け、受け手は「その型を発行してよいサービスか」と印の両方を確かめる（型の表はコードの MessageOriginCatalog）。
+  # 🔴 NFR, FR-10, IADR-0633（IADR-0627 を置き換える）: 統制の入力になるメッセージ（判断・口座・建玉・損切り到達・取消要求など）の発行元の署名
+  #   （ECDSA P-256。発行元は自分の秘密の鍵で署名し、受け手は確かめる発行元の公開の鍵だけを持つ。型の表はコードの MessageOriginCatalog）。
   #   mode: Report（段 1・既定）＝受け手は確かめて記録するだけで通す／Enforce（段 2）＝確かめられないメッセージを処理しない。
-  #   鍵は乱数（32 バイト以上・base64）を Secret（secretName）の「発行元の識別子」のキーに入れる。値は Git・values に置かない
-  #   （クラウドは OpenBao cloud/ast/ast-message-origin-keys を ESO で写す。作り方は基盤の seed-secrets.sh の gen。手順書 §5）。
-  #   services: サービス → そのサービスに渡す鍵（自分が発行元なら自分の鍵＋確かめる型の発行元の鍵）。最小にする（他の発行元の鍵を持たせない）。
-  #   🔴 コードの MessageOriginWiringExtensions.RequiredKeys と一致させる（MessageOriginChartTests が突き合わせる）。
+  #   鍵は Secret の「発行元の識別子」のキーに置く。値は Git・values に置かない。
+  #     signingSecretName: 秘密の鍵（PKCS#8 DER の base64）。signers のサービスへ、自分の分だけを env MessageOrigin__SigningKey で渡す。
+  #     verifySecretName: 公開の鍵（SubjectPublicKeyInfo DER の base64）。verifiers の受け手へ、確かめる発行元の分だけを
+  #       env MessageOrigin__VerifyKeys__<発行元>（- は _）で渡す。
+  #   （クラウドは OpenBao cloud/ast/ast-message-origin-{signing,verify}-keys を ESO で写す。作り方は scripts/ast-message-origin-keygen.sh。手順書 §5）。
+  #   🔴 コードの MessageOriginWiringExtensions.RequiresSigningKey / RequiredVerifyKeys と一致させる（MessageOriginChartTests が突き合わせる）。
+  #   audit は記録だけの受け手（拒まない。公開の鍵だけを持つ）。
   #   段 1 は鍵の Secret を optional で読む（無くても起動する）。段 2 は必須（無ければ Pod が起動しない。アプリも起動で止まる）。
-  #   段 2 へ上げるのは、段 1 で受け手のログに「発行元を確かめられませんでした」（EventId 16261）が出ないことを確かめた後。
+  #   legacyHmac: 旧い共有の鍵の HMAC の印（IADR-0627）を移行の間だけ併用する。段 1 でだけ有効にできる（段 2 と併用すると描画で止める）。
+  #     有効なら、旧い鍵の Secret（secretName）から各サービスへ旧い鍵（自分の分＋確かめる発行元の分）を optional で渡す。
+  #   段 2 へ上げるのは、段 1 で受け手のログに「発行元を確かめられませんでした」（EventId 16261。結果 legacy を含む）が出ないことを確かめた後。
   messageOrigin:
     mode: Report
-    secretName: ast-message-origin-keys
-    services:
-      trade-decision: [information-collection, market-monitor, trade-decision]
-      order-execution: [market-monitor, order-execution, risk-management]
-      market-monitor: [market-monitor, trade-decision]
+    signingSecretName: ast-message-origin-signing-keys
+    verifySecretName: ast-message-origin-verify-keys
+    signers: [backtest, information-collection, market-monitor, order-execution, report, risk-management, trade-decision]
+    verifiers:
+      trade-decision: [information-collection, market-monitor]
+      order-execution: [market-monitor, risk-management]
+      market-monitor: [trade-decision]
       risk-management: [backtest, information-collection, order-execution, risk-management, trade-decision]
-      information-collection: [information-collection]
-      backtest: [backtest]
-      report: [report]
       cost-control: [report, trade-decision]
+      audit: [backtest, information-collection, market-monitor, order-execution, report, risk-management, trade-decision]
+    legacyHmac:
+      enabled: false
+      secretName: ast-message-origin-keys
+      # 旧い鍵を渡さないサービス（記録だけの受け手。旧い方式では鍵を持たなかった）。
+      skipServices: [audit]
   db:
     host: postgres
     port: 5432
@@ -422,11 +432,16 @@ externalSecrets:
     enabled: false
     targetName: ast-owner-totp
     remoteKey: ""
-  # 🔴 NFR, FR-10, IADR-0627: メッセージの発行元の鍵（キー＝発行元の識別子。global.messageOrigin.services に現れる識別子をすべて写す）。
-  #   既定 disabled（連結ローカルは段 1 で鍵なし）。targetName は global.messageOrigin.secretName と同じにする。
-  messageOriginKeys:
+  # 🔴 NFR, FR-10, IADR-0633: メッセージの発行元の鍵（キー＝発行元の識別子）。秘密の鍵（signers の分）と公開の鍵（verifiers に現れる分）を
+  #   別々の Secret へ写す。既定 disabled（連結ローカルは段 1 で鍵なし）。targetName は global.messageOrigin の
+  #   signingSecretName / verifySecretName と同じにする。
+  messageOriginSigningKeys:
     enabled: false
-    targetName: ast-message-origin-keys
+    targetName: ast-message-origin-signing-keys
+    remoteKey: ""
+  messageOriginVerifyKeys:
+    enabled: false
+    targetName: ast-message-origin-verify-keys
     remoteKey: ""
   # NFR-18, NFR-05, #1560, IADR-0623: 基盤の CA の証明書（公開してよい）。targetName は global.infraCa.secretName と同じにする。
   infraCa:
