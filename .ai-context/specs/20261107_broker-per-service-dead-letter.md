@@ -68,7 +68,12 @@ plan_refs:
 
 - 単体: 修正ありで `PerServiceDeadLetterQueueTests` 17 件が緑。`CustomizeDeadLetterQueueing` の 1 行を消すと、全 11 サービスの理論の試験が赤（11 件）。
 - 実ブローカ（手元の docker・Testcontainers の RabbitMQ 3.13）: `BrokerPerServiceDeadLetterE2ETests` と `BrokerSubscriberLeastPrivilegeE2ETests` の
-  5 件が緑（1 分 53 秒）。修正を外すと、権限から共有を外した購読側は起動できず赤になった。
+  5 件が緑（1 分 53 秒）。`CustomizeDeadLetterQueueing` の 1 行を外すと、購読側を起動する 3 件が赤（`ACCESS_REFUSED - configure access to exchange
+  'wolverine-dead-letter-queue'`）、権限の形だけを見る 2 件（共有の名前を宣言できない・購読の exchange を宣言し直せない）は緑のまま（コードに依らない）。
+- 全体: `dotnet build backend/backend.slnx`（警告 0・エラー 0）、`dotnet test backend/backend.slnx --filter "Category!=Integration"`（全緑）、
+  `dotnet format --verify-no-changes`（差分なし）、helm v4.2.1 の lint・既定／values-local／values-cloud の描画・`helm-pod-security`・`helm-network-policy` が緑。
+- `REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js` は 1 件だけ赤（`過去の索引追随漏れ 2 件を検出できる`）。develop の素の写しでも同じ
+  （`COMMIT_RANGE=270a7c1^..270a7c1 node scripts/check-adr-index-sync.js` が手元で exit 0）。本変更に依らない手元の環境の差で、本変更では直さない。
 
 ## 6. 稼働中への影響と適用の順序
 
