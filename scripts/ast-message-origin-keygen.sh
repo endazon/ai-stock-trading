@@ -23,7 +23,8 @@
 #    受け手の窓（既定 1445 分＝24 時間＋先にあってよい 5 分）の中で同じ発行元をもう一度 --rotate すると、何も変えずに 8 で止まる
 #    （最初の前の鍵を上書きすると、その鍵で署名済みの未処理のメッセージが段 2 で処理されない）。
 #    意図して越えるときだけ --force-within-window（警告を出して続ける）。
-# 🔴 秘密の鍵だけ入って公開の鍵が入らなかったときは 1 で止まる（組が食い違ったまま）。その発行元を --rotate で作り直す。
+# 🔴 秘密の鍵だけ入って公開の鍵が入らなかったときは 1 で止まる（組が食い違ったまま）。その発行元を --rotate <発行元> --no-previous で作り直す
+#    （公開の鍵が一度も入っていない発行元では前の公開の鍵が読めないため、--no-previous なしの --rotate は 1 で止まる）。
 #
 # 終了コード: 0＝すべて入れた / 1＝失敗 / 2＝引数の誤り / 3＝--live が無い / 5＝既に在る発行元を飛ばした（--rotate なし。その分は何も変えない）
 #             6＝AST_PUT_EXTERNAL_SECRET が無い / 7＝openssl が無い / 8＝窓の中の再 --rotate（何も変えていない）
@@ -139,7 +140,7 @@ for issuer in "${issuers[@]}"; do
   unset public
   if [ "$rc" -ne 0 ]; then
     echo "ERROR: $issuer の秘密の鍵は書きましたが、公開の鍵を書けませんでした（終了コード $rc）。組が食い違っています。" >&2
-    echo "       bash scripts/ast-message-origin-keygen.sh --live --rotate $issuer で組ごと作り直してください。" >&2
+    echo "       bash scripts/ast-message-origin-keygen.sh --live --rotate $issuer --no-previous で組ごと作り直してください。" >&2
     exit 1
   fi
   # 🔴 前の鍵を置いた時刻を、秘密の鍵と公開の鍵の書き込みが両方とも成功した後にだけ記録する（値ではない）。

@@ -4,7 +4,8 @@
 #   - 7 つの発行元ごとに、秘密の鍵（PKCS#8・P-256）と公開の鍵（SPKI）が別のパスの同じキーへ入り、組が合う
 #   - 鍵の値は基盤の口の標準入力にだけ渡り、引数・標準出力・標準エラーに出ない
 #   - 既に在れば作り直さず 5（値は変わらない）。--rotate は --overwrite を渡して作り直す
-#   - 公開の鍵を書けなければ 1 で止まり、--rotate での作り直しを案内する
+#   - 公開の鍵を書けなければ 1 で止まり、--rotate <発行元> --no-previous での作り直しを案内する。
+#     初回の投入で公開の鍵が一度も書けなかった発行元も、案内どおりのコマンドで組が合う形へ戻る
 #   - --rotate は、いまの公開の鍵（kubectl はスタブ）を前の鍵のパスへ残してから作り直す。読めなければ何も変えずに 1。
 #     --no-previous は前の鍵を残さない（--rotate なしでは 2）
 #   - 窓の中の同じ発行元の再 --rotate は、何も変えずに 8（置いた時刻は ConfigMap のスタブ）。--force-within-window は警告して続ける。窓の外は通る
@@ -109,7 +110,25 @@ rc="$(run --live --no-previous report)"
 
 touch "$STATE/fail-verify"
 rc="$(run --live --rotate backtest)"
-[ "$rc" = 1 ] && grep -q -- '--rotate backtest' "$STATE/err" && ok "公開の鍵を書けなければ 1 で作り直しを案内する" || ng "公開の鍵の失敗: rc=$rc"
+[ "$rc" = 1 ] && grep -q -- '--live --rotate backtest --no-previous' "$STATE/err" && ok "公開の鍵を書けなければ 1 で作り直しを案内する" || ng "公開の鍵の失敗: rc=$rc"
+
+# 初回の投入で公開の鍵が一度も書けなかった発行元（前の公開の鍵が無い）。案内どおりのコマンドで復旧できる。
+rm -f "$STATE"/store/*__information-collection "$STATE/cm/information-collection"
+rc="$(run --live information-collection)"
+guide="$(sed -n 's/^ *bash scripts\/ast-message-origin-keygen.sh \(.*\) で組ごと作り直してください。$/\1/p' "$STATE/err")"
+[ "$rc" = 1 ] && [ -n "$(store signing information-collection)" ] && [ -z "$(store verify information-collection)" ] \
+  && [ "$guide" = "--live --rotate information-collection --no-previous" ] \
+  && ok "初回に公開の鍵を書けなければ 1 で --no-previous 付きの作り直しを案内する" || ng "初回の公開の鍵の失敗: rc=$rc guide=$guide"
+rm -f "$STATE/fail-verify"
+rc="$(run --live --rotate information-collection)"
+[ "$rc" = 1 ] && ok "公開の鍵が一度も入っていない発行元は --no-previous なしの --rotate では 1" || ng "前の鍵なしの --rotate: rc=$rc"
+# shellcheck disable=SC2086
+rc="$(run $guide)"
+priv="$(store signing information-collection)"; pub="$(store verify information-collection)"
+derived="$(printf '%s' "$priv" | base64 -d | openssl pkey -inform DER -pubout -outform DER 2>/dev/null | base64 | tr -d '\n')"
+[ "$rc" = 0 ] && [ -n "$pub" ] && [ "$derived" = "$pub" ] && [ -z "$(store previous-verify information-collection)" ] \
+  && ok "案内どおりのコマンドで組が合う形へ戻る" || ng "案内どおりの復旧: rc=$rc $(cat "$STATE/err")"
+touch "$STATE/fail-verify"
 
 rm -f "$STATE/fail-verify"
 # 書き込みが失敗した --rotate は置いた時刻を記録しない（再実行が窓に止められない）。
