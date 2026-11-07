@@ -4,7 +4,7 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-10-04
-updated: 2026-10-30
+updated: 2026-11-07
 ---
 <!-- trace:
 ids: [NFR]
@@ -118,7 +118,7 @@ CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps ev
 
 ### 0. 系列名と前提を確かめる（適用の前）
 
-1. **NetworkPolicy が無いことを確かめる。** チャートは NetworkPolicy を描かない。名前空間に（チャートの外で）入れられたものが在ると、8081 を塞ぎ得る:
+1. **NetworkPolicy が無いことを確かめる。** チャートは（既定・経路 B では）サービスの NetworkPolicy を描かない（描くのはクラウドのプロファイルだけ）。名前空間に（チャートの外で）入れられたものが在ると、8081 を塞ぎ得る:
 
    ```bash
    kubectl -n ai-stock-trading get networkpolicy
