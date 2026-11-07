@@ -51,6 +51,11 @@ updated: 2026-11-07
 
 先に試験（`scripts/scripts.repo.test.js`）だけを develop `7d485f688` の作業ツリーへ当て、`REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js` で新しい試験 23 件が赤になることを確かめてから実装を入れた。もう 1 件の赤（`過去の索引追随漏れ 2 件を検出できる`）は本作業と無関係で、develop に無いコミットが手元のクローンにだけ残っているため走った（develop だけを持つクローンでは CI と同じく skip の扱い）。
 
+［2026-11-07 追記 / AI レビューの指摘への対応］
+
+- `pr-trust-gate.js` の `changedFiles()` は、`git cat-file -e <sha>^{commit}` で両 SHA が手元にあるかを確かめ、無いときだけ `--depth` を付けずに fetch する（従来は `--depth=1` の fetch を無条件に呼んでいた。checkout は `fetch-depth: 0` であり、浅い fetch は手元の履歴を浅くして、この diff と後続の step の merge base の解決を壊し得る）。差分が取れなければ従来どおり null（信頼できる作成者なら run に倒れる）。自己試験を 1 件足した（使い捨てのリポジトリで、両 SHA があれば fetch を呼ばず `.git/shallow` が作られず差分が取れること、無い SHA では `--depth` なしの fetch を試みて null になること）。自己試験は 9 件。
+- `backlog-audit.js` の `renderReport` は、blocked の台帳にも `SECTION_LIMIT` を当て、超えた件数を「ほか N 件」と書く（台帳だけが上限の対象外だった）。自己試験を 1 件足し、15 件になった（受け入れ基準 8 の「14 件」は当時の値）。
+
 ## 再開の手順（利用者）
 
 `backlog-audit.yml` の冒頭の注記に書いた（develop に入ったことを確かめ、ワークフローを有効にし、手動実行で追跡 issue と Summary を確かめる）。

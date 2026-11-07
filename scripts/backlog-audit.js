@@ -303,7 +303,9 @@ function renderReport({ repoFindings, gh, ghError, runId, date, staleDays = DEFA
     lines.push(
       ...section(`blocked 系ラベルの open issue のうち再検証が要るもの（期限が過ぎた・期限が無く最後のコメントから ${staleDays} 日超）`, gh.staleBlocked, renderBlocked),
       `（blocked 系ラベルの open issue は全部で ${gh.blocked.length} 件 / open issue ${gh.openIssues} 件。台帳として全件を並べる）`, '',
-      ...gh.blocked.map((b) => `- ${renderBlocked(b)}`), ...(gh.blocked.length ? [''] : []),
+      ...gh.blocked.slice(0, SECTION_LIMIT).map((b) => `- ${renderBlocked(b)}`),
+      ...(gh.blocked.length > SECTION_LIMIT ? [`- …ほか ${gh.blocked.length - SECTION_LIMIT} 件（\`node scripts/backlog-audit.js\` を手元で実行すると全件を出す）`] : []),
+      ...(gh.blocked.length ? [''] : []),
     );
     if (gh.blockedNotInDoc) {
       lines.push(...section('blocked 系ラベルが付いているのに `docs/blocked-tasks.md` に番号が無い issue', gh.blockedNotInDoc, (b) => `#${b.number} ${safeText(b.title)}（${b.labels.join(' / ')}）`));
@@ -510,6 +512,12 @@ async function selfTest() {
   await ok('section: 上限を超えたら残りの件数を書く（件数の見出しは全数）', () => {
     const r = section('x', Array.from({ length: SECTION_LIMIT + 3 }, (_, i) => i), (i) => `n${i}`).join('\n');
     assert.ok(r.includes(`（${SECTION_LIMIT + 3} 件）`)); assert.ok(r.includes('…ほか 3 件'));
+  });
+  await ok('renderReport: blocked の台帳にも 1 節の上限を当て、超えた件数を書く', () => {
+    const blocked = Array.from({ length: SECTION_LIMIT + 2 }, (_, i) => ({ number: 1000 + i, title: `b${i}`, labels: ['blocked:env'], deadline: null, overdue: false, ageDays: 1 }));
+    const r = renderReport({ repoFindings, gh: { ...emptyGh, blocked }, runId: 'b1', date: 'd' });
+    assert.ok(r.includes(`全部で ${SECTION_LIMIT + 2} 件`)); assert.ok(r.includes('…ほか 2 件'), r);
+    assert.ok(r.includes(`#${1000 + SECTION_LIMIT - 1} `)); assert.ok(!r.includes(`#${1000 + SECTION_LIMIT} `));
   });
   await ok('collectGithubFindings: token が無ければ null', async () => {
     assert.strictEqual(await collectGithubFindings({ repo: null, token: null }), null);

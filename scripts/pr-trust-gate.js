@@ -54,12 +54,21 @@ function decide({ eventName, repository, headRepo, headRef, author, association,
   return { decision: 'refuse', reason: `作成者 ${login || '不明'}（${association || '不明'}）は AI レビューの自動起動の対象外` };
 }
 
-/** base...head の変更ファイル（取れなければ null）。SHA は形を確かめてから引数の配列で渡す。 */
-function changedFiles(baseSha, headSha) {
+/**
+ * base...head の変更ファイル（取れなければ null）。SHA は形を確かめてから引数の配列で渡す。
+ * 両 SHA が手元にあれば fetch しない。無いときだけ `--depth` を付けずに fetch する —— checkout は
+ * `fetch-depth: 0` であり、浅い fetch は手元の履歴を浅くして、この diff と後続の step の merge base 解決を壊し得る。
+ * 差分が取れなければ null（信頼できる作成者なら run に倒れる。安全側）。
+ * `opts.cwd` / `opts.runGit` は自己試験用（既定はカレントディレクトリの git）。
+ */
+function changedFiles(baseSha, headSha, opts = {}) {
   if (!SHA_RE.test(String(baseSha)) || !SHA_RE.test(String(headSha))) return null;
-  const run = (args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  const run = opts.runGit || ((args) => execFileSync('git', args, { cwd: opts.cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
+  const has = (sha) => { try { run(['cat-file', '-e', `${sha}^{commit}`]); return true; } catch { return false; } };
   try {
-    try { run(['fetch', '--no-tags', '--depth=1', 'origin', baseSha, headSha]); } catch { /* 取得済みなら不要 */ }
+    if (!has(baseSha) || !has(headSha)) {
+      try { run(['fetch', '--no-tags', 'origin', baseSha, headSha]); } catch { /* 取れなければ下の diff が失敗して null */ }
+    }
     return run(['diff', '--name-only', `${baseSha}...${headSha}`]).split('\n').map((s) => s.trim()).filter(Boolean);
   } catch {
     return null;
@@ -98,6 +107,33 @@ function selfTest() {
   ok('changedFiles: SHA の形でない値は git へ渡さない', () => {
     assert.strictEqual(changedFiles('HEAD;touch x', 'a'.repeat(40)), null);
     assert.strictEqual(changedFiles('a'.repeat(40), '$(id)'), null);
+  });
+  ok('changedFiles: 両 SHA が手元にあれば fetch せず（履歴を浅くしない）、差分を返す', () => {
+    const os = require('os');
+    const path = require('path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pr-trust-gate-'));
+    try {
+      const git = (args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      git(['init', '-q']);
+      git(['config', 'user.email', 't@example.invalid']); git(['config', 'user.name', 't']); git(['config', 'commit.gpgsign', 'false']);
+      fs.writeFileSync(path.join(dir, 'a.txt'), '1\n'); git(['add', '.']); git(['commit', '-q', '-m', 'base']);
+      const baseSha = git(['rev-parse', 'HEAD']).trim();
+      fs.mkdirSync(path.join(dir, 'docs', 'api'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'docs', 'api', 'openapi.yaml'), 'x\n'); git(['add', '.']); git(['commit', '-q', '-m', 'head']);
+      const headSha = git(['rev-parse', 'HEAD']).trim();
+      const calls = [];
+      const files = changedFiles(baseSha, headSha, { runGit: (args) => { calls.push(args[0]); return git(args); } });
+      assert.deepStrictEqual(files, ['docs/api/openapi.yaml']);
+      assert.ok(!calls.includes('fetch'), `fetch を呼んだ: ${calls.join(',')}`);
+      assert.ok(!fs.existsSync(path.join(dir, '.git', 'shallow')), '.git/shallow が作られた');
+      // 手元に無い SHA（origin も無い）は fetch を試み、差分が取れず null。
+      const calls2 = [];
+      assert.strictEqual(changedFiles(baseSha, 'b'.repeat(40), { runGit: (args) => { calls2.push(args.join(' ')); return git(args); } }), null);
+      const fetchCall = calls2.find((c) => c.startsWith('fetch'));
+      assert.ok(fetchCall && !fetchCall.includes('--depth'), `fetch の形: ${fetchCall}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
   console.log(`[pr-trust-gate] 自己試験 ${n} 件 OK。`);
 }
