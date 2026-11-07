@@ -21,6 +21,9 @@ plan_refs:
 ## 起点・関連
 
 - 非機能 **NFR-18**（ブローカの最小権限。IADR-0628 と同じ起点）。
+  - 注記（起点 ID のずれ）: 本リポの計画で NFR-18 は「ログ・監査記録の完全性」であり、ブローカの最小権限そのものではない。
+    IADR-0628 以来の一連と同じ ID に揃えたが、計画の NFR-01..19 にブローカの最小権限に当たる番号は無い
+    （近いのは NFR-05〔認証情報の保管〕・NFR-06〔発注機能へのアクセス〕で、いずれも別の主題）。件名は一連に合わせて変えない。
 - 前提: IADR-0129 決定 5（受信キューのデッドレターは `<queue>_error`）、IADR-0628（クラウドの購読側は購読の exchange を受動で宣言する）。
 - 基盤の受け手: MSP:IADR-0699（ブローカの権限の生成器から共有のデッドレターを外す）。基盤の権限の生成は MSP:IADR-0681・MSP:IADR-0694。
 - 作業仕様書: `.ai-context/specs/20261107_broker-per-service-dead-letter.md`。手順書: `docs/operations/broker-per-service-dead-letter-runbook.md`。
