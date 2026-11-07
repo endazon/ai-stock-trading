@@ -15,9 +15,9 @@ plan_refs:
 ## 起点
 
 - 所有者の裁定（2026-11-07）: 「OpenBao も TLS にする」。基盤の OpenBao の受け口を TLS にし、ESO は受け口の CA で検証する。
-- 基盤の側は MSP のブランチ `fix/NFR-cloud-openbao-tls`（MSP:IADR-0696）。受け口は TLS の 8443 だけ。CA の証明書（公開してよい）は、基盤の `tls-cert.sh` が
+- 基盤の側は MSP#2495（ブランチ `fix/NFR-cloud-openbao-tls`・MSP:IADR-0696）。受け口は TLS の 8443 だけ。CA の証明書（公開してよい）は、基盤の `tls-cert.sh` が
   この名前空間に ConfigMap `openbao-ca`（キー `ca.crt`）として置く。基盤の手順書 `docs/operations/cloud-openbao-tls-runbook.md` の段 3 にあたる。
-- 本 PR は **基盤の PR の後に当てる**前提である（基盤の併存の段〔平文と TLS の両方を受ける〕の後に、このストアを https にする）。
+- 本 PR は **MSP#2495 の後に当てる**前提である（基盤の併存の段〔平文と TLS の両方を受ける〕の後に、このストアを https にする）。
 - 非機能の番号: 計画の非機能要件表に通信の暗号化の番号は無い。起点は裸の `NFR` とし、秘密の保管の `NFR-05` を併記する（ESO が写す値の全部が流れる通信）。
 - 決定は [IADR-0631](../adr/IADR-0631_cloud-openbao-store-tls.md)。
 
