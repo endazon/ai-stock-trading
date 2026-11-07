@@ -334,6 +334,15 @@ spec:
             - name: SSL_CERT_DIR
               value: "/etc/ssl/certs:/etc/platform-infra-ca"
             {{- end }}
+            {{- /* NFR-18, IADR-0628: 購読する exchange の宣言の仕方（UseAiStockTradingRabbitMq が読む）。Passive のときだけ描く（既定・ローカルの描画は変えない）。 */}}
+            {{- $subEx := $mq.subscribedExchanges | default "Declare" }}
+            {{- if not (has $subEx (list "Declare" "Passive")) }}
+            {{- fail (printf "global.rabbitmq.subscribedExchanges は Declare か Passive です（値: %v）。" $subEx) }}
+            {{- end }}
+            {{- if eq $subEx "Passive" }}
+            - name: WOLVERINE_SUBSCRIBED_EXCHANGES
+              value: "Passive"
+            {{- end }}
             {{- if $infraCaMount }}
             {{- /* NFR, NFR-18, #1535, IADR-0621 決定5: LLM ゲートウェイの HttpClient（llm・report-llm）が信頼する基盤の CA の場所。 */}}
             - name: PlatformInfraCa__CertificatePath
