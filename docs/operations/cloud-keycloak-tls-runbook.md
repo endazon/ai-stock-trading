@@ -9,7 +9,7 @@ updated: 2026-11-07
 <!-- trace:
 ids: [NFR, NFR-05]
 adrs: [ADR-0006, ADR-0080]
-iadrs: [IADR-0629, IADR-0621, IADR-0623, IADR-0612, MSP:IADR-0693]
+iadrs: [IADR-0639, IADR-0629, IADR-0621, IADR-0623, IADR-0612, MSP:IADR-0693]
 specs: [20261107_cloud-keycloak-tls]
 issues: [MSP#2492]
 -->
@@ -32,8 +32,8 @@ issues: [MSP#2492]
 | Authority（`global.authAuthority`） | `http://keycloak:8080/realms/platform` | `https://keycloak:8443/realms/platform` |
 | トークンの取得先 | Authority から導く（http） | Authority から導く `https://keycloak:8443/realms/platform/protocol/openid-connect/token`（`ServiceAuth__TokenEndpoint`・Discord の `Notifications__Discord__OwnerAuth__TokenEndpoint`・LLM ゲートウェイの `LlmGateway__Auth__Authority`。values にリテラルを書かない） |
 | メタデータの取得 | 平文を許す | `Auth__RequireHttpsMetadata=true`。**https でない Authority では認証を持つサービスが起動で止まる** |
-| サーバ証明書の検証 | なし | 基盤の CA（Secret `platform-infra-ca`。ESO が `cloud/shared/platform-infra-ca` から写す既存の写し）を `/etc/platform-infra-ca` へマウントし、`SSL_CERT_DIR=/etc/ssl/certs:/etc/platform-infra-ca`（既定のストアを先に残す） |
-| CA を持つ Pod | DB・ブローカの TLS を使う Pod | **Keycloak を呼ぶ 11 個の Worker すべて**（DB・ブローカを使わない Pod も。CA のマウントと `SSL_CERT_DIR` は 1 つだけ） |
+| サーバ証明書の検証 | なし | 基盤の CA（Secret `platform-infra-ca`。ESO が `cloud/shared/platform-infra-ca` から写す既存の写し）を `/etc/platform-infra-ca` へマウントし、場所を `PlatformInfraCa__CertificatePath` で渡す。メタデータ・鍵とトークンの取得の HttpClient だけがこの CA で検証する（システムの信頼ストアへは足さない。外部 API の TLS は公開の CA だけ） |
+| CA を持つ Pod | DB・ブローカの TLS を使う Pod | **Keycloak を呼ぶ 11 個の Worker すべて**（DB・ブローカを使わない Pod も。CA のマウントは 1 つだけ。`SSL_CERT_DIR` は描かない） |
 
 - 切り替えは `global.authTls.enabled`（既定 `false`）。`values-cloud.yaml` だけが `true` にする。既定（`values.yaml`）と経路 B（`values-local.yaml`）の描画は変わらない（バイト等価。CI の helm.yml が固定する）。
 - `global.authTls.enabled=true` で Authority が `https://` でない・CA の設定（`global.infraCa`）が無いときは、描画で止まる（黙って平文へ戻らない）。
@@ -71,7 +71,7 @@ issues: [MSP#2492]
    - `kubectl -n ai-stock-trading get deploy` の 11 サービスが Ready（https でない Authority なら起動で止まる）。
    - Pod の env に平文の Keycloak の URL が残っていない:
      `kubectl -n ai-stock-trading get deploy -o yaml | grep -c 'http://keycloak:8080'` が、`Auth__ValidIssuers` の 8 行だけ（値の中の旧の発行元）。
-   - 各サービスのログに、メタデータの取得の失敗（`IDX20803`）・トークンの取得の失敗が出ない。出たら CA のマウント・`SSL_CERT_DIR`・基盤の NetworkPolicy の 8443 を確かめる。
+   - 各サービスのログに、メタデータの取得の失敗（`IDX20803`）・トークンの取得の失敗が出ない。出たら CA のマウント・`PlatformInfraCa__CertificatePath`・基盤の NetworkPolicy の 8443 を確かめる。直らないときの切り戻しは `global.infraCa.addToSystemTrust=true`（基盤の CA をシステムの信頼ストアへも足す。外部 API でも基盤の CA を信頼するので、原因を直したら戻す）。
    - 取引の判断・報告書・Discord の操作が 401 にならない。
 3. 基盤の段 5（平文を閉じる）へ渡す。
 
@@ -93,7 +93,8 @@ issues: [MSP#2492]
 
 - Keycloak を呼ぶ Worker（Authority・トークンの取得先を持つもの）を足したら、**基盤（MSP）へその一覧に足すよう依頼する**。足さなければ、そのサービスの起動・呼び出しが落ちる。
 - 取引ユニットの CI（helm.yml の「Assert values-cloud authorization server TLS」）は、CA を持つ Worker の集合を同じ 11 個の一覧と比べる。足すとこの検査が赤になるので、一覧を直すときに基盤への依頼も出す。
-- 新しい Worker は chart の `services` に足せば CA のマウントと `SSL_CERT_DIR` が付く（個別の設定は要らない）。
+- 新しい Worker は chart の `services` に足せば CA のマウントと `PlatformInfraCa__CertificatePath` が付く（個別の設定は要らない）。
+- 認可サーバー・LLM ゲートウェイなど基盤の宛先へ **HttpClient を新しく足すときは `.TrustPlatformInfraCa()` を付ける**（`SSL_CERT_DIR` は既定で描かないので、付けないと TLS で落ちる）。切り戻しは `global.infraCa.addToSystemTrust=true`。
 
 ## 証明書の更新
 

@@ -1,4 +1,4 @@
-using AiStockTrading.Shared.Infrastructure.Composable.Http;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Tls;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Infrastructure.ExternalServices;
 using TradeDecisionService.Features.TradeDecision;
@@ -613,7 +613,7 @@ builder.Services.AddSingleton(MinimumEntryNotionalOptionsLoader.FromConfiguratio
 
 // 🔴 NFR-13, FR-02, UC-02, #1423 M-5, ADR-0074 決定1・2, IADR-0582: 月次 LLM 費用上限の 100% 到達（Halted）の照会口。
 // 情報収集と同じ GET /costs/state（OwnerOrService・trading-service の s2s）。CostControl:BaseUrl 未設定/不正 URI は NoOp
-// （常に停止していない＝従来どおり）。判断のたびに 1 回照会する（短いタイムアウト。失敗は停止していない側へ倒す）。
+// （常に停止していない＝従来どおり）。判断のたびに 1 回照会する（短いタイムアウト。失敗の扱いは下の段。IADR-0639）。
 builder.Services.AddHttpClient("cost", c => c.Timeout = TimeSpan.FromSeconds(3))
     .AddAiStockTradingServiceToken(builder.Configuration);
 // NFR, MSP:ADR-0029, IADR-0284 決定 5（段 5 の追補 3）, IADR-0604, #1510 (#753): east-west gRPC（`CostStateRead/GetCostState`）。
@@ -621,18 +621,46 @@ builder.Services.AddHttpClient("cost", c => c.Timeout = TimeSpan.FromSeconds(3))
 // gRPC 実装を選ぶ（CostControl:BaseUrl より優先）。不正な宛先は起動時に落とす。
 builder.Services.AddAiStockTradingCostControlGrpc(builder.Configuration);
 builder.Services.AddSingleton<NoOpLlmCostHaltGate>();
+// 🔴 NFR-13, IADR-0639: 照会できないときの扱いの段（CostControl:HaltQuery:UnavailableMode。既定 Off＝従来どおり・クラウドは Enforce）と猶予。
+// 読めない値は起動で止める。Enforce なのに照会の宛先（CostControl:BaseUrl / CostControl:Grpc）が無ければ起動で止める（NoOp へ黙って倒さない）。
+var costHaltQuery = LlmCostHaltQueryOptions.FromConfiguration(builder.Configuration);
+if (costHaltQuery.Mode == LlmCostHaltUnavailableMode.Enforce
+    && !Uri.TryCreate(builder.Configuration["CostControl:BaseUrl"], UriKind.Absolute, out _)
+    && string.IsNullOrWhiteSpace(builder.Configuration[CostControlGrpcTransport.AddressKey]))
+{
+    throw new InvalidOperationException(
+        $"{LlmCostHaltQueryOptions.ModeKey}=Enforce には CostControl:BaseUrl（または {CostControlGrpcTransport.AddressKey}）が要ります（IADR-0639）。");
+}
+builder.Services.AddSingleton(costHaltQuery);
+builder.Services.AddSingleton<LlmCostHaltConfirmation>();
 builder.Services.AddScoped<ILlmCostHaltGate>(sp =>
 {
+    ILlmCostHaltGate inner;
     if (sp.GetService<CostControlGrpcTransport>() is { } costGrpc)
-        return new GrpcLlmCostHaltGate(costGrpc, sp.GetRequiredService<ILogger<GrpcLlmCostHaltGate>>());
+    {
+        inner = new GrpcLlmCostHaltGate(costGrpc, sp.GetRequiredService<ILogger<GrpcLlmCostHaltGate>>());
+    }
+    else
+    {
+        var baseUrl = sp.GetRequiredService<IConfiguration>()["CostControl:BaseUrl"];
+        if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+            return sp.GetRequiredService<NoOpLlmCostHaltGate>();
 
-    var baseUrl = sp.GetRequiredService<IConfiguration>()["CostControl:BaseUrl"];
-    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
-        return sp.GetRequiredService<NoOpLlmCostHaltGate>();
+        var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("cost");
+        http.BaseAddress = uri;
+        inner = new HttpLlmCostHaltGate(http, sp.GetRequiredService<ILogger<HttpLlmCostHaltGate>>());
+    }
 
-    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("cost");
-    http.BaseAddress = uri;
-    return new HttpLlmCostHaltGate(http, sp.GetRequiredService<ILogger<HttpLlmCostHaltGate>>());
+    var query = sp.GetRequiredService<LlmCostHaltQueryOptions>();
+    if (query.Mode == LlmCostHaltUnavailableMode.Off || inner is not ILlmCostHaltReader reader)
+        return inner;
+
+    return new FailClosedLlmCostHaltGate(
+        reader,
+        sp.GetRequiredService<LlmCostHaltConfirmation>(),
+        query,
+        sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<ILogger<FailClosedLlmCostHaltGate>>());
 });
 // 🔴 FR-04, FR-10, ADR-0003, #1529, IADR-0617: 現在値の供給が無い構成で、LLM の参照価格による新規建てを作らない（既定 false＝見送る）。
 // true は検証用の明示の opt-in（従前の挙動）。手仕舞いは止めない。

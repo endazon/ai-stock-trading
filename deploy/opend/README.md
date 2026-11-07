@@ -46,13 +46,19 @@ moomoo OpenAPI は **OpenD ゲートウェイの常駐が必須**（既定 `:111
 ## 手順
 
 ### 1) イメージをビルド（tar.gz は参照ディレクトリから自動取り込み）
+
+🔴 **配布物の sha256 は [`opend-tarball.sha256`](opend-tarball.sha256) の記録と照合する**（NFR, IADR-0639）。記録に無い版・値が合わない配布物では
+`scripts/opend-build.sh` も Dockerfile も止まる。新しい版を使うときは、`sha256sum` の 1 行を足す PR を先に出す（公式の値が示されていれば突き合わせる）。
+基底イメージ（`runtime-deps:8.0-jammy`）は digest で固定し、Dependabot が更新を提案する。
+
 ```bash
 # 既定: リポジトリ隣接の ../references/moomoo_OpenD_*.tar.gz を使う。別の場所なら引数か OPEND_TARBALL_PATH で指定。
 scripts/opend-build.sh
 #   もしくは: scripts/opend-build.sh /path/to/moomoo_OpenD_10.8.6818_Ubuntu18.04.tar.gz
-# 手動でビルドする場合は tar.gz を deploy/opend/ に置いてから:
+# 手動でビルドする場合は tar.gz を deploy/opend/ に置いてから（期待値は opend-tarball.sha256 の該当行）:
 #   docker build -t k3d-local/ai-stock-trading/opend:latest \
-#     --build-arg OPEND_TARBALL="moomoo_OpenD_10.8.6818_Ubuntu18.04.tar.gz" deploy/opend
+#     --build-arg OPEND_TARBALL="moomoo_OpenD_10.8.6818_Ubuntu18.04.tar.gz" \
+#     --build-arg OPEND_TARBALL_SHA256="<64 桁>" deploy/opend
 ```
 
 ### 2) 資格情報 Secret（実値はコミットしない）

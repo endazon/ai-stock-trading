@@ -12,7 +12,7 @@
  *        権限昇格なし・サイドカーはケーパビリティを全て落とす（OpenD 本体は落とさない）。
  *      - 段 2（Worker・CronJob だけ。OpenD は 1 / 3）: root のまま seccomp RuntimeDefault・権限昇格なし・ケーパビリティを全て落とす。
  *      - 段 3: 非 root（Worker 1654・CronJob 100:101・OpenD 10001）・fsGroup・全コンテナでケーパビリティを全て落とす・鍵の mount は 0440。
- *      プロファイルが段を宣言していれば（例: values-cloud.yaml）、宣言どおりの段の形かも見る。
+ *      プロファイルが段を宣言していれば（例: values-cloud.yaml）、宣言どおりの段の形（readOnlyRootFilesystem を含む）かも見る。
  *   2. 認証サイドカーの実行 uid は常に OpenD 本体と同じ（共有 emptyDir のファイルは umask 077・FIFO は 600）。
  *   3. readOnlyRootFilesystem（段 2 以上）: Worker と CronJob のコンテナのルートが読み取り専用で、/tmp が emptyDir。
  *   4. Namespace の Pod Security Admission: warn / audit は restricted、enforce は既定で描かず、選べば描き、メッシュの注入が有効なら描かない。
@@ -136,6 +136,7 @@ function declaredStages(profile) {
   let o = null;
   let seccomp = false;
   let dropAll = false;
+  let ro = null;
   for (const f of profile.files) {
     const t = read(`${CHART}/${f}`);
     const ws = readValue(t, 'podSecurity.stage');
@@ -146,6 +147,8 @@ function declaredStages(profile) {
     if (sc !== null && sc !== '') seccomp = sc === 'true';
     const da = readValue(t, 'opend.podSecurity.capabilities.dropAll');
     if (da !== null && da !== '') dropAll = da === 'true';
+    const r = readValue(t, 'podSecurity.readOnlyRootFilesystem');
+    if (r !== null && r !== '') ro = r === 'true';
   }
   const base = read(`${CHART}/values.yaml`);
   return {
@@ -153,6 +156,7 @@ function declaredStages(profile) {
     o: o ?? Number(readValue(base, 'opend.podSecurity.stage')),
     seccomp,
     dropAll,
+    ro: ro ?? readValue(base, 'podSecurity.readOnlyRootFilesystem') === 'true',
   };
 }
 
@@ -341,7 +345,8 @@ const opendStageFor = (st) => (st >= 3 ? 3 : 1);
 function stageArgs(w, o, ro = false) {
   const a = ['--set', `podSecurity.stage=${w}`, '--set', `opend.podSecurity.stage=${o}`];
   if (o >= 3) a.push(...OPEND_HOME_NONROOT);
-  if (ro) a.push('--set', 'podSecurity.readOnlyRootFilesystem=true');
+  // NFR, L-3: 段を上書きする描画では readOnlyRootFilesystem も明示する（プロファイルが true を宣言していても、段 1 の描画で止まらない）。
+  a.push('--set', `podSecurity.readOnlyRootFilesystem=${ro}`);
   return a;
 }
 
@@ -363,7 +368,7 @@ function main() {
     const declared = declaredStages(prof);
     ok(`${prof.label}: 宣言どおりの段（Worker ${declared.w} / OpenD ${declared.o}${declared.seccomp ? ' ＋ seccomp' : ''}）の形`, () => {
       const extra = declared.o >= 3 ? OPEND_HOME_NONROOT : [];
-      const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...extra]), declared);
+      const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...extra]), declared, declared.ro);
       assert.deepStrictEqual(v, []);
     });
     for (const st of [1, 2, 3]) {
@@ -385,6 +390,24 @@ function main() {
       assert.deepStrictEqual(v, []);
     });
   }
+
+  // 🔴 NFR, IADR-0609（2026-11-07 追記）: クラウドの Worker は稼働の前から段 3（非 root）と読み取り専用のルートで動かす
+  // （段 2 のまま root で稼働を始めない）。宣言を外すと、上の「宣言どおりの段の形」は緑のまま通るので、ここで値を固定する。
+  ok('values-cloud: Worker は段 3・readOnlyRootFilesystem・PSA の enforce は baseline（OpenD は段 1 のまま）', () => {
+    const cloud = profiles().find((p) => p.files.includes('values-cloud.yaml'));
+    assert.ok(cloud, 'values-cloud.yaml のプロファイルが見つからない');
+    const d = declaredStages(cloud);
+    assert.strictEqual(d.w, 3, `values-cloud の podSecurity.stage が 3 でない（${d.w}）`);
+    assert.strictEqual(d.ro, true, 'values-cloud の podSecurity.readOnlyRootFilesystem が true でない');
+    const t = read(`${CHART}/values-cloud.yaml`);
+    assert.strictEqual(readValue(t, 'podSecurity.admission.enforce'), 'baseline');
+    const ws = workloads(mustRender([...cloud.args])).filter((w) => role(w) === 'worker');
+    assert.ok(ws.length >= 10, `Worker が 10 本以上ない（${ws.length}）`);
+    for (const w of ws) {
+      assert.strictEqual(podSc(w).get('runAsNonRoot'), 'true', `${w.name}: runAsNonRoot が無い`);
+      assert.strictEqual(ctrSc(w, 0).get('readOnlyRootFilesystem'), 'true', `${w.name}: readOnlyRootFilesystem が無い`);
+    }
+  });
 
   process.stdout.write('helm-pod-security: 既定の描画\n');
   ok('既定: 段は Worker 1 / OpenD 1（報告だけ）・OpenD の seccomp は opt-in（false）', () => {
@@ -478,6 +501,49 @@ function main() {
     assert.strictEqual(users[users.length - 1].trim(), 'USER $APP_UID');
     const entry = lines.findIndex((l) => /^ENTRYPOINT\s/.test(l));
     assert.ok(lines.indexOf(users[users.length - 1]) < entry, 'USER が ENTRYPOINT より後にある');
+  });
+  // 🔴 NFR, IADR-0639: 稼働段にパッケージの導入（apt-get 等）と HTTP の取得の道具（curl / wget）を足さない。compose の healthcheck は bash の /dev/tcp。
+  ok('backend/Dockerfile: 稼働段に apt-get・curl・wget が無く、compose の healthcheck は curl を使わない', () => {
+    const lines = read('backend/Dockerfile').split('\n').filter((l) => !/^\s*#/.test(l));
+    const runtimeAt = lines.findIndex((l) => /^FROM\s.*\sAS runtime\s*$/.test(l));
+    assert.ok(runtimeAt > 0, '稼働段（AS runtime）が見つからない');
+    const bad = lines.slice(runtimeAt).filter((l) => /\b(apt-get|apt|apk|curl|wget)\b/.test(l));
+    assert.deepStrictEqual(bad, [], `稼働段に足してはならない行がある: ${bad.join(' / ')}`);
+    const compose = read('docker-compose.yml');
+    const hc = compose.match(/^\s+test:\s*(\[.*\/health\/ready.*\])\s*$/m);
+    assert.ok(hc, 'docker-compose.yml の Worker 共通の healthcheck（/health/ready）が見つからない');
+    assert.ok(!/\b(curl|wget)\b/.test(hc[1]), `healthcheck が curl / wget を使っている: ${hc[1]}`);
+    assert.ok(/\/dev\/tcp\/127\.0\.0\.1\/8080/.test(hc[1]), `healthcheck が bash の /dev/tcp で 8080 を読んでいない: ${hc[1]}`);
+  });
+  // 🔴 NFR, IADR-0639: OpenD のイメージの基底は digest で固定し、Dependabot が digest を更新する。配布物は記録の sha256 で照合する。
+  ok('deploy/opend: 基底イメージは digest つき・Dependabot の対象・配布物は展開の前に sha256 を照合する', () => {
+    const lines = read('deploy/opend/Dockerfile').split('\n').filter((l) => !/^\s*#/.test(l));
+    const froms = lines.filter((l) => /^FROM\s/.test(l));
+    assert.ok(froms.length >= 1, 'FROM が無い');
+    for (const f of froms) assert.ok(/@sha256:[0-9a-f]{64}(\s|$)/.test(f), `digest が無い: ${f}`);
+    const text = lines.join('\n');
+    const check = text.indexOf('sha256sum -c');
+    const untar = text.indexOf('tar -xzf');
+    assert.ok(/^ARG OPEND_TARBALL_SHA256\s*$/m.test(text), 'ARG OPEND_TARBALL_SHA256 が無い');
+    assert.ok(check >= 0 && untar > check, '展開（tar -xzf）の前に sha256sum -c が無い');
+    const dep = read('.github/dependabot.yml');
+    assert.ok(/package-ecosystem:\s*"docker"\s*\n\s*directory:\s*"\/deploy\/opend"/.test(dep), 'Dependabot の docker が /deploy/opend を見ていない');
+    const build = read('scripts/opend-build.sh');
+    assert.ok(/opend-tarball\.sha256/.test(build) && /OPEND_TARBALL_SHA256=\$EXPECTED/.test(build), 'opend-build.sh が記録の sha256 を照合して渡していない');
+  });
+  // 🔴 NFR, IADR-0639: 依存の既知の脆弱性の監査。high（NU1903）・critical（NU1904）は復元を失敗にする（推移的な依存も見る）。
+  ok('Directory.Build.props: NuGet Audit は all・high / critical を失敗にする（単独・submodule の両方に効く）', () => {
+    const t = read('Directory.Build.props');
+    // 条件つきの PropertyGroup（単独時だけの既定）に置くと submodule 配置で効かない。
+    const groups = [...t.matchAll(/<PropertyGroup(\s[^>]*)?>([\s\S]*?)<\/PropertyGroup>/g)];
+    const g = groups.find((m) => /<NuGetAuditMode>/.test(m[2]));
+    assert.ok(g, 'NuGetAuditMode を持つ PropertyGroup が無い');
+    assert.ok(!/Condition=/.test(g[1] ?? ''), '監査の PropertyGroup に条件が付いている（submodule 配置で効かない）');
+    assert.ok(/<NuGetAudit>true<\/NuGetAudit>/.test(g[2]), 'NuGetAudit が true でない');
+    assert.ok(/<NuGetAuditMode>all<\/NuGetAuditMode>/.test(g[2]), 'NuGetAuditMode が all でない');
+    const wae = (g[2].match(/<WarningsAsErrors>([^<]*)<\/WarningsAsErrors>/) ?? [])[1] ?? '';
+    for (const code of ['NU1903', 'NU1904']) assert.ok(wae.split(';').includes(code), `WarningsAsErrors に ${code} が無い`);
+    assert.ok(wae.startsWith('$(WarningsAsErrors)'), 'WarningsAsErrors が親の値を引き継いでいない');
   });
   ok('values.yaml: CronJob の uid:gid は 100:101（digest を固定した curl イメージの curl_user:curl_group）', () => {
     const base = read(`${CHART}/values.yaml`);

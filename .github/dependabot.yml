@@ -23,6 +23,13 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
 
+  # 🔴 NFR, IADR-0639: OpenD のイメージ（deploy/opend/Dockerfile）の基底イメージも digest で固定している。digest の更新を提案させる。
+  - package-ecosystem: "docker"
+    directory: "/deploy/opend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
   # NFR, IADR-0625: 使用スタックのエコシステムを有効化する（依存の更新とセキュリティ修正の取り込み）。
   # - nuget: ルートの Directory.Packages.props（Central Package Management）を単一情報源として更新する。
   # - npm:   frontend/（package-lock.json）を更新する。scripts/ と .claude/hooks/ の package.json は依存を持たない。

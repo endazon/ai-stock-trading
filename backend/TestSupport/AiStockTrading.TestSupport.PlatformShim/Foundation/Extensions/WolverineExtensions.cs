@@ -1,9 +1,11 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Tls;
 using JasperFx.CodeGeneration;
 using JasperFx.CodeGeneration.Model;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using RabbitMQ.Client;
 using Wolverine;
 using Wolverine.ErrorHandling;
 using Wolverine.RabbitMQ;
@@ -148,6 +150,23 @@ public static class WolverineExtensions
         throw new ArgumentException(
             $"{SubscribedExchangeDeclarationVariable} は Declare / Passive のいずれかでなければならない（実値: '{configured}'）。",
             nameof(configured));
+    }
+
+    /// <summary>
+    /// NFR, NFR-18, IADR-0639: 基盤の CA（PEM）の場所の環境変数（<see cref="PlatformInfraCaTrust.PathKey"/> の env の綴り。chart が
+    /// global.infraCa をマウントしたときに描く）。amqps のときだけ、ブローカの証明書をこの CA で検証する（システムの信頼ストアへは足さない）。
+    /// </summary>
+    public const string PlatformInfraCaPathVariable = "PlatformInfraCa__CertificatePath";
+
+    /// <summary>
+    /// NFR, NFR-18, IADR-0639: amqps の検証へ基盤の CA を足す。CA の場所が空なら何もしない（既定の検証＝システムの信頼ストア）。
+    /// 判定は <see cref="PlatformInfraCaTrust.Validate"/>（名前の不一致は常に拒む。受け入れてよい誤りは上で空にしてある）。
+    /// </summary>
+    internal static void ApplyPlatformInfraCaTrust(SslOption ssl, string? caPath)
+    {
+        ArgumentNullException.ThrowIfNull(ssl);
+        if (PlatformInfraCaTrust.CreateValidationCallback(caPath) is { } callback)
+            ssl.CertificateValidationCallback = callback;
     }
 
     /// <summary>
@@ -339,6 +358,7 @@ public static class WolverineExtensions
                 {
                     factory.Ssl.AcceptablePolicyErrors = System.Net.Security.SslPolicyErrors.None;
                     factory.Ssl.ServerName = uri.Host;
+                    ApplyPlatformInfraCaTrust(factory.Ssl, Environment.GetEnvironmentVariable(PlatformInfraCaPathVariable));
                 }
             })
             .AutoProvision()

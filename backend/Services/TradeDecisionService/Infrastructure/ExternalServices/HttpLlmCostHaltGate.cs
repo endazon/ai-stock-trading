@@ -8,19 +8,28 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 //
 // 情報収集の HttpCostControlGate（IADR-0031）と同じ口・同じ読み方（名前の大小を区別しない・真偽は true/false のみ）。
 // 停止しているのは **`isHalted` が明示的に true のときだけ**である。非 2xx・例外・タイムアウト・項目の欠落・不正な本文は
-// 「停止していない」へ倒す（判断は LLM を呼ぶ＝従来どおり）。費用の統制で資金の保護を止めない向きであり、IADR-0031 と同じ判断である。
+// 「読めない」（ReadHaltedAsync の null）。IsHaltedAsync（段 Off）はそれを「停止していない」へ倒す（IADR-0031 と同じ判断）。
+// 🔴 IADR-0639: 段 Report / Enforce では FailClosedLlmCostHaltGate が ReadHaltedAsync を包み、読めない時間が猶予を超えたら停止として扱う。
 // 認証は client_credentials サービストークン（trading-service。Program.cs の AddAiStockTradingServiceToken）。
-public sealed class HttpLlmCostHaltGate(HttpClient httpClient, ILogger<HttpLlmCostHaltGate> logger) : ILlmCostHaltGate
+public sealed class HttpLlmCostHaltGate(HttpClient httpClient, ILogger<HttpLlmCostHaltGate> logger) : ILlmCostHaltGate, ILlmCostHaltReader
 {
     public async Task<bool> IsHaltedAsync(CancellationToken cancellationToken = default)
+    {
+        if (await ReadHaltedAsync(cancellationToken).ConfigureAwait(false) is { } halted)
+            return halted;
+        logger.LogWarning("費用統制の停止を読めません。停止していないものとして判断を続けます（CostControl:HaltQuery:UnavailableMode=Off）。");
+        return false;
+    }
+
+    public async Task<bool?> ReadHaltedAsync(CancellationToken cancellationToken = default)
     {
         try
         {
             using var response = await httpClient.GetAsync("/costs/state", cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning("費用統制の照会に失敗（{Status}）。停止していないものとして判断を続けます。", (int)response.StatusCode);
-                return false;
+                logger.LogWarning("費用統制の照会に失敗（{Status}）。", (int)response.StatusCode);
+                return null;
             }
 
             await using var body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -46,18 +55,18 @@ public sealed class HttpLlmCostHaltGate(HttpClient httpClient, ILogger<HttpLlmCo
             if (halted is { } value)
                 return value;
 
-            logger.LogWarning("費用統制の応答に isHalted を読めません。停止していないものとして判断を続けます。");
-            return false;
+            logger.LogWarning("費用統制の応答に isHalted を読めません。");
+            return null;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            logger.LogWarning("費用統制の照会がタイムアウト。停止していないものとして判断を続けます。");
-            return false;
+            logger.LogWarning("費用統制の照会がタイムアウト。");
+            return null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "費用統制の照会で例外。停止していないものとして判断を続けます。");
-            return false;
+            logger.LogWarning(ex, "費用統制の照会で例外。");
+            return null;
         }
     }
 }

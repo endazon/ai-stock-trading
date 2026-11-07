@@ -1,0 +1,6 @@
+# NFR, IADR-0639: moomoo OpenD の配布物（tar.gz）の sha256 の記録。scripts/opend-build.sh がビルドの前に照合し、Dockerfile も展開の前に照合する。
+# 形: `sha256sum` の出力と同じ（<64 桁の小文字の 16 進>  <ファイル名>）。1 版 1 行。# で始まる行と空行は読まない。
+# 足し方（docs/operations/cloud-single-node-migration-runbook.md §3）:
+#   1. 公式の配布元から取得し、`sha256sum <ファイル>` を取る。公式が値を示していれば突き合わせ、合わなければ使わない。
+#   2. 1 行を足す PR を出す（レビューを経てから使う）。同じ版を取り直したら、同じ値であることを確かめる（値が変われば使わない）。
+# 行が無い版はビルドできない（fail-closed）。

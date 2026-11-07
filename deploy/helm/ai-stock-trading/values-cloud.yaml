@@ -107,7 +107,7 @@ global:
     secretName: platform-infra-ca
     caKey: ca.crt
 
-# OpenD（SIMULATE）。配布物の tar の sha256 を記録してからノードでイメージを作る（手順書）。
+# OpenD（SIMULATE）。配布物の tar の sha256 を deploy/opend/opend-tarball.sha256 の記録と照合してからノードでイメージを作る（手順書 §3。IADR-0639）。
 # 🔴 取引パスワードはクラスタに置かない（SIMULATE では解錠は要らない）。moomoo-credentials はログインの資格だけを持つ。
 opend:
   enabled: true
@@ -266,11 +266,15 @@ networkPolicy:
       llmGateway: true
       externalHttps: true
 
-# Pod のセキュリティの段（IADR-0609 の推奨の順）。段 2 で始め、起動と取引の 1 日を確かめてから段 3（非 root）へ上げる（手順書）。
-# 段 2: root のまま seccomp RuntimeDefault・権限昇格なし・ケーパビリティを全て落とす。PSA の enforce は baseline（段 2 と OpenD の
-# 段 1 が満たす）。restricted は段 3 と OpenD の段 3 が要るので、上げるときに一緒に替える。メッシュの注入は使わない（貼れる）。
+# Pod のセキュリティの段（IADR-0609）。🔴 NFR, IADR-0609（2026-11-07 追記）: Worker は**稼働の前から**段 3 で動かす（段 2 のまま root で始めない）。
+# 段 3: 非 root（aspnet の app＝1654）・seccomp RuntimeDefault・権限昇格なし・ケーパビリティを全て落とす・fsGroup（発注執行の鍵の mount は 0440）。
+# readOnlyRootFilesystem: コンテナのルートを読み取り専用にし、書く場所は /tmp の emptyDir（podSecurity.tmpSizeLimit）だけにする。
+#   Worker が書くのは /tmp（.NET の一時ファイル・診断の IPC）だけである（Stage 0 の記録の PVC はクラウドでは無効。/app は読むだけ）。
+# PSA の enforce は baseline のまま（OpenD は段 1。restricted は OpenD の段 3 も要る）。メッシュの注入は使わない（貼れる）。
+# 戻すときは stage: 2 と readOnlyRootFilesystem: false を一緒に戻して helm を再実行する（手順書 §9）。
 podSecurity:
-  stage: 2
+  stage: 3
+  readOnlyRootFilesystem: true
   admission:
     enforce: baseline
 
@@ -501,6 +505,10 @@ services:
       - { name: OrderExecution__BaseUrl, value: "http://order-execution-service:8080" }
       - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
       - { name: CostControl__BaseUrl, value: "http://cost-control-service:8080" }
+      # 🔴 NFR-13, IADR-0639: 月次 LLM 費用の停止を読めないときは、最後に読めた時から猶予（既定 900 秒）を過ぎたら停止として扱う
+      # （fail-closed。LLM を呼ぶ前に見送る。LLM を使わない保護は止まらない）。戻すときは Report（判断を止めず記録だけ）か Off（従来）。
+      - { name: CostControl__HaltQuery__UnavailableMode, value: "Enforce" }
+      - { name: CostControl__HaltQuery__GraceSeconds, value: "900" }
       # NFR-18, #1535, IADR-0621 決定 6: クラウドのゲートウェイはアプリで TLS（基盤の CA が発行。MSP の最小構成）。
       - { name: LlmGateway__BaseUrl, value: "https://llmgateway-service.microservices-platform:8080" }
       - { name: LlmGateway__Auth__Authority, value: "" }

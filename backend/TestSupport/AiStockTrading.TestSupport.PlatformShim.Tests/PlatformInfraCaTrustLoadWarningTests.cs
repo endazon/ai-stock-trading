@@ -1,11 +1,11 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using AiStockTrading.Shared.Infrastructure.Composable.Http;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Tls;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
-namespace AiStockTrading.Shared.Infrastructure.Tests;
+namespace AiStockTrading.TestSupport.PlatformShim.Tests;
 
 // NFR, NFR-18, #1535, IADR-0621 決定5: 基盤の CA が設定されているのに読めないとき、起動時に 1 回だけ Warning を出す
 // （パスと理由だけ。ファイルの中身・例外の文言は出さない）。拒否の側へ倒れる挙動は変えない（PlatformInfraCaTrustTests が固定する）。

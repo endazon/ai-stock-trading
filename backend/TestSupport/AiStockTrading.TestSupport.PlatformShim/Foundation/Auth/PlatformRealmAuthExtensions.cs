@@ -1,3 +1,4 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Tls;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -43,7 +44,9 @@ public static class PlatformRealmAuthExtensions
         if (!options.IsEnabled)
             return builder; // fail-safe: 資格情報/エンドポイント未整備ならトークンを付けない（現行挙動）。
 
-        builder.Services.AddHttpClient(tokenClientName, c => c.Timeout = TimeSpan.FromSeconds(10));
+        // 🔴 NFR, NFR-05, IADR-0639: トークンの取得先（認可サーバー）は基盤の CA で検証する（CA の場所が設定されているときだけ。外部 API には効かない）。
+        builder.Services.AddHttpClient(tokenClientName, c => c.Timeout = TimeSpan.FromSeconds(10))
+            .TrustPlatformInfraCa();
 
         // provider は DI へ公開せず、本ハンドラの内部に閉じ込める（他の名前付きクライアントへ漏れない）。
         return builder.AddHttpMessageHandler(sp => new ServiceTokenHandler(

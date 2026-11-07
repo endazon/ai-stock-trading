@@ -1,11 +1,13 @@
 using System.Security.Claims;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Tls;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 
@@ -47,7 +49,7 @@ public static class AuthExtensions
     // NFR, NFR-05, IADR-0629（基盤の MSP:IADR-0693 の受け手）: メタデータ・鍵（JWKS）の取得に HTTPS を求めるかの構成キー。
     // 未設定・false は従来どおり（クラスタの中の平文の認可サーバー）。true のとき Authority が https でなければ**登録の時点で例外**
     // （＝サービスの起動で止まる。JwtBearer 自身の拒否は最初の要求の時点であり、起動では止まらない）。サーバ証明書の検証は
-    // システムの信頼ストア（chart の global.authTls が SSL_CERT_DIR に基盤の CA を足す）が行う。
+    // メタデータと鍵の取得の HttpClient（Backchannel）だけが基盤の CA で行う（IADR-0639。PlatformInfraCaTrust。システムの信頼ストアへは足さない）。
     public const string RequireHttpsMetadataConfigKey = "Auth:RequireHttpsMetadata";
 
     // NFR, IADR-0629: トークンの iss として追加で受ける発行元（カンマ・空白区切り。未設定・空は足さない）。JwtBearer は
@@ -101,6 +103,19 @@ public static class AuthExtensions
                 // （既定マップは unique_name のみ写像するため、実トークンでは Name が null になり、
                 // 監査ログの subject が anonymous へ潰れる）。
                 options.TokenValidationParameters.NameClaimType = "preferred_username";
+            });
+
+        // 🔴 NFR, NFR-05, IADR-0639: 認可サーバーのメタデータ・鍵（JWKS）の取得は、基盤の CA（PlatformInfraCa:CertificatePath）が
+        // 設定されていればその CA で検証する（認可サーバーの宛先だけ。外部 API の検証には効かない）。未設定なら既定のまま。構成は解決の時に読む。
+        services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+            .Configure<IServiceProvider>((options, sp) =>
+            {
+                var caPath = (sp.GetService<IConfiguration>() ?? config)[PlatformInfraCaTrust.PathKey];
+                if (!string.IsNullOrWhiteSpace(caPath) && options.BackchannelHttpHandler is null && options.Backchannel is null)
+                {
+                    options.BackchannelHttpHandler = PlatformInfraCaTrust.CreateHandler(
+                        caPath, sp.GetService<ILoggerFactory>()?.CreateLogger(typeof(PlatformInfraCaTrust)));
+                }
             });
 
         // ADR-0004（platform）: Keycloak の realm_access.roles を ClaimTypes.Role へ展開する。

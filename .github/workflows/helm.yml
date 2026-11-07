@@ -28,6 +28,12 @@ on:
       - "scripts/helm-pod-security.test.js"
       - "backend/Dockerfile"
       - "deploy/opend/k8s/opend.yaml"
+      # NFR, IADR-0639: 稼働のイメージの道具・OpenD の基底の digest と配布物の照合・依存の監査の設定も同じ検査が字面で固定する。
+      - "docker-compose.yml"
+      - "deploy/opend/Dockerfile"
+      - "scripts/opend-build.sh"
+      - ".github/dependabot.yml"
+      - "Directory.Build.props"
       # NFR, IADR-0631: OpenD の権限と取引ユニットの通信の制限の描画検査。
       - "scripts/helm-network-policy.test.js"
       # NFR, IADR-0637: サービス間の認証の身元をサービスごとに分けた描画検査（口の既定の一覧は backend の ServiceCallerNames.cs を読む）。
@@ -48,6 +54,12 @@ on:
       - "scripts/helm-pod-security.test.js"
       - "backend/Dockerfile"
       - "deploy/opend/k8s/opend.yaml"
+      # NFR, IADR-0639: 稼働のイメージの道具・OpenD の基底の digest と配布物の照合・依存の監査の設定も同じ検査が字面で固定する。
+      - "docker-compose.yml"
+      - "deploy/opend/Dockerfile"
+      - "scripts/opend-build.sh"
+      - ".github/dependabot.yml"
+      - "Directory.Build.props"
       # NFR, IADR-0631: OpenD の権限と取引ユニットの通信の制限の描画検査。
       - "scripts/helm-network-policy.test.js"
       # NFR, IADR-0637: サービス間の認証の身元をサービスごとに分けた描画検査（口の既定の一覧は backend の ServiceCallerNames.cs を読む）。
@@ -321,7 +333,8 @@ jobs:
           fi
       # NFR, NFR-18, #1535, IADR-0621: 基盤（DB・ブローカ）への TLS（基盤の IADR-0591 の段 4b-2 の AST 側）。
       # 1. values-local の描画で、DB を持つ全サービスの接続文字列が VerifyFull＋基盤の CA、全サービスのブローカが amqps:5671、
-      #    SSL_CERT_DIR は既定の /etc/ssl/certs を先に持ち、CA の ConfigMap は非 optional でマウントされる。
+      #    CA の ConfigMap は非 optional でマウントされる。🔴 IADR-0639: 基盤の CA はシステムの信頼ストアへ足さない（SSL_CERT_DIR は既定で 0 件。
+      #    切り戻しの global.infraCa.addToSystemTrust=true のときだけ、/etc/ssl/certs を先に残して描く）。
       # 2. TLS を有効にして CA の設定が無いと描画が止まる（黙って平文へ戻らない）。
       # 3. 既定（values.yaml）の描画は平文のまま（TLS の部品が漏れない）。
       - name: Assert platform-infra TLS (VerifyFull・amqps・CA)
@@ -336,8 +349,10 @@ jobs:
           mqs="$(grep -c 'name: RabbitMq__ConnectionString' <<<"$out" || true)"
           amqps="$(grep -A1 'name: RabbitMq__ConnectionString' <<<"$out" | grep -cE 'value: "amqps://ast-[a-z-]+:\$\(RABBITMQ_PASSWORD\)@rabbitmq:5671"' || true)"
           [ "$mqs" -ge 11 ] && [ "$mqs" = "$amqps" ] || fail "ブローカの宛先 $mqs 件のうち amqps:5671 は $amqps 件。"
-          dirs="$(grep -A1 'name: SSL_CERT_DIR' <<<"$out" | grep -c 'value: "/etc/ssl/certs:/etc/platform-infra-ca"' || true)"
-          [ "$dirs" = "$mqs" ] || fail "SSL_CERT_DIR（/etc/ssl/certs を先に残す）が $mqs 件中 $dirs 件。"
+          if grep -q 'name: SSL_CERT_DIR' <<<"$out"; then fail "既定で SSL_CERT_DIR が描かれた（基盤の CA をシステムの信頼ストアへ足さない。IADR-0639）。"; fi
+          sys="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set global.infraCa.addToSystemTrust=true)"
+          dirs="$(grep -A1 'name: SSL_CERT_DIR' <<<"$sys" | grep -c 'value: "/etc/ssl/certs:/etc/platform-infra-ca"' || true)"
+          [ "$dirs" = "$mqs" ] || fail "切り戻し（addToSystemTrust）の SSL_CERT_DIR（/etc/ssl/certs を先に残す）が $mqs 件中 $dirs 件。"
           cas="$(grep -A1 'name: PlatformInfraCa__CertificatePath' <<<"$out" | grep -c 'value: "/etc/platform-infra-ca/ca.crt"' || true)"
           [ "$cas" = "$mqs" ] || fail "PlatformInfraCa__CertificatePath が $mqs 件中 $cas 件。"
           vols="$(grep -A3 -E '^        - name: platform-infra-ca$' <<<"$out" | grep -c 'name: platform-infra-ca$' || true)"
@@ -417,9 +432,24 @@ jobs:
           done
           if grep -q 'values-cloud' deploy/argocd/application.yaml; then fail "ArgoCD の Application が values-cloud を参照している（最初の稼働では使わない）。"; fi
           echo "values-cloud: images=$(grep -c . <<<"$images") connections=$conns tls-db=$full amqps=$amqps https-gateway=$gws"
+      # 🔴 NFR-13, IADR-0639: クラウドの取引判断は、月次 LLM 費用の停止を読めないとき fail-closed（Enforce）。既定・values-local は描かない（Off）。
+      - name: Assert values-cloud LLM cost halt query is fail-closed
+        run: |
+          set -eu
+          fail() { echo "::error::$1"; exit 1; }
+          td() { awk '/^kind: Deployment/{d=0} /^  name: trade-decision-service$/{d=1} d' <<<"$1"; }
+          cloud="$(helm template ast "$CHART" -f "$CHART/values-cloud.yaml" -f "$CHART/ci/values-cloud-digests.fixture.yaml")"
+          grep -A1 'name: CostControl__HaltQuery__UnavailableMode$' <<<"$(td "$cloud")" | grep -q 'value: "Enforce"' \
+            || fail "values-cloud の trade-decision に CostControl__HaltQuery__UnavailableMode=Enforce が無い。"
+          for f in "" "-f $CHART/values-local.yaml"; do
+            o="$(helm template ast "$CHART" $f --set global.authAuthority="$CI_AUTH_AUTHORITY")"
+            if grep -q 'CostControl__HaltQuery__UnavailableMode' <<<"$o"; then fail "既定または values-local に照会の段が描かれた（既定は Off のまま）。"; fi
+          done
+          echo "values-cloud: LLM cost halt query = Enforce"
       # NFR, NFR-05, IADR-0629（基盤の MSP:IADR-0693 の受け手）: クラウドの認可サーバー（Keycloak）への通信を TLS にする。
       # 1. values-cloud の 11 個の Worker（基盤の Keycloak の入りの一覧と同じ集合）が、基盤の CA を 1 つだけマウントし、
-      #    SSL_CERT_DIR（/etc/ssl/certs を先に残す）を 1 つだけ持つ。DB・ブローカの TLS を外しても同じ（認可サーバーの TLS だけで CA が付く）。
+      #    SSL_CERT_DIR を持たない（IADR-0639。切り戻しの addToSystemTrust=true のときだけ /etc/ssl/certs を先に残して 1 つ）。
+      #    DB・ブローカの TLS を外しても同じ（認可サーバーの TLS だけで CA が付く）。
       # 2. values-cloud の Keycloak の URL（Authority・トークンの取得先）はすべて https://keycloak:8443/realms/platform で始まり、平文の URL は無い。
       #    認証を持つサービスには Auth__RequireHttpsMetadata=true が付く。追加の発行元は既定で描かず、与えたときだけ描く。
       # 3. https でない Authority・CA の設定の欠落は描画で止まる。
@@ -449,13 +479,15 @@ jobs:
             rows="$(summ "$1" | grep -- '-service ' || true)"
             names="$(awk '{print $1}' <<<"$rows" | sort | tr '\n' ' ' | sed 's/ $//')"
             [ "$names" = "$expected" ] || fail "$2: CA を確かめる Worker の集合が一覧と違う: $names"
-            bad="$(grep -v ' mount=1 ssl=1 sslbad=0 vol=1$' <<<"$rows" || true)"
-            [ -z "$bad" ] || fail "$2: 基盤の CA（マウント 1・SSL_CERT_DIR 1）を持たない Worker がある: $bad"
+            bad="$(grep -v " mount=1 ssl=$3 sslbad=0 vol=1\$" <<<"$rows" || true)"
+            [ -z "$bad" ] || fail "$2: 基盤の CA（マウント 1・SSL_CERT_DIR $3）でない Worker がある: $bad"
           }
           out="$(helm template ast "$CHART" -f "$cloud" -f "$fixture")"
-          workers "$out" "values-cloud"
+          workers "$out" "values-cloud" 0
           noext="$(helm template ast "$CHART" -f "$cloud" -f "$fixture" --set global.db.tls.enabled=false --set global.rabbitmq.tls.enabled=false)"
-          workers "$noext" "values-cloud（DB・ブローカの TLS なし）"
+          workers "$noext" "values-cloud（DB・ブローカの TLS なし）" 0
+          # IADR-0639: 切り戻し（基盤の CA をシステムの信頼ストアへも足す）の形。
+          workers "$(helm template ast "$CHART" -f "$cloud" -f "$fixture" --set global.infraCa.addToSystemTrust=true)" "values-cloud（addToSystemTrust）" 1
           urls="$(grep -oE 'value: "[a-z]+://keycloak[^"]*"' <<<"$out" || true)"
           [ "$(grep -c . <<<"$urls" || true)" -ge 11 ] || fail "values-cloud の Keycloak の URL の抽出が痩せた: $urls"
           badurl="$(grep -vF "value: \"$kc" <<<"$urls" || true)"
