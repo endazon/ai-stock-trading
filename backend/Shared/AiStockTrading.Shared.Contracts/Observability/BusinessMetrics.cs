@@ -136,6 +136,7 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Counter<long> _riskRejections;
     private readonly Counter<long> _orderExecutions;
     private readonly Counter<long> _orderDispatchForgone;
+    private readonly Counter<long> _messageOriginFailures;
     private readonly Counter<long> _driftAdoptionFollowUpAbandoned;
     private readonly Counter<long> _orderReservationReconciliations;
     private readonly Counter<double> _llmCostJpy;
@@ -240,6 +241,11 @@ public sealed class BusinessMetrics : IDisposable
         _orderDispatchForgone = _meter.CreateCounter<long>(
             BusinessMetricNames.OrderDispatchForgone,
             description: "発注せずに見送った件数（reason 別。FR-05/FR-10）");
+
+        // NFR, FR-10, IADR-0627 決定 4: 受け手で発行元を確かめられなかったメッセージ（平常は 0）。
+        _messageOriginFailures = _meter.CreateCounter<long>(
+            BusinessMetricNames.MessageOriginFailures,
+            description: "受け手で発行元を確かめられなかったメッセージの件数（type・reason・outcome 別。outcome=rejected は段 2 で処理しなかった。NFR/FR-10）");
 
         // FR-10, #942, IADR-0395: 乖離の取り込みの追随を、建玉照会の不明・失敗のまま再試行を使い切って打ち切った件数。
         _driftAdoptionFollowUpAbandoned = _meter.CreateCounter<long>(
@@ -433,6 +439,17 @@ public sealed class BusinessMetrics : IDisposable
             1,
             new KeyValuePair<string, object?>(BusinessMetricNames.TagStatus, status.ToString()),
             new KeyValuePair<string, object?>(BusinessMetricNames.TagProvider, provider.ToString()));
+
+    /// <summary>
+    /// NFR, FR-10, IADR-0627 決定 4: 受け手で発行元を確かめられなかったメッセージを 1 件計上する。
+    /// <paramref name="rejected"/> が true なら段 2 で処理しなかった（outcome=rejected）、false なら段 1 で通した（admitted）。
+    /// </summary>
+    public void RecordMessageOriginCheck(string messageType, string reason, bool rejected) =>
+        _messageOriginFailures.Add(
+            1,
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagMessageType, messageType),
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, reason),
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagOutcome, rejected ? "rejected" : "admitted"));
 
     /// <summary>FR-05, FR-10: 発注を見送った 1 件を計上する。</summary>
     public void RecordOrderDispatchForgone(OrderDispatchForgoneReason reason) =>

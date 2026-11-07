@@ -228,6 +228,16 @@ public static class BusinessMetricNames
     /// <summary>FR-04, FR-15, #1118, IADR-0467: 日足 K 線の取得の直後に照会した<b>取得枠の残り</b>（<c>remainQuota</c>。直近の値）。</summary>
     public const string KLineQuotaRemaining = "ast.kline.quota_remaining";
 
+    /// <summary>
+    /// 🔴 NFR, FR-10, IADR-0627 決定 4: 受け手で<b>発行元を確かめられなかった</b>メッセージの件数。
+    /// タグ <c>type</c>（メッセージ型の名前）・<c>reason</c>（missing / forbidden_issuer / mismatch / stale / future / replayed / unverifiable）・
+    /// <c>outcome</c>（rejected＝段 2 で処理しなかった / admitted＝段 1 で記録して通した）。平常は 0 件である。
+    /// </summary>
+    public const string MessageOriginFailures = "ast.messaging.origin_failures";
+
+    /// <summary>タグ名: メッセージ型の名前（IADR-0627）。</summary>
+    public const string TagMessageType = "type";
+
     /// <summary>タグ名: 判断の結果（buy / sell / no-trade）。</summary>
     public const string TagAction = "action";
 

@@ -30,6 +30,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Grpc;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Serilog;
@@ -594,6 +595,8 @@ builder.Host.UseWolverine(opts =>
         ServiceName,
         builder.Configuration["RabbitMq:ConnectionString"],
         typeof(OrderApprovedHandler).Assembly);
+    // 🔴 NFR, FR-10, IADR-0627: 統制の入力になる型の発行元の印（送る側）と、受け手での確かめ（構成 MessageOrigin。段 2 で鍵が無ければ起動で止まる）。
+    opts.UseAiStockTradingMessageOrigin(ServiceName, builder.Configuration);
     if (durableOutbox)
         opts.UseOrderExecutionDurableOutbox(connStr);
 });

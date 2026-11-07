@@ -212,12 +212,12 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   `$(DB_PASSWORD)` で組み、`global.db.password` を描かない。values-cloud は `ast-db-credentials` を使う。
 - **秘密は OpenBao から ESO で写す**（#1560 / IADR-0623）: values-cloud は名前空間の `SecretStore openbao`（kubernetes 認証・role `ast-eso`・
   ServiceAccount `ast-eso-reader`・audience `vault`）を `externalSecrets.openbaoStore.create` で描き、描画が参照する Secret を
-  ExternalSecret で写す（`ast-db-credentials`・`ast-rabbitmq-users`・`ast-secrets`・`ast-owner-totp`・`moomoo-credentials`・`moomoo-rsa`・
+  ExternalSecret で写す（`ast-db-credentials`・`ast-rabbitmq-users`・`ast-secrets`・`ast-owner-totp`・`ast-message-origin-keys`・`moomoo-credentials`・`moomoo-rsa`・
   CA の写し `platform-infra-ca`）。例外は `ast-operator-hold`（秘密ではない SSH からの停止の切り替え。管理の外）。
   - `global.db.usernameSecret`: DB の利用者名も Secret から読む（`passwordSecret` と一緒に与える）。既定は与えない＝`global.db.username` を描く。
   - `global.infraCa.secretName`: CA を Secret から mount する（`configMap` との併用は描画で止める）。既定は空＝ConfigMap。
   - `externalSecrets.deletionPolicy`・`dbCredentials`・`ownerTotp`・`infraCa`・`appSecrets.clientIds`・`appSecrets.sharedClientSecrets`: 既定はどれも無効・空。
-- **守りは段 2 で始める**（#1560 / IADR-0623 決定 3）: `global.orderApprovalSigning`・`ownerTokenBinding`・`ownerBotScope` は `Enforce`、
+- **守りは段 2 で始める**（#1560 / IADR-0623 決定 3・IADR-0627）: `global.orderApprovalSigning`・`messageOrigin`・`ownerTokenBinding`・`ownerBotScope` は `Enforce`、
   risk-management・report の `OwnerSecondFactor__Mode` は `Enforce`、risk-management の `RiskControls__KillSwitch__Precondition` は `Require`。
 - 既定（本番）と `values-local.yaml` の描画は、これらの部品を入れる前と 1 バイトも変わらない（`helm.yml` が digest・DB_PASSWORD・
   利用者名の Secret・ストアの不在と、利用者名 `ai`・段 1 を検査する）。
@@ -912,6 +912,21 @@ risk-management が発行する注文の承認に HMAC の印を付け、order-e
 - 鍵は `scripts/gen-order-approval-signing-key.sh --vault`（ESO 所有。Vault `ai-stock-trading/app-secrets` のプロパティ）か `--k8s`（従来経路）で作る。値は表示されない。既にあれば書かない（`--rotate` で作り直す）。
 - 段 2 へ上げる前に、段 1 のまま両サービスに鍵が載り、order-execution のログに「発行元を確かめられませんでした」が出ないこと、キューと DLQ に印のない承認が残っていないことを確かめる。
 - `--vault` は KV が在れば patch だけ（失敗したら止まる）。KV が無いと確定したときだけ put する（共有の KV の他のキーを消さない）。
+
+## メッセージの発行元の印（`global.messageOrigin`。[IADR-0627](../../../.ai-context/adr/IADR-0627_message-origin-signing-for-control-inputs.md)）
+
+統制の入力になるメッセージ（判断・口座・建玉・損切り到達・取消要求など。型の表はコードの `MessageOriginCatalog`）に、発行元のサービスごとの鍵で
+HMAC の印を付け、受け手が「その型を発行してよいサービスか」と印の両方を処理の前に確かめる。
+
+| 値 | 既定 | 意味 |
+| --- | --- | --- |
+| `mode` | `Report` | 段 1: 受け手は確かめて記録するだけで通す。`Enforce`（段 2）: 確かめられないメッセージを処理しない。他の値は描画で止まる |
+| `secretName` | `ast-message-origin-keys` | 鍵の Secret。キーは発行元の識別子（`trade-decision` など 7 つ）。値は 32 バイト以上の乱数・base64 |
+| `services` | 8 サービス | サービス → 渡す鍵（自分の発行の鍵＋確かめる型の発行元の鍵）。コードの要る鍵と一致させる（`MessageOriginChartTests`） |
+
+- env は `MessageOrigin__Mode` と `MessageOrigin__Keys__<発行元>`（発行元の `-` は `_` で書く。シェルの識別子に限るため）。段 1 は `optional`、段 2 は必須。
+- クラウドは `externalSecrets.messageOriginKeys`（OpenBao `cloud/ast/ast-message-origin-keys`）を写す。鍵は基盤の `seed-secrets.sh … gen` で OpenBao の中に作る（手順書 §5）。
+- 段 2 へ上げる前に、段 1 のまま受け手のログに「メッセージの発行元を確かめられませんでした」（EventId 16261）が出ないこと、メトリクス `ast_messaging_origin_failures_total` が 0 であることを確かめる。
 
 ## 外部連携（fail-safe 既定）
 

@@ -74,6 +74,24 @@ public class BusinessMetricsTests
         capture.SumOf(BusinessMetricNames.InformationItemsCollected).Should().Be(itemCount);
     }
 
+    // NFR, FR-10, IADR-0627 決定 4: 発行元を確かめられなかったメッセージは、型・理由・処理したか（段 1 で通した / 段 2 で拒んだ）で読み分けられる。
+    [Theory]
+    [InlineData(true, "rejected")]
+    [InlineData(false, "admitted")]
+    public void 発行元を確かめられなかったメッセージは型と理由と結果のタグで数える(bool rejected, string outcome)
+    {
+        var meter = $"test.message-origin.{Guid.NewGuid():N}";
+        using var capture = new MeterCapture(meter);
+        using var metrics = BusinessMetrics.WithMeterName(meter);
+
+        metrics.RecordMessageOriginCheck("TradeDecisionMade", "forbidden_issuer", rejected);
+
+        capture.SumOf(BusinessMetricNames.MessageOriginFailures).Should().Be(1);
+        capture.TagValuesOf(BusinessMetricNames.MessageOriginFailures, BusinessMetricNames.TagMessageType).Should().Equal("TradeDecisionMade");
+        capture.TagValuesOf(BusinessMetricNames.MessageOriginFailures, BusinessMetricNames.TagReason).Should().Equal("forbidden_issuer");
+        capture.TagValuesOf(BusinessMetricNames.MessageOriginFailures, BusinessMetricNames.TagOutcome).Should().Equal(outcome);
+    }
+
     // FR-04: 判断の内訳（Buy / Sell / 見送り）が action タグで読み分けられる。
     [Theory]
     [InlineData(TradeSide.Buy, "buy")]
@@ -681,6 +699,8 @@ public class BusinessMetricsTests
         metrics.RecordKLineQuota(used: 1, remaining: 299);
         // NFR, FR-10, #1442, IADR-0573 決定3: 発行し終えていない約定の件数（ゲージ）。
         metrics.RecordOrderExecutedPublishPending(0);
+        // NFR, FR-10, IADR-0627 決定 4: 受け手で発行元を確かめられなかったメッセージ。
+        metrics.RecordMessageOriginCheck("StopLossTriggered", "missing", rejected: true);
 
         // NFR-01, NFR-02, #689: 端点間の 3 計器。**未観測カウンタも 1 回発火させる** ——
         // 起点なしの呼び出しでしか出ない計器であり、ここを落とすとレジストリとの一致検査がすり抜ける。

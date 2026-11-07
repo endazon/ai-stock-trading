@@ -423,9 +423,12 @@ jobs:
           [ "$conns" -ge 1 ] && [ "$conns" = "$users" ] || fail "values-cloud の接続文字列 $conns 件のうち利用者名を Secret から読むのは $users 件。"
           if grep -q 'Username=ai;' <<<"$out"; then fail "values-cloud の描画に固定の DB の利用者名 ai が現れた。"; fi
           mode() { grep -A1 -E "^ +- name: $1\$" <<<"$2" | grep -oE 'value: "[A-Za-z]+"' | sort -u | tr '\n' ' '; }
-          for m in Auth__OwnerToken__Mode Auth__OwnerBot__Mode OrderApprovalSigning__Mode OwnerSecondFactor__Mode; do
+          for m in Auth__OwnerToken__Mode Auth__OwnerBot__Mode OrderApprovalSigning__Mode OwnerSecondFactor__Mode MessageOrigin__Mode; do
             [ "$(mode "$m" "$out")" = 'value: "Enforce" ' ] || fail "values-cloud の $m が Enforce だけでない: $(mode "$m" "$out")"
           done
+          # NFR, FR-10, IADR-0627: メッセージの発行元の鍵は 8 サービスに、段 2 は必須（optional なし）で描く。鍵の Secret は ESO の同期先（上の refs ⊆ targets）。
+          [ "$(grep -cE '^ +- name: MessageOrigin__Mode$' <<<"$out" || true)" = 8 ] || fail "メッセージの発行元の段が 8 サービスに無い。"
+          if grep -A6 -E '^ +- name: MessageOrigin__Keys__[a-z_]+$' <<<"$out" | grep -q 'optional: true'; then fail "values-cloud の発行元の鍵が optional で描かれた（段 2 は必須）。"; fi
           [ "$(mode RiskControls__KillSwitch__Precondition "$out")" = 'value: "Require" ' ] || fail "values-cloud の kill switch の前提条件が Require でない。"
           [ "$(grep -cE '^ +- name: OwnerSecondFactor__Mode$' <<<"$out" || true)" = 2 ] || fail "第 2 要素の段が risk-management と report の 2 つに無い。"
           for prof in "" "-f $CHART/values-local.yaml"; do
@@ -434,7 +437,7 @@ jobs:
             u="$(grep -cF 'Username=ai;' <<<"$o" || true)"
             [ "$c" -ge 1 ] && [ "$c" = "$u" ] || fail "既定または values-local（${prof:-既定}）の接続文字列 $c 件のうち利用者名 ai は $u 件（既定の値を変えない）。"
             if grep -qE 'name: DB_USERNAME$|kind: SecretStore$|ast-eso-reader' <<<"$o"; then fail "既定または values-local の描画にクラウドの部品が漏れた。"; fi
-            for m in Auth__OwnerToken__Mode Auth__OwnerBot__Mode OrderApprovalSigning__Mode; do
+            for m in Auth__OwnerToken__Mode Auth__OwnerBot__Mode OrderApprovalSigning__Mode MessageOrigin__Mode; do
               [ "$(mode "$m" "$o")" = 'value: "Report" ' ] || fail "既定または values-local の $m が段 1（Report）でない: $(mode "$m" "$o")"
             done
             [ "$(mode OwnerSecondFactor__Mode "$o")" = 'value: "Audit" ' ] || fail "既定または values-local の第 2 要素が段 1（Audit）でない。"

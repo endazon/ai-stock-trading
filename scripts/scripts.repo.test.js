@@ -3326,6 +3326,43 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.ok(stopLoss, 'AstStopLossPositionRowsDegraded が無い');
       assert.ok(stopLoss.noForReason, `印の読み取りが壊れた: ${JSON.stringify(stopLoss)}`);
     });
+
+    // 🔴 NFR, FR-10, IADR-0627 決定 4: 発行元の拒否の系列は最初の拒否の計上で生まれる（起動時に 0 で作らない）。
+    // increase() だけの式は、15 分前に系列が無いと最初の 1 件を増分に数えず鳴らない（promtool は本リポに無いので、
+    // 式の形と、評価の 2 つの場面〔系列が無い → 1 件／既に在る系列が増えた〕を小さな評価で固定する）。
+    ok('アラート: 発行元の拒否は系列が無い状態からの最初の 1 件でも鳴る（IADR-0627）', () => {
+      const alertDir = pathOa.join(REPO_ROOT_OA, 'deploy', 'observability', 'alerts');
+      const rules = fsOa.readdirSync(alertDir)
+        .filter((f) => /\.ya?ml$/.test(f))
+        .flatMap((f) => oa.parseAlertRules(fsOa.readFileSync(pathOa.join(alertDir, f), 'utf8')));
+      const rule = rules.find((r) => r.alert === 'AstMessageOriginRejected');
+      assert.ok(rule, 'AstMessageOriginRejected が無い');
+      const expr = rule.expr.replace(/\s+/g, ' ').trim();
+      const sel = 'ast_messaging_origin_failures_total{outcome="rejected"}';
+      const by = 'sum by (type, reason)';
+      // 形: (今の系列 unless 15 分前の系列) or 15 分の増分 > 0。> は unless・or より強く結び付く（右の枝だけに掛かる）。
+      const shape = new RegExp(
+        `^\\(${esc(by)} \\(${esc(sel)}\\) unless ${esc(by)} \\(${esc(sel)} offset (\\d+m)\\)\\) ` +
+        `or ${esc(by)} \\(increase\\(${esc(sel)}\\[(\\d+m)\\]\\)\\) > 0$`);
+      const m = shape.exec(expr);
+      assert.ok(m, `式の形が違う（初回の拒否を取りこぼす形に戻っていないか）: ${expr}`);
+      assert.strictEqual(m[1], m[2], `offset（${m[1]}）と increase の窓（${m[2]}）を揃える`);
+
+      // 評価（ラベルの組 → 値）。左の枝は「今在り 15 分前に無い」系列、右の枝は増分が正の系列。
+      const fires = ({ before, now, increase }) => {
+        const left = Object.keys(now).filter((k) => !(k in before));
+        const right = Object.keys(increase).filter((k) => increase[k] > 0);
+        return [...new Set([...left, ...right])].sort();
+      };
+      const key = 'TradeDecisionMade/mismatch';
+      // 場面 1: 系列が無い → 最初の拒否で 1（Prometheus の increase は標本 1 つでは値を出さない＝空）。
+      assert.deepStrictEqual(fires({ before: {}, now: { [key]: 1 }, increase: {} }), [key], '系列が無い → 1 件で鳴らない');
+      // 場面 2: 既に在る系列が 1 → 2。
+      assert.deepStrictEqual(fires({ before: { [key]: 1 }, now: { [key]: 2 }, increase: { [key]: 1 } }), [key], '増分で鳴らない');
+      // 場面 3: 15 分の間に新しい拒否が無い → 鳴らない。
+      assert.deepStrictEqual(fires({ before: { [key]: 2 }, now: { [key]: 2 }, increase: { [key]: 0 } }), [], '拒否が無いのに鳴る');
+      function esc(t) { return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+    });
   }
 
   // --- check-integration-skips: integration.yml の「全 skip で緑」を検知する（NFR / #1200 / IADR-0497） ---
