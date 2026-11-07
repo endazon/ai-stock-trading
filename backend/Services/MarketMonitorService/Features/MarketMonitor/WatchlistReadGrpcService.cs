@@ -6,6 +6,7 @@ using MarketMonitorService.Domain;
 using MarketMonitorService.Features.MarketMonitor.GetWatchlistAsOf;
 using Microsoft.AspNetCore.Authorization;
 using Proto = AiStockTrading.Shared.Grpc.MarketMonitor.V1;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 namespace MarketMonitorService.Features.MarketMonitor;
 
@@ -23,6 +24,8 @@ namespace MarketMonitorService.Features.MarketMonitor;
 // s2s（trading-service）は同じ、所有者（trading-owner）はトークンの `azp` が Discord ボットの機密クライアントであるときだけ通す
 // ＝人の利用者のトークンは gRPC 面を通らない（REST の面の判定は変えていない）。
 [Authorize(Policy = AiStockTradingAuthPolicies.GrpcOwnerOrService)]
+// 🔴 NFR, IADR-0636: サービスのトークンは、この口の一覧（Auth:ServiceCallers の ServiceCallerNames.GrpcWatchlistRead）に在るクライアントだけ。
+[ServiceCallers(ServiceCallerNames.GrpcWatchlistRead)]
 public sealed class WatchlistReadGrpcService(
     MonitorWatchlistService watchlist,
     IMonitorSettingsChangeLog changeLog,

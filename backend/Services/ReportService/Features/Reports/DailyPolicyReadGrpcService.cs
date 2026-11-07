@@ -4,6 +4,7 @@ using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using ReportService.Features.Reports.GetConfirmedDailyPolicy;
 using Proto = AiStockTrading.Shared.Grpc.Report.V1;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 namespace ReportService.Features.Reports;
 
@@ -21,6 +22,8 @@ namespace ReportService.Features.Reports;
 // s2s（trading-service）は同じ、所有者（trading-owner）はトークンの `azp` が Discord ボットの機密クライアントであるときだけ通す
 // ＝人の利用者のトークンは gRPC 面を通らない（REST の面の判定は変えていない）。
 [Authorize(Policy = AiStockTradingAuthPolicies.GrpcOwnerOrService)]
+// 🔴 NFR, IADR-0636: サービスのトークンは、この口の一覧（Auth:ServiceCallers の ServiceCallerNames.GrpcDailyPolicyRead）に在るクライアントだけ。
+[ServiceCallers(ServiceCallerNames.GrpcDailyPolicyRead)]
 public sealed class DailyPolicyReadGrpcService(ReportAppService reports) : Proto.DailyPolicyRead.DailyPolicyReadBase
 {
     public override Task<Proto.GetConfirmedDailyPolicyResponse> GetConfirmedDailyPolicy(

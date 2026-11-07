@@ -13,5 +13,6 @@ internal static class GetStageGateEndpoint
     public static void MapGetStageGate(this IEndpointRouteBuilder read) =>
         read.MapGet("/stage-gate", (StageGateService svc) => Results.Ok(svc.GetStatus()))
             // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
-            .AllowOwnerBot();
+            .AllowOwnerBot()
+            .RequireServiceCallers(ServiceCallerNames.RiskStageGate);
 }

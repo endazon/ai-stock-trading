@@ -2,6 +2,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 namespace AuditService.Features.AuditEvents.GetAuditEventsByType;
 
@@ -36,7 +37,8 @@ internal static class GetAuditEventsByTypeEndpoint
                         ? Results.BadRequest(new { error = ReversedPeriodError })
                         : Results.Ok(store.GetByTypesInPeriod(wanted, from, to));
             })
-            .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
+            .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService)
+            .RequireServiceCallers(ServiceCallerNames.AuditEventsByType);
 
     /// <summary>
     /// カンマ区切りの種別を解析する。空・空白のみの要素は落とす（`types=,,` を「全件」と解釈しない）。

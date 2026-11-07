@@ -1,4 +1,5 @@
 using AppSvc = ReportService.Features.Reports.ReportAppService;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 namespace ReportService.Features.Reports.GetConfirmedDailyPolicy;
 
@@ -15,7 +16,8 @@ internal static partial class GetConfirmedDailyPolicyAsOfEndpoint
 
             var policy = svc.GetConfirmedDailyPolicyAsOf(instant);
             return policy is null ? Results.NotFound() : Results.Ok(policy);
-        });
+        })
+            .RequireServiceCallers(ServiceCallerNames.ReportsDailyPolicyAsOf);
 
     // NFR, #1388, IADR-0557 決定 3: gRPC 面（DailyPolicyReadGrpcService）の INVALID_ARGUMENT も同じ文言を返す（検証は 1 つ）。
     internal const string InvalidAtError = "at（オフセット付きの ISO 8601 時刻。例 2026-09-15T20:00:00Z）が必要です。";

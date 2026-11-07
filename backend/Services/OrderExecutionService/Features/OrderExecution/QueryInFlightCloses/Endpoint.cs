@@ -1,5 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 namespace OrderExecutionService.Features.OrderExecution.QueryInFlightCloses;
 
@@ -33,7 +34,8 @@ public static class InFlightClosesEndpoint
                     .QueryAsync(symbol!, (Market)market!.Value, (TradeSide)closeSide!.Value, cancellationToken)
                     .ConfigureAwait(false));
             })
-            .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
+            .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService)
+            .RequireServiceCallers(ServiceCallerNames.OrderExecutionInFlightCloses);
 
         return app;
     }

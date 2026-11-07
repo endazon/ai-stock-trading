@@ -315,7 +315,8 @@ app.MapPost("/internal/collection/run-once",
         await poller.RunOnceAsync(ct);
         return Results.Ok();
     })
-    .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
+    .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService)
+    .RequireServiceCallers(ServiceCallerNames.CollectionRunOnce);
 
 // FR-01, FR-11, #336, ADR-0020 決定4: 一般インターネット収集（最終手段）の**発動申請**。
 // 端点の本体は Features/InformationCollection/ActivateGeneralWebCollection/Endpoint.cs にある

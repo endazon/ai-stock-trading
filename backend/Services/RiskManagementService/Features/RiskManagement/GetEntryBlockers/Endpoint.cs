@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 namespace RiskManagementService.Features.RiskManagement.GetEntryBlockers;
 
@@ -10,5 +11,6 @@ internal static class GetEntryBlockersEndpoint
         read.MapGet("/entry-blockers", (string? symbol, Market? market, EntryBlockersService svc) =>
             string.IsNullOrWhiteSpace(symbol) || market is not { } m || !Enum.IsDefined(m)
                 ? Results.BadRequest("symbol・market は必須です。")
-                : Results.Ok(svc.Build(symbol, m)));
+                : Results.Ok(svc.Build(symbol, m)))
+            .RequireServiceCallers(ServiceCallerNames.RiskEntryBlockers);
 }

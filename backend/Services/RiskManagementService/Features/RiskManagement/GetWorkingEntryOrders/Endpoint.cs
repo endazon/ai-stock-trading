@@ -1,3 +1,5 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
+
 namespace RiskManagementService.Features.RiskManagement.GetWorkingEntryOrders;
 
 // FR-04, FR-10, ADR-0003, #934, IADR-0390 決定1: 当日の未約定の新規建て注文（承認済み・未終端・残数量 > 0）。
@@ -6,5 +8,6 @@ namespace RiskManagementService.Features.RiskManagement.GetWorkingEntryOrders;
 internal static class GetWorkingEntryOrdersEndpoint
 {
     public static void MapGetWorkingEntryOrders(this IEndpointRouteBuilder read) =>
-        read.MapGet("/working-entry-orders", (WorkingEntryOrdersService svc) => Results.Ok(svc.Build()));
+        read.MapGet("/working-entry-orders", (WorkingEntryOrdersService svc) => Results.Ok(svc.Build()))
+            .RequireServiceCallers(ServiceCallerNames.RiskWorkingEntryOrders);
 }

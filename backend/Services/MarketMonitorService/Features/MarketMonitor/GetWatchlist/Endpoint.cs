@@ -8,5 +8,6 @@ internal static class GetWatchlistEndpoint
     public static void MapGetWatchlist(this IEndpointRouteBuilder read) =>
         read.MapGet("/watchlist", (MonitorWatchlistService svc) => Results.Ok(svc.GetWatchlist()))
             // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
-            .AllowOwnerBot();
+            .AllowOwnerBot()
+            .RequireServiceCallers(ServiceCallerNames.MonitorWatchlist);
 }

@@ -5,6 +5,7 @@ using AuditService.Features.AuditEvents.GetAuditEventsByType;
 using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using Proto = AiStockTrading.Shared.Grpc.Audit.V1;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 namespace AuditService.Features.AuditEvents;
 
@@ -27,6 +28,8 @@ namespace AuditService.Features.AuditEvents;
 // s2s（trading-service）は同じ、所有者（trading-owner）はトークンの `azp` が Discord ボットの機密クライアントであるときだけ通す
 // ＝人の利用者のトークンは gRPC 面を通らない（REST の面の判定は変えていない）。
 [Authorize(Policy = AiStockTradingAuthPolicies.GrpcOwnerOrService)]
+// 🔴 NFR, IADR-0636: サービスのトークンは、この口の一覧（Auth:ServiceCallers の ServiceCallerNames.GrpcAuditEventsRead）に在るクライアントだけ。
+[ServiceCallers(ServiceCallerNames.GrpcAuditEventsRead)]
 public sealed class AuditEventsReadGrpcService(IAuditEventStore store) : Proto.AuditEventsRead.AuditEventsReadBase
 {
     public override Task<Proto.GetEventsByTypeResponse> GetEventsByType(

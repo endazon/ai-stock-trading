@@ -1,3 +1,5 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
+
 namespace RiskManagementService.Features.RiskManagement.GetFills;
 
 // 期間の約定（FR-06/16, IADR-0115 決定5, #280）: 報告書サービス（#14）が日報/週報/月報の数値集計のため
@@ -12,5 +14,6 @@ internal static class GetFillsEndpoint
                 return Results.BadRequest(new { error = "from・to（yyyy-MM-dd）は必須です。" });
 
             return Results.Ok(PeriodFillQuery.InTradingDayRange(ledger, fromDay, toDay));
-        });
+        })
+            .RequireServiceCallers(ServiceCallerNames.RiskFills);
 }

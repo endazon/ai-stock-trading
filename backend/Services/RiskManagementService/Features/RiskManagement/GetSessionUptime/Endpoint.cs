@@ -1,4 +1,5 @@
 using RiskManagementService.Domain;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 namespace RiskManagementService.Features.RiskManagement.GetSessionUptime;
 
@@ -25,7 +26,8 @@ internal static class GetSessionUptimeEndpoint
             return Results.Ok(new SessionUptimeView(
                 OpenDUptimeReporting.Days(observations.GetSessionUptimesBetween(fromDay, toDay)),
                 observations.GetQualifiedTradingDayCount()));
-        });
+        })
+            .RequireServiceCallers(ServiceCallerNames.RiskSessionUptime);
 }
 
 // FR-06, FR-20, #569, INDEX 決定34, 04_report-templates 日報 §1 / 月報 §6.2, IADR-0271:

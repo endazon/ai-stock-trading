@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [NFR, FR-10, FR-14, ADR-0047, IADR-0011, IADR-0051, IADR-0448, IADR-0449, IADR-0324]
 author: claude (Claude Code)
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-07
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10 受け入れ基準)
   - planning:projects/ai-stock-trading/07_adr/ADR-0047_discord-bot-token-is-service-identity-east-west.md (決定3)
@@ -66,3 +66,9 @@ FR-10 の受け入れ基準は「kill switch・一時停止の操作は利用者
 1. 段 2 へ上げるのは、段 1 で実トークンの記録に不一致が出ないことを確かめた後（オーナーの判断）。
 2. 単体実行向けの AST レルム（docker-compose）のトークンは aud を持たないため、段 2 にすると compose では所有者の操作が通らない。compose は段 1 のまま使う。
 3. JwtBearer の `ValidateAudience=false` は据え置き（s2s の aud の構成は基盤の管掌）。
+
+## ［2026-11-07 追記 / IADR-0636］サービスの分岐も宛先とクライアントを確かめる段を足した
+
+- 「サービスの分岐（`trading-service`）は aud / azp を見ない」と残余 3「`ValidateAudience=false` は据え置き」は、段 `Auth:ServiceToken:Mode` が Off（既定）のときだけの記述になった。
+  Enforce（values-cloud）では JwtBearer が宛先（既定 `ai-stock-trading-api`）を確かめ（違えば 401。所有者のトークンにも掛かる）、サービスの分岐は口ごとのクライアントの一覧で
+  限る（IADR-0636）。所有者の分岐の判定（本 IADR の段）は変えない。

@@ -72,6 +72,8 @@ public static class AuthExtensions
             ?? StandaloneRealmGuard.DevelopmentDefaultAuthority;
         var requireHttpsMetadata = ResolveRequireHttpsMetadata(config, authority);
         var validIssuers = ParseValidIssuers(config[ValidIssuersConfigKey]);
+        // 🔴 NFR, IADR-0636: サービスのトークンの身元と宛先の段。起動時に解決し、誤りはここで止める。
+        var serviceToken = ServiceTokenBinding.Resolve(config);
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
@@ -83,6 +85,14 @@ public static class AuthExtensions
                 if (validIssuers.Length > 0)
                     options.TokenValidationParameters.ValidIssuers = validIssuers;
                 options.TokenValidationParameters.ValidateAudience = false;
+                // 🔴 NFR, IADR-0636: Enforce では宛先（aud）を認証で確かめる（合わなければ 401。所有者・サービスのどちらのトークンも）。
+                // 移行の段の旧の共有クライアント（Auth:ServiceToken:LegacyClients）だけは宛先を問わない。Off・Report は従前どおり見ない。
+                if (serviceToken.Mode == ServiceTokenMode.Enforce)
+                {
+                    options.TokenValidationParameters.ValidateAudience = true;
+                    options.TokenValidationParameters.ValidAudiences = serviceToken.Audiences;
+                    options.TokenValidationParameters.AudienceValidator = ServiceTokenBinding.AudienceValidatorFor(serviceToken);
+                }
                 // RequireRole/IsInRole が参照するロールクレーム型を明示する。実 Keycloak のレルムロールは
                 // realm_access.roles に格納され、標準ハンドラでは ClaimTypes.Role へ展開されないため、
                 // 下記の IClaimsTransformation で補う。
@@ -108,6 +118,9 @@ public static class AuthExtensions
         // 🔴 NFR-06, #1554, IADR-0622: ボットの許可表の段（Auth:OwnerBot:Mode。aud / azp の段とは別）。
         services.AddSingleton(OwnerBotScope.Resolve(config));
         services.AddSingleton<IAuthorizationHandler, OwnerTokenBindingHandler>();
+        // 🔴 NFR, IADR-0636: サービスのトークンを口ごとの呼び手の一覧で限る（段 Auth:ServiceToken:Mode。既定 Off）。
+        services.AddSingleton(serviceToken);
+        services.AddSingleton<IAuthorizationHandler, ServiceCallerHandler>();
 
         // FR-10/FR-19/FR-20, ADR-0003/ADR-0007/ADR-0008: 利用者のみのエンドポイント用に OwnerOnly ポリシーを登録する。
         services.AddAuthorization(options =>
@@ -121,13 +134,14 @@ public static class AuthExtensions
             // #1528, IADR-0611: 所有者の分岐は aud / azp も確かめる（サービスの分岐は従来どおり）。
             options.AddPolicy(AiStockTradingAuthPolicies.OwnerOrService, policy => policy
                 .RequireRole(AiStockTradingAuthPolicies.OwnerRole, AiStockTradingAuthPolicies.ServiceRole, AiStockTradingAuthPolicies.BotRole)
-                .AddRequirements(new OwnerTokenBindingRequirement(AllowService: true)));
+                .AddRequirements(new OwnerTokenBindingRequirement(AllowService: true), new ServiceCallerRequirement()));
 
             // NFR-06, FR-14, ADR-0047 決定 3, IADR-0448 決定 1, #1067: gRPC 面の門。s2s の分岐は OwnerOrService と同じ、
             // 所有者の分岐は azp がボットの機密クライアントであることを併せて求める（GrpcOwnerClientGate.Allows）。
             options.AddPolicy(AiStockTradingAuthPolicies.GrpcOwnerOrService, policy => policy
                 .RequireAuthenticatedUser()
-                .RequireAssertion(context => GrpcOwnerClientGate.Allows(context.User, grpcOwnerClients)));
+                .RequireAssertion(context => GrpcOwnerClientGate.Allows(context.User, grpcOwnerClients))
+                .AddRequirements(new ServiceCallerRequirement()));
 
             // NFR-06, FR-14, ADR-0047 決定 3, IADR-0449 決定 2, #753（段 5）: 所有者限定の gRPC 面の門。所有者の分岐だけ（s2s は通さない）。
             options.AddPolicy(AiStockTradingAuthPolicies.GrpcOwnerOnly, policy => policy

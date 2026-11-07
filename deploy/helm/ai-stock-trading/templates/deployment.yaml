@@ -489,6 +489,20 @@ spec:
             {{- end }}
             - name: Auth__OwnerBot__Mode
               value: {{ $obs.mode | default "Report" | quote }}
+            {{- /* 🔴 NFR, NFR-05, IADR-0636: サービスのトークンの身元（azp）と宛先（aud）を確かめ、口ごとに呼び手を限る段。
+                   空（既定）は描かない＝コードの既定 Off（従前どおり）。legacyClients は移行の段だけ受ける旧の共有クライアント。 */}}
+            {{- $stb := $g.serviceTokenBinding | default dict }}
+            {{- with $stb.mode }}
+            {{- if not (has . (list "Off" "Report" "Enforce")) }}
+            {{- fail (printf "global.serviceTokenBinding.mode は Off・Report・Enforce のどれかです（値: %v。IADR-0636）。" .) }}
+            {{- end }}
+            - name: Auth__ServiceToken__Mode
+              value: {{ . | quote }}
+            {{- end }}
+            {{- range $i, $c := ($stb.legacyClients | default list) }}
+            - name: {{ printf "Auth__ServiceToken__LegacyClients__%d" $i }}
+              value: {{ $c | quote }}
+            {{- end }}
             {{- end }}
             {{- range $e := $svc.extraEnv }}
             - name: {{ $e.name }}
