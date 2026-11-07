@@ -75,6 +75,8 @@ LLM ゲートウェイ（`ai-stock-trading-llm-caller`）・KB は基盤の口�
 | 前提条件 `GET /assumptions` | `assumptions` | cost-control・trade-decision（各 HttpAssumptionsClient） |
 | 報告書 `GET /reports/daily-policy` | `reports.daily-policy` | trade-decision（HttpDailyPolicyProvider） |
 | `GET /reports/daily-policy/as-of` | `reports.daily-policy.as-of` | trade-decision（HttpAsOfDailyPolicySource） |
+| `GET /reports/policy-revisions/watchlist-proposal/binding`（#1588） | `reports.watchlist-proposal.binding` | market-monitor（HttpWatchlistProposalSource。サービスだけの門 ServiceOnly の上に重ねる） |
+| `POST /reports/policy-revisions/watchlist-proposal/binding/reserve`（#1588） | `reports.watchlist-proposal.binding.reserve` | market-monitor（同上） |
 | 監査 `GET /audit/events/by-type` | `audit.events.by-type` | report（HttpBorrowFeeRecordSource ほか 8 つの Http*Source） |
 | 情報収集 `POST /internal/collection/run-once` | `collection.run-once`（一覧なし） | CronJob（`tradingCycle.cronjob`。**クラウドでは無効**。移行の段は旧の共有クライアントで通り、最終の段では 403。有効にするなら CronJob のクライアントを足す） |
 
@@ -148,4 +150,6 @@ clientId は `ai-stock-trading-svc-<サービス>`（基盤の realm-for-cloud.j
 ## ［2026-11-07 追記］レビューの指摘への対応
 
 - 移行の段の間は、旧の共有クライアントが確かめの口も通る（IADR-0626 の追記に例外を明記し、手順書の段 3 を本番の取引の前の必須の段にした）。
+- #1588（監視銘柄の入れ替えの適用の結び付き）の 2 つの口に名前を付け、一覧を market-monitor だけにした（`WatchlistProposalBindingServiceCallerTests`。陰性対照: 名前を外すと赤）。
+  網羅の判定は、方針の要件の型だけでなく、サービスのロールだけを持つ利用者で方針を実際に評価して拾う（#1588 の `RequireAssertion` の門は型からは見えない）。
 - 費用統制の `GET /costs/review`・`GET /costs/usage` は認可は OwnerOrService だが、呼び手の側の実装が無い（母集合の表に無いのは正しい）。段 Enforce ではサービスから 403。

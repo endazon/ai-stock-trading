@@ -31,6 +31,10 @@ public static class ServiceCallerNames
     public const string OrderExecutionShortPermit = "order-execution.short-permit";
     public const string ReportsDailyPolicy = "reports.daily-policy";
     public const string ReportsDailyPolicyAsOf = "reports.daily-policy.as-of";
+    /// <summary>NFR-06, IADR-0634: 監視銘柄の入れ替えの適用の結び付きの照会（市場監視だけ）。</summary>
+    public const string ReportsWatchlistProposalBinding = "reports.watchlist-proposal.binding";
+    /// <summary>NFR-06, IADR-0634: 同じ結び付きの予約（1 回だけ。市場監視だけ）。</summary>
+    public const string ReportsWatchlistProposalBindingReserve = "reports.watchlist-proposal.binding.reserve";
     public const string AuditEventsByType = "audit.events.by-type";
     public const string CollectionRunOnce = "collection.run-once";
 
@@ -73,6 +77,8 @@ public static class ServiceCallerNames
         (OrderExecutionShortPermit, ["risk-management"]),
         (ReportsDailyPolicy, ["trade-decision"]),
         (ReportsDailyPolicyAsOf, ["trade-decision"]),
+        (ReportsWatchlistProposalBinding, ["market-monitor"]),
+        (ReportsWatchlistProposalBindingReserve, ["market-monitor"]),
         (AuditEventsByType, ["report"]),
         (GrpcRiskControlsRead, ["information-collection", "market-monitor", "order-execution", "report", "trade-decision"]),
         (GrpcWatchlistRead, ["information-collection", "trade-decision"]),

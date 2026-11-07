@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
@@ -11,8 +12,9 @@ namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 /// NFR, IADR-0637: 本物の組み立ての経路表（<see cref="EndpointDataSource"/>）から、**サービスのロール（trading-service）で通り得るのに口の名前
 /// （<see cref="ServiceCallersAttribute"/>。REST は <c>.RequireServiceCallers</c>、gRPC は型の <c>[ServiceCallers]</c>）を持たない経路**を挙げる。
 /// 段 Enforce では、そうした経路はサービスから 403 になる（閉じる向き）。口を足したときの名前の付け忘れを、各サービスの試験が止める。
-/// 「通り得る」は、経路の認可（<see cref="IAuthorizeData"/> と経路に付けた <see cref="AuthorizationPolicy"/> を合わせた方針）が、
-/// trading-service を許すロールの要件・サービスを許す所有者の結び付きの要件・<see cref="ServiceCallerRequirement"/> のどれかを持つことである。
+/// 「通り得る」は、経路の認可（<see cref="IAuthorizeData"/> と経路に付けた <see cref="AuthorizationPolicy"/> を合わせた方針）を、
+/// **サービスのロールだけを持つ利用者で実際に評価して通る**ことである（段 Off。<c>RequireAssertion</c> のような中身の見えない要件も評価で拾う）。
+/// 評価で通らなくても、方針が trading-service を許すロール・サービスを許す結び付き・<see cref="ServiceCallerRequirement"/> を持てば数える（判定の取りこぼしを避ける）。
 /// </summary>
 public static class ServiceCallerCoverage
 {
@@ -28,7 +30,7 @@ public static class ServiceCallerCoverage
                 provider,
                 endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
                 endpoint.Metadata.GetOrderedMetadata<AuthorizationPolicy>());
-            if (policy is null || !AdmitsService(policy))
+            if (policy is null || !(AdmitsService(policy) || await AuthorizesServiceAsync(services, endpoint, policy)))
                 continue;
 
             checkedCount++;
@@ -49,6 +51,17 @@ public static class ServiceCallerCoverage
         ServiceCallerRequirement => true,
         _ => false,
     });
+
+    private static async Task<bool> AuthorizesServiceAsync(IServiceProvider services, Endpoint endpoint, AuthorizationPolicy policy)
+    {
+        var identity = new ClaimsIdentity(
+            [new Claim(ClaimTypes.Role, AiStockTradingAuthPolicies.ServiceRole), new Claim("azp", ServiceCallerNames.ClientPrefix + "coverage-probe")],
+            "service-caller-coverage", ClaimTypes.Name, ClaimTypes.Role);
+        var http = new DefaultHttpContext { RequestServices = services };
+        http.SetEndpoint(endpoint);
+        var result = await services.GetRequiredService<IAuthorizationService>().AuthorizeAsync(new ClaimsPrincipal(identity), http, policy);
+        return result.Succeeded;
+    }
 
     private static string Describe(RouteEndpoint endpoint)
     {
