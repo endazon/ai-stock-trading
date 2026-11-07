@@ -70,7 +70,7 @@ grep -rn "lingui-macro\|plugin-react\|vitest" scripts/*.js
 | `vite` | `^6.4.3` → 6.4.3 | `^8.3.6` → 8.3.6（plugin-react 6 の peer） |
 | `@rolldown/plugin-babel` | — | `^0.3.0` → 0.3.0（**新規**。マクロの展開） |
 | `@babel/core` | （plugin-react 4 の推移依存） | `^7.29.0` → 7.29.7（**直接宣言**。`@rolldown/plugin-babel` の peer） |
-| `@lingui/core`・`@lingui/react` | `^6.6.0` → 6.7.0 | `^6.12.0` → 6.12.0 |
+| `@lingui/core`・`@lingui/react` | `^6.6.0` → 6.7.0 | `^6.6.0`（**据え置き**）→ 6.12.0 |
 | `@lingui/cli`・`@lingui/babel-plugin-lingui-macro` | `^6.6.0` → 6.7.0 | `^6.12.0` → 6.12.0 |
 | `@lingui/format-po` | `^6.12.0` → 6.12.0 | 変えない |
 
@@ -91,11 +91,25 @@ grep -rn "lingui-macro\|plugin-react\|vitest" scripts/*.js
 
 - 緩めた規則・外した試験: 無い。
 
+## 基盤の合成での実測（オーケストレーターの追加の確認）
+
+- 手順: 基盤 develop（95ace5d05）を `git worktree add --detach` し、submodule `src/ai-stock-trading` を各 pin の作業ツリーにして、
+  `src/` で `pnpm install --no-frozen-lockfile` → `pnpm run typecheck`・`pnpm run lint`・`pnpm run test`・`pnpm run build`。push はしない。
+- 結果の表と内訳は IADR-0641 §基盤での実測。要点:
+  - 初版（af7d5c33c）は基盤の test で 283 件落ちた（develop の pin では 11 件）。増えた分は `@lingui/core` の範囲 `^6.12.0` で基盤に 6.6.0 と 6.12.0 の
+    2 つの実体ができたため（`Lingui: Attempted to call a translation function without setting a locale.`）。
+  - `@lingui/core`・`@lingui/react` の範囲だけを `^6.6.0` に戻す（lockfile の解決は 6.12.0 のまま。`npm install` は lock を変えず、宣言の 2 行だけが動く）と、
+    基盤は本ユニットにも 6.6.0 を割り当て、落ちる試験は develop の pin と同じ 11 件の集合になる。typecheck・build の赤も develop の pin と同じ 2 件。
+  - vite 8・plugin-react 6・plugin-babel・vitest 5 は基盤の合成に新しい赤を足さない（基盤の `pnpm.overrides` が vite 6・vitest 3 に固定し、基盤の設定で走る）。
+  - develop の pin で既にある赤（`@tanstack/react-query` の範囲 `^5.105.3`、`@playwright/test` の `^1.64.1`）は本 PR の対象外。
+- 範囲を戻した後の本ユニットの検査: `npm ci`・typecheck・lint・e2e:typecheck・test（494 件）・i18n（差分なし）が通る。lockfile の解決は変わらないので E2E は再実行していない。
+
 ## 受け入れ基準
 
 - [x] develop（b2a2e876d）の上で `npm ci` が通り、typecheck・lint・e2e:typecheck・test（494 件）が緑である（取り込み前の確認）
 - [x] 本ブランチで `npm ci` が通る（ERESOLVE が出ない）
 - [x] `npm ls @lingui/core` が 6.12.0 の 1 つだけ（入れ子なし）。lockfile の `@lingui/*` はすべて 6.12.0 で入れ子が無い
+- [x] 基盤（MSP）の合成で、本 PR が typecheck・lint・test・build に新しい赤を足さない（実測。上の §基盤の合成での実測）
 - [x] vite・vitest・rolldown が lockfile に 1 版ずつ（vite 8.3.6・vitest 5.1.0・rolldown 1.2.16）
 - [x] `npm run typecheck`・`npm run lint`・`npm run e2e:typecheck`・`npm run test`（33 files / 494 tests）が通る
 - [x] `npm run i18n`（抽出と compile）で `src/locales` に差分が出ない
