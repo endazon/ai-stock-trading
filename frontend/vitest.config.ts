@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import babel from '@rolldown/plugin-babel';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
@@ -9,7 +10,9 @@ export default defineConfig({
   // MSP/ADR-0031（i18n = Lingui・コンパイル時抽出）: `msg` マクロを babel で展開する。
   // **同じ設定を e2e/vite.harness.config.ts にも置く**（片方だけだと「テストは通るのに E2E ハーネスが
   // 壊れる」という静かな破綻になる。基盤が vite.config.ts と vitest.config.ts の両方に置くのと同じ理由）。
-  plugins: [react({ babel: { plugins: ['@lingui/babel-plugin-lingui-macro'] } })],
+  // NFR / IADR-0641: `@vitejs/plugin-react` 6 は `babel` オプションを持たない（Babel を外し、Vite 8 の Oxc で変換する）。
+  // マクロの展開は `@rolldown/plugin-babel`（`enforce: 'pre'`＝Oxc の変換より前に元のソースへ掛かる）へ移した。
+  plugins: [babel({ plugins: ['@lingui/babel-plugin-lingui-macro'] }), react()],
   resolve: {
     alias: {
       '@foundation': fileURLToPath(new URL('./test/foundation-stub', import.meta.url)),

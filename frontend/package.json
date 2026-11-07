@@ -22,8 +22,8 @@
     "i18n": "npm run i18n:extract && npm run i18n:compile"
   },
   "dependencies": {
-    "@lingui/core": "^6.6.0",
-    "@lingui/react": "^6.6.0",
+    "@lingui/core": "^6.12.0",
+    "@lingui/react": "^6.12.0",
     "@tanstack/react-query": "^5.105.3",
     "@tanstack/react-router": "^1.170.18",
     "lucide-react": "^0.577.0",
@@ -32,11 +32,13 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
+    "@babel/core": "^7.29.0",
     "@eslint/js": "^10.0.1",
-    "@lingui/babel-plugin-lingui-macro": "^6.6.0",
-    "@lingui/cli": "^6.6.0",
+    "@lingui/babel-plugin-lingui-macro": "^6.12.0",
+    "@lingui/cli": "^6.12.0",
     "@lingui/format-po": "^6.12.0",
     "@playwright/test": "^1.64.1",
+    "@rolldown/plugin-babel": "^0.3.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.5.0",
     "@testing-library/react": "^16.0.1",
@@ -44,7 +46,7 @@
     "@types/node": "^26.6.6",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "@vitejs/plugin-react": "^4.3.2",
+    "@vitejs/plugin-react": "^6.2.1",
     "eslint": "^10.14.0",
     "eslint-import-resolver-typescript": "^4.4.5",
     "eslint-plugin-import-x": "^4.18.0",
@@ -54,7 +56,7 @@
     "jsdom": "^25.0.1",
     "typescript": "^5.6.2",
     "typescript-eslint": "^8.72.1",
-    "vite": "^6.4.3",
-    "vitest": "^3.2.7"
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
   }
 }

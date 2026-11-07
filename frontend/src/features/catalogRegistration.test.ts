@@ -1,3 +1,6 @@
+// NFR / IADR-0641: `vitest/globals` は 3 系では Node の型を推移的に読み込んでいたが、5 系では読み込まない（実測）。
+// tsconfig の `types` へ `node` を足すと画面のコードにも Node の型が見えるので、Node の API を読むこの試験だけで参照する。
+/// <reference types="node" />
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';

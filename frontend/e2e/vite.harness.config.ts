@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import babel from '@rolldown/plugin-babel';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
@@ -11,7 +12,9 @@ import { fileURLToPath, URL } from 'node:url';
 // - `msg` マクロの babel 展開は vitest.config.ts と**同じ設定**を置く（片方だけだと静かに割れる）。
 export default defineConfig({
   root: fileURLToPath(new URL('./harness', import.meta.url)),
-  plugins: [react({ babel: { plugins: ['@lingui/babel-plugin-lingui-macro'] } })],
+  // NFR / IADR-0641: `@vitejs/plugin-react` 6 は `babel` オプションを持たない（Babel を外し、Vite 8 の Oxc で変換する）。
+  // マクロの展開は `@rolldown/plugin-babel`（`enforce: 'pre'`＝Oxc の変換より前に元のソースへ掛かる）へ移した。
+  plugins: [babel({ plugins: ['@lingui/babel-plugin-lingui-macro'] }), react()],
   resolve: {
     alias: [
       {
