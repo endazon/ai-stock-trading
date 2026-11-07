@@ -2,7 +2,8 @@
   NFR, ADR-0002, IADR-0566: 常駐 OpenD の Pod への到達の制限（多層防御の 1 段。もう 1 段は認証サイドカーの共有シークレット）。
   既定 opend.networkPolicy.enabled=true（opend.enabled=true のときだけ描く）。
 
-  - ingress だけを絞る（policyTypes: [Ingress]）。egress は絞らない —— OpenD は moomoo のサーバと DNS へ出る必要がある。
+  - この方針（opend-ingress）は ingress だけを絞る（policyTypes: [Ingress]）。egress は既定で絞らない —— OpenD は moomoo のサーバと DNS へ出る必要がある
+    （絞るのは下の opend-egress。明示の opt-in）。
   - API（opend.apiPort）へ届いてよいのは同じ namespace の発注執行（opend.networkPolicy.apiClientPodLabels）だけ。
   - 認証サイドカー（opend.authGateway.port）へ届いてよいのは基盤の BFF（opend.networkPolicy.authGatewayClients）だけ。
     authGateway が無効なら、その口の規則は描かない（＝どこからも届かない）。
@@ -12,6 +13,12 @@
       Prometheus の scrape … OpenD とサイドカーは scrape の対象ではない（chart は scrape の注釈を描かない）。
       ingress（エッジ）… OpenD は Ingress・NodePort を持たない。
   🔴 NetworkPolicy を強制しない CNI では無害な宣言として残るだけである。そのとき呼び出し元を絞るのは共有シークレットの 1 段になる。
+
+  NFR, IADR-0631: 出（opend-egress）。opend.networkPolicy.egress.enabled=true のときだけ描く（既定 false＝従来どおり出を絞らない。values-cloud が有効にする）。
+  - 出てよいのは名前解決と、クラスタの外の公開アドレス（networkPolicy.publicEgress。私設・リンクローカル・CGNAT・ループバック・ノードの公開アドレスを除く）
+    の TCP（opend.networkPolicy.egress.tcpPorts。空＝全ての口）だけ。クラスタの中の Pod・基盤・ノードのメタデータの口へは出られない。
+  - 証券会社のサーバは公開されたアドレスの一覧が無く、IP では絞れない（IADR-0631 に残る範囲を書いた）。
+  - 発注執行からの API の接続への応答は、接続の状態で通る（出の規則は要らない）。
 */ -}}
 {{- if and .Values.opend.enabled .Values.opend.networkPolicy.enabled }}
 {{- $o := .Values.opend }}
@@ -53,4 +60,41 @@ spec:
       ports:
         - { protocol: TCP, port: {{ $o.authGateway.port }} }
     {{- end }}
+{{- if ($np.egress | default dict).enabled }}
+{{- $pe := .Values.networkPolicy.publicEgress }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: opend-egress
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: opend
+    app.kubernetes.io/part-of: ai-stock-trading
+spec:
+  podSelector:
+    matchLabels: { app: opend }
+  policyTypes: [Egress]
+  egress:
+    # 名前解決。
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ .Values.networkPolicy.dns.namespace | quote }} } }
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dns.podLabels | nindent 14 }}
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # 証券会社のサーバ（クラスタの外の公開アドレスの TCP）。
+    - to:
+        - ipBlock:
+            cidr: {{ $pe.cidr }}
+            except: [{{ join ", " (concat ($pe.except | default list) ($pe.extraExcept | default list)) }}]
+      ports:
+        {{- range $p := ($np.egress.tcpPorts | default list) }}
+        - { protocol: TCP, port: {{ $p }} }
+        {{- else }}
+        - { protocol: TCP }
+        {{- end }}
+{{- end }}
 {{- end }}

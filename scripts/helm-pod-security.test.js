@@ -44,6 +44,9 @@ const ENABLE_ALL = [
   '--set', 'opend.authGateway.enabled=true',
   '--set', 'tradingCycle.cronjob.enabled=true',
   '--set', 'broker.tier=moomoo-sim',
+  // NFR, IADR-0631: 通信の制限（networkPolicy.enabled。values-cloud）は CronJob と併用すると描画で止まる（CronJob の組を宣言していない）。
+  // 本試験は Pod の形だけを見るので外す（通信の制限は scripts/helm-network-policy.test.js が見る）。
+  '--set', 'networkPolicy.enabled=false',
 ];
 const OPEND_HOME_NONROOT = ['--set', 'opend.home=/home/opend'];
 const DOTNET_UID = 1654;
@@ -132,6 +135,7 @@ function declaredStages(profile) {
   let w = null;
   let o = null;
   let seccomp = false;
+  let dropAll = false;
   for (const f of profile.files) {
     const t = read(`${CHART}/${f}`);
     const ws = readValue(t, 'podSecurity.stage');
@@ -140,12 +144,15 @@ function declaredStages(profile) {
     if (ws !== null && ws !== '') w = Number(ws);
     if (os !== null && os !== '') o = Number(os);
     if (sc !== null && sc !== '') seccomp = sc === 'true';
+    const da = readValue(t, 'opend.podSecurity.capabilities.dropAll');
+    if (da !== null && da !== '') dropAll = da === 'true';
   }
   const base = read(`${CHART}/values.yaml`);
   return {
     w: w ?? Number(readValue(base, 'podSecurity.stage')),
     o: o ?? Number(readValue(base, 'opend.podSecurity.stage')),
     seccomp,
+    dropAll,
   };
 }
 
@@ -228,7 +235,7 @@ function violations(text, stages, ro = false) {
     // 段に依らず全 Pod でトークンを置かない（AST の Pod は k8s API を使わない）。
     if (automount !== 'false') v.push(`${tag}: automountServiceAccountToken: false が無い（段に依らず要る）`);
     // Worker・CronJob は段 2 から、OpenD は段 3 か明示の opt-in（opend.podSecurity.seccomp=true）で seccomp・権限昇格なし。
-    // 段 1 の OpenD 本体には何も足さない（root の実 OpenD で未検証。ADR-0024）。
+    // 段 1 の OpenD 本体には何も足さない（root の実 OpenD で未検証。ADR-0024）。opt-in の seccomp・capabilities（IADR-0631）は stages で受ける。
     const hardened = r === 'opend' ? (st >= 3 || stages.seccomp === true) : st >= 2;
     if (hardened) {
       if (p.get('seccompProfile.type') !== 'RuntimeDefault') v.push(`${tag}: 段 ${st} なのに Pod の seccompProfile が RuntimeDefault でない`);
@@ -260,9 +267,15 @@ function violations(text, stages, ro = false) {
       // 認証サイドカー（.NET のイメージ）は段に依らず権限昇格なし・ケーパビリティを全て落とす。
       if (hardened || isSidecar) {
         if (c.get('allowPrivilegeEscalation') !== 'false') v.push(`${ctag}: 段 ${st} なのに allowPrivilegeEscalation: false が無い`);
-        const mustDrop = st >= 3 || !isOpendMain;
+        // NFR, IADR-0631: 段 1 の OpenD 本体は opend.podSecurity.capabilities.dropAll（opt-in）のときだけ ALL を落とし、DAC_OVERRIDE・FOWNER だけを戻す。
+        const mustDrop = st >= 3 || !isOpendMain || stages.dropAll === true;
         if (mustDrop && !dropsAll(c)) v.push(`${ctag}: 段 ${st} なのに capabilities.drop に ALL が無い`);
         if (!mustDrop && dropItem(c, 0) !== undefined) v.push(`${ctag}: 段 ${st} の OpenD 本体（root）がケーパビリティを落としている（/opt/opend へ書けなくなる）`);
+        const adds = [];
+        for (let j = 0; (c.get(`capabilities.add.${j}.[text]`) ?? c.get(`capabilities.add.${j}`)) !== undefined; j++) adds.push(c.get(`capabilities.add.${j}.[text]`) ?? c.get(`capabilities.add.${j}`));
+        const allowedAdd = isOpendMain && st < 3 && stages.dropAll === true ? ['DAC_OVERRIDE', 'FOWNER'] : [];
+        for (const a of adds) if (!allowedAdd.includes(a)) v.push(`${ctag}: 段 ${st} で capabilities.add に ${a} がある（戻してよいのは ${allowedAdd.join('・') || '無し'}）`);
+        if (isOpendMain && st < 3 && stages.dropAll === true && adds.slice().sort().join() !== 'DAC_OVERRIDE,FOWNER') v.push(`${ctag}: 段 1 の OpenD 本体の capabilities.add が DAC_OVERRIDE・FOWNER でない（${adds.join(',')}）`);
       } else {
         for (const k of c.keys()) v.push(`${ctag}: 段 ${st} なのにコンテナの securityContext.${k} がある（既定では足さない）`);
       }
@@ -355,20 +368,20 @@ function main() {
     });
     for (const st of [1, 2, 3]) {
       ok(`${prof.label}: 段 ${st}（Worker・CronJob・OpenD）の形`, () => {
-        const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...stageArgs(st, opendStageFor(st))]), { w: st, o: opendStageFor(st) });
+        const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...stageArgs(st, opendStageFor(st))]), { w: st, o: opendStageFor(st), seccomp: declared.seccomp, dropAll: declared.dropAll });
         assert.deepStrictEqual(v, []);
       });
     }
     ok(`${prof.label}: 段 3 ＋ readOnlyRootFilesystem の形`, () => {
-      const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...stageArgs(3, 3, true)]), { w: 3, o: 3 }, true);
+      const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...stageArgs(3, 3, true)]), { w: 3, o: 3, dropAll: declared.dropAll }, true);
       assert.deepStrictEqual(v, []);
     });
     ok(`${prof.label}: Worker 段 2・OpenD 段 1 ＋ seccomp の opt-in の形`, () => {
-      const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...stageArgs(2, 1), '--set', 'opend.podSecurity.seccomp=true']), { w: 2, o: 1, seccomp: true });
+      const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...stageArgs(2, 1), '--set', 'opend.podSecurity.seccomp=true']), { w: 2, o: 1, seccomp: true, dropAll: declared.dropAll });
       assert.deepStrictEqual(v, []);
     });
     ok(`${prof.label}: Worker 段 3・OpenD 段 1（別々に上げられる）でサイドカーは OpenD と同じ uid`, () => {
-      const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...stageArgs(3, 1)]), { w: 3, o: 1 });
+      const v = violations(mustRender([...prof.args, ...ENABLE_ALL, ...stageArgs(3, 1)]), { w: 3, o: 1, seccomp: declared.seccomp, dropAll: declared.dropAll });
       assert.deepStrictEqual(v, []);
     });
   }

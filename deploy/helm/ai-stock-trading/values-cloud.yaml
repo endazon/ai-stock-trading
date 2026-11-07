@@ -97,6 +97,26 @@ opend:
   enabled: true
   authGateway:
     enabled: false
+  # NFR, IADR-0631: 外の中継（OpenD）の権限を最小にする。段 1（root のまま。HOME とデバイス信頼の置き場を変えない）に、
+  #   seccomp RuntimeDefault と権限昇格なし（seccomp: true）・ケーパビリティは全て落として起動に要る 2 つだけを足す。
+  #   - DAC_OVERRIDE: 入口の処理（deploy/opend/entrypoint.sh）が uid 10001 の所有する /opt/opend の OpenD.xml へ書き、OpenD が同じ場所へ
+  #     AppData.dat 等を書く（deploy/opend/README の観測）。所有者でない root の書き込みに要る。
+  #   - FOWNER: 入口の処理が所有者でない OpenD.xml へ chmod 600 をかける。
+  #   実測（2026-11-07。deploy/opend/Dockerfile のまま、OpenD の実行ファイルだけを同じファイル操作をする代わりの物に替えたイメージ）:
+  #   ALL を落とすだけ → OpenD.xml の書き込みで拒否／DAC_OVERRIDE だけ → chmod で拒否／FOWNER だけ → 書き込みで拒否／
+  #   2 つと権限昇格なし・既定の seccomp → 起動まで通る。NET_RAW（同じノードの通信への細工に使える）は落ちる。
+  #   🔴 実 OpenD の実行ファイルそのものでは確かめていない（配布物は取り込みの前に手元に無い）。初回の起動で確かめ、落ちたら手順書の切り戻し
+  #   （docs/operations/cloud-network-policy-runbook.md）で上書きを外す。非 root（段 3）を初回に採らない理由は IADR-0631。
+  podSecurity:
+    stage: 1
+    seccomp: true
+    capabilities:
+      dropAll: true
+      add: [DAC_OVERRIDE, FOWNER]
+  # NFR, IADR-0631: OpenD の出は名前解決とクラスタの外の公開アドレスの TCP だけ（templates/networkpolicy-opend.yaml の opend-egress）。
+  networkPolicy:
+    egress:
+      enabled: true
 
 broker:
   tier: moomoo-sim
@@ -168,6 +188,43 @@ externalSecrets:
 
 reloader:
   enabled: false
+
+# NFR, IADR-0631: 取引ユニットの通信を許可した組だけにする（templates/networkpolicy-services.yaml）。名前空間に入り・出の既定の拒否を置き、
+#   下の宣言の組だけを足す。宣言は呼び手の側（env の *__BaseUrl・grpcClients の写し）。写し忘れは scripts/helm-network-policy.test.js が止める。
+#   🔴 適用の順序と切り戻しは docs/operations/cloud-network-policy-runbook.md（先に試験の環境で通し、稼働へは OpenD の再起動を伴わない形で入れる）。
+#   基盤の側（MSP の deploy/cloud/infra/networkpolicy.yaml）の入りの一覧（Postgres は DB を持つ 7 つ・ブローカと Keycloak は 11 個・
+#   LLM ゲートウェイは report と trade-decision）と同じ組である（片側だけ開けても届かない）。
+networkPolicy:
+  enabled: true
+  services:
+    audit: {}
+    backtest:
+      calls: [order-execution]
+    configuration: {}
+    cost-control:
+      calls: [configuration]
+    information-collection:
+      calls: [cost-control, market-monitor, risk-management]
+      externalHttps: true
+    market-monitor:
+      calls: [risk-management]
+      externalHttps: true
+    notification:
+      calls: [market-monitor, report, risk-management]
+      externalHttps: true
+    order-execution:
+      calls: [risk-management]
+      opend: true
+    report:
+      calls: [audit, risk-management]
+      llmGateway: true
+      externalHttps: true
+    risk-management:
+      externalHttps: true
+    trade-decision:
+      calls: [cost-control, market-monitor, order-execution, report, risk-management]
+      llmGateway: true
+      externalHttps: true
 
 # Pod のセキュリティの段（IADR-0609 の推奨の順）。段 2 で始め、起動と取引の 1 日を確かめてから段 3（非 root）へ上げる（手順書）。
 # 段 2: root のまま seccomp RuntimeDefault・権限昇格なし・ケーパビリティを全て落とす。PSA の enforce は baseline（段 2 と OpenD の
