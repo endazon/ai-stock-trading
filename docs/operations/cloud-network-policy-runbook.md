@@ -78,6 +78,12 @@ NetworkPolicy には「記録だけして通す」段が無い。誤った方針
    - `kubectl -n kube-system get pods -l k8s-app=kube-dns`（名前解決の Pod が出る）
    - `kubectl -n platform-infra get pods -l 'app in (postgres,rabbitmq,keycloak,otel-collector)'`（4 つ出る）
    - `kubectl -n microservices-platform get pods -l app=llmgateway-service`（1 つ出る）
+4. 口が方針と合うこと。NetworkPolicy は Service の口ではなく **Pod の口（targetPort・endpoints の口）** で効く:
+   `kubectl -n platform-infra get svc,endpoints` と `kubectl -n microservices-platform get svc,endpoints llmgateway-service` で、
+   endpoints の口が Postgres 5432・ブローカ 5671・Keycloak 8443・collector 4317・LLM ゲートウェイ 8080 であること。違えば当てずに、`networkPolicy.infra` / `networkPolicy.llmGateway` の口を Pod の口に直す。
+   取引ユニットの別名（`kubectl -n ai-stock-trading get svc postgres rabbitmq keycloak otel-collector`）の `EXTERNAL-IP` が `<名前>.platform-infra.svc.cluster.local` であること。
+5. Pod の網が IPv4 だけであること: `kubectl get nodes -o jsonpath='{.items[*].spec.podCIDRs}'` に IPv6 の範囲が無い。
+   IPv6 の範囲があれば当てない（外への許可は IPv4 の範囲だけを書いているので、IPv6 の外への通信が止まる）。
 
 ### 段 1: 試験の環境として、取引を始める前のクラウドで確かめる
 

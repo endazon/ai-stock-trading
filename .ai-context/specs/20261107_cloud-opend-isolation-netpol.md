@@ -29,6 +29,19 @@ plan_refs:
 - 基盤（MSP の `deploy/cloud/infra/networkpolicy.yaml`）は、Postgres を DB を持つ 7 つ、ブローカと Keycloak（8443）を 11 個、collector を名前空間全体、
   LLM ゲートウェイ（8080）を report と trade-decision だけに開いている。BFF はクラウドで無効（取引ユニットを呼ぶ基盤の Pod は無い）。
 
+### 基盤の口（NetworkPolicy は Pod の口で効く。MSP の origin/develop を読んだ）
+
+| 宛先 | Service（名前空間） | port | targetPort | containerPort | 取引ユニットからの引き方 |
+| --- | --- | --- | --- | --- | --- |
+| Postgres | `postgres`（platform-infra） | 5432 | 5432 | 5432 | 別名 `postgres` → `postgres.platform-infra.svc.cluster.local` |
+| ブローカ | `rabbitmq`（platform-infra） | 5671（amqps） | 5671 | 5671 | 別名 `rabbitmq` → `rabbitmq.platform-infra.svc.cluster.local` |
+| Keycloak | `keycloak`（platform-infra） | 8443 | 8443 | 8443 | 別名 `keycloak` → `keycloak.platform-infra.svc.cluster.local` |
+| collector | `otel-collector`（platform-infra） | 4317 | 4317 | 4317 | 別名 `otel-collector` → `otel-collector.platform-infra.svc.cluster.local` |
+| LLM ゲートウェイ | `llmgateway-service`（microservices-platform） | 8080 | 8080 | 8080（https） | 直に `llmgateway-service.microservices-platform:8080` |
+
+- 出典: MSP の `deploy/cloud/infra/{postgres,rabbitmq,keycloak,otel-collector}.yaml`、`deploy/helm/microservices-platform/templates/{service,deployment}.yaml`（`targetPort: {{ $svc.port }}`・`containerPort: {{ $svc.port }}`）と `values.yaml` の `llmgateway.port: 8080`。
+  別名は本 chart の `templates/externalname-aliases.yaml`（`infraAliases.infraNamespace: platform-infra`）。Service の口と Pod の口はすべて同じで、chart の口の直しは要らない。
+
 ### env から導いた呼び出しの組（values-cloud の描画）
 
 | 呼び手 | 呼び先（取引ユニット） | 基盤 | 外の 443 |
