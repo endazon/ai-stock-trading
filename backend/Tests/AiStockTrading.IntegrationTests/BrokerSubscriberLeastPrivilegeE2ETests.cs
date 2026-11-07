@@ -3,6 +3,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Exceptions;
 using Testcontainers.RabbitMq;
@@ -20,7 +21,8 @@ namespace AiStockTrading.IntegrationTests;
 // 利用者を作り、
 //   1. exchange を運用が先に宣言しておけば、購読側は起動し、束ね、発行側からのメッセージを受け取る
 //   2. その利用者は購読の exchange を非受動で宣言できず、消せもしない（＝ Declare のままなら起動できない。configure を外せた）
-//   3. 購読側が先に起動して exchange がまだ無いときは、起動はブローカの初期化の再試行で待ち、exchange が現れてから束ねて受け取る
+//   3. 購読側が先に起動して exchange がまだ無いときは、受動の宣言が 404 で失敗したこと（初期化の失敗の記録）を拾い、その時点で購読の
+//      キューが未宣言であることを確かめる。exchange が現れた後の再試行で束ねて受け取る（固定の時間の待ちに頼らない）
 // を確かめる。利用者を作るためにブローカの管理コマンドを使うので、外部注入（E2E_*）の経路では走らない。
 [Trait("Category", "Integration")]
 public sealed partial class BrokerSubscriberLeastPrivilegeE2ETests : IAsyncLifetime
@@ -86,8 +88,12 @@ public sealed partial class BrokerSubscriberLeastPrivilegeE2ETests : IAsyncLifet
         await channel.ExchangeDeclareAsync(Exchange, ExchangeType.Fanout, durable: true, autoDelete: false);
     }
 
-    private Task<IHost> StartSubscriberAsync(CancellationToken cancellationToken = default) =>
+    private Task<IHost> StartSubscriberAsync(CancellationToken cancellationToken = default, ILoggerProvider? logs = null) =>
         Host.CreateDefaultBuilder()
+            .ConfigureLogging(logging =>
+            {
+                if (logs is not null) logging.AddProvider(logs);
+            })
             .UseWolverine(opts =>
             {
                 opts.UseAiStockTradingRabbitMq(SubscriberService, SubscriberConnectionString(), SubscribedExchangeDeclaration.Passive);
@@ -169,10 +175,18 @@ public sealed partial class BrokerSubscriberLeastPrivilegeE2ETests : IAsyncLifet
     public async Task 購読側が先に起動してもexchangeが現れるまで待ってから束ねて受け取る()
     {
         // exchange がまだ無い。購読側の起動は受動の宣言の 404 で止まり、Wolverine のブローカの初期化の再試行（5 秒おき）で待つ。
+        // 🔴 固定の待ちに頼らない: 「受動の宣言が、この exchange の不在（404 NOT_FOUND）で失敗した」という初期化の失敗の記録を拾ってから
+        //   次へ進む（待っている理由が exchange の不在であることを区別する）。期限は記録が出ないときの打ち切りだけに使う。
         using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(90));
-        var starting = StartSubscriberAsync(limit.Token);
-        await Task.Delay(TimeSpan.FromSeconds(3));
-        starting.IsCompleted.Should().BeFalse("exchange が無い間、購読側は束ねの無いまま起動を終えない");
+        var logs = new BrokerInitializationFailureCapture(Exchange);
+        var starting = StartSubscriberAsync(limit.Token, logs);
+        // 購読側の初期化が、受動の宣言がこの exchange の不在（404）で失敗したことを記録するまで待つ（出なければ全体の期限で赤）。
+        await logs.ExchangeNotFound.WaitAsync(limit.Token);
+        starting.IsCompleted.Should().BeFalse("exchange が無い間、購読側は起動を終えない");
+        // exchange はキューより先に確かめるので、受動の宣言が失敗した時点で購読のキューはまだ宣言されていない（束ねの無いまま動かない）。
+        (await RabbitMqTopologyProbe.TryDescribeQueueAsync(
+                _rabbitMq.GetConnectionString(), WolverineExtensions.QueueNameFor(SubscriberService, typeof(BscLeastPrivilegeProbe))))
+            .Should().BeNull("受動の宣言が通るまで、購読のキューの宣言と束ねに進まない");
 
         await DeclareExchangeAsOperatorAsync();
         var subscriber = await starting;
@@ -187,6 +201,49 @@ public sealed partial class BrokerSubscriberLeastPrivilegeE2ETests : IAsyncLifet
         {
             await E2EInfrastructure.DisposeQuietlyAsync(publisher as IAsyncDisposable, "発行側のホスト");
             await E2EInfrastructure.DisposeQuietlyAsync(subscriber as IAsyncDisposable, "購読側のホスト");
+        }
+    }
+}
+
+/// <summary>
+/// NFR-18, IADR-0628: Wolverine のブローカの初期化の失敗の記録（再試行の前に Error で出る）のうち、例外が「この exchange の不在」
+/// （RabbitMQ の 404 NOT_FOUND）であるものを拾う。拾ったら <see cref="ExchangeNotFound"/> が完了する。
+/// </summary>
+internal sealed class BrokerInitializationFailureCapture(string exchange) : ILoggerProvider
+{
+    private readonly TaskCompletionSource _notFound = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task ExchangeNotFound => _notFound.Task;
+
+    public ILogger CreateLogger(string categoryName) => new Capture(this);
+
+    public void Dispose()
+    {
+    }
+
+    private void Observe(Exception? exception)
+    {
+        for (var e = exception; e is not null; e = e.InnerException)
+        {
+            if (e is OperationInterruptedException { ShutdownReason.ReplyCode: 404 } oie
+                && oie.ShutdownReason!.ReplyText.Contains(exchange, StringComparison.Ordinal))
+            {
+                _notFound.TrySetResult();
+                return;
+            }
+        }
+    }
+
+    private sealed class Capture(BrokerInitializationFailureCapture owner) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Error;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel >= LogLevel.Error) owner.Observe(exception);
         }
     }
 }

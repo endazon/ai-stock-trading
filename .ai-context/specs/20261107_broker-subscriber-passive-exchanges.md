@@ -83,6 +83,8 @@ plan_refs:
   - stub の transport では Wolverine がリスナーの発見を飛ばすので、起動が呼ぶのと同じ `DiscoverListeners` / `PreregisterSenders` を試験から呼ぶ。
 - 実ブローカ（`BrokerSubscriberLeastPrivilegeE2ETests`。Testcontainers の `rabbitmq:3.13-management`）: 3 件緑（48 秒）。
   購読側を `Declare` に戻すと 1 件目が赤（`BrokerInitializationException`、内側は 403 `ACCESS_REFUSED - configure access to exchange ... refused`、1 分 47 秒）。
+  - ［2026-11-07 追記 / #1581 のレビュー］「先に起動したときに待つ」試験は固定の時間の待ちをやめ、初期化の失敗の記録（受動の宣言がこの exchange の
+    404 で失敗した）を拾ってから、購読のキューが未宣言であることを確かめる形にした。拾う exchange の名前を違えると赤（期限で打ち切り）。
 - helm は手元に無い（描画は CI の helm.yml が検査する）。
 
 ## 影響範囲
