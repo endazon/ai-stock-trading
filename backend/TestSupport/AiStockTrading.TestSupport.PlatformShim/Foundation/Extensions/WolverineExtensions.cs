@@ -165,12 +165,28 @@ public static class WolverineExtensions
     /// <summary>
     /// IADR-0129 決定 5: デッドレターキューの名前。MassTransit 時代と同じ <c>&lt;queue&gt;_error</c> を保つ
     /// （Wolverine の既定は全キュー共有の <c>wolverine-dead-letter-queue</c> であり、どのキューで失敗したかが
-    /// キュー一覧から読めなくなるため採らない）。
+    /// キュー一覧から読めなくなるため採らない）。transport の既定の DLQ の名前は <see cref="ServiceDeadLetterQueueNameFor"/>（IADR-0636）。
     /// </summary>
     public static string DeadLetterQueueNameFor(string queueName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(queueName);
         return $"{queueName}_error";
+    }
+
+    /// <summary>
+    /// NFR-18, IADR-0636: サービスごとの既定のデッドレター（transport の既定の DLQ）の名前。<c>&lt;ServiceName&gt;.dead-letter</c>。
+    /// <para>
+    /// 受信キューの DLQ は <see cref="DeadLetterQueueNameFor"/>（<c>&lt;queue&gt;_error</c>）だが、Wolverine は transport の既定の DLQ
+    /// （既定の名前は全サービスで同じ <c>wolverine-dead-letter-queue</c>）も起動のたびに宣言する（キュー・同名の exchange・束ね）。
+    /// 名前を全サービスで共有すると、ブローカの権限で各サービスに同じ 1 本の宣言・書き込み・読み取りを許すことになり、サービスの間を隔てられない。
+    /// サービス名を前置して、各サービスの権限の接頭辞（<c>&lt;ServiceName&gt;\..*</c>）の中に収める。
+    /// 🔴 基盤（MSP）の権限の生成器はこの字面（下の return）を読んで導出する。変えるときは基盤の生成器も直す。
+    /// </para>
+    /// </summary>
+    public static string ServiceDeadLetterQueueNameFor(string serviceName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
+        return $"{serviceName}.dead-letter";
     }
 
     /// <summary>
@@ -326,6 +342,10 @@ public static class WolverineExtensions
                 }
             })
             .AutoProvision()
+            // 🔴 NFR-18, IADR-0636: transport の既定の DLQ をサービスごとの名前にする（既定の共有の名前を宣言しない）。
+            // 受信キューの DLQ（<queue>_error）は下の ConfigureListeners が個別に与える。これは受信キュー以外の既定の受け皿で、
+            // 宣言されるのはキュー・同名の exchange・束ねの 3 つ。いずれも自分の接頭辞の中なので、ブローカの権限に共有の名前が要らない。
+            .CustomizeDeadLetterQueueing(new DeadLetterQueue(ServiceDeadLetterQueueNameFor(serviceName)))
             .UseConventionalRouting(convention => convention
                 // IADR-0129 決定 1: サービス名を前置してキューを分離する。
                 .QueueNameForListener(messageType => QueueNameFor(serviceName, messageType))
