@@ -162,4 +162,5 @@ spec:
             description: >-
               統制の入力になるメッセージ（型は type）を、受け手が段 2 で処理しなかった（理由は reason）。
               最初に見る場所: 受け手のサービスのログの WRN「メッセージの発行元を確かめられないため処理しません」（EventId 16260。型・名乗った発行元・メッセージ ID が載る）。
-              missing / unverifiable なら鍵の Secret（ast-message-origin-keys）と ESO の同期を、forbidden_issuer / mismatch / replayed ならブローカの利用者と Pod の侵害を疑う。
+              missing / unverifiable なら鍵の Secret（ast-message-origin-signing-keys・ast-message-origin-verify-keys）と ESO の同期を、
+              legacy なら旧い共有の鍵の印だけを付ける発行元（移行の取り残し）を、forbidden_issuer / mismatch / replayed ならブローカの利用者と Pod の侵害を疑う。

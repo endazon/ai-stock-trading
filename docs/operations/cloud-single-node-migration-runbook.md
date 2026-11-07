@@ -9,8 +9,8 @@ updated: 2026-11-07
 <!-- trace:
 ids: [FR-04, FR-08, NFR, NFR-03, NFR-05, NFR-06, FR-10]
 adrs: [ADR-0006, ADR-0024, ADR-0073, ADR-0076, ADR-0078, ADR-0080]
-iadrs: [IADR-0637, IADR-0632, IADR-0631, IADR-0630, IADR-0629, IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627]
-specs: [20261107_s2s-per-service-clients, 20261107_cloud-openbao-tls-store, 20261107_cloud-opend-isolation-netpol, 20261107_cloud-db-per-service-users, 20261107_cloud-keycloak-tls, 20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
+iadrs: [IADR-0637, IADR-0632, IADR-0631, IADR-0630, IADR-0629, IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627, IADR-0633]
+specs: [20261107_s2s-per-service-clients, 20261107_message-origin-asymmetric-signature, 20261107_cloud-openbao-tls-store, 20261107_cloud-opend-isolation-netpol, 20261107_cloud-db-per-service-users, 20261107_cloud-keycloak-tls, 20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
 issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471, MSP#2495]
 -->
 
@@ -128,7 +128,8 @@ issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471, M
 | `ast-secrets` の 3 つの client secret | `cloud/shared/ast-client-secrets`（キーは clientId） | 同上。client ID は chart が字面で足す |
 | CA の写し `platform-infra-ca`（`ca.crt`） | `cloud/shared/platform-infra-ca` | 基盤の `configure.sh` が置く（公開してよい証明書） |
 | `ast-secrets` の `order-approval-signing-key` | `cloud/ast/ast-secrets` | 基盤の `seed-secrets.sh … gen cloud/ast/ast-secrets order-approval-signing-key 32`（OpenBao の中で乱数。在れば上書きしない） |
-| `ast-message-origin-keys`（`backtest`・`information-collection`・`market-monitor`・`order-execution`・`report`・`risk-management`・`trade-decision`） | `cloud/ast/ast-message-origin-keys` | 基盤の `seed-secrets.sh … gen cloud/ast/ast-message-origin-keys <キー> 32` を 7 つのキーごとに流す（下。OpenBao の中で乱数。在れば上書きしない） |
+| `ast-message-origin-signing-keys`（秘密の鍵。`backtest`・`information-collection`・`market-monitor`・`order-execution`・`report`・`risk-management`・`trade-decision`） | `cloud/ast/ast-message-origin-signing-keys` | オーナーが `scripts/ast-message-origin-keygen.sh --live` で鍵の組を作って入れる（下。値は表示しない。在れば上書きしない） |
+| `ast-message-origin-verify-keys`（公開の鍵。キーは同じ 7 つ） | `cloud/ast/ast-message-origin-verify-keys` | 同じスクリプトが、秘密の鍵の後に入れる |
 | `ast-secrets` の外の値 | `cloud/ast/ast-secrets` | オーナーが `put-external-secret.sh cloud/ast/ast-secrets <キー>` で 1 つずつ入れる（下） |
 | `moomoo-credentials`（`login-account`・`login-pwd-md5`） | `cloud/ast/moomoo-credentials` | オーナーが入れる。パスワードは平文で置かず、MD5 の小文字 16 進を入れる |
 | `moomoo-rsa`（`opend_rsa.pem`） | `cloud/ast/moomoo-rsa` | オーナーが手元で 1024 ビットの鍵を作り、ディスクに書かずに流す（下） |
@@ -152,16 +153,35 @@ read -rs v && printf '%s' "$v" | md5sum | cut -d' ' -f1 | tr -d '\n' | "${PUT[@]
 openssl genrsa -traditional 1024 2>/dev/null | "${PUT[@]}" cloud/ast/moomoo-rsa opend_rsa.pem
 ```
 
-メッセージの発行元の鍵（7 つ。乱数で足りるので、オーナーが値を入れるのではなく OpenBao の中で作る）:
+メッセージの発行元の署名の鍵（7 つの組。発行元は秘密の鍵で署名し、受け手は公開の鍵だけを持つ。基盤の `gen` は乱数のバイトしか作れないので、
+鍵の組は手元で作る。値はメモリの中だけに置き、画面・ディスク・引数に出さず、基盤の口の標準入力へだけ流す）:
 
 ```bash
-# 前置き（秘密は含まない。ファイルのパスだけ）。キーが既に在れば 5 で止まる（作り直さない）。
-SEED=(bash <基盤>/deploy/cloud/vault/seed-secrets.sh --live --operator-file <…>.age --identity <…>)
-for k in backtest information-collection market-monitor order-execution report risk-management trade-decision; do
-  "${SEED[@]}" gen cloud/ast/ast-message-origin-keys "$k" 32
-done
+# 前置き（秘密は含まない。ファイルのパスだけ。§5.3 と同じ値）。
+export AST_PUT_EXTERNAL_SECRET='bash <基盤>/deploy/cloud/vault/put-external-secret.sh --live --operator-file <…>.age --identity <…>'
+# 7 つの発行元の組を作り、秘密の鍵 → 公開の鍵の順に入れる。既に在る発行元は作り直さない（終了コード 5）。
+bash scripts/ast-message-origin-keygen.sh --live
+# 作り直し（漏れの疑い・入れ替え）は発行元を指定して --rotate（基盤の口へ --overwrite を渡す）。
+#   bash scripts/ast-message-origin-keygen.sh --live --rotate <発行元>
 ```
 
+- 秘密の鍵だけ入り公開の鍵が入らなかったときは、スクリプトが 1 で止まる。その発行元を `--rotate --no-previous` で作り直す。
+- 再実行で「既に在ります」（終了コード 5）と出た発行元は何も変えていない。組が壊れている疑い（受け手が起動しない・`mismatch` が出る）があれば、
+  その発行元を `--rotate --no-previous` で作り直す。
+- **作り直し（入れ替え）の順**（段 2 で、入れ替えの前に署名された未処理のメッセージを落とさない）:
+  1. `bash scripts/ast-message-origin-keygen.sh --live --rotate <発行元>`。作り直す前に、いまの公開の鍵を
+     `cloud/ast/ast-message-origin-previous-verify-keys` の `<発行元>` へ「前の鍵」として残す（`kubectl` で Secret から読む。値は表示しない）。
+  2. chart を `--set 'global.messageOrigin.previousVerify={<発行元>}'`（または values のファイル）で当てる。
+     その発行元を確かめる受け手に、前の公開の鍵が渡る（`MessageOrigin__PreviousVerifyKeys__<発行元>`）。
+  3. ESO が写した後に、**受け手を先に**作り直す（新旧の両方の公開の鍵で確かめる）。次に、その発行元を作り直す（新しい秘密の鍵で署名する）。
+  4. 入れ替えの前に署名されたメッセージが処理し終わったら、`previousVerify` から外して当て直し、受け手を作り直す。
+     目安は、キューと DLQ が空になり、受け手の窓（既定 24 時間）が過ぎた後。外した後は、前の鍵の署名は段 2 で処理されない。
+  - 漏れの疑いで前の鍵を受け付けたくないときは `--no-previous`（前の鍵を残さない。入れ替えの前の未処理のメッセージは処理されない）。
+  - 前の鍵の置き場は発行元ごとに 1 つである。スクリプトは前の鍵を置いた時刻（値ではない）を ConfigMap `ast-message-origin-rotation` に記録する。
+    窓（既定 1445 分＝受け手の古さの上限 24 時間＋先にあってよい 5 分）の中で同じ発行元をもう一度 `--rotate` すると、何も変えずに 8 で止まる。
+    窓が過ぎるのを待つ。意図して越えるときだけ `--force-within-window` を付ける（警告が出る。最初の前の鍵で署名済みの未処理のメッセージは処理されない）。
+- 旧い共有の鍵（`cloud/ast/ast-message-origin-keys`）はクラウドでは使わない（段 2 は旧い印を受けず、旧い鍵を構成すると起動で止まる）。
+  既に作っていれば、新しい鍵で配備できたことを確かめた後に、オーナーが OpenBao から消してよい。
 - 7 つが揃うまで配備しない（段 2 では、鍵を読むサービスの Pod が起動しない）。
 
 - RSA の鍵は 1024 ビットにする。手元の PoC がこの長さで動いており、2048 ビットで OpenD が動いた記録は無い（基盤の `gen-rsa` は 2048 未満を作れない）。
@@ -186,7 +206,7 @@ done
 - 配備: `helm upgrade --install ast deploy/helm/ai-stock-trading -f deploy/helm/ai-stock-trading/values-cloud.yaml -f <§4 のファイル>`
 - 守りは段 2 で始まる（注文の承認の印・メッセージの発行元の印・所有者のトークンの aud / azp・ボットの許可表・危険な操作の第 2 要素・kill switch の前提条件）。
   - 注文の承認の鍵が無いと、risk-management と order-execution の Pod は起動しない。
-  - メッセージの発行元の鍵（`ast-message-origin-keys`）が無いと、鍵を読む 8 サービスの Pod は起動しない。
+  - メッセージの発行元の鍵（`ast-message-origin-signing-keys`・`ast-message-origin-verify-keys`）が無いと、鍵を読む 9 サービス（監査を含む）の Pod は起動しない。
     受け手が拒んだメッセージは処理されず、ログ（EventId 16260）とメトリクス `ast_messaging_origin_failures_total{outcome="rejected"}`・警報 `AstMessageOriginRejected` に残る。
   - TOTP が無いと、取引を再開・緩める 7 操作は拒まれる。
 - 値を替えたら（作り直し・更新）、ESO が写した後に読む側を作り直す（`kubectl -n ai-stock-trading rollout restart deploy/<名前>`）。クラウドに Reloader は無い。
