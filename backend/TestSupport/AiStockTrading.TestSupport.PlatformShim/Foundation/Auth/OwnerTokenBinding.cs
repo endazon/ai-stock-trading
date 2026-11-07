@@ -238,6 +238,8 @@ public sealed class GrpcOwnerAudienceHandler(OwnerTokenBindingSettings settings,
             return Task.CompletedTask;
         }
 
+        // どのロールでもない利用者には Succeed しない（要件が満たされず、ポリシーは落ちる）。azp の門（GrpcOwnerClientGate）もロールを求めるので
+        // 二重に拒まれる（試験 GrpcOwnerAudiencePolicyTests.どのロールでもない利用者はgRPCの両方の口で通らない）。
         if (!user.IsInRole(AiStockTradingAuthPolicies.OwnerRole) && !user.IsInRole(AiStockTradingAuthPolicies.BotRole))
             return Task.CompletedTask;
 

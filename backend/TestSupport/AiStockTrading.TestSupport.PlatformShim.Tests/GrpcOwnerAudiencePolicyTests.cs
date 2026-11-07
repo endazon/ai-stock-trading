@@ -73,6 +73,22 @@ public class GrpcOwnerAudiencePolicyTests
         (await Evaluate(Principal([OwnerRole], "bff", Audience), policy, mode)).Should().BeFalse("azp の門は段に依らない");
     }
 
+    // NFR-06, IADR-0638 決定 5（AST#1596 のレビュー）: Owner・Bot・Service のどのロールでもない利用者は、gRPC の 2 つの口のどちらでも、
+    // 段に依らず通らない（認証済みで認可が落ちる＝gRPC では PERMISSION_DENIED）。宛先の判定器はこの利用者に Succeed しないので要件が満たされず、
+    // 加えて azp の門（GrpcOwnerClientGate.Allows / AllowsOwner）もロールを求めて偽を返す。azp・aud が正しくても同じ。
+    [Theory]
+    [InlineData(AiStockTradingAuthPolicies.GrpcOwnerOnly, null)]
+    [InlineData(AiStockTradingAuthPolicies.GrpcOwnerOnly, "Report")]
+    [InlineData(AiStockTradingAuthPolicies.GrpcOwnerOnly, "Enforce")]
+    [InlineData(AiStockTradingAuthPolicies.GrpcOwnerOrService, null)]
+    [InlineData(AiStockTradingAuthPolicies.GrpcOwnerOrService, "Report")]
+    [InlineData(AiStockTradingAuthPolicies.GrpcOwnerOrService, "Enforce")]
+    public async Task どのロールでもない利用者はgRPCの両方の口で通らない(string policy, string? mode)
+    {
+        (await Evaluate(Principal([], Bot, Audience), policy, mode)).Should().BeFalse("ロールが無い");
+        (await Evaluate(Principal(["trading-viewer"], Bot, Audience), policy, mode)).Should().BeFalse("許可されていないロール");
+    }
+
     // サービスの分岐は所有者の段の対象外（GrpcOwnerOnly は従前どおり s2s を通さない）。
     [Fact]
     public async Task サービスの分岐は所有者の宛先の段で変わらない()
