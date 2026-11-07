@@ -461,6 +461,51 @@ namespace RiskManagementService.Infrastructure.Migrations
                     b.ToTable("order_screening_observations", (string)null);
                 });
 
+            modelBuilder.Entity("RiskManagementService.Infrastructure.Persistence.OwnerSecondFactorStateRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ConsecutiveFailures")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("LastAcceptedOperation")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("LastAcceptedStep")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("LastAcceptedTarget")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset?>("LockedUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("LockoutCount")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("ManualUnlockRequired")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("SecretFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("owner_second_factor_state", (string)null);
+                });
+
             modelBuilder.Entity("RiskManagementService.Infrastructure.Persistence.PauseRow", b =>
                 {
                     b.Property<int>("Id")

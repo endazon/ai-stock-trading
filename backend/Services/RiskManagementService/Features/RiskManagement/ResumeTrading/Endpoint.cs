@@ -17,6 +17,6 @@ internal static class ResumeTradingEndpoint
     {
         // NFR-06, FR-14, #1542, IADR-0615: 再開は危険な操作（第 2 要素）。
         return Results.Ok(svc.Resume(RiskControlEndpoints.ActorOf(http), req.Reason,
-            RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.TradingResume, req.SecondFactorCode)));
+            RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.TradingResume, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorTargets.TradingPause, req.SecondFactorCode)));
     }
 }

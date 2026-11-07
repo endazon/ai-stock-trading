@@ -85,7 +85,7 @@ internal static class AdoptPositionDriftEndpoint
 
         var outcome = svc.Adopt(new PositionDriftAdoptionCommand(req.Symbol, market, req.Reason), actor.Actor,
             // NFR-06, FR-14, #1542, IADR-0615: 乖離の取り込み（台帳の書き換え）は危険な操作（第 2 要素。門は書き込みの直前にサービスが呼ぶ）。
-            RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.PositionDriftAdopt, req.SecondFactorCode));
+            RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.PositionDriftAdopt, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorTargets.Drift(market, req.Symbol), req.SecondFactorCode));
 
         if (!outcome.Accepted)
         {

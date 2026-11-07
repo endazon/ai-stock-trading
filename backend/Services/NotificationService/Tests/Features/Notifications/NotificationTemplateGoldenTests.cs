@@ -531,6 +531,54 @@ public class NotificationTemplateGoldenTests
                     + "**建玉の解消にも失敗しました。逆指値なしの建玉が残っている可能性があります。"
                     + "直ちに確認してください。**",
                 NotificationSeverity.Critical)),
+
+        // NFR-06, FR-14, IADR-0626 決定 3・4: 確認コードの成功は「何に使われたか」（操作と対象）を知らせる。
+        ["OwnerSecondFactorChecked/成功"] = (
+            new OwnerSecondFactorChecked("StagePromote", "stage:Stage2Small", "Verified", 0, 0, null, false, false, T),
+            new NotificationMessage(
+                "確認コード: 確かめました",
+                "操作 StagePromote（対象 stage:Stage2Small）に確認コードを使いました（2026-08-28 03:00:00Z）。"
+                    + "このコードは他の操作には使えません。心当たりが無ければ、すぐに kill switch を起動し、"
+                    + "Discord のアカウントとボットの資格情報を確かめてください。",
+                NotificationSeverity.Info)),
+
+        // 失敗は続けた回数と、続ければ止まることを知らせる。
+        ["OwnerSecondFactorChecked/失敗"] = (
+            new OwnerSecondFactorChecked("ReportConfirm", "report:2026-08-27@v2", "Invalid", 3, 0, null, false, false, T),
+            new NotificationMessage(
+                "確認コード: 確かめられませんでした",
+                "操作 ReportConfirm（対象 report:2026-08-27@v2）の確認コードが違っていました（2026-08-28 03:00:00Z・続けて 3 回）。"
+                    + "続けて失敗すると、確認コードを要する操作を止めます。心当たりが無ければ、誰かが試しています。",
+                NotificationSeverity.Warning)),
+
+        ["OwnerSecondFactorChecked/使用済み"] = (
+            new OwnerSecondFactorChecked("KillSwitchDisengage", "kill-switch", "Replayed", 1, 0, null, false, false, T),
+            new NotificationMessage(
+                "確認コード: 確かめられませんでした",
+                "操作 KillSwitchDisengage（対象 kill-switch）の確認コードが使用済みでした（2026-08-28 03:00:00Z・続けて 1 回）。"
+                    + "続けて失敗すると、確認コードを要する操作を止めます。心当たりが無ければ、誰かが試しています。",
+                NotificationSeverity.Warning)),
+
+        // 🔴 停止は解ける時刻と、止めている間は正しいコードも受け付けないことを書く。
+        ["OwnerSecondFactorChecked/停止"] = (
+            new OwnerSecondFactorChecked("TradingResume", "trading-pause", "Invalid", 0, 2, T.AddMinutes(30), false, true, T),
+            new NotificationMessage(
+                "確認コード: 一時的に止めました",
+                "操作 TradingResume（対象 trading-pause）で確認コードの失敗が続いたため、2026-08-28 03:30Z まで"
+                    + "確認コードを要する操作を止めました（2 回目。止めるたびに長くなり、続けば手動の解除まで閉じます）。"
+                    + "止めている間は正しいコードも受け付けません。心当たりが無ければ、誰かが試しています。",
+                NotificationSeverity.Critical)),
+
+        // 🔴 手動の解除まで閉じたら、時間では解けないことと、止める向きは使えることを書く。
+        ["OwnerSecondFactorChecked/手動の解除"] = (
+            new OwnerSecondFactorChecked("TradingResume", "trading-pause", "Invalid", 0, 4, null, true, true, T),
+            new NotificationMessage(
+                "確認コード: 手動の解除まで閉じました",
+                "操作 TradingResume（対象 trading-pause）の確認コードの失敗が重なったため、確認コードを要する操作を閉じました"
+                    + "（2026-08-28 03:00:00Z）。時間では解けません。止める向きの操作（kill switch の起動・一時停止）は使えます。"
+                    + "心当たりが無ければ、Discord のアカウントとボットの資格情報が漏れていないかを確かめてください。"
+                    + "解除はノードからシークレットを作り直します（手順書の「作り直し」）。",
+                NotificationSeverity.Critical)),
     };
 
     public static TheoryData<string> GoldenKeys()

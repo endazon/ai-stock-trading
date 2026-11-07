@@ -40,7 +40,7 @@ public class OwnerSecondFactorGateTests
     {
         var gate = Gate(SecondFactorMode.Off, out _);
 
-        gate.Check(SecondFactorOperation.KillSwitchDisengage, null).Should().Be(new SecondFactorDecision(SecondFactorOutcome.Skipped, true));
+        gate.Check(SecondFactorOperation.KillSwitchDisengage, Target, null).Should().Be(new SecondFactorDecision(SecondFactorOutcome.Skipped, true));
     }
 
     [Fact]
@@ -48,7 +48,7 @@ public class OwnerSecondFactorGateTests
     {
         var gate = Gate(SecondFactorMode.Enforce, out var clock);
 
-        gate.Check(SecondFactorOperation.TradingResume, CodeAt(clock.Now.AddSeconds(-30))).Should().Be(Verified);
+        gate.Check(SecondFactorOperation.TradingResume, Target, CodeAt(clock.Now.AddSeconds(-30))).Should().Be(Verified);
     }
 
     [Fact]
@@ -57,8 +57,8 @@ public class OwnerSecondFactorGateTests
         var gate = Gate(SecondFactorMode.Enforce, out var clock);
         var code = CodeAt(clock.Now);
 
-        gate.Check(SecondFactorOperation.StagePromote, code).Outcome.Should().Be(SecondFactorOutcome.Verified);
-        gate.Check(SecondFactorOperation.StagePromote, code).Should().Be(new SecondFactorDecision(SecondFactorOutcome.Replayed, false));
+        gate.Check(SecondFactorOperation.StagePromote, Target, code).Outcome.Should().Be(SecondFactorOutcome.Verified);
+        gate.Check(SecondFactorOperation.StagePromote, Target, code).Should().Be(new SecondFactorDecision(SecondFactorOutcome.Replayed, false));
     }
 
     [Fact]
@@ -66,8 +66,8 @@ public class OwnerSecondFactorGateTests
     {
         var gate = Gate(SecondFactorMode.Enforce, out var clock);
 
-        gate.Check(SecondFactorOperation.ReportConfirm, CodeAt(clock.Now.AddSeconds(30))).Outcome.Should().Be(SecondFactorOutcome.Verified);
-        gate.Check(SecondFactorOperation.ReportConfirm, CodeAt(clock.Now)).Outcome.Should().Be(SecondFactorOutcome.Replayed);
+        gate.Check(SecondFactorOperation.ReportConfirm, Target, CodeAt(clock.Now.AddSeconds(30))).Outcome.Should().Be(SecondFactorOutcome.Verified);
+        gate.Check(SecondFactorOperation.ReportConfirm, Target, CodeAt(clock.Now)).Outcome.Should().Be(SecondFactorOutcome.Replayed);
     }
 
     [Theory]
@@ -78,7 +78,7 @@ public class OwnerSecondFactorGateTests
     {
         var gate = Gate(SecondFactorMode.Enforce, out _);
 
-        gate.Check(SecondFactorOperation.GoodFaithViolationClear, code).Should().Be(new SecondFactorDecision(SecondFactorOutcome.Invalid, false));
+        gate.Check(SecondFactorOperation.GoodFaithViolationClear, Target, code).Should().Be(new SecondFactorDecision(SecondFactorOutcome.Invalid, false));
     }
 
     // 時刻は固定（ManualClock）なので、前後 1 段の 3 つのコードを除いた 6 桁を決めて外す（偶然一致で黙って通らない）。
@@ -89,7 +89,7 @@ public class OwnerSecondFactorGateTests
         var wrong = Wrong(clock);
         new[] { -30, 0, 30 }.Select(s => CodeAt(clock.Now.AddSeconds(s))).Should().NotContain(wrong);
 
-        gate.Check(SecondFactorOperation.GoodFaithViolationClear, wrong).Should().Be(new SecondFactorDecision(SecondFactorOutcome.Invalid, false));
+        gate.Check(SecondFactorOperation.GoodFaithViolationClear, Target, wrong).Should().Be(new SecondFactorDecision(SecondFactorOutcome.Invalid, false));
     }
 
     [Fact]
@@ -97,22 +97,22 @@ public class OwnerSecondFactorGateTests
     {
         var gate = Gate(SecondFactorMode.Enforce, out var clock);
 
-        gate.Check(SecondFactorOperation.PositionDriftAdopt, CodeAt(clock.Now.AddSeconds(-90))).Outcome.Should().Be(SecondFactorOutcome.Invalid);
+        gate.Check(SecondFactorOperation.PositionDriftAdopt, Target, CodeAt(clock.Now.AddSeconds(-90))).Outcome.Should().Be(SecondFactorOutcome.Invalid);
     }
 
     [Fact]
     public void 欠けたコードはEnforceで拒みAuditで通す()
     {
-        Gate(SecondFactorMode.Enforce, out _).Check(SecondFactorOperation.PolicyConfirm, null)
+        Gate(SecondFactorMode.Enforce, out _).Check(SecondFactorOperation.PolicyConfirm, Target, null)
             .Should().Be(new SecondFactorDecision(SecondFactorOutcome.Missing, false));
-        Gate(SecondFactorMode.Audit, out _).Check(SecondFactorOperation.PolicyConfirm, null)
+        Gate(SecondFactorMode.Audit, out _).Check(SecondFactorOperation.PolicyConfirm, Target, null)
             .Should().Be(new SecondFactorDecision(SecondFactorOutcome.Missing, true));
     }
 
     [Fact]
     public void 段1のAuditは失敗しても操作を止めない()
     {
-        Gate(SecondFactorMode.Audit, out _).Check(SecondFactorOperation.KillSwitchDisengage, "000001")
+        Gate(SecondFactorMode.Audit, out _).Check(SecondFactorOperation.KillSwitchDisengage, Target, "000001")
             .Allowed.Should().BeTrue();
     }
 
@@ -121,12 +121,12 @@ public class OwnerSecondFactorGateTests
     {
         var gate = Gate(SecondFactorMode.Enforce, out var clock);
         for (var i = 0; i < 5; i++)
-            gate.Check(SecondFactorOperation.TradingResume, Wrong(clock)).Outcome.Should().Be(SecondFactorOutcome.Invalid);
+            gate.Check(SecondFactorOperation.TradingResume, Target, Wrong(clock)).Outcome.Should().Be(SecondFactorOutcome.Invalid);
 
-        gate.Check(SecondFactorOperation.TradingResume, CodeAt(clock.Now)).Should().Be(new SecondFactorDecision(SecondFactorOutcome.LockedOut, false));
+        gate.Check(SecondFactorOperation.TradingResume, Target, CodeAt(clock.Now)).Should().Be(new SecondFactorDecision(SecondFactorOutcome.LockedOut, false));
 
         clock.Now = clock.Now.AddMinutes(15);
-        gate.Check(SecondFactorOperation.TradingResume, CodeAt(clock.Now)).Outcome.Should().Be(SecondFactorOutcome.Verified);
+        gate.Check(SecondFactorOperation.TradingResume, Target, CodeAt(clock.Now)).Outcome.Should().Be(SecondFactorOutcome.Verified);
     }
 
     [Fact]
@@ -134,13 +134,13 @@ public class OwnerSecondFactorGateTests
     {
         var gate = Gate(SecondFactorMode.Enforce, out var clock);
         for (var i = 0; i < 4; i++)
-            gate.Check(SecondFactorOperation.TradingResume, Wrong(clock));
-        gate.Check(SecondFactorOperation.TradingResume, CodeAt(clock.Now)).Outcome.Should().Be(SecondFactorOutcome.Verified);
+            gate.Check(SecondFactorOperation.TradingResume, Target, Wrong(clock));
+        gate.Check(SecondFactorOperation.TradingResume, Target, CodeAt(clock.Now)).Outcome.Should().Be(SecondFactorOutcome.Verified);
 
         clock.Now = clock.Now.AddSeconds(30);
         for (var i = 0; i < 4; i++)
-            gate.Check(SecondFactorOperation.TradingResume, Wrong(clock));
-        gate.Check(SecondFactorOperation.TradingResume, CodeAt(clock.Now)).Outcome.Should().Be(SecondFactorOutcome.Verified);
+            gate.Check(SecondFactorOperation.TradingResume, Target, Wrong(clock));
+        gate.Check(SecondFactorOperation.TradingResume, Target, CodeAt(clock.Now)).Outcome.Should().Be(SecondFactorOutcome.Verified);
     }
 
     [Fact]
@@ -148,10 +148,12 @@ public class OwnerSecondFactorGateTests
     {
         var clock = new ManualClock();
         new OwnerSecondFactorGate(new OwnerSecondFactorOptions { Mode = SecondFactorMode.Enforce }, clock, NullLogger.Instance)
-            .Check(SecondFactorOperation.StagePromote, "123456").Should().Be(new SecondFactorDecision(SecondFactorOutcome.NotConfigured, false));
+            .Check(SecondFactorOperation.StagePromote, Target, "123456").Should().Be(new SecondFactorDecision(SecondFactorOutcome.NotConfigured, false));
         new OwnerSecondFactorGate(new OwnerSecondFactorOptions { Mode = SecondFactorMode.Audit }, clock, NullLogger.Instance)
-            .Check(SecondFactorOperation.StagePromote, "123456").Should().Be(new SecondFactorDecision(SecondFactorOutcome.NotConfigured, true));
+            .Check(SecondFactorOperation.StagePromote, Target, "123456").Should().Be(new SecondFactorDecision(SecondFactorOutcome.NotConfigured, true));
     }
+
+    private const string Target = "kill-switch";
 
     private static readonly SecondFactorDecision Verified = new(SecondFactorOutcome.Verified, true);
 

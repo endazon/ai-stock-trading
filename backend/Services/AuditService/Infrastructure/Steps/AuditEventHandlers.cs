@@ -214,6 +214,16 @@ public sealed class GoodFaithViolationsClearedAuditHandler(IAuditEventStore stor
     }
 }
 
+// NFR-06, FR-14, FR-11, IADR-0626 決定 3: 危険な操作の確認コードを確かめた結果を中央監査台帳へ記録する（止めている間の試行も含む全件）。
+public sealed class OwnerSecondFactorCheckedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(OwnerSecondFactorChecked message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-10, FR-11, #465, ADR-0027 決定1, IADR-0183: 借株料の**日次の計上額**を中央監査台帳へ記録する。
 // **累計だけを保持すると、後から日別の内訳を復元できない**（決定1）。
 public sealed class BorrowFeeAccruedAuditHandler(IAuditEventStore store, IClock clock)

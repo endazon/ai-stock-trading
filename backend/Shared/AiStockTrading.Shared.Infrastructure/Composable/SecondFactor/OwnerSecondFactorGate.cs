@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Shared.Infrastructure.Composable.SecondFactor;
@@ -36,9 +34,12 @@ public enum SecondFactorOutcome
     LockedOut,
     /// <summary>シークレットが構成されていない・読めない。</summary>
     NotConfigured,
+
+    /// <summary>IADR-0626 決定 1: 共有の状態を読めない・書けない（DB の障害・リスク管理へ届かない）。Enforce は拒む（閉じる向き）。</summary>
+    Unavailable,
 }
 
-/// <summary>NFR-06, #1542, IADR-0615: 第 2 要素の構成（`OwnerSecondFactor:*`）。</summary>
+/// <summary>NFR-06, #1542, IADR-0615, IADR-0626: 第 2 要素の構成（`OwnerSecondFactor:*`）。</summary>
 public sealed class OwnerSecondFactorOptions
 {
     public const string SectionName = "OwnerSecondFactor";
@@ -48,25 +49,32 @@ public sealed class OwnerSecondFactorOptions
     /// <summary>base32 のシークレット。chart は Secret `ast-owner-totp` の optional の参照で渡す（値はリポジトリに置かない）。</summary>
     public string? Secret { get; set; }
 
-    /// <summary>連続して失敗したらロックする回数（既定 5）。</summary>
+    /// <summary>連続して失敗したら止める回数（既定 5）。</summary>
     public int MaxConsecutiveFailures { get; set; } = 5;
 
-    /// <summary>ロックの長さ（既定 15 分）。</summary>
+    /// <summary>1 回目に止める長さ（既定 15 分）。2 回目以降は倍に延ばす（IADR-0626 決定 2）。</summary>
     public int LockoutMinutes { get; set; } = 15;
+
+    /// <summary>
+    /// 止めた回数がこの値に達したら、時間では解かず手動の解除（シークレットの作り直し）を求める（既定 4＝15・30・60 分の後）。
+    /// IADR-0626 決定 2。
+    /// </summary>
+    public int ManualUnlockAfterLockouts { get; set; } = 4;
 }
 
 /// <summary>判定。<see cref="Allowed"/> が false なら呼び手は操作をしない。</summary>
 public sealed record SecondFactorDecision(SecondFactorOutcome Outcome, bool Allowed);
 
 /// <summary>
-/// NFR-06, FR-14, #1542, IADR-0615: 危険な操作の第 2 要素（TOTP）の門。<b>ボットの外（提供側）で検証する</b>。
+/// NFR-06, FR-14, #1542, IADR-0615, IADR-0626: 危険な操作の第 2 要素（TOTP）の門。<b>ボットの外（提供側）で検証する</b>。
 /// <list type="bullet">
-///   <item>前後 1 段（±30 秒）まで受け付け、受け付けた段より新しい段だけを通す（同じコードの再利用を拒む）。</item>
-///   <item>連続して <see cref="OwnerSecondFactorOptions.MaxConsecutiveFailures"/> 回失敗したら一定時間ロックする（コードの欠けは数えない）。</item>
+///   <item>確かめは <see cref="IOwnerSecondFactorVerifier"/> が行う。状態（最後の段・失敗の数・停止）は 2 サービスで 1 つ
+///   （リスク管理が持ち、報告書はリスク管理へ問い合わせる。IADR-0626 決定 1）。</item>
+///   <item>確かめは操作の種類と対象（<c>target</c>）に結び付ける。一度使ったコードは、どの操作・どのサービスでも再び通らない
+///   （IADR-0626 決定 4）。</item>
 ///   <item>Audit（段 1）は結果を記録するだけで、操作を止めない。Enforce（段 2）は Verified 以外を拒む（シークレットが無ければ拒む）。</item>
-///   <item>ログにはコードを載せない（操作・結果・段だけ）。</item>
+///   <item>ログにはコードを載せない（操作・対象・結果・段だけ）。</item>
 /// </list>
-/// 状態（最後の段・失敗の数）はプロセスの中に持つ（Pod は 1 台）。
 /// </summary>
 public sealed class OwnerSecondFactorGate
 {
@@ -74,100 +82,42 @@ public sealed class OwnerSecondFactorGate
     public const string LogMarker = "owner-second-factor:";
 
     private readonly OwnerSecondFactorOptions _options;
-    private readonly TimeProvider _time;
+    private readonly IOwnerSecondFactorVerifier _verifier;
     private readonly ILogger _logger;
-    private readonly byte[]? _key;
-    private readonly Lock _gate = new();
-    private long _lastAcceptedStep = long.MinValue;
-    private int _consecutiveFailures;
-    private DateTimeOffset? _lockedUntil;
 
+    /// <summary>プロセスの中の状態で確かめる（単体の実行・試験。状態は共有しない）。</summary>
     public OwnerSecondFactorGate(OwnerSecondFactorOptions options, TimeProvider time, ILogger logger)
+        : this(options, new TotpOwnerSecondFactorVerifier(options, new InMemoryOwnerSecondFactorStateStore(), time, logger), logger)
+    {
+    }
+
+    public OwnerSecondFactorGate(OwnerSecondFactorOptions options, IOwnerSecondFactorVerifier verifier, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(verifier);
         _options = options;
-        _time = time ?? TimeProvider.System;
+        _verifier = verifier;
         _logger = logger;
-        _key = Totp.TryDecodeBase32(options.Secret, out var key) ? key : null;
-        if (options.Mode != SecondFactorMode.Off && _key is null)
-        {
-            _logger.LogWarning(
-                "{Marker} シークレットが無いか読めません（段={Mode}）。Audit は記録だけ、Enforce は危険な操作をすべて拒みます。",
-                LogMarker, options.Mode);
-        }
     }
 
     public SecondFactorMode Mode => _options.Mode;
 
-    public SecondFactorDecision Check(SecondFactorOperation operation, string? code)
+    /// <summary>
+    /// 操作 <paramref name="operation"/> を対象 <paramref name="target"/> に行う前に、コードを確かめる。
+    /// 🔴 IADR-0626 決定 4: 対象は記録・通知に載せ、オーナーが「何に使われたか」を見られるようにする。
+    /// </summary>
+    public SecondFactorDecision Check(SecondFactorOperation operation, string target, string? code)
     {
         if (_options.Mode == SecondFactorMode.Off)
             return new SecondFactorDecision(SecondFactorOutcome.Skipped, true);
 
-        var outcome = Evaluate(code);
+        var outcome = _verifier.Verify(operation, target, code);
         var allowed = _options.Mode == SecondFactorMode.Audit || outcome == SecondFactorOutcome.Verified;
         _logger.Log(
             outcome == SecondFactorOutcome.Verified ? LogLevel.Information : LogLevel.Warning,
-            "{Marker} operation={Operation} outcome={Outcome} mode={Mode} allowed={Allowed}",
-            LogMarker, operation, outcome, _options.Mode, allowed);
+            "{Marker} operation={Operation} target={Target} outcome={Outcome} mode={Mode} allowed={Allowed}",
+            LogMarker, operation, OwnerSecondFactorTargets.ForLog(target), outcome, _options.Mode, allowed);
         return new SecondFactorDecision(outcome, allowed);
-    }
-
-    private SecondFactorOutcome Evaluate(string? code)
-    {
-        if (_key is null)
-            return SecondFactorOutcome.NotConfigured;
-
-        lock (_gate)
-        {
-            var now = _time.GetUtcNow();
-            if (_lockedUntil is { } until && now < until)
-                return SecondFactorOutcome.LockedOut;
-
-            if (string.IsNullOrEmpty(code))
-                return SecondFactorOutcome.Missing;
-
-            var trimmed = code.Trim();
-            var step = Totp.StepOf(now);
-            long? matched = null;
-            if (trimmed.Length == Totp.Digits && trimmed.All(char.IsAsciiDigit))
-            {
-                for (var d = -1; d <= 1; d++)
-                {
-                    var expected = Encoding.ASCII.GetBytes(Totp.Compute(_key, step + d));
-                    if (CryptographicOperations.FixedTimeEquals(expected, Encoding.ASCII.GetBytes(trimmed)))
-                    {
-                        matched = step + d;
-                        break;
-                    }
-                }
-            }
-
-            if (matched is { } m)
-            {
-                if (m <= _lastAcceptedStep)
-                    return Fail(SecondFactorOutcome.Replayed, now);
-
-                _lastAcceptedStep = m;
-                _consecutiveFailures = 0;
-                _lockedUntil = null;
-                return SecondFactorOutcome.Verified;
-            }
-
-            return Fail(SecondFactorOutcome.Invalid, now);
-        }
-    }
-
-    private SecondFactorOutcome Fail(SecondFactorOutcome outcome, DateTimeOffset now)
-    {
-        _consecutiveFailures++;
-        if (_consecutiveFailures >= Math.Max(1, _options.MaxConsecutiveFailures))
-        {
-            _lockedUntil = now.AddMinutes(Math.Max(1, _options.LockoutMinutes));
-            _consecutiveFailures = 0;
-        }
-
-        return outcome;
     }
 }
 

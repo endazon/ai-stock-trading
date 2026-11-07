@@ -10,6 +10,7 @@ using RiskManagementService.Features.RiskManagement.EvaluateWithdrawal;
 using RiskManagementService.Features.RiskManagement.GetBuyInInferences;
 using RiskManagementService.Features.RiskManagement.GetDriftAdoptions;
 using RiskManagementService.Features.RiskManagement.GetEntryBlockers;
+using RiskManagementService.Features.RiskManagement.VerifyOwnerSecondFactor;
 using RiskManagementService.Features.RiskManagement.GetFills;
 using RiskManagementService.Features.RiskManagement.GetKillSwitch;
 using RiskManagementService.Features.RiskManagement.GetOpenPositions;
@@ -143,6 +144,9 @@ internal static class RiskControlEndpoints
         owner.MapGetStageGateHistory();
         owner.MapRequestStageTransition();
         owner.MapEvaluateWithdrawal();
+
+        // ---- 第 2 要素の代わりの確かめ（NFR-06, FR-14, IADR-0626 決定 1）: サービスの身元だけ（報告書が呼ぶ）。状態は 2 サービスで 1 つ ----
+        g.MapVerifyOwnerSecondFactor();
 
         return app;
     }

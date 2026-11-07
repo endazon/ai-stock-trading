@@ -16,7 +16,7 @@ internal static class DisengageKillSwitchEndpoint
         // NFR-06, FR-14, #1542, IADR-0615: 解除は危険な操作（第 2 要素。門は状態を変える直前にサービスが呼ぶ）。
         // #1534, IADR-0620: 見た状態の版（任意）。本文の expectedVersion を優先し、無ければ If-Match を使う。
         svc.Disengage(RiskControlEndpoints.ActorOf(http), req.Reason,
-            RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.KillSwitchDisengage, req.SecondFactorCode),
+            RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.KillSwitchDisengage, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorTargets.KillSwitch, req.SecondFactorCode),
             KillSwitchPrecondition.ExpectedVersionOf(req, http));
         return Results.Ok(svc.GetState());
     }

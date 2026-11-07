@@ -39,6 +39,34 @@ public sealed class KillSwitchRow
     public long Version { get; set; }
 }
 
+// NFR-06, FR-14, IADR-0626 決定 1: 危険な操作の第 2 要素（TOTP）の状態（単一行）。リスク管理と報告書の 2 サービスで共有する。
+// 🔴 コード・シークレットそのものは持たない。指紋（シークレットの SHA-256 の先頭）だけを持ち、作り直しを見分ける。
+public sealed class OwnerSecondFactorStateRow
+{
+    public int Id { get; set; } = SingletonKeys.Id;
+
+    public string SecretFingerprint { get; set; } = string.Empty;
+
+    public long LastAcceptedStep { get; set; } = long.MinValue;
+
+    public int ConsecutiveFailures { get; set; }
+
+    public int LockoutCount { get; set; }
+
+    public DateTimeOffset? LockedUntil { get; set; }
+
+    public bool ManualUnlockRequired { get; set; }
+
+    public string? LastAcceptedOperation { get; set; }
+
+    public string? LastAcceptedTarget { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    /// <summary>書くたびに 1 つ進む版（並行トークン）。</summary>
+    public long Version { get; set; }
+}
+
 // 取引の一時停止（pause）の単一行状態（FR-10, ADR-0009）。kill switch と同型。日次損失ロックアウトとは別テーブル。
 public sealed class PauseRow
 {

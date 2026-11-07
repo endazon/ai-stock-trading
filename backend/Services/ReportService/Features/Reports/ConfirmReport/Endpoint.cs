@@ -49,7 +49,10 @@ internal static class ConfirmReportEndpoint
                     .LogWarning(ex, "確定の第 2 要素の記録で、方針の改訂の台帳を読めませんでした（報告書の確定として記録します）。");
             }
 
-            var decision = gate.Check(operation, req.SecondFactorCode);
+            // IADR-0626 決定 4: 確かめを「この期間キーのこの版の確定」に結び付ける（記録・通知に載る）。
+            var decision = gate.Check(
+                operation, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorTargets.Report(periodKey, req.ExpectedVersion),
+                req.SecondFactorCode);
             if (!decision.Allowed)
                 throw new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorRejectedException(decision.Outcome);
         };

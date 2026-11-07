@@ -245,6 +245,7 @@ public class AuditCycleCompletenessTests
             new GoodFaithViolationRecorded(
                 Guid.NewGuid(), decisionId, "ORD-1", "AAPL", Market.UnitedStates, 1_000m, 500m, day, t, t),
             new GoodFaithViolationsCleared("endazon", "入金により解消", ["ORD-1"], 0, t),
+            new OwnerSecondFactorChecked("KillSwitchDisengage", "kill-switch", "Invalid", 0, 1, t.AddMinutes(15), false, true, t),
             new InformationCollected(Guid.NewGuid(), 5, t),
             new InformationSourceDegraded("news", "LimitedDegradation", ["finnhub-company-news"], true, t),
             new InformationSourceRecovered("news", t.AddHours(-2), 4, t),

@@ -184,6 +184,16 @@ public sealed class GoodFaithViolationRecordedNotificationHandler(INotificationS
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
 
+// NFR-06, FR-14, FR-09, IADR-0626 決定 3・4: 危険な操作の確認コードの成功・失敗・停止をオーナーへ知らせる。
+// 止めている間の試行は知らせない（整形が null を返す。監査には全件が残る）。
+public sealed class OwnerSecondFactorCheckedNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(OwnerSecondFactorChecked message, CancellationToken cancellationToken) =>
+        NotificationFormatter.From(message) is { } notification
+            ? sender.SendAsync(notification, cancellationToken)
+            : Task.CompletedTask;
+}
+
 // FR-10, FR-09, #381, IADR-0198: 鮮度切れのレートで決済した事実を Discord へ通知する。
 public sealed class PositionClosedWithStaleFxRateNotificationHandler(INotificationSender sender)
 {

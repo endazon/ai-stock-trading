@@ -105,7 +105,7 @@ internal static class RequestStageTransitionEndpoint
             // NFR-06, FR-14, FR-20, #1542, IADR-0615: 昇格（実弾へ近づく向き）だけが危険な操作（第 2 要素）。差し戻しには課さない。
             // 門は受理された昇格の台帳への追記の直前にサービスが呼ぶ（受理不能〔422〕はコードを消費しない）。
             result = svc.RequestTransition(target, approver.Actor,
-                RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.StagePromote, req.SecondFactorCode));
+                RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.StagePromote, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorTargets.Stage(target), req.SecondFactorCode));
         }
 
         // FR-11, #167, IADR-0082: 受理時のみ中央監査集約のため StageTransitioned を発行する（拒否時は非発行）。

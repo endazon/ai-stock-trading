@@ -312,6 +312,17 @@
     "Reasons": "IReadOnlyList\u003CRejectionReason\u003E",
     "RejectedAt": "DateTimeOffset"
   },
+  "OwnerSecondFactorChecked": {
+    "CheckedAt": "DateTimeOffset",
+    "ConsecutiveFailures": "Int32",
+    "LockStarted": "Boolean",
+    "LockedUntil": "DateTimeOffset?",
+    "LockoutCount": "Int32",
+    "ManualUnlockRequired": "Boolean",
+    "Operation": "String",
+    "Outcome": "String",
+    "Target": "String"
+  },
   "PositionCloseAbandoned": {
     "AbandonedAt": "DateTimeOffset",
     "ApprovedQuantity": "Int32",
