@@ -1,5 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 namespace OrderExecutionService.Features.OrderExecution.QueryDailyBars;
 
@@ -40,7 +41,8 @@ public static class DailyBarsEndpoint
                     .QueryAsync(symbol!, (Market)market!.Value, from!.Value, to!.Value, cancellationToken)
                     .ConfigureAwait(false));
             })
-            .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
+            .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService)
+            .RequireServiceCallers(ServiceCallerNames.OrderExecutionDailyBars);
 
         return app;
     }

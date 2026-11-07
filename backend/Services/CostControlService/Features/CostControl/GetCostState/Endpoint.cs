@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using AppSvc = CostControlService.Features.CostControl.CostControlAppService;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 namespace CostControlService.Features.CostControl.GetCostState;
 
@@ -8,5 +9,6 @@ namespace CostControlService.Features.CostControl.GetCostState;
 internal static class GetCostStateEndpoint
 {
     public static void MapGetCostState(this IEndpointRouteBuilder read) =>
-        read.MapGet("/state", async (AppSvc svc, CancellationToken ct) => Results.Ok(await svc.GetLlmStateAsync(ct)));
+        read.MapGet("/state", async (AppSvc svc, CancellationToken ct) => Results.Ok(await svc.GetLlmStateAsync(ct)))
+            .RequireServiceCallers(ServiceCallerNames.CostState);
 }

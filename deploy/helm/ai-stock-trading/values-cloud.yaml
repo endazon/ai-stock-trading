@@ -60,6 +60,14 @@ global:
     mode: Enforce
   ownerBotScope:
     mode: Enforce
+  # 🔴 NFR, NFR-05, IADR-0637: サービスのトークンは身元（azp）と宛先（aud ai-stock-trading-api）で確かめ、口ごとに呼び手を限る（段 Enforce）。
+  #   呼び手は基盤の realm のサービスごとの機密クライアント（下の services.<名前>.serviceAuthClient。基盤の realm-for-cloud.js の SERVICE_CLIENTS）。
+  #   🔴 移行の段: 旧の共有クライアント ai-stock-trading-svc も受ける（宛先を問わず、サービスに開いた口を通す。受けた回はログに残る）。
+  #   全サービスが自分のクライアントで動き、そのログが 1 日出ないことを確かめてから legacyClients を外す（手順書
+  #   docs/operations/cloud-s2s-per-service-clients-runbook.md の段 3）。戻すときは mode を Report にする（記録だけ）。
+  serviceTokenBinding:
+    mode: Enforce
+    legacyClients: [ai-stock-trading-svc]
   # 🔴 段 2（IADR-0633）。発行元の鍵（cloud/ast/ast-message-origin-{signing,verify}-keys）が無ければ、鍵を読むサービスの Pod は起動しない。
   #   旧い共有の鍵（legacyHmac）は使わない（段 2 と併用すると描画で止まる）。
   messageOrigin:
@@ -186,12 +194,19 @@ externalSecrets:
     targetName: platform-infra-ca
     remoteKey: shared/platform-infra-ca
     property: ca.crt
+  # 🔴 NFR, NFR-05, IADR-0637: サービス間の認証の資格をサービスごとの Secret ast-service-auth-<名前> へ写す（キー client-id・client-secret）。
+  #   置き場は基盤の cloud/shared/ast-client-secrets（キーは clientId。基盤の seed-secrets.sh が OpenBao の中で作る）。
+  serviceAuthClients:
+    enabled: true
+    remoteKey: shared/ast-client-secrets
   appSecrets:
     enabled: true
     targetName: ast-secrets
     # 外から持ち込む値（Discord・情報源）と、OpenBao の中で作る注文の承認の鍵（gen）。キーは Secret のキーと同じ名前。
     remoteKey: ast/ast-secrets
-    # クラウドの realm の 3 つの機密クライアント（基盤の realm-for-cloud.js の CLOUD_CLIENTS）。client ID は秘密ではない。
+    # クラウドの realm の 3 つの機密クライアント（基盤の realm-for-cloud.js の DECLARED_CLOUD_CLIENTS）。client ID は秘密ではない。
+    # 🔴 IADR-0637: service-auth-client-* は旧の共有クライアント。サービスは使わない（上の serviceAuthClients）。戻す道として移行の段だけ残し、
+    #   最終の段（手順書の段 3）で外す。
     clientIds:
       service-auth-client-id: ai-stock-trading-svc
       llm-auth-client-id: ai-stock-trading-llm-caller
@@ -272,6 +287,17 @@ services:
     dbCredentials:
       usernameSecret: { name: ast-db-cost-control-credentials, key: username }
       passwordSecret: { name: ast-db-cost-control-credentials, key: password }
+    serviceAuthClient: { clientId: ai-stock-trading-svc-cost-control }
+    # 🔴 IADR-0637: extraEnv は配列で丸ごと置き換わるため、values.yaml の同じサービスの全要素を写す（サービス間の認証の資格だけを替える）。
+    extraEnv:
+      - { name: Configuration__BaseUrl, value: "http://configuration-service:8080" }
+      # 🔴 NFR, NFR-05, IADR-0637: 自分の機密クライアント（ExternalSecret ast-service-auth-cost-control）。無ければ Pod は起動しない（共有の資格へ戻らない）。
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-service-auth-cost-control, key: client-id }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-service-auth-cost-control, key: client-secret }
+      - name: Auth__GrpcOwnerClients__0
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
   risk-management:
     # NFR-18, IADR-0630: 自分の DB の資格だけを読む（基盤の cloud/shared/ast-db-risk-management。基盤の IADR-0695）。
     dbCredentials:
@@ -311,6 +337,8 @@ services:
       # 🔴 FR-10, FR-14, #1560, IADR-0620, IADR-0623 決定 3: 段 2。版の無い kill switch の解除を 428 で拒む（ボットは版を添える。#1561）。
       - { name: RiskControls__KillSwitch__Precondition, value: "Require" }
   order-execution:
+    # 🔴 NFR, NFR-05, IADR-0637: サービス間の認証の自分の機密クライアント（基盤の realm の SERVICE_CLIENTS）。
+    serviceAuthClient: { clientId: ai-stock-trading-svc-order-execution }
     # NFR-18, IADR-0630: 自分の DB の資格だけを読む（基盤の cloud/shared/ast-db-order-execution。基盤の IADR-0695）。
     dbCredentials:
       usernameSecret: { name: ast-db-order-execution-credentials, key: username }
@@ -328,11 +356,14 @@ services:
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
       - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
+      # 🔴 NFR, NFR-05, IADR-0637: 自分の機密クライアント（ExternalSecret ast-service-auth-order-execution）。無ければ Pod は起動しない（共有の資格へ戻らない）。
       - name: ServiceAuth__ClientId
-        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+        secretKeyRef: { name: ast-service-auth-order-execution, key: client-id }
       - name: ServiceAuth__ClientSecret
-        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+        secretKeyRef: { name: ast-service-auth-order-execution, key: client-secret }
   market-monitor:
+    # 🔴 NFR, NFR-05, IADR-0637: サービス間の認証の自分の機密クライアント（基盤の realm の SERVICE_CLIENTS）。
+    serviceAuthClient: { clientId: ai-stock-trading-svc-market-monitor }
     # NFR-18, IADR-0630: 自分の DB の資格だけを読む（基盤の cloud/shared/ast-db-market-monitor。基盤の IADR-0695）。
     dbCredentials:
       usernameSecret: { name: ast-db-market-monitor-credentials, key: username }
@@ -342,10 +373,11 @@ services:
       # 🔴 NFR-06, IADR-0634: 段 2。入れ替えの適用は、報告書の台帳の確定済み（第 2 要素つき）・未適用の案と一致するときだけ（違えば 403）。
       - { name: Reports__BaseUrl, value: "http://report-service:8080" }
       - { name: Watchlist__ProposalBinding__Mode, value: "Enforce" }
+      # 🔴 NFR, NFR-05, IADR-0637: 自分の機密クライアント（ExternalSecret ast-service-auth-market-monitor）。無ければ Pod は起動しない（共有の資格へ戻らない）。
       - name: ServiceAuth__ClientId
-        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+        secretKeyRef: { name: ast-service-auth-market-monitor, key: client-id }
       - name: ServiceAuth__ClientSecret
-        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+        secretKeyRef: { name: ast-service-auth-market-monitor, key: client-secret }
       - { name: MarketData__Provider, value: "finnhub" }
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
@@ -358,6 +390,8 @@ services:
       - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
   information-collection:
+    # 🔴 NFR, NFR-05, IADR-0637: サービス間の認証の自分の機密クライアント（基盤の realm の SERVICE_CLIENTS）。
+    serviceAuthClient: { clientId: ai-stock-trading-svc-information-collection }
     extraEnv:
       - { name: Collection__Source__Provider, value: "finnhub,finnhub-news,google-news,sec-edgar,fred" }
       - { name: Collection__PollIntervalSeconds, value: "300" }
@@ -381,11 +415,14 @@ services:
       - { name: Collection__Source__Fred__SeriesIds__0, value: "DEXJPUS" }
       - { name: Collection__Source__Fred__SeriesIds__1, value: "DGS10" }
       - { name: CostControl__BaseUrl, value: "http://cost-control-service:8080" }
+      # 🔴 NFR, NFR-05, IADR-0637: 自分の機密クライアント（ExternalSecret ast-service-auth-information-collection）。無ければ Pod は起動しない（共有の資格へ戻らない）。
       - name: ServiceAuth__ClientId
-        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+        secretKeyRef: { name: ast-service-auth-information-collection, key: client-id }
       - name: ServiceAuth__ClientSecret
-        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+        secretKeyRef: { name: ast-service-auth-information-collection, key: client-secret }
   report:
+    # 🔴 NFR, NFR-05, IADR-0637: サービス間の認証の自分の機密クライアント（基盤の realm の SERVICE_CLIENTS）。
+    serviceAuthClient: { clientId: ai-stock-trading-svc-report }
     # NFR-18, IADR-0630: 自分の DB の資格だけを読む（基盤の cloud/shared/ast-db-report。基盤の IADR-0695）。
     dbCredentials:
       usernameSecret: { name: ast-db-report-credentials, key: username }
@@ -427,10 +464,11 @@ services:
       - { name: LlmPricing__PerModel__claude_haiku_5_5__CacheReadPer1kTokens, value: "0.00164" }
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextCacheWritePer1kTokens, value: "0.102" }
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextCacheReadPer1kTokens, value: "0.00819" }
+      # 🔴 NFR, NFR-05, IADR-0637: 自分の機密クライアント（ExternalSecret ast-service-auth-report）。無ければ Pod は起動しない（共有の資格へ戻らない）。
       - name: ServiceAuth__ClientId
-        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+        secretKeyRef: { name: ast-service-auth-report, key: client-id }
       - name: ServiceAuth__ClientSecret
-        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+        secretKeyRef: { name: ast-service-auth-report, key: client-secret }
       - { name: ReportDraftKnowledge__Enabled, value: "false" }
       - { name: Reports__NoResponseBehavior, value: "" }
       - name: Reports__DelegatedActor__TrustedClientIds
@@ -448,6 +486,8 @@ services:
       # Secret ast-owner-totp を読まない（宛先が無ければ Enforce は拒む）。
       - { name: OwnerSecondFactor__Mode, value: "Enforce" }
   trade-decision:
+    # 🔴 NFR, NFR-05, IADR-0637: サービス間の認証の自分の機密クライアント（基盤の realm の SERVICE_CLIENTS）。
+    serviceAuthClient: { clientId: ai-stock-trading-svc-trade-decision }
     extraEnv:
       - { name: Reports__BaseUrl, value: "http://report-service:8080" }
       - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
@@ -484,10 +524,11 @@ services:
       - { name: LlmPricing__PerModel__claude_haiku_5_5__CacheReadPer1kTokens, value: "0.00164" }
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextCacheWritePer1kTokens, value: "0.102" }
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextCacheReadPer1kTokens, value: "0.00819" }
+      # 🔴 NFR, NFR-05, IADR-0637: 自分の機密クライアント（ExternalSecret ast-service-auth-trade-decision）。無ければ Pod は起動しない（共有の資格へ戻らない）。
       - name: ServiceAuth__ClientId
-        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+        secretKeyRef: { name: ast-service-auth-trade-decision, key: client-id }
       - name: ServiceAuth__ClientSecret
-        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+        secretKeyRef: { name: ast-service-auth-trade-decision, key: client-secret }
       - { name: TradeCycle__Watchlist__0__Symbol, value: "AAPL" }
       - { name: TradeCycle__Watchlist__0__Market, value: "UnitedStates" }
       - { name: TradeCycle__MaxWatchedSymbols, value: "12" }
@@ -499,13 +540,16 @@ services:
       - name: Fx__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
   backtest:
+    # 🔴 NFR, NFR-05, IADR-0637: サービス間の認証の自分の機密クライアント（基盤の realm の SERVICE_CLIENTS）。
+    serviceAuthClient: { clientId: ai-stock-trading-svc-backtest }
     extraEnv:
       - { name: Backtest__BarData__Provider, value: "order-execution" }
       - { name: Backtest__BarData__OrderExecution__BaseUrl, value: "http://order-execution-service:8080" }
+      # 🔴 NFR, NFR-05, IADR-0637: 自分の機密クライアント（ExternalSecret ast-service-auth-backtest）。無ければ Pod は起動しない（共有の資格へ戻らない）。
       - name: ServiceAuth__ClientId
-        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+        secretKeyRef: { name: ast-service-auth-backtest, key: client-id }
       - name: ServiceAuth__ClientSecret
-        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+        secretKeyRef: { name: ast-service-auth-backtest, key: client-secret }
       - { name: Backtest__Stage0__Enabled, value: "false" }
       - { name: Backtest__Stage0__LlmTrainingCutoff, value: "2026-06-30" }
       - { name: Backtest__Stage0__Strategy, value: "" }

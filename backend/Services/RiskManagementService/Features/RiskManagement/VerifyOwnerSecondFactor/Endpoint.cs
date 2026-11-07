@@ -1,5 +1,6 @@
 using AiStockTrading.Shared.Infrastructure.Composable.SecondFactor;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 namespace RiskManagementService.Features.RiskManagement.VerifyOwnerSecondFactor;
 
@@ -20,7 +21,9 @@ internal static class VerifyOwnerSecondFactorEndpoint
                 .RequireAuthenticatedUser()
                 .RequireAssertion(ctx => ctx.User.IsInRole(AiStockTradingAuthPolicies.ServiceRole)
                     && !ctx.User.IsInRole(AiStockTradingAuthPolicies.BotRole)
-                    && !ctx.User.IsInRole(AiStockTradingAuthPolicies.OwnerRole)));
+                    && !ctx.User.IsInRole(AiStockTradingAuthPolicies.OwnerRole)))
+            // 🔴 NFR-06, IADR-0637: 呼んでよいのは報告書のサービスのクライアントだけ（ほかのサービスのトークンは 403。段 Auth:ServiceToken:Mode）。
+            .RequireServiceCallers(ServiceCallerNames.RiskOwnerSecondFactorVerify);
 
     internal static IResult Handle(OwnerSecondFactorVerifyRequest req, IOwnerSecondFactorVerifier verifier, ILoggerFactory loggerFactory)
     {

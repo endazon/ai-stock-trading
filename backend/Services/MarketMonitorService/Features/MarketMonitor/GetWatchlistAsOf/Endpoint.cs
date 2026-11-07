@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using MarketMonitorService.Common.Abstractions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 namespace MarketMonitorService.Features.MarketMonitor.GetWatchlistAsOf;
 
@@ -23,7 +24,8 @@ internal static partial class GetWatchlistAsOfEndpoint
 
             return Results.Ok(WatchlistAsOfReconstructor.Reconstruct(
                 instant, clock.UtcNow, changeLog.GetHistory(), seedRecord.Read()));
-        });
+        })
+            .RequireServiceCallers(ServiceCallerNames.MonitorWatchlistAsOf);
 
     /// <summary>
     /// 時刻は ISO 8601 で、オフセット（Z か ±hh:mm）を必須にする。オフセットの無い文字列はサーバの地方時として読まれ得る。

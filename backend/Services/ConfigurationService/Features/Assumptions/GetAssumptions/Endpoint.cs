@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 namespace ConfigurationService.Features.Assumptions.GetAssumptions;
 
@@ -7,5 +8,6 @@ namespace ConfigurationService.Features.Assumptions.GetAssumptions;
 internal static class GetAssumptionsEndpoint
 {
     public static void MapGetAssumptions(this IEndpointRouteBuilder read) =>
-        read.MapGet("", (AssumptionsService svc) => Results.Ok(svc.GetCurrent()));
+        read.MapGet("", (AssumptionsService svc) => Results.Ok(svc.GetCurrent()))
+            .RequireServiceCallers(ServiceCallerNames.Assumptions);
 }

@@ -70,7 +70,9 @@ internal static partial class WatchlistProposalEndpoints
                             lookup.Proposal!, lookup.Attempt!.ProposalSecondFactorVerified, lookup.Attempt.WatchlistApplyReservedAt is not null)),
                     };
                 })
-            .RequireAuthorization(ServiceOnly);
+            .RequireAuthorization(ServiceOnly)
+            // 🔴 NFR, IADR-0637: サービスの中でも市場監視のクライアントだけ（段 Enforce。既定の一覧 ServiceCallerNames.DefaultCallers）。
+            .RequireServiceCallers(ServiceCallerNames.ReportsWatchlistProposalBinding);
 
         g.MapPost("/policy-revisions/watchlist-proposal/binding/reserve",
                 (string? periodKey, int? version, IPolicyRevisionLedger ledger, IReportStore store, IClock clock) =>
@@ -89,7 +91,9 @@ internal static partial class WatchlistProposalEndpoints
                             : Results.Conflict(new { error = "この案の入れ替えは予約・適用済みです（二重に適用しません）。" }),
                     };
                 })
-            .RequireAuthorization(ServiceOnly);
+            .RequireAuthorization(ServiceOnly)
+            // 🔴 NFR, IADR-0637: 予約も市場監視のクライアントだけ（段 Enforce）。
+            .RequireServiceCallers(ServiceCallerNames.ReportsWatchlistProposalBindingReserve);
     }
 
     private static void ServiceOnly(Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder policy) => policy

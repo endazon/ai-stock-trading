@@ -1,3 +1,5 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
+
 namespace RiskManagementService.Features.RiskManagement.GetDriftAdoptions;
 
 // 期間の乖離の取り込み（FR-06, FR-11, FR-16, ADR-0041 決定 1, #870, #859, IADR-0360 決定 2）:
@@ -17,5 +19,6 @@ internal static class GetDriftAdoptionsEndpoint
 
             return Results.Ok(
                 PeriodDriftAdoptionQuery.InTradingDayRange(ledger.GetDriftAdoptions(), fromDay, toDay));
-        });
+        })
+            .RequireServiceCallers(ServiceCallerNames.RiskDriftAdoptions);
 }

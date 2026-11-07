@@ -1,4 +1,5 @@
 using AppSvc = ReportService.Features.Reports.ReportAppService;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 namespace ReportService.Features.Reports.GetConfirmedDailyPolicy;
 
@@ -11,5 +12,6 @@ internal static class GetConfirmedDailyPolicyEndpoint
         {
             var policy = svc.GetConfirmedDailyPolicy();
             return policy is null ? Results.NotFound() : Results.Ok(policy);
-        });
+        })
+            .RequireServiceCallers(ServiceCallerNames.ReportsDailyPolicy);
 }

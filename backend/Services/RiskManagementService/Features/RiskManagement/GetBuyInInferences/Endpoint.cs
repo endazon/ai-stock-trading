@@ -1,3 +1,5 @@
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
+
 namespace RiskManagementService.Features.RiskManagement.GetBuyInInferences;
 
 // 強制買戻しの推定（FR-10, FR-06, FR-21, ADR-0016 決定15, #463, IADR-0181）:
@@ -39,5 +41,6 @@ internal static class GetBuyInInferencesEndpoint
                 observedTradingDays = observedDays,
                 inferences = inferences.GetInferredBetween(fromDay, toDay),
             });
-        });
+        })
+            .RequireServiceCallers(ServiceCallerNames.RiskBuyInInferences);
 }

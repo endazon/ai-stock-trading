@@ -1,5 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 namespace OrderExecutionService.Features.OrderExecution.QueryShortPermit;
 
@@ -27,7 +28,8 @@ public static class ShortPermitEndpoint
 
                 return Results.Ok(await service.QueryAsync(symbol!, (Market)market!.Value, cancellationToken).ConfigureAwait(false));
             })
-            .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
+            .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService)
+            .RequireServiceCallers(ServiceCallerNames.OrderExecutionShortPermit);
 
         return app;
     }
