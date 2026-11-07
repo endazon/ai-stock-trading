@@ -5669,6 +5669,15 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       pull_request_review: 'github.event.review.author_association',
       issues: 'github.event.issue.author_association',
     };
+    // NFR, IADR-0635: 対象の issue / PR の書き手の判定と、PR が同じリポジトリのブランチであることの判定（issues は本文の書き手が対象の書き手）。
+    const EXPECT_TARGET = {
+      issue_comment: ['github.event.issue.author_association'],
+      pull_request_review_comment: ['github.event.pull_request.author_association'],
+      pull_request_review: ['github.event.pull_request.author_association'],
+      issues: [],
+    };
+    const SAME_REPO = 'github.event.pull_request.head.repo.full_name == github.repository';
+    const EXPECT_SAME_REPO = new Set(['pull_request_review_comment', 'pull_request_review']);
     const TRUSTED = `contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), `;
     const codingViolations = (yml) => {
       const out = [];
@@ -5678,6 +5687,8 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
         seen.add(ev);
         if (!EXPECT_AUTHOR[ev]) { out.push(`想定外のイベント: ${ev}`); continue; }
         if (!c.includes(`${TRUSTED}${EXPECT_AUTHOR[ev]})`)) out.push(`${ev}: 本文の書き手の判定が無い`);
+        for (const t of EXPECT_TARGET[ev]) if (!c.includes(`${TRUSTED}${t})`)) out.push(`${ev}: 対象の書き手の判定が無い`);
+        if (EXPECT_SAME_REPO.has(ev) && !c.includes(SAME_REPO)) out.push(`${ev}: 同じリポジトリの PR の判定が無い`);
       }
       for (const ev of Object.keys(EXPECT_AUTHOR)) if (!seen.has(ev)) out.push(`${ev} の句が無い`);
       return out;
@@ -5689,12 +5700,55 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.deepStrictEqual(codingViolations(yml), []);
     });
 
+    // NFR, IADR-0635: issue_comment の PR はフォークでないことを段で確かめ、id-token を持たず、AI のサブプロセスから秘密を落とす。
+    const codingHardeningViolations = (yml) => {
+      const out = [];
+      const body = yml.replace(/^\s*#.*$/gm, '');
+      if (/id-token:/.test(body)) out.push('id-token の権限が残っている');
+      const check = /\n      - name: Check the target pull request\n((?: {8}.*\n)+)/.exec(body);
+      if (!check) out.push('対象の PR を確かめる段が無い');
+      else {
+        if (!/if: github\.event_name == 'issue_comment' && github\.event\.issue\.pull_request/.test(check[1])) out.push('対象の PR を確かめる段の条件が違う');
+        if (!/\.head\.repo\.full_name/.test(check[1]) || !/!= "\$REPOSITORY" \]; then\n(?: {12}.*\n)*? {12}exit 1\n {10}fi\n/.test(check[1])) out.push('対象の PR の head を同じリポジトリと比べて止めていない');
+      }
+      const steps = body.indexOf('\n    steps:\n');
+      if (check && body.indexOf('- name: Check the target pull request') > body.indexOf('- name: Run Claude Code')) out.push('対象の PR の確かめが AI の段より後にある');
+      if (steps < 0 || body.indexOf('- name: Check the target pull request') < steps) out.push('steps が読めない');
+      const run = /\n      - name: Run Claude Code\n[\s\S]*?\n        env:\n((?: {10}.*\n)+)/.exec(body);
+      if (!run || !/CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"/.test(run[1])) out.push('AI のサブプロセスの秘密を落としていない（CLAUDE_CODE_SUBPROCESS_ENV_SCRUB）');
+      return out;
+    };
+
+    ok('NFR: claude-coding.yml はフォークの PR を確かめて止め、id-token を持たず、AI のサブプロセスから秘密を落とす', () => {
+      assert.deepStrictEqual(codingHardeningViolations(fs.readFileSync(path.join(WF, 'claude-coding.yml'), 'utf8')), []);
+    });
+
+    ok('NFR: 変異試験 —— 対象の書き手・同じリポジトリ・id-token・秘密の除去・PR の確かめを戻すと落ちる', () => {
+      const yml = fs.readFileSync(path.join(WF, 'claude-coding.yml'), 'utf8');
+      const noTarget = yml.replace(` && ${TRUSTED}github.event.issue.author_association))`, ')');
+      assert.notStrictEqual(noTarget, yml, '変異させる箇所が見つからない');
+      assert.deepStrictEqual(codingViolations(noTarget), ['issue_comment: 対象の書き手の判定が無い']);
+      const noRepo = yml.replace(` && ${SAME_REPO}) ||\n      (github.event_name == 'pull_request_review'`, ") ||\n      (github.event_name == 'pull_request_review'");
+      assert.notStrictEqual(noRepo, yml, '変異させる箇所が見つからない');
+      assert.deepStrictEqual(codingViolations(noRepo), ['pull_request_review_comment: 同じリポジトリの PR の判定が無い']);
+      const idt = yml.replace('      issues: write\n', '      issues: write\n      id-token: write\n');
+      assert.notStrictEqual(idt, yml);
+      assert.ok(codingHardeningViolations(idt).includes('id-token の権限が残っている'));
+      const scrub = yml.replace('          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"\n', '');
+      assert.notStrictEqual(scrub, yml);
+      assert.ok(codingHardeningViolations(scrub).some((v) => v.includes('CLAUDE_CODE_SUBPROCESS_ENV_SCRUB')));
+      const noExit = yml.replace('            exit 1\n          fi\n', '          fi\n');
+      assert.notStrictEqual(noExit, yml);
+      assert.ok(codingHardeningViolations(noExit).some((v) => v.includes('head')));
+    });
+
     ok('NFR: 変異試験 —— 1 句から書き手の判定を外す・判定の対象を取り違えると落ちる', () => {
       const yml = fs.readFileSync(path.join(WF, 'claude-coding.yml'), 'utf8');
       const drop = yml.replace(` && ${TRUSTED}github.event.review.author_association)`, '');
       assert.notStrictEqual(drop, yml, '変異させる箇所が見つからない');
       assert.deepStrictEqual(codingViolations(drop), ['pull_request_review: 本文の書き手の判定が無い']);
-      const swap = yml.replace(`${TRUSTED}github.event.issue.author_association)`, `${TRUSTED}github.event.sender.author_association)`);
+      // issues の句（行末に || が無い最後の句）の判定の対象を取り違える（issue_comment の句の対象の書き手の判定は同じ字面なので行末で区別する）。
+      const swap = yml.replace(`${TRUSTED}github.event.issue.author_association))\n`, `${TRUSTED}github.event.sender.author_association))\n`);
       assert.notStrictEqual(swap, yml, '変異させる箇所が見つからない');
       assert.deepStrictEqual(codingViolations(swap), ['issues: 本文の書き手の判定が無い']);
     });

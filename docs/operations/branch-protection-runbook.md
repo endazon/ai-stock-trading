@@ -4,13 +4,13 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-09-26
-updated: 2026-09-26
+updated: 2026-11-07
 ---
 <!-- trace:
 ids: [NFR]
 adrs: []
-iadrs: [IADR-0185, IADR-0190]
-specs: [20260926_644_branch-protection-codeowners]
+iadrs: [IADR-0185, IADR-0190, IADR-0635]
+specs: [20260926_644_branch-protection-codeowners, 20261107_ci-claude-coding-author-check]
 issues: [#644, #501, #473, #483]
 -->
 <!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
@@ -56,6 +56,30 @@ $ gh api repos/endazon/ai-stock-trading/rulesets --jq '.[] | "\(.id) \(.name) \(
 **したがって「AI が実装し AI が承認してマージする」ループが止まらなかった原因は、保護が無いことではなく、
 マージしている主体（利用者のトークン）が `exempt` であることにある。** 赤い `claude-review` のままマージできた事実もこれで説明が付く。
 必須チェックを足すだけでは、この主体には効かない（手順 2 が要る）。
+
+## 🔴 所有者が設定すること（クラウドで稼働する前。2026-11-07）
+
+リポジトリの側（実装用の AI のワークフロー）は、次のように絞った。
+
+- 外の書き手の issue・PR、フォークの PR では AI を起動しない。
+- `id-token` の権限を外した。
+- AI のビルド・テストのサブプロセスから秘密を落とす。
+
+**残りは GitHub の設定で、AI には変えられない。** 稼働の前に、所有者が次の 4 つを当てる。
+
+| # | 何を | 今（2026-09-26 の実測） | 何にする | どこで |
+| --- | --- | --- | --- | --- |
+| 1 | 必須チェック（`required_status_checks`） | `pr-title` の 1 件だけ | `build-and-test`・`lint`・`commit-messages`・`pr-title`・`Secret scan (gitleaks)`・`Dependency review`・`claude-review` の 7 件（`integration_id: 15368`・`strict: true`） | 下の手順 1 |
+| 2 | 管理者ロールのバイパス | `exempt`（ルールが評価されない） | `pull_request`（赤・未完了のチェックでは普通のマージができない。越えるには `--admin` の明示が要り、記録が残る） | 下の手順 2 の案 B |
+| 3 | AI の Integration（Claude の App `1236702`・Copilot coding agent `1143301`）のバイパス | `always` | 外す | 同上 |
+| 4 | Dependabot（`29110`）と未特定の `946600` のバイパス | `always` | `pull_request`（`946600` は画面で正体を確かめてから決める） | 同上 |
+
+- 当てる前に手順 0 で現状を保存し、当てた後に「確認」の節のコマンドで実測を取り、本書の表を当てた日付で直す。
+- クラウドのノードへ入れるイメージは、develop の保護（上の必須チェック）を通ったコミットから作る。
+  - ノードでビルドする前に `gh api repos/endazon/ai-stock-trading/commits/<SHA>/check-runs --jq '.check_runs[] | "\(.name) \(.conclusion)"'` で、7 件が `success` であることを確かめる。
+- 実装用の AI のワークフローは、起動したら最初の実行のログを 1 度見る。
+  - 見ること: `gh issue create` が使えたか、サブプロセスの秘密を落とす仕組みで認証を失っていないか。
+  - 失っていれば、AI は GitHub の道具で issue を書く。戻すときは、ワークフローの `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` の 1 行を外す（試験も同時に直す）。
 
 ## この手順を実行する条件（いつ走らせるか）
 
