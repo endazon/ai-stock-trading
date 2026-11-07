@@ -138,6 +138,7 @@
 {{- $moReload := $.Values.global.messageOrigin | default dict -}}
 {{- if has $name ($moReload.signers | default list) }}{{- $reloadSecrets = append $reloadSecrets $moReload.signingSecretName -}}{{- end }}
 {{- if hasKey ($moReload.verifiers | default dict) $name }}{{- $reloadSecrets = append $reloadSecrets $moReload.verifySecretName -}}{{- end }}
+{{- range $issuer := (index ($moReload.verifiers | default dict) $name | default list) }}{{- if has $issuer ($moReload.previousVerify | default list) }}{{- $reloadSecrets = append $reloadSecrets $moReload.previousVerifySecretName -}}{{- end }}{{- end }}
 {{- /* FR-15, NFR（費用）, ADR-0033 決定5, #1342, IADR-0537 決定5: Stage 0 の記録器の永続ボリューム（trade-decision だけ）。
        有効なら PVC（templates/pvc-stage0-recording.yaml）を mount し、状態の置き場 Stage0Recording__StateDirectory を
        <mountPath>/state として注入し、更新方式を Recreate にする。既定（無効）では何も描かない＝既定描画はバイト等価。
@@ -416,6 +417,17 @@ spec:
                   {{- if eq $mo.mode "Report" }}
                   optional: true
                   {{- end }}
+            {{- end }}
+            {{- /* 鍵の入れ替えの間だけ、前の公開の鍵を渡す（previousVerify に載った発行元のうち、このサービスが確かめるもの）。段に依らず optional。 */}}
+            {{- range $issuer := $moVerifies }}
+            {{- if has $issuer ($mo.previousVerify | default list) }}
+            - name: MessageOrigin__PreviousVerifyKeys__{{ $issuer | replace "-" "_" }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $mo.previousVerifySecretName }}
+                  key: {{ $issuer }}
+                  optional: true
+            {{- end }}
             {{- end }}
             {{- /* 記録だけの受け手（audit）には旧い共有の鍵を渡さない（共有の鍵を持てば、その Pod から全発行元を名乗れる）。 */}}
             {{- if and $moLegacy.enabled (not (has $name ($moLegacy.skipServices | default list))) }}

@@ -75,6 +75,14 @@ public partial class MessageOriginChartTests
             verifiers[service].Should().BeEquivalentTo(keys, $"chart の {service} に渡す公開の鍵");
     }
 
+    // 入れ替えの間の前の公開の鍵は、既定では誰にも渡さない（空）。
+    [Fact]
+    public void 前の公開の鍵の既定は空()
+    {
+        var values = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "helm", "ai-stock-trading", "values.yaml")).Replace("\r\n", "\n");
+        MessageOriginBlock().Match(values).Groups[1].Value.Should().MatchRegex(@"(?m)^    previousVerify: \[\]$");
+    }
+
     [Fact]
     public void values_cloudは段2で2つの鍵をOpenBaoから写し旧い鍵を使わない()
     {

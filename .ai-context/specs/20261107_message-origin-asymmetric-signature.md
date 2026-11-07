@@ -41,6 +41,7 @@ plan_refs:
 | --- | --- | --- | --- | --- | --- |
 | 署名の鍵（秘密） | PKCS#8 DER の base64（P-256） | 発行元 7 サービスが自分の分だけ | `cloud/ast/ast-message-origin-signing-keys`（property ＝ 発行元） | `ast-message-origin-signing-keys` | `MessageOrigin__SigningKey` |
 | 確かめる鍵（公開） | SubjectPublicKeyInfo DER の base64（P-256） | 受け手が確かめる発行元の分だけ | `cloud/ast/ast-message-origin-verify-keys` | `ast-message-origin-verify-keys` | `MessageOrigin__VerifyKeys__<発行元>` |
+| 前の公開の鍵（入れ替えの間だけ） | 同上 | 受け手のうち、`previousVerify` に載った発行元を確かめるもの | `cloud/ast/ast-message-origin-previous-verify-keys`（`--rotate` が残す） | `ast-message-origin-previous-verify-keys` | `MessageOrigin__PreviousVerifyKeys__<発行元>`（optional） |
 | 旧い共有の鍵（HMAC） | 32 バイト以上の base64 | 段 1 で `legacyHmac.enabled` のときだけ | `cloud/ast/ast-message-origin-keys`（既存） | `ast-message-origin-keys` | `MessageOrigin__Keys__<発行元>` |
 
 受け手の確かめる発行元（`MessageOriginCatalog.VerifiedBy` から計算。chart の `verifiers` と試験で突き合わせる）:

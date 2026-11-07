@@ -107,6 +107,12 @@ global:
       risk-management: [backtest, information-collection, order-execution, risk-management, trade-decision]
       cost-control: [report, trade-decision]
       audit: [backtest, information-collection, market-monitor, order-execution, report, risk-management, trade-decision]
+    # 鍵の入れ替えの間だけ、前の公開の鍵を受け手へ渡す発行元（既定は空＝渡さない）。scripts/ast-message-origin-keygen.sh --rotate <発行元> が
+    #   前の公開の鍵を previousVerifySecretName（OpenBao cloud/ast/ast-message-origin-previous-verify-keys）へ残す。ここへ発行元を足して当て、
+    #   受け手 → 発行元の順に作り直す。入れ替えの前に署名されたメッセージが処理し終わったら（既定の窓 24 時間の後）外して当て直す（手順書 §5.1）。
+    #   env は MessageOrigin__PreviousVerifyKeys__<発行元>（段に依らず optional。無くても起動する）。
+    previousVerifySecretName: ast-message-origin-previous-verify-keys
+    previousVerify: []
     legacyHmac:
       enabled: false
       secretName: ast-message-origin-keys
@@ -494,6 +500,11 @@ externalSecrets:
   messageOriginVerifyKeys:
     enabled: false
     targetName: ast-message-origin-verify-keys
+    remoteKey: ""
+  # 入れ替えの間の前の公開の鍵（global.messageOrigin.previousVerify が空でないときだけ描く）。targetName は previousVerifySecretName と同じにする。
+  messageOriginPreviousVerifyKeys:
+    enabled: false
+    targetName: ast-message-origin-previous-verify-keys
     remoteKey: ""
   # NFR-18, NFR-05, #1560, IADR-0623: 基盤の CA の証明書（公開してよい）。targetName は global.infraCa.secretName と同じにする。
   infraCa:

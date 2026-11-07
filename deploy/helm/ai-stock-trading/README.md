@@ -952,6 +952,7 @@ risk-management が発行する注文の承認に HMAC の印を付け、order-e
 | `verifySecretName` | `ast-message-origin-verify-keys` | 公開の鍵の Secret。キーは発行元の識別子。値は SubjectPublicKeyInfo DER の base64 |
 | `signers` | 7 つ | 自分の秘密の鍵を渡すサービス（表の型の発行元）。コードと一致させる（`MessageOriginChartTests`） |
 | `verifiers` | 6 つ | 受け手 → 公開の鍵を渡す発行元。コードの要る鍵と一致させる（同上）。`audit` は記録だけの受け手（拒まない） |
+| `previousVerify` | `[]` | 鍵の入れ替えの間だけ、前の公開の鍵（`previousVerifySecretName`）を受け手へ渡す発行元。env は `MessageOrigin__PreviousVerifyKeys__<発行元>`（段に依らず optional）。発行元でない名前は描画で止まる。手順は手順書 §5.1 |
 | `legacyHmac.enabled` | `false` | 旧い共有の鍵の HMAC の印を移行の間だけ併用する（段 1 でだけ。段 2 と併用すると描画で止まる）。`skipServices` には渡さない |
 
 - env は `MessageOrigin__Mode`・`MessageOrigin__SigningKey`（発行元だけ）・`MessageOrigin__VerifyKeys__<発行元>`（発行元の `-` は `_`）。段 1 は `optional`、段 2 は必須。

@@ -165,9 +165,18 @@ bash scripts/ast-message-origin-keygen.sh --live
 #   bash scripts/ast-message-origin-keygen.sh --live --rotate <発行元>
 ```
 
-- 秘密の鍵だけ入り公開の鍵が入らなかったときは、スクリプトが 1 で止まる。その発行元を `--rotate` で作り直す。
-- 作り直したら、ESO が写した後に、その発行元と、その発行元の公開の鍵を読む受け手（`values.yaml` の `global.messageOrigin.verifiers`）を作り直す。
-  段 2 では、作り直しの前に旧い鍵で署名され、まだ処理されていないメッセージは処理されない（キューを空にしてから作り直す）。
+- 秘密の鍵だけ入り公開の鍵が入らなかったときは、スクリプトが 1 で止まる。その発行元を `--rotate --no-previous` で作り直す。
+- 再実行で「既に在ります」（終了コード 5）と出た発行元は何も変えていない。組が壊れている疑い（受け手が起動しない・`mismatch` が出る）があれば、
+  その発行元を `--rotate --no-previous` で作り直す。
+- **作り直し（入れ替え）の順**（段 2 で、入れ替えの前に署名された未処理のメッセージを落とさない）:
+  1. `bash scripts/ast-message-origin-keygen.sh --live --rotate <発行元>`。作り直す前に、いまの公開の鍵を
+     `cloud/ast/ast-message-origin-previous-verify-keys` の `<発行元>` へ「前の鍵」として残す（`kubectl` で Secret から読む。値は表示しない）。
+  2. chart を `--set 'global.messageOrigin.previousVerify={<発行元>}'`（または values のファイル）で当てる。
+     その発行元を確かめる受け手に、前の公開の鍵が渡る（`MessageOrigin__PreviousVerifyKeys__<発行元>`）。
+  3. ESO が写した後に、**受け手を先に**作り直す（新旧の両方の公開の鍵で確かめる）。次に、その発行元を作り直す（新しい秘密の鍵で署名する）。
+  4. 入れ替えの前に署名されたメッセージが処理し終わったら、`previousVerify` から外して当て直し、受け手を作り直す。
+     目安は、キューと DLQ が空になり、受け手の窓（既定 24 時間）が過ぎた後。外した後は、前の鍵の署名は段 2 で処理されない。
+  - 漏れの疑いで前の鍵を受け付けたくないときは `--no-previous`（前の鍵を残さない。入れ替えの前の未処理のメッセージは処理されない）。
 - 旧い共有の鍵（`cloud/ast/ast-message-origin-keys`）はクラウドでは使わない（段 2 は旧い印を受けず、旧い鍵を構成すると起動で止まる）。
   既に作っていれば、新しい鍵で配備できたことを確かめた後に、オーナーが OpenBao から消してよい。
 - 7 つが揃うまで配備しない（段 2 では、鍵を読むサービスの Pod が起動しない）。

@@ -170,6 +170,11 @@ externalSecrets:
     enabled: true
     targetName: ast-message-origin-verify-keys
     remoteKey: ast/ast-message-origin-verify-keys
+  # 入れ替えの間の前の公開の鍵。global.messageOrigin.previousVerify に発行元を足したときだけ描かれる（手順書 §5.1）。
+  messageOriginPreviousVerifyKeys:
+    enabled: true
+    targetName: ast-message-origin-previous-verify-keys
+    remoteKey: ast/ast-message-origin-previous-verify-keys
   infraCa:
     enabled: true
     targetName: platform-infra-ca

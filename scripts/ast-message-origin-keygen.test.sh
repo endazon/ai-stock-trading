@@ -5,6 +5,8 @@
 #   - 鍵の値は基盤の口の標準入力にだけ渡り、引数・標準出力・標準エラーに出ない
 #   - 既に在れば作り直さず 5（値は変わらない）。--rotate は --overwrite を渡して作り直す
 #   - 公開の鍵を書けなければ 1 で止まり、--rotate での作り直しを案内する
+#   - --rotate は、いまの公開の鍵（kubectl はスタブ）を前の鍵のパスへ残してから作り直す。読めなければ何も変えずに 1。
+#     --no-previous は前の鍵を残さない（--rotate なしでは 2）
 set -u
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT="$ROOT_DIR/scripts/ast-message-origin-keygen.sh"
@@ -19,11 +21,23 @@ printf '%s\n' "$*" >> "$AST_TEST_STATE/put-args.log"
 over=0; pos=()
 for a in "$@"; do case "$a" in --overwrite) over=1 ;; --live|--operator-file|--identity|*.age|*.txt) ;; *) pos+=("$a") ;; esac; done
 f="$AST_TEST_STATE/store/$(printf '%s' "${pos[0]}" | tr '/' '_')__${pos[1]}"
-case "${pos[0]}" in *verify*) [ -f "$AST_TEST_STATE/fail-verify" ] && { cat >/dev/null; exit 1; } ;; esac
+case "${pos[0]}" in */ast-message-origin-verify-keys) [ -f "$AST_TEST_STATE/fail-verify" ] && { cat >/dev/null; exit 1; } ;; esac
 if [ -f "$f" ] && [ "$over" -eq 0 ]; then cat >/dev/null; exit 5; fi
 cat > "$f"
 STUB
 chmod +x "$BIN/put-external-secret"
+# kubectl のスタブ: Secret ast-message-origin-verify-keys の <発行元> を、ストアの公開の鍵から k8s の data の形（base64）で返す。
+cat > "$BIN/kubectl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$AST_TEST_STATE/kubectl.log"
+[ -f "$AST_TEST_STATE/kubectl-fail" ] && exit 1
+issuer="$(printf '%s' "$*" | sed -n 's/.*index \.data "\([a-z-]*\)".*/\1/p')"
+f="$AST_TEST_STATE/store/cloud_ast_ast-message-origin-verify-keys__$issuer"
+[ -f "$f" ] || exit 1
+base64 < "$f" | tr -d '\n'
+STUB
+chmod +x "$BIN/kubectl"
+export KUBECTL="$BIN/kubectl"
 PUT="$BIN/put-external-secret --live --operator-file op.age --identity id.txt"
 
 fails=0
@@ -70,6 +84,19 @@ oldpub="$(store verify market-monitor)"
 rc="$(run --live --rotate market-monitor)"
 [ "$rc" = 0 ] && [ "$(store signing market-monitor)" != "$before" ] && [ "$(store verify market-monitor)" != "$oldpub" ] \
   && grep -q -- '--overwrite' "$STATE/put-args.log" && ok "--rotate は --overwrite で組ごと作り直す" || ng "--rotate: rc=$rc"
+[ "$(store previous-verify market-monitor)" = "$oldpub" ] && ok "--rotate は作り直す前の公開の鍵を前の鍵として残す" || ng "前の鍵が残っていない"
+grep -qF "$oldpub" "$STATE/put-args.log" "$STATE/out" "$STATE/err" "$STATE/kubectl.log" && ng "前の鍵の値が出た" || ok "前の鍵の値は引数・出力に出ない"
+
+touch "$STATE/kubectl-fail"; before="$(store signing report)"
+rc="$(run --live --rotate report)"
+[ "$rc" = 1 ] && [ "$(store signing report)" = "$before" ] && grep -q -- '--no-previous' "$STATE/err" \
+  && ok "前の公開の鍵を読めなければ何も変えずに 1" || ng "前の鍵が読めない: rc=$rc"
+rc="$(run --live --rotate --no-previous report)"
+[ "$rc" = 0 ] && [ "$(store signing report)" != "$before" ] && [ -z "$(store previous-verify report)" ] \
+  && ok "--no-previous は前の鍵を残さずに作り直す" || ng "--no-previous: rc=$rc"
+rm -f "$STATE/kubectl-fail"
+rc="$(run --live --no-previous report)"
+[ "$rc" = 2 ] && ok "--no-previous は --rotate なしでは 2" || ng "--no-previous 単独: rc=$rc"
 
 touch "$STATE/fail-verify"
 rc="$(run --live --rotate backtest)"

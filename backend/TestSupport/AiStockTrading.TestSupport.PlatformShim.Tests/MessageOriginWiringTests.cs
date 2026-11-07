@@ -168,6 +168,45 @@ public class MessageOriginWiringTests
         await host.StopAsync();
     }
 
+    // 🔴 IADR-0633（2026-11-07 追記）: 鍵の入れ替えの間は、前の公開の鍵（MessageOrigin__PreviousVerifyKeys__<発行元>。chart の previousVerify）で
+    // 入れ替えの前に署名されたメッセージも処理する。前の鍵を外した後は処理しない（段 2）。
+    [Fact]
+    public async Task 入れ替えの間は前の公開の鍵の署名を処理し外した後は渡さない()
+    {
+        var oldPair = MessageOriginTestKeys.NewPair();
+        var message = Trigger();
+        var signedWithOld = SignedBy(MessageOriginCatalog.MarketMonitor, oldPair, message);
+        IConfiguration WithPrevious(bool previous)
+        {
+            var values = new Dictionary<string, string?>
+            {
+                ["MessageOrigin:Mode"] = "Enforce",
+                ["MessageOrigin:SigningKey"] = MessageOriginTestKeys.For(MessageOriginCatalog.OrderExecution).Private,
+                // 入れ替えの後の新しい公開の鍵（MessageOriginTestKeys の組）と、chart の env の書き方（- は _）の前の鍵。
+                ["MessageOrigin:VerifyKeys:market_monitor"] = MessageOriginTestKeys.For(MessageOriginCatalog.MarketMonitor).Public,
+                ["MessageOrigin:VerifyKeys:risk_management"] = MessageOriginTestKeys.For(MessageOriginCatalog.RiskManagement).Public,
+            };
+            if (previous)
+                values["MessageOrigin:PreviousVerifyKeys:market_monitor"] = oldPair.Public;
+            return new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        }
+
+        MessageOriginProbeHandler.Reset();
+        using (var rotating = await HostAsync(OrderExecution, WithPrevious(previous: true)))
+        {
+            await InvokeAsync(rotating, message, signedWithOld);
+            await InvokeAsync(rotating, message, SignedBy(MessageOriginCatalog.MarketMonitor, MessageOriginTestKeys.For(MessageOriginCatalog.MarketMonitor), message));
+            MessageOriginProbeHandler.Handled.Should().HaveCount(2, "前の鍵の署名も新しい鍵の署名も処理する");
+            await rotating.StopAsync();
+        }
+
+        MessageOriginProbeHandler.Reset();
+        using var after = await HostAsync(OrderExecution, WithPrevious(previous: false));
+        await InvokeAsync(after, message, SignedBy(MessageOriginCatalog.MarketMonitor, oldPair, message));
+        MessageOriginProbeHandler.Handled.Should().BeEmpty("前の鍵を外した後は、前の鍵の署名を処理しない");
+        await after.StopAsync();
+    }
+
     // 🔴 IADR-0633 決定 4: 旧い HMAC の印だけのメッセージは、段 1 では（記録して）処理し、段 2 では渡さない。
     [Fact]
     public async Task 旧い印だけのメッセージは段1で処理され段2で渡されない()
