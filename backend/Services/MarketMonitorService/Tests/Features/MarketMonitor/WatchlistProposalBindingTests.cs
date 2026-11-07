@@ -39,20 +39,35 @@ public class WatchlistProposalBindingTests
 
         public WatchlistProposalLookupResult Result { get; set; } = result;
 
+        public List<(string Key, int Version)> Reservations { get; } = [];
+
+        /// <summary>台帳と同じく、予約は 1 回だけ通る（2 回目は AlreadyReserved）。null なら届かない。</summary>
+        public bool? Reservable { get; set; } = true;
+
         public Task<WatchlistProposalLookupResult> FindAsync(string periodKey, int version, CancellationToken cancellationToken)
         {
             Calls.Add((periodKey, version));
             return Task.FromResult(Result);
         }
+
+        public Task<WatchlistProposalReserveStatus> ReserveAsync(string periodKey, int version, CancellationToken cancellationToken)
+        {
+            Reservations.Add((periodKey, version));
+            if (Reservable is null)
+                return Task.FromResult(WatchlistProposalReserveStatus.Unavailable);
+            var first = Reservable.Value && Reservations.Count(r => r == (periodKey, version)) == 1;
+            return Task.FromResult(first ? WatchlistProposalReserveStatus.Reserved : WatchlistProposalReserveStatus.AlreadyReserved);
+        }
     }
 
     private static BoundWatchlistProposal Proposal(
-        bool applied = false, bool enforced = true, bool snapshot = true, params (string Action, string Symbol)[] changes) =>
+        bool applied = false, bool verified = true, bool snapshot = true, bool reserved = false) =>
         new(
-            changes.Length == 0 ? [new BoundWatchlistChange("add", "NVDA")] : [.. changes.Select(c => new BoundWatchlistChange(c.Action, c.Symbol))],
+            [new BoundWatchlistChange("add", "NVDA", "台帳の理由")],
             snapshot ? [new BoundWatchlistSnapshotEntry("AAPL", "UnitedStates"), new BoundWatchlistSnapshotEntry("MSFT", "UnitedStates")] : null,
             applied,
-            enforced);
+            verified,
+            reserved);
 
     private static WatchlistProposalLookupResult Found(BoundWatchlistProposal proposal) => new(WatchlistProposalLookupStatus.Found, proposal);
 
@@ -66,8 +81,42 @@ public class WatchlistProposalBindingTests
 
         var decision = await Gate(WatchlistProposalBindingMode.Enforce, source).CheckAsync(ProposalRef, [Msft, Aapl], [AddNvda], default);
 
-        decision.Should().Be(new WatchlistProposalBindingDecision(WatchlistProposalBindingOutcome.Bound, true));
+        (decision.Outcome, decision.Allowed).Should().Be((WatchlistProposalBindingOutcome.Bound, true));
         source.Calls.Should().Equal(("daily-2026-09-28", 3));
+        source.Reservations.Should().Equal(("daily-2026-09-28", 3));
+        // 🔴 適用と変更履歴には台帳の理由を使う（要求の理由「AI 需要」ではない）。
+        decision.BoundChanges.Should().Equal(new ProposedWatchlistChange(ProposedWatchlistAction.Add, "NVDA", "台帳の理由"));
+    }
+
+    // 🔴 IADR-0634 決定 8: 同じ確定済みの案の 2 度目は、台帳の予約が 1 回だけなので拒む（監視銘柄を変えない案でも）。
+    [Fact]
+    public async Task 同じ案の2度目の適用は予約が通らず拒まれる()
+    {
+        var source = new FakeSource(Found(Proposal()));
+        var gate = Gate(WatchlistProposalBindingMode.Enforce, source);
+
+        (await gate.CheckAsync(ProposalRef, [Aapl, Msft], [AddNvda], default)).Allowed.Should().BeTrue();
+        (await gate.CheckAsync(ProposalRef, [Aapl, Msft], [AddNvda], default))
+            .Should().Be(new WatchlistProposalBindingDecision(WatchlistProposalBindingOutcome.AlreadyApplied, false));
+    }
+
+    [Fact]
+    public async Task 一致しない要求では予約しない()
+    {
+        var source = new FakeSource(Found(Proposal()));
+
+        (await Gate(WatchlistProposalBindingMode.Enforce, source).CheckAsync(ProposalRef, [Aapl, Msft], [new(ProposedWatchlistAction.Add, "TSLA", "r")], default))
+            .Allowed.Should().BeFalse();
+        source.Reservations.Should().BeEmpty("食い違う要求で予約を使い切らせない");
+    }
+
+    [Fact]
+    public async Task 予約が届かなければEnforceは拒む()
+    {
+        var source = new FakeSource(Found(Proposal())) { Reservable = null };
+
+        (await Gate(WatchlistProposalBindingMode.Enforce, source).CheckAsync(ProposalRef, [Aapl, Msft], [AddNvda], default))
+            .Should().Be(new WatchlistProposalBindingDecision(WatchlistProposalBindingOutcome.Unavailable, false));
     }
 
     public static TheoryData<string, WatchlistProposalLookupResult, MonitoredSymbol[], ProposedWatchlistChange[], WatchlistProposalBindingOutcome> Unbound() => new()
@@ -80,7 +129,9 @@ public class WatchlistProposalBindingTests
         { ProposalRef, Found(Proposal()), [Aapl], [AddNvda], WatchlistProposalBindingOutcome.Mismatch },
         { ProposalRef, Found(Proposal()), [Aapl, Msft, new("TSLA", Market.UnitedStates)], [AddNvda], WatchlistProposalBindingOutcome.Mismatch },
         { ProposalRef, Found(Proposal(applied: true)), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.AlreadyApplied },
-        { ProposalRef, Found(Proposal(enforced: false)), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.SecondFactorNotEnforced },
+        { ProposalRef, Found(Proposal(reserved: true)), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.AlreadyApplied },
+        // 🔴 確定が第 2 要素で Verified だった記録が無い（段 1 で確認コードなしに確定した案）は、段 2 では拒む。
+        { ProposalRef, Found(Proposal(verified: false)), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.SecondFactorNotVerified },
         { ProposalRef, Found(Proposal(snapshot: false)), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.SnapshotUnknown },
         { ProposalRef, new(WatchlistProposalLookupStatus.NotConfirmed, null), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.NotConfirmed },
         { ProposalRef, new(WatchlistProposalLookupStatus.NotProposal, null), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.NotProposal },
@@ -158,7 +209,8 @@ public class WatchlistProposalBindingTests
                 [new ReportRevise.WatchlistChangeView("add", "NVDA", "AI 需要")],
                 [new ReportWatchlist.WatchlistSnapshotEntryView("AAPL", "UnitedStates")],
                 ApplyRecorded: false),
-            SecondFactorEnforced: true);
+            SecondFactorVerified: true,
+            ApplyReserved: false);
         var ok = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(JsonSerializer.Serialize(sent, ReportWire), System.Text.Encoding.UTF8, "application/json"),
@@ -167,10 +219,11 @@ public class WatchlistProposalBindingTests
         var found = await Source(ok).FindAsync("daily-2026-09-28", 3, default);
 
         found.Status.Should().Be(WatchlistProposalLookupStatus.Found);
-        found.Proposal!.Changes.Should().Equal(new BoundWatchlistChange("add", "NVDA"));
+        found.Proposal!.Changes.Should().Equal(new BoundWatchlistChange("add", "NVDA", "AI 需要"));
         found.Proposal.Snapshot.Should().Equal(new BoundWatchlistSnapshotEntry("AAPL", "UnitedStates"));
         found.Proposal.ApplyRecorded.Should().BeFalse();
-        found.Proposal.SecondFactorEnforced.Should().BeTrue();
+        found.Proposal.SecondFactorVerified.Should().BeTrue();
+        found.Proposal.ApplyReserved.Should().BeFalse();
 
         var unknown = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -228,10 +281,10 @@ public class WatchlistProposalBindingTests
     {
         var before = await SymbolsAsync(factory);
         source.Result = Found(new BoundWatchlistProposal(
-            [new BoundWatchlistChange("add", "NVDA")],
+            [new BoundWatchlistChange("add", "NVDA", "台帳の理由")],
             [.. before.Select(s => new BoundWatchlistSnapshotEntry(s, "UnitedStates"))],
             ApplyRecorded: false,
-            SecondFactorEnforced: true));
+            SecondFactorVerified: true));
         return before;
     }
 
@@ -258,6 +311,14 @@ public class WatchlistProposalBindingTests
         var bound = await Bot(factory).PostAsJsonAsync("/monitor/watchlist/proposal-apply", Body(before, "NVDA"));
         bound.StatusCode.Should().Be(HttpStatusCode.OK);
         (await SymbolsAsync(factory)).Should().Contain("NVDA");
+        // 変更履歴の理由は台帳の確定済みの値（要求の理由 "r" ではない）。
+        var history = await Owner(factory).GetFromJsonAsync<JsonElement>("/monitor/watchlist/history");
+        history.EnumerateArray().Should().Contain(h => h.GetProperty("reason").GetString()!.StartsWith("台帳の理由"))
+            .And.NotContain(h => h.GetProperty("reason").GetString()!.StartsWith("r（") || h.GetProperty("reason").GetString() == "r");
+
+        // 🔴 同じ確定済みの案の 2 度目は、台帳の予約が 1 回だけなので 403（同じ要求を送り直しても適用しない）。
+        (await Bot(factory).PostAsJsonAsync("/monitor/watchlist/proposal-apply", Body(before, "NVDA")))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     // 宛先（Reports:BaseUrl）が無い本番の組み立てで Enforce なら、照会できないので拒む（閉じる向き）。Audit は記録だけで適用する。

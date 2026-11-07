@@ -38,10 +38,10 @@ public enum WatchlistProposalBindingOutcome
     /// <summary>その版で確定されていない。</summary>
     NotConfirmed,
 
-    /// <summary>報告書の第 2 要素が段 2 でない（確定が第 2 要素を通ったと言えない）。</summary>
-    SecondFactorNotEnforced,
+    /// <summary>その版の確定が第 2 要素で Verified だった記録が無い（段 1 で確認コードなしに確定した案など）。</summary>
+    SecondFactorNotVerified,
 
-    /// <summary>既に適用の記録がある。</summary>
+    /// <summary>既に適用の記録か予約がある（2 度目の適用を拒む）。</summary>
     AlreadyApplied,
 
     /// <summary>案を作った時点の監視銘柄が台帳に無い。</summary>
@@ -54,8 +54,12 @@ public enum WatchlistProposalBindingOutcome
     Unavailable,
 }
 
-/// <summary>判定。<see cref="Allowed"/> が false なら適用しない。</summary>
-public sealed record WatchlistProposalBindingDecision(WatchlistProposalBindingOutcome Outcome, bool Allowed);
+/// <summary>
+/// 判定。<see cref="Allowed"/> が false なら適用しない。<see cref="BoundChanges"/> は結び付いたときの台帳の入れ替え（理由も台帳の値。
+/// 適用と変更履歴はこちらを使う）。結び付いていなければ null（Audit では要求の値で適用する）。
+/// </summary>
+public sealed record WatchlistProposalBindingDecision(
+    WatchlistProposalBindingOutcome Outcome, bool Allowed, IReadOnlyList<ProposedWatchlistChange>? BoundChanges = null);
 
 /// <summary>NFR-06, IADR-0634: 台帳（報告書サービス）の照会の結果。</summary>
 public enum WatchlistProposalLookupStatus
@@ -72,9 +76,18 @@ public sealed record BoundWatchlistProposal(
     IReadOnlyList<BoundWatchlistChange> Changes,
     IReadOnlyList<BoundWatchlistSnapshotEntry>? Snapshot,
     bool ApplyRecorded,
-    bool SecondFactorEnforced);
+    bool SecondFactorVerified,
+    bool ApplyReserved = false);
 
-public sealed record BoundWatchlistChange(string? Action, string? Symbol);
+public sealed record BoundWatchlistChange(string? Action, string? Symbol, string? Reason = null);
+
+/// <summary>NFR-06, IADR-0634 決定 8: 適用の予約の結果。</summary>
+public enum WatchlistProposalReserveStatus
+{
+    Reserved,
+    AlreadyReserved,
+    Unavailable,
+}
 
 public sealed record BoundWatchlistSnapshotEntry(string? Symbol, string? Market);
 
@@ -84,6 +97,9 @@ public sealed record WatchlistProposalLookupResult(WatchlistProposalLookupStatus
 public interface IWatchlistProposalSource
 {
     Task<WatchlistProposalLookupResult> FindAsync(string periodKey, int version, CancellationToken cancellationToken);
+
+    /// <summary>適用の予約（1 回だけ）。台帳が比較して書く。</summary>
+    Task<WatchlistProposalReserveStatus> ReserveAsync(string periodKey, int version, CancellationToken cancellationToken);
 }
 
 /// <summary>宛先（Reports:BaseUrl）が無い・読めない構成。すべて Unavailable（閉じる向き）。</summary>
@@ -91,6 +107,9 @@ public sealed class UnavailableWatchlistProposalSource : IWatchlistProposalSourc
 {
     public Task<WatchlistProposalLookupResult> FindAsync(string periodKey, int version, CancellationToken cancellationToken) =>
         Task.FromResult(new WatchlistProposalLookupResult(WatchlistProposalLookupStatus.Unavailable, null));
+
+    public Task<WatchlistProposalReserveStatus> ReserveAsync(string periodKey, int version, CancellationToken cancellationToken) =>
+        Task.FromResult(WatchlistProposalReserveStatus.Unavailable);
 }
 
 /// <summary>
@@ -122,16 +141,17 @@ public sealed partial class WatchlistProposalBindingGate(
         if (options.Mode == WatchlistProposalBindingMode.Off)
             return new(WatchlistProposalBindingOutcome.Skipped, true);
 
-        var outcome = await DecideAsync(proposalRef, expected, changes, cancellationToken).ConfigureAwait(false);
+        var decided = await DecideAsync(proposalRef, expected, changes, cancellationToken).ConfigureAwait(false);
+        var outcome = decided.Outcome;
         var allowed = options.Mode == WatchlistProposalBindingMode.Audit || outcome == WatchlistProposalBindingOutcome.Bound;
         logger.Log(
             outcome == WatchlistProposalBindingOutcome.Bound ? LogLevel.Information : LogLevel.Warning,
             "{Marker} proposal={ProposalRef} outcome={Outcome} mode={Mode} allowed={Allowed}",
             LogMarker, ReferencePattern().IsMatch(proposalRef) ? proposalRef : "-", outcome, options.Mode, allowed);
-        return new(outcome, allowed);
+        return decided with { Allowed = allowed };
     }
 
-    private async Task<WatchlistProposalBindingOutcome> DecideAsync(
+    private async Task<WatchlistProposalBindingDecision> DecideAsync(
         string proposalRef, IReadOnlyList<MonitoredSymbol>? expected, IReadOnlyList<ProposedWatchlistChange>? changes,
         CancellationToken cancellationToken)
     {
@@ -139,35 +159,49 @@ public sealed partial class WatchlistProposalBindingGate(
         if (!match.Success
             || !int.TryParse(match.Groups["version"].Value, System.Globalization.NumberStyles.None,
                 System.Globalization.CultureInfo.InvariantCulture, out var version))
-            return WatchlistProposalBindingOutcome.MalformedReference;
+            return Outcome(WatchlistProposalBindingOutcome.MalformedReference);
 
-        var found = await source.FindAsync(match.Groups["key"].Value, version, cancellationToken).ConfigureAwait(false);
+        var key = match.Groups["key"].Value;
+        var found = await source.FindAsync(key, version, cancellationToken).ConfigureAwait(false);
         switch (found.Status)
         {
             case WatchlistProposalLookupStatus.Invalid:
-                return WatchlistProposalBindingOutcome.MalformedReference;
+                return Outcome(WatchlistProposalBindingOutcome.MalformedReference);
             case WatchlistProposalLookupStatus.NotProposal:
-                return WatchlistProposalBindingOutcome.NotProposal;
+                return Outcome(WatchlistProposalBindingOutcome.NotProposal);
             case WatchlistProposalLookupStatus.NotConfirmed:
-                return WatchlistProposalBindingOutcome.NotConfirmed;
+                return Outcome(WatchlistProposalBindingOutcome.NotConfirmed);
             case WatchlistProposalLookupStatus.Unavailable:
-                return WatchlistProposalBindingOutcome.Unavailable;
+                return Outcome(WatchlistProposalBindingOutcome.Unavailable);
         }
 
         var proposal = found.Proposal!;
-        if (!proposal.SecondFactorEnforced)
-            return WatchlistProposalBindingOutcome.SecondFactorNotEnforced;
-        if (proposal.ApplyRecorded)
-            return WatchlistProposalBindingOutcome.AlreadyApplied;
+        if (!proposal.SecondFactorVerified)
+            return Outcome(WatchlistProposalBindingOutcome.SecondFactorNotVerified);
+        if (proposal.ApplyRecorded || proposal.ApplyReserved)
+            return Outcome(WatchlistProposalBindingOutcome.AlreadyApplied);
         if (proposal.Snapshot is not { } snapshot)
-            return WatchlistProposalBindingOutcome.SnapshotUnknown;
+            return Outcome(WatchlistProposalBindingOutcome.SnapshotUnknown);
+        if (!SameChanges(proposal.Changes, changes) || !SameSnapshot(snapshot, expected))
+            return Outcome(WatchlistProposalBindingOutcome.Mismatch);
 
-        return SameChanges(proposal.Changes, changes) && SameSnapshot(snapshot, expected)
-            ? WatchlistProposalBindingOutcome.Bound
-            : WatchlistProposalBindingOutcome.Mismatch;
+        // 🔴 IADR-0634 決定 8: 一致したものだけ、適用の直前に台帳で予約する（1 回だけ）。食い違う要求で予約を使い切らせない。
+        var reserved = await source.ReserveAsync(key, version, cancellationToken).ConfigureAwait(false);
+        return reserved switch
+        {
+            WatchlistProposalReserveStatus.Reserved => new(
+                WatchlistProposalBindingOutcome.Bound, true,
+                [.. proposal.Changes.Select(c => new ProposedWatchlistChange(
+                    c.Action == "add" ? ProposedWatchlistAction.Add : ProposedWatchlistAction.Remove,
+                    c.Symbol!.Trim(), c.Reason ?? string.Empty))]),
+            WatchlistProposalReserveStatus.AlreadyReserved => Outcome(WatchlistProposalBindingOutcome.AlreadyApplied),
+            _ => Outcome(WatchlistProposalBindingOutcome.Unavailable),
+        };
     }
 
-    // 入れ替えは操作と銘柄の並びで比べる（理由の文は比べない）。
+    private static WatchlistProposalBindingDecision Outcome(WatchlistProposalBindingOutcome outcome) => new(outcome, false);
+
+    // 入れ替えは操作と銘柄の並びで比べる（理由の文は比べない。適用と変更履歴には台帳の理由を使う＝要求の理由は使わない）。
     private static bool SameChanges(IReadOnlyList<BoundWatchlistChange> ledger, IReadOnlyList<ProposedWatchlistChange>? requested)
     {
         if (requested is null || requested.Count != ledger.Count)

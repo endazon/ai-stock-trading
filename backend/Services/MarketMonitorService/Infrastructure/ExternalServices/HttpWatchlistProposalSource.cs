@@ -13,6 +13,8 @@ public sealed class HttpWatchlistProposalSource(HttpClient http, ILogger<HttpWat
 {
     public const string Route = "/reports/policy-revisions/watchlist-proposal/binding";
 
+    public const string ReserveRoute = "/reports/policy-revisions/watchlist-proposal/binding/reserve";
+
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
     public async Task<WatchlistProposalLookupResult> FindAsync(string periodKey, int version, CancellationToken cancellationToken)
@@ -43,7 +45,7 @@ public sealed class HttpWatchlistProposalSource(HttpClient http, ILogger<HttpWat
                 return new(WatchlistProposalLookupStatus.Unavailable, null);
 
             return new(WatchlistProposalLookupStatus.Found, new BoundWatchlistProposal(
-                changes, proposal.Snapshot, proposal.ApplyRecorded, view.SecondFactorEnforced));
+                changes, proposal.Snapshot, proposal.ApplyRecorded, view.SecondFactorVerified, view.ApplyReserved));
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
@@ -52,7 +54,31 @@ public sealed class HttpWatchlistProposalSource(HttpClient http, ILogger<HttpWat
         }
     }
 
-    private sealed record BindingView(ProposalView? Proposal, bool SecondFactorEnforced);
+    // NFR-06, IADR-0634 決定 8: 適用の予約。200＝予約した／409＝予約・記録済み（2 度目）・確定されていない／それ以外は届かない。
+    // 本文は読まない（状態だけで決める）。
+    public async Task<WatchlistProposalReserveStatus> ReserveAsync(string periodKey, int version, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await http.PostAsync(
+                $"{ReserveRoute}?periodKey={Uri.EscapeDataString(periodKey)}&version={version}", content: null, cancellationToken)
+                .ConfigureAwait(false);
+            if (response.IsSuccessStatusCode)
+                return WatchlistProposalReserveStatus.Reserved;
+            if (response.StatusCode == HttpStatusCode.Conflict)
+                return WatchlistProposalReserveStatus.AlreadyReserved;
+            logger.LogWarning("{Marker} 台帳が予約に応じませんでした（{Status}）。確かめられないものとして扱います。",
+                WatchlistProposalBindingGate.LogMarker, (int)response.StatusCode);
+            return WatchlistProposalReserveStatus.Unavailable;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "{Marker} 台帳へ予約を届けられませんでした。確かめられないものとして扱います。", WatchlistProposalBindingGate.LogMarker);
+            return WatchlistProposalReserveStatus.Unavailable;
+        }
+    }
+
+    private sealed record BindingView(ProposalView? Proposal, bool SecondFactorVerified, bool ApplyReserved);
 
     private sealed record ProposalView(
         IReadOnlyList<BoundWatchlistChange>? Changes, IReadOnlyList<BoundWatchlistSnapshotEntry>? Snapshot, bool ApplyRecorded);

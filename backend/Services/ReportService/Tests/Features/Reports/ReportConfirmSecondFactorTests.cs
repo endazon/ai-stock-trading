@@ -151,7 +151,8 @@ public class ReportConfirmSecondFactorTests
         public void Complete(Guid id, PolicyRevisionAttemptOutcome outcome, int? reportVersion, string? watchlistChangesJson) => throw new NotSupportedException();
         public PolicyRevisionAttempt? Find(Guid id) => throw new NotSupportedException();
         public bool RecordWatchlistApply(Guid id, string resultJson, DateTimeOffset recordedAt) => throw new NotSupportedException();
-        public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt) => throw new NotSupportedException();
+        public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt, bool secondFactorVerified = false) => throw new NotSupportedException();
+        public bool ReserveWatchlistApply(Guid id, DateTimeOffset reservedAt) => throw new NotSupportedException();
     }
 
     private sealed class BotHeaders(HttpMessageHandler inner) : DelegatingHandler(inner)

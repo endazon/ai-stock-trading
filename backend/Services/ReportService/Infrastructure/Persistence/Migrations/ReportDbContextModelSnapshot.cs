@@ -49,6 +49,9 @@ namespace ReportService.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("ProposalConfirmedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("ProposalSecondFactorVerified")
+                        .HasColumnType("boolean");
+
                     b.Property<int?>("ReportVersion")
                         .HasColumnType("integer");
 
@@ -58,6 +61,10 @@ namespace ReportService.Infrastructure.Migrations
 
                     b.Property<string>("WatchlistApplyJson")
                         .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("WatchlistApplyReservedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("WatchlistChangesJson")
                         .HasColumnType("text");

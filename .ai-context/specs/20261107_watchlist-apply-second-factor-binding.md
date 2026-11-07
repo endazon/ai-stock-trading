@@ -87,3 +87,11 @@ plan_refs:
 4. 報告書の照会の口は、サービスの身元だけが通る（ボット・利用者のトークンは 403）。
 5. 空売りの解禁の判定は、受理できるときだけ第 2 要素を通す（Enforce でコードが無ければ記録しない）。受理できない判定は門を呼ばない。
 6. chart: 3 つのプロファイルに env が揃う。values-cloud は Enforce で、NetworkPolicy が市場監視から報告書への通信を許す。
+
+## 8. ［2026-11-07 追記 / レビュー］結び付きを強める 4 点
+
+1. 確定の第 2 要素は、照会の時点の構成ではなく、確定の時の記録で判定する。報告書は、方針の案の行の `ProposalSecondFactorVerified` に `Verified` だったかを残す（移行 `AddPolicyProposalSecondFactorAndApplyReservation`）。
+2. 二重適用を止めるため、台帳で適用を予約する（`WatchlistApplyReservedAt`・同時実行のトークン・1 回だけ）。市場監視は結び付いた要求だけを予約し、2 度目は拒む。
+3. 適用と変更履歴には、台帳の入れ替え（理由も台帳の値）を使う。
+4. 門は `GetRequiredService` で解決する（登録が無ければ黙って飛ばさない）。
+
