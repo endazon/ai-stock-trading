@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # NFR, FR-10, IADR-0633: メッセージの発行元の署名の鍵の組（ECDSA P-256）を作り、OpenBao へ入れる。**オーナーが実行する。**
 #
-#   bash scripts/ast-message-origin-keygen.sh --live [--rotate [--no-previous]] [<発行元>…]
+#   bash scripts/ast-message-origin-keygen.sh --live [--rotate [--no-previous | --force-within-window]] [<発行元>…]
 #
 # 何をするか（--live）:
 #   発行元ごと（既定は 7 つすべて: backtest information-collection market-monitor order-execution report risk-management trade-decision）に、
@@ -19,11 +19,16 @@
 #    「前の公開の鍵」として cloud/ast/ast-message-origin-previous-verify-keys の <発行元> へ残す。chart の global.messageOrigin.previousVerify に
 #    その発行元を足して当てると、受け手は入れ替えの前に署名されたメッセージも確かめられる（手順書 §5.1）。前の鍵を読めなければ何も変えずに 1。
 #    漏れの疑いで前の鍵を受け付けたくないときだけ --no-previous（前の鍵を残さない。入れ替えの前の未処理のメッセージは段 2 で処理されない）。
+# 🔴 前の鍵の置き場は発行元ごとに 1 つ。前の鍵を置いた時刻（値ではないメタデータ）を ConfigMap ast-message-origin-rotation の <発行元> に記録し、
+#    受け手の窓（既定 1445 分＝24 時間＋先にあってよい 5 分）の中で同じ発行元をもう一度 --rotate すると、何も変えずに 8 で止まる
+#    （最初の前の鍵を上書きすると、その鍵で署名済みの未処理のメッセージが段 2 で処理されない）。
+#    意図して越えるときだけ --force-within-window（警告を出して続ける）。
 # 🔴 秘密の鍵だけ入って公開の鍵が入らなかったときは 1 で止まる（組が食い違ったまま）。その発行元を --rotate で作り直す。
 #
 # 終了コード: 0＝すべて入れた / 1＝失敗 / 2＝引数の誤り / 3＝--live が無い / 5＝既に在る発行元を飛ばした（--rotate なし。その分は何も変えない）
-#             6＝AST_PUT_EXTERNAL_SECRET が無い / 7＝openssl が無い
-# 環境変数（既定）: AST_NAMESPACE=ai-stock-trading  KUBECTL=kubectl（--rotate で前の公開の鍵を読むときだけ使う）
+#             6＝AST_PUT_EXTERNAL_SECRET が無い / 7＝openssl が無い / 8＝窓の中の再 --rotate（何も変えていない）
+# 環境変数（既定）: AST_NAMESPACE=ai-stock-trading  KUBECTL=kubectl（--rotate で前の公開の鍵を読み、置いた時刻を記録するときだけ使う）
+#                   AST_MESSAGE_ORIGIN_WINDOW_MINUTES=1445（再 --rotate を止める窓。受け手の MessageOrigin:MaxAge ＋ MaxFutureSkew に合わせる）
 set -euo pipefail
 
 ALL_ISSUERS=(backtest information-collection market-monitor order-execution report risk-management trade-decision)
@@ -32,16 +37,19 @@ VERIFY_PATH="cloud/ast/ast-message-origin-verify-keys"
 PREVIOUS_PATH="cloud/ast/ast-message-origin-previous-verify-keys"
 NAMESPACE="${AST_NAMESPACE:-ai-stock-trading}"
 KUBECTL_BIN="${KUBECTL:-kubectl}"
+ROTATION_CONFIGMAP="ast-message-origin-rotation"
+WINDOW_MINUTES="${AST_MESSAGE_ORIGIN_WINDOW_MINUTES:-1445}"
 
 usage() { sed -n '2,4p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
-live=0; rotate=0; previous=1; issuers=()
+live=0; rotate=0; previous=1; force_window=0; issuers=()
 for arg in "$@"; do
   case "$arg" in
     --live) live=1 ;;
     --rotate) rotate=1 ;;
     --no-previous) previous=0 ;;
-    -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
+    --force-within-window) force_window=1 ;;
+    -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
     -*) echo "ERROR: 知らない引数: $arg" >&2; usage ;;
     *)
       known=0
@@ -52,6 +60,9 @@ for arg in "$@"; do
 done
 [ "${#issuers[@]}" -gt 0 ] || issuers=("${ALL_ISSUERS[@]}")
 [ "$previous" -eq 1 ] || [ "$rotate" -eq 1 ] || { echo "ERROR: --no-previous は --rotate と一緒に使います。" >&2; exit 2; }
+[ "$force_window" -eq 0 ] || { [ "$rotate" -eq 1 ] && [ "$previous" -eq 1 ]; } \
+  || { echo "ERROR: --force-within-window は --rotate と一緒に使い、--no-previous とは併用しません。" >&2; exit 2; }
+[[ "$WINDOW_MINUTES" =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: AST_MESSAGE_ORIGIN_WINDOW_MINUTES は正の整数です。" >&2; exit 2; }
 
 if [ "$live" -ne 1 ]; then
   echo "ERROR: OpenBao へ鍵を書きます。確かめたうえで --live を付けて実行してください（何も変えていません）。" >&2
@@ -80,6 +91,25 @@ for issuer in "${issuers[@]}"; do
 
   # --rotate: 作り直す前に、いまの公開の鍵を前の鍵として残す（読めなければ何も変えずに止める）。
   if [ "$rotate" -eq 1 ] && [ "$previous" -eq 1 ]; then
+    # 🔴 窓の中の再 --rotate を止める（前の鍵の置き場は 1 つ。上書きすると最初の前の鍵で署名済みの未処理のメッセージが落ちる）。
+    #    置いた時刻（UNIX 秒。値ではない）を読む。記録が無ければ止めない。読めなければ何も変えずに止める（閉じる向き）。
+    placed="$("$KUBECTL_BIN" -n "$NAMESPACE" get configmap "$ROTATION_CONFIGMAP" --ignore-not-found \
+      -o "go-template={{index .data \"$issuer\"}}" 2>/dev/null)" \
+      || { unset private public; echo "ERROR: $issuer の前の鍵を置いた時刻を読めません（ConfigMap $ROTATION_CONFIGMAP）。何も変えていません。" >&2; exit 1; }
+    placed="${placed//<no value>/}"
+    if [ -n "$placed" ]; then
+      [[ "$placed" =~ ^[0-9]+$ ]] || { unset private public; echo "ERROR: $issuer の前の鍵を置いた時刻が読めない形です。何も変えていません。" >&2; exit 1; }
+      age=$(( $(date +%s) - placed ))
+      if [ "$age" -lt $(( WINDOW_MINUTES * 60 )) ]; then
+        if [ "$force_window" -ne 1 ]; then
+          unset private public
+          echo "ERROR: $issuer は $(( age / 60 )) 分前に前の鍵を置いたばかりです（窓 $WINDOW_MINUTES 分の中）。何も変えていません。" >&2
+          echo "       いまの前の鍵で署名済みのメッセージが処理し終わるまで待ってください。意図して越えるときだけ --force-within-window。" >&2
+          exit 8
+        fi
+        echo "WARNING: --force-within-window: $issuer の前の鍵（$(( age / 60 )) 分前に置いた）を上書きします。その鍵で署名済みの未処理のメッセージは段 2 で処理されません。" >&2
+      fi
+    fi
     old="$("$KUBECTL_BIN" -n "$NAMESPACE" get secret ast-message-origin-verify-keys -o "go-template={{index .data \"$issuer\"}}" 2>/dev/null \
       | base64 -d 2>/dev/null | tr -d '\n')" || old=""
     if [ -z "$old" ] || ! printf '%s' "$old" | base64 -d 2>/dev/null | "$OPENSSL_BIN" pkey -pubin -inform DER -noout 2>/dev/null; then
@@ -92,6 +122,14 @@ for issuer in "${issuers[@]}"; do
     printf '%s' "$old" | "${PUT_CMD[@]}" --overwrite "$PREVIOUS_PATH" "$issuer" >/dev/null || rc=$?
     unset old
     [ "$rc" -eq 0 ] || { unset private public; echo "ERROR: $issuer の前の公開の鍵を残せませんでした（終了コード $rc。何も変えていません）。" >&2; exit 1; }
+    # 置いた時刻を記録する（値ではない）。記録できなければ止める（次の再 --rotate を止められなくなるため）。秘密の鍵はまだ変えていない。
+    now="$(date +%s)"
+    if "$KUBECTL_BIN" -n "$NAMESPACE" get configmap "$ROTATION_CONFIGMAP" -o name >/dev/null 2>&1; then
+      "$KUBECTL_BIN" -n "$NAMESPACE" patch configmap "$ROTATION_CONFIGMAP" --type merge -p "{\"data\":{\"$issuer\":\"$now\"}}" >/dev/null 2>&1 || rc=$?
+    else
+      "$KUBECTL_BIN" -n "$NAMESPACE" create configmap "$ROTATION_CONFIGMAP" --from-literal="$issuer=$now" >/dev/null 2>&1 || rc=$?
+    fi
+    [ "$rc" -eq 0 ] || { unset private public; echo "ERROR: $issuer の前の鍵を置いた時刻を記録できませんでした（前の鍵は残しました。鍵の組は変えていません）。" >&2; exit 1; }
     echo "前の公開の鍵を残しました: $issuer（$PREVIOUS_PATH。global.messageOrigin.previousVerify に足して当ててください）。"
   fi
 

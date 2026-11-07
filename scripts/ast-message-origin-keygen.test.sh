@@ -7,6 +7,7 @@
 #   - 公開の鍵を書けなければ 1 で止まり、--rotate での作り直しを案内する
 #   - --rotate は、いまの公開の鍵（kubectl はスタブ）を前の鍵のパスへ残してから作り直す。読めなければ何も変えずに 1。
 #     --no-previous は前の鍵を残さない（--rotate なしでは 2）
+#   - 窓の中の同じ発行元の再 --rotate は、何も変えずに 8（置いた時刻は ConfigMap のスタブ）。--force-within-window は警告して続ける。窓の外は通る
 set -u
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT="$ROOT_DIR/scripts/ast-message-origin-keygen.sh"
@@ -27,9 +28,17 @@ cat > "$f"
 STUB
 chmod +x "$BIN/put-external-secret"
 # kubectl のスタブ: Secret ast-message-origin-verify-keys の <発行元> を、ストアの公開の鍵から k8s の data の形（base64）で返す。
+# ConfigMap ast-message-origin-rotation は $AST_TEST_STATE/cm/<発行元> のファイル（置いた時刻）で模す。
 cat > "$BIN/kubectl" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$AST_TEST_STATE/kubectl.log"
+mkdir -p "$AST_TEST_STATE/cm"
+case " $* " in
+  *" get configmap "*" -o name "*) [ -n "$(ls "$AST_TEST_STATE/cm")" ]; exit $? ;;
+  *" get configmap "*) i="$(printf '%s' "$*" | sed -n 's/.*index \.data "\([a-z-]*\)".*/\1/p')"; [ -f "$AST_TEST_STATE/cm/$i" ] && cat "$AST_TEST_STATE/cm/$i"; exit 0 ;;
+  *" patch configmap "*) i="$(printf '%s' "$*" | sed -n 's/.*"data":{"\([a-z-]*\)":"\([0-9]*\)".*/\1/p')"; t="$(printf '%s' "$*" | sed -n 's/.*"data":{"\([a-z-]*\)":"\([0-9]*\)".*/\2/p')"; printf '%s' "$t" > "$AST_TEST_STATE/cm/$i"; exit 0 ;;
+  *" create configmap "*) kv="$(printf '%s' "$*" | sed -n 's/.*--from-literal=\([a-z-]*\)=\([0-9]*\).*/\1 \2/p')"; printf '%s' "${kv#* }" > "$AST_TEST_STATE/cm/${kv%% *}"; exit 0 ;;
+esac
 [ -f "$AST_TEST_STATE/kubectl-fail" ] && exit 1
 issuer="$(printf '%s' "$*" | sed -n 's/.*index \.data "\([a-z-]*\)".*/\1/p')"
 f="$AST_TEST_STATE/store/cloud_ast_ast-message-origin-verify-keys__$issuer"
@@ -101,6 +110,22 @@ rc="$(run --live --no-previous report)"
 touch "$STATE/fail-verify"
 rc="$(run --live --rotate backtest)"
 [ "$rc" = 1 ] && grep -q -- '--rotate backtest' "$STATE/err" && ok "公開の鍵を書けなければ 1 で作り直しを案内する" || ng "公開の鍵の失敗: rc=$rc"
+
+rm -f "$STATE/fail-verify"
+# 窓の中の再 --rotate（market-monitor は上で --rotate 済み＝置いた時刻が記録されている）。
+[ -s "$STATE/cm/market-monitor" ] && ok "--rotate は前の鍵を置いた時刻を記録する" || ng "置いた時刻が記録されていない"
+prev="$(store previous-verify market-monitor)"; sig="$(store signing market-monitor)"
+rc="$(run --live --rotate market-monitor)"
+[ "$rc" = 8 ] && [ "$(store previous-verify market-monitor)" = "$prev" ] && [ "$(store signing market-monitor)" = "$sig" ] \
+  && grep -q -- '--force-within-window' "$STATE/err" && ok "窓の中の再 --rotate は何も変えずに 8" || ng "窓の中の再 --rotate: rc=$rc"
+rc="$(run --live --rotate --force-within-window market-monitor)"
+[ "$rc" = 0 ] && [ "$(store signing market-monitor)" != "$sig" ] && grep -q 'WARNING: --force-within-window' "$STATE/err" \
+  && ok "--force-within-window は警告して続ける" || ng "--force-within-window: rc=$rc"
+printf '%s' "$(( $(date +%s) - 1446 * 60 ))" > "$STATE/cm/market-monitor"
+rc="$(run --live --rotate market-monitor)"
+[ "$rc" = 0 ] && ok "窓の外の --rotate は通る" || ng "窓の外: rc=$rc"
+rc="$(run --live --no-previous --force-within-window market-monitor)"
+[ "$rc" = 2 ] && ok "--force-within-window は --rotate なし・--no-previous と併用できない" || ng "旗の組み合わせ: rc=$rc"
 
 [ "$fails" -eq 0 ] || { echo "FAILED: $fails"; exit 1; }
 echo "all ok"

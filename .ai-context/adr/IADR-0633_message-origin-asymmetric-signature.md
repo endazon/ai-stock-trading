@@ -95,6 +95,8 @@ plan_refs:
    （`global.messageOrigin.previousVerify`・Secret `ast-message-origin-previous-verify-keys`・env `MessageOrigin__PreviousVerifyKeys__<発行元>`。
    段に依らず optional）を足した。`--rotate` は作り直す前に、いまの公開の鍵を前の鍵として OpenBao へ残す（`--no-previous` で残さない）。
    受け手 → 発行元の順に作り直し、入れ替えの前の未処理のメッセージが処理し終わったら外す（手順書 §5.1）。
+   前の鍵の置き場は発行元ごとに 1 つなので、`--rotate` は置いた時刻（値ではない）を ConfigMap `ast-message-origin-rotation` に記録し、
+   窓（既定 1445 分）の中の同じ発行元の再 `--rotate` を何も変えずに止める（終了コード 8。越えるのは `--force-within-window` の明示だけ）。
 4. 監査の台帳の列に確かめの結果を残すのは本 IADR では入れない（台帳の形の変更と移行を伴う）。いまの検出は Warning とメトリクスで行う。
 5. 再送の記録がプロセスの中にだけあること・印が受け手に束縛されないこと・同時に届いた同じ ID の扱いは、IADR-0627 §残余 2・7・8 のまま。
 6. 段 2 へ上げる前に、段 1 のまま受け手のログに EventId 16261（`legacy` を含む）が出ないことを確かめる（IADR-0627 §残余 3 と同じ）。
