@@ -12,6 +12,7 @@ namespace TradeDecisionService.Features.TradeDecision;
 //   Report    : 倒す向きは Off と同じ。最後に読めた時から猶予（CostControl:HaltQuery:GraceSeconds。既定 900 秒）を過ぎたら、Enforce なら
 //               停止として扱うことをログに出す。
 //   Enforce   : 猶予の間は最後に読めた値を使い、猶予を過ぎても読めなければ停止として扱う（fail-closed。LLM を呼ばない）。クラウドの既定。
+// 段が効くのは**読めない場合に限る**。読めた停止の値（と猶予の内の最後に読めた停止の値）は段に依らず従う（Report でも Off でも止める）。
 public interface ILlmCostHaltGate
 {
     /// <summary>月次 LLM 費用上限の 100% に達して停止中（Halted）か。照会できないときの扱いは段による（上の説明）。</summary>

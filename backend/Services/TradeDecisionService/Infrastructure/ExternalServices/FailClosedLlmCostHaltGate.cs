@@ -12,7 +12,8 @@ public enum LlmCostHaltUnavailableMode
     /// <summary>従来の挙動。読めなければ「停止していない」（LLM を呼ぶ。IADR-0031 / IADR-0582）。既定・ローカル。</summary>
     Off = 0,
 
-    /// <summary>倒す向きは Off と同じ。猶予を過ぎても読めなければ、Enforce なら停止として扱うことをログに出す。</summary>
+    /// <summary>倒す向きは Off と同じ。猶予を過ぎても読めなければ、Enforce なら停止として扱うことをログに出す。
+    /// 止めないのは読めない場合に限る。読めた停止の値（猶予の内の最後に読めた値を含む）には従う。</summary>
     Report = 1,
 
     /// <summary>猶予を過ぎても読めなければ停止として扱う（LLM を呼ばない。fail-closed）。クラウド。</summary>
