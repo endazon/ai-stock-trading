@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using NotificationService.Domain;
+using Wolverine.Attributes;
 
 namespace NotificationService.Features.Notifications.OperateKillSwitch;
 
@@ -8,6 +9,8 @@ namespace NotificationService.Features.Notifications.OperateKillSwitch;
 //
 // 本ハンドラは Discord.Net に依存しない（Gateway アダプタが DiscordCommandContext に変換して渡す）。
 // 拒否理由は詳細設計07 に従いログに残す。利用者への応答文言は呼び出し側（Gateway アダプタ）が組む。
+// 🔴 NFR, FR-14, IADR-0638 決定 1: 入口は Discord の Gateway だけ。名前がハンドラの規則に当たってもブローカから受けない。
+[WolverineIgnore]
 public sealed class KillSwitchCommandHandler(
     IKillSwitchController controller,
     DiscordBotOptions options,

@@ -61,6 +61,9 @@ global:
   #   段 2 へ上げるのは、段 1 で各サービスのログに不一致が出ないことを確かめた後。
   ownerTokenBinding:
     mode: Report
+    # 🔴 NFR, FR-10, IADR-0638 決定 4: 所有者のトークンの発行先のクライアント（azp）の許可集合。空（既定）＝描かない＝コードの既定
+    #   （bff と ai-stock-trading-owner）。値を並べると auth のサービスへ env Auth__OwnerToken__Clients__<n> で描き、既定を置き換える。
+    clients: []
   # 🔴 NFR-06, #1554, IADR-0622: ボットの資格情報（azp ai-stock-trading-owner）で届く REST の所有者の操作を、ボットの許可表の経路に絞る段。
   #   Report（段 1・既定）＝許可表の外の呼び出しを記録して通す／Enforce（段 2）＝拒否。ownerTokenBinding とは別に上げる。
   #   段 2 へ上げるのは、段 1 で各サービスのログに「ボットの許可表の外」が出ないことを確かめた後。
@@ -115,11 +118,16 @@ global:
       market-monitor: [trade-decision]
       risk-management: [backtest, information-collection, order-execution, risk-management, trade-decision]
       cost-control: [report, trade-decision]
+      notification: [market-monitor, order-execution, risk-management]
       audit: [backtest, information-collection, market-monitor, order-execution, report, risk-management, trade-decision]
     # 鍵の入れ替えの間だけ、前の公開の鍵を受け手へ渡す発行元（既定は空＝渡さない）。scripts/ast-message-origin-keygen.sh --rotate <発行元> が
     #   前の公開の鍵を previousVerifySecretName（OpenBao cloud/ast/ast-message-origin-previous-verify-keys）へ残す。ここへ発行元を足して当て、
     #   受け手 → 発行元の順に作り直す。入れ替えの前に署名されたメッセージが処理し終わったら（既定の窓 24 時間の後）外して当て直す（手順書 §5.1）。
     #   env は MessageOrigin__PreviousVerifyKeys__<発行元>（段に依らず optional。無くても起動する）。
+    # 🔴 NFR, FR-09, IADR-0638 決定 3: サービスごとの段の下げ（既定は空＝global の mode）。受け手を新しく足したときだけ、そのサービスを
+    #   Report にして当て、ログに「発行元を確かめられませんでした」（EventId 16261）が出ないことを確かめてから外す（手順書 §5.1）。
+    #   鍵（Secret の参照）の optional は global の mode のまま。値は Report か Enforce。
+    modeOverrides: {}
     previousVerifySecretName: ast-message-origin-previous-verify-keys
     previousVerify: []
     legacyHmac:

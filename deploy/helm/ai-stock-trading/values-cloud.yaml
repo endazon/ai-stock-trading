@@ -58,6 +58,9 @@ global:
     mode: Enforce
   ownerTokenBinding:
     mode: Enforce
+    # 🔴 NFR, FR-10, IADR-0638 決定 4: クラウドの所有者の操作は Discord ボットのクライアントだけが送る（基盤の realm に中継のクライアントは無い）。
+    #   コードの既定の集合に頼らず明示する（将来 realm に同名のクライアントが足されても所有者として通さない）。
+    clients: [ai-stock-trading-owner]
   ownerBotScope:
     mode: Enforce
   # 🔴 NFR, NFR-05, IADR-0637: サービスのトークンは身元（azp）と宛先（aud ai-stock-trading-api）で確かめ、口ごとに呼び手を限る（段 Enforce）。
@@ -72,6 +75,10 @@ global:
   #   旧い共有の鍵（legacyHmac）は使わない（段 2 と併用すると描画で止まる）。
   messageOrigin:
     mode: Enforce
+    # 🔴 NFR, FR-09, IADR-0638 決定 3: 通知は新しく足した受け手なので、段 1（記録だけ）で当てる。鍵は段 2 のまま必須で読む。
+    #   通知のログに EventId 16261 が 1 日出ないことを確かめてから、この行を外す（手順書 docs/operations/cloud-single-node-migration-runbook.md §5.1「受け手を足したときの段」）。
+    modeOverrides:
+      notification: Report
   # NFR-18, #1535, IADR-0621: 基盤の DB・ブローカへの接続を TLS にする（経路 B の values-local と同じスイッチ）。
   rabbitmq:
     tls:

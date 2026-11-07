@@ -407,6 +407,37 @@ public class MessageOriginWiringTests
         await host.StopAsync();
     }
 
+    // 🔴 NFR, FR-09, IADR-0638 決定 2: 通知は記録だけの受け手ではない。段 2 では確かめられない表の型を処理しない（偽の事象を知らせない）、
+    //   正しい印は処理する。段 1 は記録して処理する（受け手を足すときの段）。
+    // 陰性対照: 表の行から Notification を外すと、段 2 の印の無い行が処理されて赤になる。
+    [Theory]
+    [InlineData("Enforce", false)]
+    [InlineData("Report", true)]
+    public async Task 通知は段2で印の無い表の型を処理せず正しい印は処理する(string mode, bool unsignedHandled)
+    {
+        const string notification = "ai-stock-trading.notification-service";
+        AuditProbeHandler.Reset();
+        using var host = await Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
+            {
+                opts.PinDynamicTypeLoadMode();
+                opts.Discovery.DisableConventionalDiscovery();
+                opts.Discovery.IncludeType<AuditProbeHandler>();
+                opts.UseAiStockTradingMessageOrigin(notification, FullConfig(notification, mode));
+                opts.StubAllExternalTransports();
+            })
+            .StartAsync();
+        host.Services.GetRequiredService<MessageOriginVerifier>().RecordOnly.Should().BeFalse();
+
+        await InvokeAsync(host, MessageOriginSamples.Create(typeof(OrderExecuted)));
+        AuditProbeHandler.Handled.Should().HaveCount(unsignedHandled ? 1 : 0);
+
+        var signed = MessageOriginSamples.Create(typeof(OrderExecuted));
+        await InvokeAsync(host, signed, SignedBy(MessageOriginCatalog.OrderExecution, MessageOriginTestKeys.For(MessageOriginCatalog.OrderExecution), signed));
+        AuditProbeHandler.Handled.Should().HaveCount(unsignedHandled ? 2 : 1, "正しい印の約定は知らせる");
+        await host.StopAsync();
+    }
+
     [Fact]
     public void 知らない段は起動で止まる()
     {
@@ -415,10 +446,11 @@ public class MessageOriginWiringTests
         act.Should().Throw<InvalidOperationException>();
     }
 
-    // 鍵を持つ（発行元か受け手の）サービス。通知・前提条件は表の型を発行も確かめもしない。監査は公開の鍵だけを持つ。
+    // 鍵を持つ（発行元か受け手の）サービス。前提条件は表の型を発行も確かめもしない。監査・通知は公開の鍵だけを持つ（IADR-0638 決定 2）。
     public static TheoryData<string> Services() =>
     [
         "ai-stock-trading.audit-service",
+        "ai-stock-trading.notification-service",
         "ai-stock-trading.trade-decision-service",
         "ai-stock-trading.order-execution-service",
         "ai-stock-trading.market-monitor-service",
@@ -430,13 +462,22 @@ public class MessageOriginWiringTests
     ];
 
     [Theory]
-    [InlineData("ai-stock-trading.notification-service")]
     [InlineData("ai-stock-trading.configuration-service")]
     public void 表の型を発行も確かめもしないサービスは鍵が要らない(string serviceName)
     {
         var issuer = MessageOriginCatalog.IssuerIdFor(serviceName);
         MessageOriginWiringExtensions.RequiresSigningKey(issuer).Should().BeFalse();
         MessageOriginWiringExtensions.RequiredVerifyKeys(issuer).Should().BeEmpty();
+    }
+
+    // 🔴 NFR, FR-09, IADR-0638 決定 2: 通知は秘密の鍵を持たず、受ける表の型の発行元（発注執行・市場監視・リスク管理）の公開の鍵だけを要る。
+    [Fact]
+    public void 通知は秘密の鍵を持たず受ける表の型の発行元の公開の鍵だけを要る()
+    {
+        MessageOriginWiringExtensions.RequiresSigningKey(MessageOriginCatalog.Notification).Should().BeFalse();
+        MessageOriginWiringExtensions.RequiredVerifyKeys(MessageOriginCatalog.Notification).Should().BeEquivalentTo(
+            [MessageOriginCatalog.MarketMonitor, MessageOriginCatalog.OrderExecution, MessageOriginCatalog.RiskManagement]);
+        MessageOriginCatalog.IsRecordOnly(MessageOriginCatalog.Notification).Should().BeFalse();
     }
 
     [Fact]

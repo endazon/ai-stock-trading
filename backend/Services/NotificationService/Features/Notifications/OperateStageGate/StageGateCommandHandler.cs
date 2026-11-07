@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using NotificationService.Domain;
+using Wolverine.Attributes;
 
 namespace NotificationService.Features.Notifications.OperateStageGate;
 
@@ -12,6 +13,8 @@ namespace NotificationService.Features.Notifications.OperateStageGate;
 //
 // 本ハンドラは Discord.Net に依存しない（Gateway アダプタが DiscordCommandContext に変換して渡す）。
 // 段階ゲート系以外（kill switch・pause・未知）は本ハンドラでは実行しない。
+// 🔴 NFR, FR-14, IADR-0638 決定 1: 入口は Discord の Gateway だけ。名前がハンドラの規則に当たってもブローカから受けない。
+[WolverineIgnore]
 public sealed class StageGateCommandHandler(
     IStageGateController controller,
     DiscordBotOptions options,

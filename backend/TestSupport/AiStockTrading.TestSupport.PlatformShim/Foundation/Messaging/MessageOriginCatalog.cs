@@ -25,6 +25,7 @@ public static class MessageOriginCatalog
     public const string Backtest = "backtest";
     public const string Report = "report";
     public const string CostControl = "cost-control";
+    public const string Notification = "notification";
 
     private static MessageOriginRule Rule<T>(string[] issuers, string[] receivers) =>
         new(typeof(T), issuers, receivers);
@@ -39,7 +40,7 @@ public static class MessageOriginCatalog
         Rule<PriceMovementDetected>([MarketMonitor], [TradeDecision]),
         Rule<InformationCollected>([InformationCollection], [TradeDecision]),
         // 損切り到達: ソフトウェア逆指値の建玉を成行で決済する。
-        Rule<StopLossTriggered>([MarketMonitor], [OrderExecution]),
+        Rule<StopLossTriggered>([MarketMonitor], [OrderExecution, Notification]),
         // 情報の縮退: 新規建ての停止の出し入れ。
         Rule<InformationSourceDegraded>([InformationCollection], [RiskManagement]),
         Rule<InformationSourceRecovered>([InformationCollection], [RiskManagement]),
@@ -51,19 +52,21 @@ public static class MessageOriginCatalog
         Rule<BrokerAvailabilityObserved>([OrderExecution], [RiskManagement]),
         Rule<BrokerPositionsObserved>([OrderExecution], [RiskManagement]),
         // 注文の結果: 取引台帳・処理中の決済の押さえ・GFV・段階ゲートの件数・相場操縦の検知。
-        Rule<OrderExecuted>([OrderExecution], [RiskManagement]),
+        Rule<OrderExecuted>([OrderExecution], [RiskManagement, Notification]),
         Rule<OrderCancelled>([OrderExecution], [RiskManagement]),
         Rule<OrderModified>([OrderExecution], [RiskManagement]),
-        Rule<OrderDispatchForgone>([OrderExecution], [RiskManagement]),
-        Rule<ProtectiveStopPlaced>([OrderExecution], [RiskManagement]),
-        Rule<ProtectiveStopCoverageLost>([OrderExecution], [RiskManagement]),
-        Rule<SoftwareStopExecuted>([OrderExecution], [RiskManagement]),
+        Rule<OrderDispatchForgone>([OrderExecution], [RiskManagement, Notification]),
+        Rule<ProtectiveStopPlaced>([OrderExecution], [RiskManagement, Notification]),
+        Rule<ProtectiveStopCoverageLost>([OrderExecution], [RiskManagement, Notification]),
+        Rule<SoftwareStopExecuted>([OrderExecution], [RiskManagement, Notification]),
         Rule<SoftwareStopLineWidened>([OrderExecution], [RiskManagement]),
         // 注文の承認: 発注執行は承認の印（IADR-0610）に加えてこちらも確かめる。リスク管理は自分の発行を台帳へ取り込む。
         Rule<OrderApproved>([RiskManagement], [RiskManagement, OrderExecution]),
         // 手仕舞いの取消要求・乖離の取り込み: 発注執行がブローカの注文を取り消す・保護レグを合わせる。
         Rule<PositionCloseCancellationRequested>([RiskManagement], [OrderExecution]),
-        Rule<PositionDriftAdopted>([RiskManagement], [OrderExecution]),
+        Rule<PositionDriftAdopted>([RiskManagement], [OrderExecution, Notification]),
+        // 🔴 NFR, FR-09, IADR-0638 決定 2: 通知は、表の型のうち自分が受けるもの（約定・損切り到達・保護レグ・乖離の取り込み・見送り）を確かめる
+        //   （偽の統制の事象を利用者へ知らせない）。表の外の型は印が無いので確かめない（ExternalTypesUnverifiedServices）。
         // LLM の費用: 月次上限（費用の統制）の台帳。
         Rule<LlmCostIncurred>([TradeDecision, Report], [CostControl]),
     ];
@@ -78,10 +81,16 @@ public static class MessageOriginCatalog
         (CostControl, typeof(AssumptionsChanged), "キャッシュを捨てるだけで本文の値を使わない（版は REST で取り直す）"),
     ];
 
-    /// <summary>受ける型をすべて対象外にするサービスと理由。</summary>
-    public static IReadOnlyList<(string Service, string Reason)> ExcludedServices { get; } =
+    /// <summary>受ける型をすべて対象外にするサービスと理由（いまは無い。IADR-0638 決定 2 で通知を外した）。</summary>
+    public static IReadOnlyList<(string Service, string Reason)> ExcludedServices { get; } = [];
+
+    /// <summary>
+    /// 🔴 NFR, FR-09, IADR-0638 決定 2: 受ける表の型は確かめる（表の受け手に載せる）が、表の外の契約の型は型ごとの対象外を並べずに
+    /// まとめて確かめない（発行元の印が付かない型）サービスと理由。
+    /// </summary>
+    public static IReadOnlyList<(string Service, string Reason)> ExternalTypesUnverifiedServices { get; } =
     [
-        ("notification", "利用者へ知らせるだけで、判断・統制・発注に使わない（操作は認可つきの REST / gRPC を通る）"),
+        ("notification", "表の外の型は利用者へ知らせるだけで判断・統制・発注に使わず、発行元の印も付かない（表の型は確かめる）"),
     ];
 
     /// <summary>
