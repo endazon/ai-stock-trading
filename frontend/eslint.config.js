@@ -1,8 +1,10 @@
 import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import js from '@eslint/js';
+import { defineConfig } from 'eslint/config';
+import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript';
 import globals from 'globals';
-import importPlugin from 'eslint-plugin-import';
+import importX from 'eslint-plugin-import-x';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
@@ -10,6 +12,13 @@ import tseslint from 'typescript-eslint';
 // IADR-0080 / IADR-0288: 単独リポのフロント lint。platform（`src/eslint.config.js`）と同じ規則を
 // 本ユニットに閉じて適用する。テスト専用スタブ（test/foundation-stub）は @foundation の代替であり
 // lint 対象外にする（合成時は実 foundation を使う）。
+//
+// NFR / IADR-0640: ESLint 10 系へ上げた。`eslint-plugin-import` 2.x は ESLint 10 を peer に持たない
+// （`^9` まで）ため、同じ規則（`no-restricted-paths`）を持つ後継の `eslint-plugin-import-x` へ移した
+// （MSP/ADR-0066 の「`eslint-plugin-import`（または同等）」の「同等」に当たる）。規則名は
+// `import/no-restricted-paths` → `import-x/no-restricted-paths`、resolver の設定は
+// `import/resolver` → `import-x/resolver-next` に変わる。ゾーンの中身は変えていない。
+// 入口は `typescript-eslint` の `tseslint.config()`（非推奨）から ESLint 本体の `defineConfig()` へ移した。
 
 const PROJECT_ROOT = fileURLToPath(new URL('.', import.meta.url));
 
@@ -160,7 +169,7 @@ const BANNED_IMPORT_PATTERNS = [
   },
 ];
 
-export default tseslint.config(
+export default defineConfig(
   {
     ignores: [
       '**/dist',
@@ -207,18 +216,21 @@ export default tseslint.config(
   },
   // MSP/ADR-0066 決定 3 / IADR-0288: feature 境界の機械強制。
   //
-  // `import/no-restricted-paths` は**解決できた import しか検査しない**ため、TypeScript の
-  // 拡張子・パスエイリアスを解決できる resolver を必ず与える（与えないと規則は静かに 0 件検査になる）。
+  // `import-x/no-restricted-paths`（IADR-0640。旧 `import/no-restricted-paths`）は**解決できた import しか
+  // 検査しない**ため、TypeScript の拡張子・パスエイリアスを解決できる resolver を必ず与える
+  // （与えないと規則は静かに 0 件検査になる）。
   {
     files: ['src/**/*.{ts,tsx}'],
-    plugins: { import: importPlugin },
+    plugins: { 'import-x': importX },
     settings: {
-      'import/resolver': {
-        typescript: { project: fileURLToPath(new URL('./tsconfig.standalone.json', import.meta.url)) },
-      },
+      'import-x/resolver-next': [
+        createTypeScriptImportResolver({
+          project: fileURLToPath(new URL('./tsconfig.standalone.json', import.meta.url)),
+        }),
+      ],
     },
     rules: {
-      'import/no-restricted-paths': ['error', { basePath: PROJECT_ROOT, zones: importDirectionZones }],
+      'import-x/no-restricted-paths': ['error', { basePath: PROJECT_ROOT, zones: importDirectionZones }],
       'no-restricted-imports': [
         'error',
         { paths: BANNED_IMPORT_PATHS, patterns: BANNED_IMPORT_PATTERNS },
