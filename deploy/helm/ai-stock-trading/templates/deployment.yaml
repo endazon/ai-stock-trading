@@ -51,7 +51,19 @@
 {{- if and $mqTls (not $mq.tls.port) -}}
 {{- fail "global.rabbitmq.tls.port が要ります（amqps の口。IADR-0621）。" -}}
 {{- end -}}
-{{- $infraCaMount := or $dbTls $mqTls -}}
+{{- /* NFR, NFR-05, IADR-0629（基盤の MSP:IADR-0693 の受け手）: 認可サーバー（Keycloak）への通信を TLS で検証する（global.authTls。opt-in）。
+       有効なら Authority は https でなければ描画で止め、全 Worker に基盤の CA（global.infraCa。DB・ブローカと同じ CA）をマウントする
+       （DB・ブローカを使わない Worker も。トークンの取得はどの Worker も行う）。CA の設定が無ければ止める（黙って平文へ戻らない）。 */ -}}
+{{- $authTls := and $g.authTls $g.authTls.enabled -}}
+{{- if $authTls -}}
+{{- if not (hasPrefix "https://" ($g.authAuthority | toString)) -}}
+{{- fail (printf "global.authTls.enabled のとき global.authAuthority は https:// で始めてください（%s。IADR-0629）。" $g.authAuthority) -}}
+{{- end -}}
+{{- if or (not (or $infraCa.configMap $infraCa.secretName)) (not $infraCa.caKey) -}}
+{{- fail "global.authTls.enabled のときは global.infraCa.configMap（または secretName）/ caKey が要ります（認可サーバーの証明書を基盤の CA で検証する。IADR-0629）。" -}}
+{{- end -}}
+{{- end -}}
+{{- $infraCaMount := or $dbTls $mqTls $authTls -}}
 {{- if and $g.db.usernameSecret (not $g.db.passwordSecret) -}}
 {{- fail "global.db.usernameSecret は global.db.passwordSecret と一緒に与えてください（接続文字列を Secret の参照で組む形だけが利用者名を Secret から読む。IADR-0623）。" -}}
 {{- end -}}
@@ -317,6 +329,11 @@ spec:
             - name: RabbitMq__ConnectionString
               value: {{ printf "amqp://%s%s:$(RABBITMQ_PASSWORD)@%s:%v" $mq.usernamePrefix $name $mq.host $mq.port | quote }}
             {{- end }}
+            {{- if and $authTls (not $mqTls) }}
+            {{- /* NFR, IADR-0629: 認可サーバーの証明書の検証に基盤の CA を信頼ストアへ足す（上の amqps の段が描くときは同じ値なので描かない＝二重にしない）。 */}}
+            - name: SSL_CERT_DIR
+              value: "/etc/ssl/certs:/etc/platform-infra-ca"
+            {{- end }}
             {{- /* NFR-18, IADR-0628: 購読する exchange の宣言の仕方（UseAiStockTradingRabbitMq が読む）。Passive のときだけ描く（既定・ローカルの描画は変えない）。 */}}
             {{- $subEx := $mq.subscribedExchanges | default "Declare" }}
             {{- if not (has $subEx (list "Declare" "Passive")) }}
@@ -415,6 +432,16 @@ spec:
             {{- if $svc.auth }}
             - name: Auth__Authority
               value: {{ $g.authAuthority | quote }}
+            {{- if $authTls }}
+            {{- /* NFR, IADR-0629: https でない Authority をアプリが起動で拒む（AuthExtensions.ResolveRequireHttpsMetadata）。 */}}
+            - name: Auth__RequireHttpsMetadata
+              value: "true"
+            {{- end }}
+            {{- with $g.authValidIssuers }}
+            {{- /* NFR, IADR-0629: 移行の間だけ受ける旧の発行元（既定は空＝描かない）。外す時期は手順書 cloud-keycloak-tls-runbook の段 6。 */}}
+            - name: Auth__ValidIssuers
+              value: {{ . | quote }}
+            {{- end }}
             {{- /* 🔴 NFR, #1529, IADR-0612: Production では単体実行向けのレルム（ai-stock-trading）を指す Authority で起動しない。
                    意図して使うときだけ global.allowStandaloneRealm=true で明示する（既定 false＝描かない）。 */}}
             {{- if $g.allowStandaloneRealm }}

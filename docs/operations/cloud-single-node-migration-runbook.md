@@ -9,8 +9,8 @@ updated: 2026-11-07
 <!-- trace:
 ids: [FR-04, FR-08, NFR, NFR-03, NFR-05, NFR-06, FR-10]
 adrs: [ADR-0006, ADR-0024, ADR-0073, ADR-0076, ADR-0078, ADR-0080]
-iadrs: [IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627]
-specs: [20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
+iadrs: [IADR-0629, IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627]
+specs: [20261107_cloud-keycloak-tls, 20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
 issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471]
 -->
 
@@ -191,6 +191,9 @@ done
 - 値を替えたら（作り直し・更新）、ESO が写した後に読む側を作り直す（`kubectl -n ai-stock-trading rollout restart deploy/<名前>`）。クラウドに Reloader は無い。
 - 基盤が CA を作り直したら、`cloud/shared/platform-infra-ca` の更新を ESO が写した後に、取引ユニットのサービスを作り直す。
   切り替えの確かめ方と戻し方は [基盤の TLS 切り替え Runbook](platform-infra-tls-cutover-runbook.md)。
+- 認可サーバー（Keycloak）へは `https://keycloak:8443` で繋ぎ、同じ基盤の CA で検証する（`values-cloud.yaml` の `global.authTls`）。
+  稼働中の構成を平文から移す段（移す間だけ旧の発行元を足し、後で外す）と、Keycloak を呼ぶサービスを足すときの基盤への依頼は
+  [認可サーバーの TLS Runbook](cloud-keycloak-tls-runbook.md)。
 
 ### 5.5 突き合わせ（秘密を入れた後・取引を始める前）
 
