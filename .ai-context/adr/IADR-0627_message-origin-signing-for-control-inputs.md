@@ -1,8 +1,8 @@
 ---
 title: IADR-0627 統制の入力になるメッセージ（24 型）は、発行元のサービスごとの鍵で HMAC の印を付け、受け手が発行元の許可と印の両方を処理の前に確かめる（段 1 は記録だけ・段 2 で処理しない。鍵は 7 つ・OpenBao の中で作る）
 type: impl-adr
-status: Accepted
-related_ids: [NFR, NFR-05, FR-10, FR-04, FR-20, UC-01, UC-02, UC-06, ADR-0009, ADR-0013, ADR-0080, IADR-0610, IADR-0129, IADR-0568, IADR-0623, IADR-0255, MSP:IADR-0691]
+status: Superseded
+related_ids: [NFR, NFR-05, FR-10, FR-04, FR-20, UC-01, UC-02, UC-06, ADR-0009, ADR-0013, ADR-0080, IADR-0610, IADR-0129, IADR-0568, IADR-0623, IADR-0255, MSP:IADR-0691, IADR-0633]
 author: claude (Claude Code)
 created: 2026-11-07
 updated: 2026-11-07
@@ -16,7 +16,7 @@ plan_refs:
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 
-- 状態: **Accepted**
+- 状態: **Superseded**（by [IADR-0633](IADR-0633_message-origin-asymmetric-signature.md)。決定 2・6 と §残余 1 を非対称の署名へ置き換えた。表・段・窓・再送・配線は引き継ぐ）
 - 日付: 2026-11-07
 - 決定者: 利用者裁定（2026-11-07: 受け手で発行元を確かめる）／ Claude Code（起案・実装）
 

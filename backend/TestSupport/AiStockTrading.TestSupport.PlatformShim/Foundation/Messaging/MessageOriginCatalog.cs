@@ -6,8 +6,8 @@ namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Messaging;
 /// 🔴 NFR, FR-10, IADR-0627 決定 1: <b>発行元を受け手で確かめる型の表（単一の情報源）。</b>
 /// <para>
 /// 受け手の判断・統制・発注の入力になるメッセージ型ごとに、<b>発行してよいサービス</b>（発行元）と、
-/// <b>確かめる受け手</b>を宣言する。発行元はこの表の型を出すときに印（HMAC）を付け、受け手は表の型を処理する前に
-/// 発行元の許可と印の両方を確かめる（<see cref="MessageOriginVerifier"/>）。
+/// <b>確かめる受け手</b>を宣言する。発行元はこの表の型を出すときに自分の秘密の鍵で署名し（IADR-0633）、受け手は表の型を処理する前に
+/// 発行元の許可と、その発行元の公開の鍵による署名の両方を確かめる（<see cref="MessageOriginVerifier"/>）。
 /// </para>
 /// <para>
 /// 🔴 <b>受け手に型を足したら、ここにも足す。</b> <c>MessageOriginCatalogCompletenessTests</c> がハンドラの受ける型を
@@ -81,9 +81,25 @@ public static class MessageOriginCatalog
     /// <summary>受ける型をすべて対象外にするサービスと理由。</summary>
     public static IReadOnlyList<(string Service, string Reason)> ExcludedServices { get; } =
     [
-        ("audit", "受けた事実を記録するだけで、判断・統制・発注に使わない"),
         ("notification", "利用者へ知らせるだけで、判断・統制・発注に使わない（操作は認可つきの REST / gRPC を通る）"),
     ];
+
+    /// <summary>
+    /// 🔴 NFR, FR-11, IADR-0633 決定 5: 受ける表の型を<b>すべて確かめるが拒まない</b>（記録だけの）サービスと理由。
+    /// 確かめに要る鍵は表の発行元すべての公開の鍵（秘密は持たない）。確かめられないメッセージも処理し、Warning とメトリクスに残す。
+    /// </summary>
+    public static IReadOnlyList<(string Service, string Reason)> RecordOnlyServices { get; } =
+    [
+        ("audit", "受けた事実の台帳で、捨てると証跡が欠ける。偽装の疑いは記録で知らせる（判断・統制・発注には使わない）"),
+    ];
+
+    /// <summary>記録だけの受け手か。</summary>
+    public static bool IsRecordOnly(string issuerId) =>
+        RecordOnlyServices.Any(r => string.Equals(r.Service, issuerId, StringComparison.Ordinal));
+
+    /// <summary>表の発行元すべて（識別子の順）。</summary>
+    public static IReadOnlyList<string> AllIssuers { get; } =
+        [.. Rules.SelectMany(r => r.Issuers).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
 
     /// <summary>型の行。無ければ null（表の外の型は印を付けず・確かめない）。</summary>
     public static MessageOriginRule? Find(Type messageType)
@@ -120,9 +136,9 @@ public static class MessageOriginCatalog
     public static IReadOnlyList<MessageOriginRule> IssuedBy(string issuerId) =>
         [.. Rules.Where(r => r.Issuers.Contains(issuerId, StringComparer.Ordinal))];
 
-    /// <summary>このサービスが確かめる型。</summary>
+    /// <summary>このサービスが確かめる型（記録だけの受け手は表の型すべて）。</summary>
     public static IReadOnlyList<MessageOriginRule> VerifiedBy(string issuerId) =>
-        [.. Rules.Where(r => r.Receivers.Contains(issuerId, StringComparer.Ordinal))];
+        IsRecordOnly(issuerId) ? Rules : [.. Rules.Where(r => r.Receivers.Contains(issuerId, StringComparer.Ordinal))];
 }
 
 /// <summary>NFR, IADR-0627 決定 1: 表の 1 行（型・発行してよいサービス・確かめる受け手）。</summary>
