@@ -7,7 +7,9 @@ using Microsoft.Extensions.Hosting;
 using Wolverine;
 using Wolverine.ErrorHandling;
 using Wolverine.RabbitMQ;
+using Wolverine.RabbitMQ.Internal;
 using Wolverine.Runtime;
+using Wolverine.Util;
 
 namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 
@@ -115,6 +117,40 @@ public static class WolverineExtensions
     }
 
     /// <summary>
+    /// NFR-18, IADR-0628: 購読する exchange の宣言の仕方を指定する環境変数。値は <see cref="SubscribedExchangeDeclaration"/> の名前
+    /// （<c>Declare</c> / <c>Passive</c>。大小無視）。未設定なら <see cref="SubscribedExchangeDeclaration.Declare"/>（従来の挙動）。
+    /// クラウドの chart（values-cloud の <c>global.rabbitmq.subscribedExchanges</c>）だけが <c>Passive</c> を描く。
+    /// </summary>
+    public const string SubscribedExchangeDeclarationVariable = "WOLVERINE_SUBSCRIBED_EXCHANGES";
+
+    /// <summary>
+    /// NFR-18, IADR-0628: 購読する exchange の宣言の仕方を決める純関数。未設定・空は <see cref="SubscribedExchangeDeclaration.Declare"/>。
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="configured"/> が <see cref="SubscribedExchangeDeclaration"/> の名前でないとき。黙って Declare へ倒すと、
+    /// 権限を絞ったブローカで購読側が起動できなくなる（原因が設定の綴りだと読めない）ため、起動時に止める。
+    /// </exception>
+    public static SubscribedExchangeDeclaration ResolveSubscribedExchangeDeclaration(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return SubscribedExchangeDeclaration.Declare;
+        }
+
+        // 名前だけを受ける（Enum.TryParse は "1" のような数も受けるので、名前の一覧と突き合わせる）。
+        var name = Enum.GetNames<SubscribedExchangeDeclaration>()
+            .FirstOrDefault(n => string.Equals(n, configured.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (name is not null)
+        {
+            return Enum.Parse<SubscribedExchangeDeclaration>(name);
+        }
+
+        throw new ArgumentException(
+            $"{SubscribedExchangeDeclarationVariable} は Declare / Passive のいずれかでなければならない（実値: '{configured}'）。",
+            nameof(configured));
+    }
+
+    /// <summary>
     /// IADR-0129 決定 1: リスニングキューの名前。<c>&lt;ServiceName&gt;.&lt;メッセージ型名&gt;</c>。
     /// キュー名の一意性を「人間が付けるクラス名」ではなく、既に一意な <paramref name="serviceName"/>
     /// （OpenTelemetry / Serilog と同じサービス識別子）に帰着させる。
@@ -154,10 +190,42 @@ public static class WolverineExtensions
         this WolverineOptions options,
         string serviceName,
         string? connectionString = null,
-        params Assembly[] handlerAssemblies)
+        params Assembly[] handlerAssemblies) =>
+        options.UseAiStockTradingRabbitMqCore(
+            serviceName,
+            connectionString,
+            ResolveSubscribedExchangeDeclaration(Environment.GetEnvironmentVariable(SubscribedExchangeDeclarationVariable)),
+            Assembly.GetCallingAssembly(),
+            handlerAssemblies);
+
+    /// <summary>
+    /// <see cref="UseAiStockTradingRabbitMq(WolverineOptions, string, string?, Assembly[])"/> の、購読する exchange の宣言の仕方を
+    /// 呼び出し側が明示する形（試験の固定用。環境変数 <see cref="SubscribedExchangeDeclarationVariable"/> を読まない）。
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static void UseAiStockTradingRabbitMq(
+        this WolverineOptions options,
+        string serviceName,
+        string? connectionString,
+        SubscribedExchangeDeclaration subscribedExchanges,
+        params Assembly[] handlerAssemblies) =>
+        options.UseAiStockTradingRabbitMqCore(
+            serviceName, connectionString, subscribedExchanges, Assembly.GetCallingAssembly(), handlerAssemblies);
+
+    private static void UseAiStockTradingRabbitMqCore(
+        this WolverineOptions options,
+        string serviceName,
+        string? connectionString,
+        SubscribedExchangeDeclaration subscribedExchanges,
+        Assembly applicationAssembly,
+        Assembly[] handlerAssemblies)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
+        if (!Enum.IsDefined(subscribedExchanges))
+        {
+            throw new ArgumentOutOfRangeException(nameof(subscribedExchanges), subscribedExchanges, "購読する exchange の宣言の仕方が未知である。");
+        }
 
         options.ServiceName = serviceName;
 
@@ -179,7 +247,8 @@ public static class WolverineExtensions
         // RiskManagementService のハンドラを拾い、OrderApproved が一通も執行されなくなった。
         // 移送前は相手の application assembly（`*.Api`）がハンドラを含まなかったため無害だっただけで、
         // **配線の欠陥は移送前から存在した**。
-        options.ApplicationAssembly = Assembly.GetCallingAssembly();
+        // （公開の 2 つの入口がそれぞれ Assembly.GetCallingAssembly() で取ったものを受け取る。ここで取ると shim 自身になる。）
+        options.ApplicationAssembly = applicationAssembly;
 
         // 🔴 NFR-01, ADR-0006, IADR-0129（2026-09-16 / 2026-09-17 追記）, #808 / #811: **稼働では実行時コンパイルをしない。**
         //
@@ -245,6 +314,8 @@ public static class WolverineExtensions
         // RabbitMQ.Client は amqps の URI を受けると名前の不一致を既定で受け入れる（基盤の IADR-0591 決定 5 の実測）。
         // 受け入れてよい誤りを空に戻し、ServerName を URI の host にする（基盤の UsePlatformRabbitMq と同じ）。平文のときは何も変えない。
         var uri = new Uri(connectionString ?? DefaultRabbitMqConnectionString);
+        // NFR-18, IADR-0628: 購読の exchange の宣言を受動へ替えるために、規約が使うのと同じ transport を取る（UseRabbitMq が使う既定の 1 つ）。
+        var transport = options.Transports.GetOrCreate<RabbitMqTransport>();
         options.UseRabbitMq(factory =>
             {
                 factory.Uri = uri;
@@ -259,11 +330,37 @@ public static class WolverineExtensions
                 // IADR-0129 決定 1: サービス名を前置してキューを分離する。
                 .QueueNameForListener(messageType => QueueNameFor(serviceName, messageType))
                 // IADR-0129 決定 5: DLQ はキュー単位（<queue>_error）。
-                .ConfigureListeners((listener, _) =>
-                    listener.DeadLetterQueueing(new DeadLetterQueue(DeadLetterQueueNameFor(listener.QueueName)))));
+                .ConfigureListeners((listener, context) =>
+                {
+                    listener.DeadLetterQueueing(new DeadLetterQueue(DeadLetterQueueNameFor(listener.QueueName)));
+
+                    // 🔴 NFR-18, IADR-0628: **Passive では、購読する exchange を宣言しない（受動の宣言＝在るかの確かめだけにする）。**
+                    // RabbitMQ は非受動の exchange.declare に、在る exchange でも configure を求め、configure は削除も許す。
+                    // 受動にすれば、購読側に要るのは exchange の read（束ね）と自分のキューの権限だけになる。キューの宣言と束ねは続ける。
+                    // exchange の名前は規約の送り先の名前（ApplyListenerRoutingDefaults と同じ ToMessageTypeName ＋ MaybeCorrectName）。
+                    // 自分も発行する型（例: OrderApproved）も同じ exchange の物なので受動になる（発行は宣言を要らない）。
+                    // exchange は運用（基盤のブローカの起動の直後の初期化）が先に宣言する。無い間は受動の宣言が 404 で失敗し、
+                    // Wolverine のブローカの初期化の再試行（5 秒おき・20 回）で待ち、尽きれば起動を失敗させる（束ねの無いまま動かない）。
+                    if (subscribedExchanges == SubscribedExchangeDeclaration.Passive)
+                    {
+                        transport.Exchanges[transport.MaybeCorrectName(context.MessageType.ToMessageTypeName())].DeclarePassive = true;
+                    }
+                }));
 
         // IADR-0129 決定 2: 送信側の exchange 名はメッセージ型名（Wolverine 既定）のままにする。
         // fan-out はこの共有 fanout exchange の上で成立するため、exchange にサービス名を混ぜてはならない
         // （PrefixIdentifiers で exchange まで前置すると、発行側と購読側が永久に出会わない）。
     }
+}
+
+/// <summary>
+/// NFR-18, IADR-0628: 購読する exchange（自分のキューを束ねる、規約ルーティングの送り先の exchange）の宣言の仕方。
+/// </summary>
+public enum SubscribedExchangeDeclaration
+{
+    /// <summary>従来の挙動。購読側も exchange を非受動で宣言する（購読の exchange の configure が要る）。既定・ローカル。</summary>
+    Declare = 0,
+
+    /// <summary>受動で宣言する（在るかを確かめるだけ。configure は要らない）。exchange は発行側か運用が先に宣言する。クラウド。</summary>
+    Passive = 1,
 }

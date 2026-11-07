@@ -56,6 +56,9 @@ global:
   rabbitmq:
     tls:
       enabled: true
+    # 🔴 NFR-18, IADR-0628: 購読側は購読の exchange を宣言しない（受動の確かめだけ）。基盤のクラウドのブローカの権限は、購読の exchange の
+    #   configure を購読側に与えない形へ絞る（基盤の生成器）。exchange は基盤のブローカの起動の直後の初期化が先に宣言する。
+    subscribedExchanges: Passive
   db:
     tls:
       enabled: true
