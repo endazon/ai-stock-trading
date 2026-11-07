@@ -1,5 +1,5 @@
 ---
-title: IADR-0636 サービス間の認証の身元をサービスごとの機密クライアントに分け、受け側は宛先（aud）を確かめ、口ごとに呼んでよいクライアント（azp）の一覧で限る。段は Off（既定）・Report・Enforce、移行の段だけ旧の共有クライアントを受ける
+title: IADR-0637 サービス間の認証の身元をサービスごとの機密クライアントに分け、受け側は宛先（aud）を確かめ、口ごとに呼んでよいクライアント（azp）の一覧で限る。段は Off（既定）・Report・Enforce、移行の段だけ旧の共有クライアントを受ける
 type: impl-adr
 status: Accepted
 related_ids: [NFR, NFR-05, NFR-06, FR-14, ADR-0047, ADR-0080, IADR-0051, IADR-0611, IADR-0623, IADR-0626, MSP:IADR-0689]
@@ -10,7 +10,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (NFR-05・NFR-06)
 ---
 
-# IADR-0636: サービスごとの機密クライアントと口ごとの呼び手の一覧
+# IADR-0637: サービスごとの機密クライアントと口ごとの呼び手の一覧
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 

@@ -24,7 +24,7 @@ namespace OrderExecutionService.Features.OrderExecution;
 // s2s（trading-service）は同じ、所有者（trading-owner）はトークンの `azp` が Discord ボットの機密クライアントであるときだけ通す。
 // 資格情報が無ければ `UNAUTHENTICATED`、ロールが無ければ `PERMISSION_DENIED`（ASP.NET Core の gRPC は認可失敗をこの 2 つへ写す）。
 [Authorize(Policy = AiStockTradingAuthPolicies.GrpcOwnerOrService)]
-// 🔴 NFR, IADR-0636: サービスのトークンは、この口の一覧（Auth:ServiceCallers の ServiceCallerNames.GrpcOrderExecutionRead）に在るクライアントだけ。
+// 🔴 NFR, IADR-0637: サービスのトークンは、この口の一覧（Auth:ServiceCallers の ServiceCallerNames.GrpcOrderExecutionRead）に在るクライアントだけ。
 [ServiceCallers(ServiceCallerNames.GrpcOrderExecutionRead)]
 public sealed class OrderExecutionReadGrpcService(
     ShortPermitQueryService shortPermits,

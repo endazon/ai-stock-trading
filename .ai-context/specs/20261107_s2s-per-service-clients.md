@@ -2,7 +2,7 @@
 title: サービス間の認証の身元をサービスごとに分け、口ごとに呼んでよいサービスを限る（クラウド）
 type: spec
 status: in-progress
-related_ids: [NFR, NFR-05, NFR-06, FR-14, ADR-0047, ADR-0080, IADR-0636, IADR-0611, IADR-0626, IADR-0623, IADR-0051, MSP:IADR-0689]
+related_ids: [NFR, NFR-05, NFR-06, FR-14, ADR-0047, ADR-0080, IADR-0637, IADR-0611, IADR-0626, IADR-0623, IADR-0051, MSP:IADR-0689]
 author: claude (Claude Code)
 created: 2026-11-07
 updated: 2026-11-07
@@ -12,7 +12,7 @@ plan_refs:
 
 # 仕様書: サービスごとの機密クライアントと口ごとの呼び手の一覧（NFR）
 
-> 本仕様書は実装着手前に作成する。実装の判断は IADR-0636。基盤（MSP）の側は同名のブランチの作業仕様書
+> 本仕様書は実装着手前に作成する。実装の判断は IADR-0637。基盤（MSP）の側は同名のブランチの作業仕様書
 > `MSP:.ai-context/specs/20261107_s2s-per-service-clients.md`（realm・OpenBao・ESO）。
 
 ## 起点となる計画書（トレーサビリティ）
@@ -101,7 +101,7 @@ clientId は `ai-stock-trading-svc-<サービス>`（基盤の realm-for-cloud.j
 - AST#1588 は market-monitor → report のサービスだけの口（`GET /reports/policy-revisions/watchlist-proposal/binding`）を足す。先に入れば、その口に
   `.RequireServiceCallers(...)` と既定の一覧（`ServiceCallerNames.DefaultCallers`。呼び手 market-monitor）を足す（足さなければ Enforce で 403＝閉じる向き）。
 
-## 設計（IADR-0636）
+## 設計（IADR-0637）
 
 1. **身元**: values-cloud の 7 サービスはそれぞれ Secret `ast-service-auth-<サービス>`（ExternalSecret。client-id は字面、client-secret は基盤の
    `cloud/shared/ast-client-secrets` の同じ clientId のプロパティだけ）を読む。optional を付けない（無ければ Pod は起動しない＝共有の資格へ戻らない）。

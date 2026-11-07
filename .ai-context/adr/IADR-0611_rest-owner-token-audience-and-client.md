@@ -67,8 +67,8 @@ FR-10 の受け入れ基準は「kill switch・一時停止の操作は利用者
 2. 単体実行向けの AST レルム（docker-compose）のトークンは aud を持たないため、段 2 にすると compose では所有者の操作が通らない。compose は段 1 のまま使う。
 3. JwtBearer の `ValidateAudience=false` は据え置き（s2s の aud の構成は基盤の管掌）。
 
-## ［2026-11-07 追記 / IADR-0636］サービスの分岐も宛先とクライアントを確かめる段を足した
+## ［2026-11-07 追記 / IADR-0637］サービスの分岐も宛先とクライアントを確かめる段を足した
 
 - 「サービスの分岐（`trading-service`）は aud / azp を見ない」と残余 3「`ValidateAudience=false` は据え置き」は、段 `Auth:ServiceToken:Mode` が Off（既定）のときだけの記述になった。
   Enforce（values-cloud）では JwtBearer が宛先（既定 `ai-stock-trading-api`）を確かめ（違えば 401。所有者のトークンにも掛かる）、サービスの分岐は口ごとのクライアントの一覧で
-  限る（IADR-0636）。所有者の分岐の判定（本 IADR の段）は変えない。
+  限る（IADR-0637）。所有者の分岐の判定（本 IADR の段）は変えない。

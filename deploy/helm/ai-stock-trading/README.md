@@ -235,7 +235,7 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   トークンの取得先は Authority から導く。`global.authValidIssuers`（既定は空）は移行の間だけ旧の発行元を足す（外す時期は
   [認可サーバーの TLS Runbook](../../../docs/operations/cloud-keycloak-tls-runbook.md) の段 6）。
   🔴 Keycloak を呼ぶ Worker を足したら、基盤の `deploy/cloud/infra/networkpolicy.yaml` の Keycloak の入りの一覧にも足すよう基盤へ依頼する。
-- **サービス間の認証の身元をサービスごとに分け、口ごとに呼び手を限る**（[IADR-0636](../../../.ai-context/adr/IADR-0636_s2s-per-service-clients-and-caller-allowlists.md)）:
+- **サービス間の認証の身元をサービスごとに分け、口ごとに呼び手を限る**（[IADR-0637](../../../.ai-context/adr/IADR-0637_s2s-per-service-clients-and-caller-allowlists.md)）:
   `services.<名前>.serviceAuthClient.clientId` を持つサービスごとに ExternalSecret `ast-service-auth-<名前>`（client-id は字面・client-secret は
   `externalSecrets.serviceAuthClients.remoteKey` の同じ clientId のプロパティ）を描く（同じ clientId の 2 重は描画で止める）。`global.serviceTokenBinding.mode`
   （既定は空＝描かない＝Off）・`legacyClients` を認証を持つサービスへ `Auth__ServiceToken__*` で渡す。values-cloud は 7 サービスに別々のクライアントを与え、Enforce と移行の段。

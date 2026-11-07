@@ -96,7 +96,7 @@ J-4（操作への結び付き）:
 - `Unavailable`（リスク管理が状態を読み書きできない）も `OwnerSecondFactorChecked` で流す。監査は全件、通知は続いた 1 回目だけ（`UnavailableStreak`）。**残る制約 5: メッセージも出せない障害（DB とブローカの両方）ではログだけになり、報告書の側の `Unavailable`（リスク管理へ届かない）もログだけである**（オーナーは Discord の拒否の応答とログで気付く）。
 - 報告書は欠けたコードも持ち主へ問い合わせ、持ち主の判定（停止中は `LockedOut`、そうでなければ `Missing`）に揃える。持ち主は欠けを数えないので状態は変わらない。持ち主へ届けられない構成の門は、欠けも含めて `Unavailable` を返す。
 
-## ［2026-11-07 追記 / IADR-0636］残る制約 4 を改めた（確かめの口は報告書のクライアントだけ）
+## ［2026-11-07 追記 / IADR-0637］残る制約 4 を改めた（確かめの口は報告書のクライアントだけ）
 
 - 確かめの口（`POST /risk-controls/owner-second-factor/verify`）に口の名前 `risk-controls.owner-second-factor.verify` を付け、既定の一覧（`ServiceCallerNames.DefaultCallers`）で
   報告書のクライアント（`ai-stock-trading-svc-report`）だけを許した（段 `Auth:ServiceToken:Mode=Enforce` のとき。ほかのサービスのクライアントは 403）。

@@ -1,7 +1,7 @@
 namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
 /// <summary>
-/// NFR, IADR-0636: サービスに開く口の名前（<c>Auth:ServiceCallers:&lt;名前&gt;</c> の鍵）と、許す呼び手の既定の一覧（<see cref="DefaultCallers"/>）。
+/// NFR, IADR-0637: サービスに開く口の名前（<c>Auth:ServiceCallers:&lt;名前&gt;</c> の鍵）と、許す呼び手の既定の一覧（<see cref="DefaultCallers"/>）。
 /// 母集合は作業仕様書 20261107_s2s-per-service-clients（呼び手の側の ExternalServices の呼び出しから引いた）。構成で与えると、その口の既定を置き換える。
 /// 🔴 base appsettings.json に Auth の鍵を置けない（validate-runtime-scaffold）ため、既定はここに持つ（OwnerTokenBinding.DefaultClients と同じ形）。
 /// </summary>

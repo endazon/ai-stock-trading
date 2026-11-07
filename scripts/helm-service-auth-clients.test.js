@@ -2,7 +2,7 @@
 'use strict';
 /*
  * helm-service-auth-clients.test.js
- * NFR, NFR-05, IADR-0636: **サービス間の認証の身元をサービスごとに分けたことを、実際に `helm template` で描いて固定する。**
+ * NFR, NFR-05, IADR-0637: **サービス間の認証の身元をサービスごとに分けたことを、実際に `helm template` で描いて固定する。**
  *
  * 固定するもの（values-cloud.yaml に検査用の digest を重ねた描画）:
  *   1. ServiceAuth__ClientId / __ClientSecret を持つ Deployment は 7 つ（下の CALLERS）。どれも自分の Secret ast-service-auth-<名前>

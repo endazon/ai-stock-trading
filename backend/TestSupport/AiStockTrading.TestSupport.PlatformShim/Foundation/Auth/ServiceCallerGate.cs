@@ -11,7 +11,7 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 
-// 🔴 NFR, NFR-05, NFR-06, IADR-0636: サービス（trading-service）のトークンを、**身元（azp）と宛先（aud）で**確かめ、
+// 🔴 NFR, NFR-05, NFR-06, IADR-0637: サービス（trading-service）のトークンを、**身元（azp）と宛先（aud）で**確かめ、
 // **口ごとに呼んでよいサービスを限る。** 以前はサービスの分岐がロールだけを見て通していた（IADR-0611 の「サービスの分岐は従来どおり」）。
 //
 // 口（エンドポイント）は名前で指す: REST は `.RequireServiceCallers("<名前>")`、gRPC はサービスの型に `[ServiceCallers("<名前>")]`。
@@ -44,18 +44,18 @@ public static class ServiceTokenBinding
         if (string.IsNullOrWhiteSpace(modeText))
             mode = ServiceTokenMode.Off;
         else if (!Enum.TryParse(modeText.Trim(), ignoreCase: false, out mode) || !Enum.IsDefined(mode))
-            throw new InvalidOperationException($"{ModeKey} は Off・Report・Enforce のどれかです（値: {modeText}。IADR-0636）。");
+            throw new InvalidOperationException($"{ModeKey} は Off・Report・Enforce のどれかです（値: {modeText}。IADR-0637）。");
 
         var audiences = ReadArray(configuration, AudiencesKey) ?? DefaultAudiences;
         var legacy = ReadArray(configuration, LegacyClientsKey) ?? [];
         if (mode == ServiceTokenMode.Enforce && audiences.Count == 0)
-            throw new InvalidOperationException($"{ModeKey}=Enforce には {AudiencesKey} に 1 つ以上の値が要ります（IADR-0636）。");
+            throw new InvalidOperationException($"{ModeKey}=Enforce には {AudiencesKey} に 1 つ以上の値が要ります（IADR-0637）。");
 
         // 既定（ServiceCallerNames.DefaultCallers）に、構成の口ごとの一覧を上書きする（口ごとに置き換える。足し合わせない）。
         var callers = new Dictionary<string, IReadOnlyList<string>>(ServiceCallerNames.DefaultCallers, StringComparer.Ordinal);
         var section = configuration.GetSection(CallersKey);
         if (!string.IsNullOrEmpty(section.Value))
-            throw new InvalidOperationException($"{CallersKey} は口の名前ごとの配列で構成すること（IADR-0636）。");
+            throw new InvalidOperationException($"{CallersKey} は口の名前ごとの配列で構成すること（IADR-0637）。");
         foreach (var child in section.GetChildren())
             callers[child.Key] = ReadArray(configuration, $"{CallersKey}:{child.Key}") ?? [];
 
@@ -94,7 +94,7 @@ public static class ServiceTokenBinding
         // 空の値は未構成と同じ（試験の WebApplicationFactory は配列の親の鍵を空の値で渡す）。値のある 1 つの値だけを誤りとする。
         if (!string.IsNullOrEmpty(configuration.GetSection(key).Value))
             throw new InvalidOperationException(
-                $"{key} は配列で構成すること（環境変数なら {key.Replace(":", "__", StringComparison.Ordinal)}__0=...。IADR-0636）。");
+                $"{key} は配列で構成すること（環境変数なら {key.Replace(":", "__", StringComparison.Ordinal)}__0=...。IADR-0637）。");
         var children = configuration.GetSection(key).GetChildren().ToList();
         if (children.Count == 0)
             return null;
@@ -107,7 +107,7 @@ public static class ServiceTokenBinding
     }
 }
 
-/// <summary>NFR, IADR-0636: サービスのトークンの確かめの段。</summary>
+/// <summary>NFR, IADR-0637: サービスのトークンの確かめの段。</summary>
 public enum ServiceTokenMode
 {
     /// <summary>既定: 従前どおり（ロールだけ）。</summary>
@@ -120,14 +120,14 @@ public enum ServiceTokenMode
     Enforce = 2,
 }
 
-/// <summary>NFR, IADR-0636: 解決済みの設定。</summary>
+/// <summary>NFR, IADR-0637: 解決済みの設定。</summary>
 public sealed record ServiceTokenSettings(
     ServiceTokenMode Mode,
     IReadOnlyList<string> Audiences,
     IReadOnlyList<string> LegacyClients,
     IReadOnlyDictionary<string, IReadOnlyList<string>> Callers);
 
-/// <summary>NFR, IADR-0636: 口の名前（サービスに開く口の許可の一覧を引く鍵）。gRPC はサービスの型に付ける。</summary>
+/// <summary>NFR, IADR-0637: 口の名前（サービスに開く口の許可の一覧を引く鍵）。gRPC はサービスの型に付ける。</summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public sealed class ServiceCallersAttribute : Attribute
 {
@@ -140,13 +140,13 @@ public sealed class ServiceCallersAttribute : Attribute
     public string Name { get; }
 }
 
-/// <summary>NFR, IADR-0636: サービスのトークンの身元と口の一覧を確かめる要件（OwnerOrService・GrpcOwnerOrService・サービスだけの口）。</summary>
+/// <summary>NFR, IADR-0637: サービスのトークンの身元と口の一覧を確かめる要件（OwnerOrService・GrpcOwnerOrService・サービスだけの口）。</summary>
 public sealed record ServiceCallerRequirement : IAuthorizationRequirement;
 
 public static class ServiceCallersEndpointExtensions
 {
     /// <summary>
-    /// NFR, IADR-0636: 口に名前を付け、サービスのトークンの呼び手を一覧（<c>Auth:ServiceCallers:&lt;名前&gt;</c>）で限る。
+    /// NFR, IADR-0637: 口に名前を付け、サービスのトークンの呼び手を一覧（<c>Auth:ServiceCallers:&lt;名前&gt;</c>）で限る。
     /// サービスだけの口（独自のポリシー）にも使えるよう、要件も足す（OwnerOrService の口では要件が重なるだけ）。
     /// </summary>
     public static TBuilder RequireServiceCallers<TBuilder>(this TBuilder builder, string name)
@@ -159,7 +159,7 @@ public static class ServiceCallersEndpointExtensions
     }
 }
 
-/// <summary>NFR, IADR-0636: <see cref="ServiceCallerRequirement"/> の判定器。</summary>
+/// <summary>NFR, IADR-0637: <see cref="ServiceCallerRequirement"/> の判定器。</summary>
 public sealed class ServiceCallerHandler(ServiceTokenSettings settings, ILogger<ServiceCallerHandler> logger)
     : AuthorizationHandler<ServiceCallerRequirement>
 {

@@ -72,7 +72,7 @@ public static class AuthExtensions
             ?? StandaloneRealmGuard.DevelopmentDefaultAuthority;
         var requireHttpsMetadata = ResolveRequireHttpsMetadata(config, authority);
         var validIssuers = ParseValidIssuers(config[ValidIssuersConfigKey]);
-        // 🔴 NFR, IADR-0636: サービスのトークンの身元と宛先の段。起動時に解決し、誤りはここで止める。
+        // 🔴 NFR, IADR-0637: サービスのトークンの身元と宛先の段。起動時に解決し、誤りはここで止める。
         var serviceToken = ServiceTokenBinding.Resolve(config);
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -85,7 +85,7 @@ public static class AuthExtensions
                 if (validIssuers.Length > 0)
                     options.TokenValidationParameters.ValidIssuers = validIssuers;
                 options.TokenValidationParameters.ValidateAudience = false;
-                // 🔴 NFR, IADR-0636: Enforce では宛先（aud）を認証で確かめる（合わなければ 401。所有者・サービスのどちらのトークンも）。
+                // 🔴 NFR, IADR-0637: Enforce では宛先（aud）を認証で確かめる（合わなければ 401。所有者・サービスのどちらのトークンも）。
                 // 移行の段の旧の共有クライアント（Auth:ServiceToken:LegacyClients）だけは宛先を問わない。Off・Report は従前どおり見ない。
                 if (serviceToken.Mode == ServiceTokenMode.Enforce)
                 {
@@ -118,7 +118,7 @@ public static class AuthExtensions
         // 🔴 NFR-06, #1554, IADR-0622: ボットの許可表の段（Auth:OwnerBot:Mode。aud / azp の段とは別）。
         services.AddSingleton(OwnerBotScope.Resolve(config));
         services.AddSingleton<IAuthorizationHandler, OwnerTokenBindingHandler>();
-        // 🔴 NFR, IADR-0636: サービスのトークンを口ごとの呼び手の一覧で限る（段 Auth:ServiceToken:Mode。既定 Off）。
+        // 🔴 NFR, IADR-0637: サービスのトークンを口ごとの呼び手の一覧で限る（段 Auth:ServiceToken:Mode。既定 Off）。
         services.AddSingleton(serviceToken);
         services.AddSingleton<IAuthorizationHandler, ServiceCallerHandler>();
 

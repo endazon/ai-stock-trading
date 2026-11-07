@@ -17,7 +17,7 @@ using Xunit;
 
 namespace AiStockTrading.TestSupport.PlatformShim.Tests;
 
-// 🔴 NFR, NFR-05, NFR-06, IADR-0636: サービスのトークンを身元（azp）と宛先（aud）で確かめ、口ごとに呼び手を限る。
+// 🔴 NFR, NFR-05, NFR-06, IADR-0637: サービスのトークンを身元（azp）と宛先（aud）で確かめ、口ごとに呼び手を限る。
 // 本物の登録（AddAiStockTradingAuth）と本物の JwtBearer（鍵は試験ごとの乱数。発行元は固定の試験用の値）を TestServer で通す。
 //   - Enforce: 宛先違いは 401、一覧に無い呼び手・名前の無い口は 403、サービスだけの口は一覧のクライアントだけ。
 //   - 移行の段（LegacyClients）: 旧の共有クライアントは宛先を問わずに通る。段を外すと 401。
@@ -213,7 +213,7 @@ public class ServiceCallerPolicyTests
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { [key] = value }).Build();
         var resolve = () => ServiceTokenBinding.Resolve(configuration);
-        resolve.Should().Throw<InvalidOperationException>().WithMessage("*IADR-0636*");
+        resolve.Should().Throw<InvalidOperationException>().WithMessage("*IADR-0637*");
     }
 
     [Fact]

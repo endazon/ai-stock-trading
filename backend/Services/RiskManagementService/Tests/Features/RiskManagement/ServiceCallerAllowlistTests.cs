@@ -8,7 +8,7 @@ using Xunit;
 
 namespace RiskManagementService.Tests;
 
-// 🔴 NFR, NFR-06, IADR-0636: リスク管理の口は、既定の一覧（ServiceCallerNames.DefaultCallers。構成 Auth:ServiceCallers で置き換えられる）に在るサービスのクライアントだけが呼べる
+// 🔴 NFR, NFR-06, IADR-0637: リスク管理の口は、既定の一覧（ServiceCallerNames.DefaultCallers。構成 Auth:ServiceCallers で置き換えられる）に在るサービスのクライアントだけが呼べる
 // （段 Auth:ServiceToken:Mode=Enforce。既定 Off は従前どおり）。第 2 要素の確かめの口は報告書のサービスのクライアントだけ。
 // 認証は TestAuthHandler（azp は X-Test-Azp）。宛先（aud）の 401 は認証の層の試験（PlatformShim の ServiceCallerPolicyTests）が持つ。
 public class ServiceCallerAllowlistTests

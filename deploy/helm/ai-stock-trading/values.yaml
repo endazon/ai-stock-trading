@@ -66,7 +66,7 @@ global:
   #   段 2 へ上げるのは、段 1 で各サービスのログに「ボットの許可表の外」が出ないことを確かめた後。
   ownerBotScope:
     mode: Report
-  # 🔴 NFR, NFR-05, IADR-0636: サービス（trading-service）のトークンを身元（azp）と宛先（aud）で確かめ、口ごとに呼び手を限る段
+  # 🔴 NFR, NFR-05, IADR-0637: サービス（trading-service）のトークンを身元（azp）と宛先（aud）で確かめ、口ごとに呼び手を限る段
   #   （auth: true のサービスへ env Auth__ServiceToken__Mode を描く）。空（既定）＝描かない＝Off（従前どおり。ロールだけで通す）。
   #   Report＝合わないものを記録して通す／Enforce＝宛先違いは 401・一覧に無い呼び手は 403。一覧の既定はコード（ServiceCallerNames）で、env
   #   Auth__ServiceCallers__<名前>__<n> が口ごとに置き換える（呼び手は MSP の realm のサービスごとのクライアント ai-stock-trading-svc-<サービス>）。
