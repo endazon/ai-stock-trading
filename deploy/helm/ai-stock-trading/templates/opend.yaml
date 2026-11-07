@@ -26,7 +26,7 @@
 {{- /* NFR, IADR-0609, #1526: OpenD の Pod の段（opend.podSecurity.stage。Worker の podSecurity.stage とは別）。
        段の値を組み、受け口 opend.securityContext / opend.podSecurityContext を**上に重ねる**（従来の --set の手順はそのまま効く。
        1（既定）: root のまま。トークンを置かない。認証サイドカー（Worker と同じ .NET のイメージ）は権限昇格なし・ケーパビリティを全て落とす
-          （同じ uid の所有者として読み書きするだけ）。**OpenD 本体には何も足さない**（ADR-0024: 再起動を最小にする。root の実 OpenD で
+          （同じ uid の所有者として読み書きするだけ）。**OpenD 本体には何も足さない**（下の seccomp と capabilities の opt-in を除く。ADR-0024: 再起動を最小にする。root の実 OpenD で
           確かめていない変更を既定にしない。OpenD が落ちると発注経路が止まる）。
           opend.podSecurity.seccomp=true（明示の opt-in。chart README の必須の前提の手順で実機を確かめてから）: Pod に seccomp RuntimeDefault、
           OpenD 本体に権限昇格なし。
@@ -56,6 +56,23 @@
 {{- $_ := set $podSc "runAsGroup" $uid }}
 {{- $_ := set $podSc "fsGroup" $uid }}
 {{- $_ := set $ctrSc "capabilities" (dict "drop" (list "ALL")) }}
+{{- end }}
+{{- /* NFR, IADR-0631: 段 1 のケーパビリティの最小化（opend.podSecurity.capabilities。明示の opt-in。values-cloud が有効にする）。
+       dropAll=true なら OpenD 本体の capabilities を drop: [ALL] にし、add に起動に要るものだけを戻す。戻せるのは DAC_OVERRIDE・FOWNER だけ
+       （root の入口の処理が uid 10001 の所有する /opt/opend の OpenD.xml へ書き、chmod する。実測は IADR-0631）。それ以外（NET_RAW 等）は描画で止める。
+       段 3 は従来どおり ALL を落とすだけ（非 root に add は要らない）。受け口 opend.securityContext はこの上に重なる。 */}}
+{{- $ocap := ($o.podSecurity | default dict).capabilities | default dict }}
+{{- if and (lt $ost 3) $ocap.dropAll }}
+{{- range $c := ($ocap.add | default list) }}
+{{- if not (has (toString $c) (list "DAC_OVERRIDE" "FOWNER")) }}
+{{- fail (printf "opend.podSecurity.capabilities.add に戻せるのは DAC_OVERRIDE / FOWNER だけです（受け取った値: %v。IADR-0631）" $c) }}
+{{- end }}
+{{- end }}
+{{- $caps := dict "drop" (list "ALL") }}
+{{- with $ocap.add }}
+{{- $_ := set $caps "add" (deepCopy .) }}
+{{- end }}
+{{- $_ := set $ctrSc "capabilities" $caps }}
 {{- end }}
 {{- $podSc = mustMergeOverwrite $podSc (deepCopy ($o.podSecurityContext | default dict)) }}
 {{- $ctrSc = mustMergeOverwrite $ctrSc (deepCopy ($o.securityContext | default dict)) }}

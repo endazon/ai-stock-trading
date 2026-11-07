@@ -326,6 +326,7 @@ opend:
   # podSecurityContext は段の値の**上に重なる**＝上の --set の手順はそのまま効く）。
   #   1（既定）: root のまま。SA トークンを置かない。認証サイドカーは権限昇格なし・ケーパビリティを全て落とす。
   #            **OpenD 本体には何も足さない**（ADR-0024: 再起動を最小にする。root の実 OpenD で確かめていない変更を既定にしない）。
+  #            下の seccomp・capabilities は明示の opt-in（values-cloud が有効にする。IADR-0631）。
   #   2      : 受け付けない（描画で止める）。
   #   3      : 非 root（runAsUser＝下の値・fsGroup）・全コンテナでケーパビリティを全て落とす。**home=/home/opend が要る**
   #            （違えば描画で止める）。RSA 鍵の mount は 0440。**実 OpenD で未検証**（HOME が変わる＝デバイス信頼の置き場が変わる）。
@@ -336,6 +337,11 @@ opend:
     # 明示の opt-in（段 1）: Pod に seccomp RuntimeDefault、OpenD 本体に権限昇格なし。**実 OpenD で未検証**。
     # chart README「必須の前提」の手順で実機を確かめてから true にする（段 3 では常に付く）。
     seccomp: false
+    # NFR, IADR-0631: 段 1 の OpenD 本体のケーパビリティ（明示の opt-in）。dropAll=true で ALL を落とし、add に起動に要るものだけを戻す
+    # （戻せるのは DAC_OVERRIDE・FOWNER だけ。それ以外は描画で止める）。段 3 では使わない（常に ALL を落とす）。values-cloud が有効にする。
+    capabilities:
+      dropAll: false
+      add: []
   # 段 3 の uid / gid / fsGroup（deploy/opend/Dockerfile が用意する opend:opend）。
   runAsUser: 10001
   resources:
@@ -391,6 +397,52 @@ opend:
       namespace: microservices-platform
       podLabels:
         app: bff-service
+    # NFR, IADR-0631: OpenD の出（egress）。既定 false＝描かない（既定・経路 B は従来どおり出を絞らない）。values-cloud が有効にする。
+    # 有効にすると、OpenD の Pod から出てよいのは名前解決と、クラスタの外の公開アドレス（下の networkPolicy.publicEgress の除外を引いた範囲）の
+    # TCP だけになる。接続先の証券会社のサーバは公開されたアドレスの一覧が無く IP で絞れないため、範囲は「クラスタの外」で切る（IADR-0631）。
+    # 受けた接続（発注執行からの API）への応答は NetworkPolicy が接続の状態で通すので、出の規則は要らない。
+    egress:
+      enabled: false
+      # 外の公開アドレスへ出てよい TCP の口。空＝TCP の全ての口（証券会社のサーバの口は公式の文書に無く、実測していない。IADR-0631）。
+      tcpPorts: []
+
+# NFR, IADR-0631: 取引ユニットの 11 サービスの通信の制限（templates/networkpolicy-services.yaml）。既定 false＝描かない
+# （既定・経路 B の描画は追加前と同じ）。values-cloud が有効にする。有効にすると:
+#   - 名前空間の全 Pod に、入り・出とも既定で拒否する方針（ast-default-deny）を描く。
+#   - サービスごとに、入りは「呼ぶ側として宣言したサービス」からの 8080（と gRPC の口）だけ、出は名前解決・基盤の各口
+#     （DB を持つサービスの Postgres・ブローカ・Keycloak・collector）・宣言した呼び先・LLM ゲートウェイ（宣言したサービス）・
+#     クラスタの外の 443（宣言したサービス）だけを許す。
+#   - 🔴 呼び出しの組は下の services に**呼び手の側**で宣言する（env の `*__BaseUrl` と grpcClients の写し）。呼び先を env に足したら、ここにも足す。
+#     写し忘れは scripts/helm-network-policy.test.js（helm.yml）が止める。宣言の無いサービス・未知の名前は描画で止める。
+#   - OpenD を有効にしているときは opend.networkPolicy（入り）と opend.networkPolicy.egress（出）も有効でなければ描画で止める
+#     （既定拒否の下で OpenD の出が無いと、証券会社へ繋がらず発注経路が止まる）。CronJob は組を宣言していないので併用を描画で止める。
+networkPolicy:
+  enabled: false
+  # 名前解決（k3s の CoreDNS）。
+  dns:
+    namespace: kube-system
+    podLabels: { k8s-app: kube-dns }
+  # 基盤の各口（ExternalName の別名 postgres / rabbitmq / keycloak / otel-collector の実体）。Postgres とブローカの口は global.db.port と
+  # global.rabbitmq（tls.enabled なら tls.port）から導く。Keycloak の口は global.authAuthority の口と同じ値にする（試験が突き合わせる）。
+  infra:
+    namespace: platform-infra
+    postgres: { podLabels: { app: postgres } }
+    rabbitmq: { podLabels: { app: rabbitmq } }
+    keycloak: { podLabels: { app: keycloak }, port: 8443 }
+    otelCollector: { podLabels: { app: otel-collector }, port: 4317 }
+  # 基盤の LLM ゲートウェイ（宣言したサービスだけが出てよい）。
+  llmGateway:
+    namespace: microservices-platform
+    podLabels: { app: llmgateway-service }
+    port: 8080
+  # クラスタの外の公開アドレス。私設・リンクローカル（ノードのメタデータの口）・CGNAT・ループバックを除く（基盤の LLM ゲートウェイの出と同じ範囲）。
+  # extraExcept にはノード自身の公開アドレス（/32）を配備のときに足す（手順書。値はリポジトリに書かない）。
+  publicEgress:
+    cidr: 0.0.0.0/0
+    except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 127.0.0.0/8]
+    extraExcept: []
+  # サービスごとの宣言（キーは services の名前）。calls: 呼び先（取引ユニットのサービス名）。llmGateway / externalHttps / opend: 真なら許す。
+  services: {}
 
 # #132, IADR-0060 決定 4: 秘匿情報の External Secrets（Vault）**受け口**。既定 disabled = fail-safe。
 # ⚠️ **これは Vault 化の充足ではない**。ストア（Vault / External Secrets Operator）は #24 の管掌で本リポジトリには無く、

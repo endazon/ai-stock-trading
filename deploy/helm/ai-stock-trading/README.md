@@ -234,8 +234,19 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   🔴 Keycloak を呼ぶ Worker を足したら、基盤の `deploy/cloud/infra/networkpolicy.yaml` の Keycloak の入りの一覧にも足すよう基盤へ依頼する。
 - **守りは段 2 で始める**（#1560 / IADR-0623 決定 3・IADR-0633）: `global.orderApprovalSigning`・`messageOrigin`・`ownerTokenBinding`・`ownerBotScope` は `Enforce`、
   risk-management・report の `OwnerSecondFactor__Mode` は `Enforce`、risk-management の `RiskControls__KillSwitch__Precondition` は `Require`。
+- **外の中継（OpenD）の権限を最小にし、サービス間の通信を許可した組だけにする**（[IADR-0631](../../../.ai-context/adr/IADR-0631_cloud-opend-least-privilege-and-service-network-policy.md)）:
+  - OpenD: `opend.podSecurity.seccomp: true`（Pod に seccomp `RuntimeDefault`・本体に権限昇格なし）と
+    `opend.podSecurity.capabilities`（`dropAll: true`・`add: [DAC_OVERRIDE, FOWNER]`。ALL を落とし、root の入口の処理が要る 2 つだけを戻す。
+    戻せるのはこの 2 つだけで、ほかは描画で止める）。出は `opend.networkPolicy.egress`（名前解決とクラスタの外の公開アドレスの TCP だけ）。
+  - 11 サービス: `networkPolicy.enabled: true` で名前空間に入り・出の既定の拒否（`ast-default-deny`）と、サービスごとの方針を描く。
+    呼び出しの組は `networkPolicy.services.<呼び手>`（`calls`・`llmGateway`・`externalHttps`・`opend`）に呼び手の側で宣言する。
+    入りは宣言した呼び手からの 8080（と gRPC の口）だけ、出は名前解決・基盤（DB を持つサービスだけ Postgres。全サービスがブローカ・Keycloak・collector）・
+    宣言した呼び先・LLM ゲートウェイ・OpenD の API・クラスタの外の 443 だけ。宣言の欠け・未知の名前・CronJob との併用・OpenD の入り／出の無効は描画で止める。
+  - 🔴 env に呼び先（`*__BaseUrl`・`grpcClients`）を足したら `networkPolicy.services` も直す。写し忘れは `scripts/helm-network-policy.test.js`（`helm.yml`）が止める。
+  - `networkPolicy.publicEgress.extraExcept` にノード自身の公開アドレス（/32）を配備のときに足す（値はリポジトリに書かない）。
+  - 適用の順序と切り戻しは [通信の制限の Runbook](../../../docs/operations/cloud-network-policy-runbook.md)。
 - 既定（本番）と `values-local.yaml` の描画は、これらの部品を入れる前と 1 バイトも変わらない（`helm.yml` が digest・DB_PASSWORD・
-  利用者名の Secret・ストアの不在と、利用者名 `ai`・段 1 を検査する）。
+  利用者名の Secret・ストアの不在と、利用者名 `ai`・段 1 を検査する。通信の制限と OpenD の権限は `helm-network-policy.test.js` が検査する）。
 
 ## 経路B（ローカル SIMULATE）の機能有効化: `values-local.yaml`
 
@@ -1118,7 +1129,8 @@ PersistentVolumeClaim `opend-persist` には `helm.sh/resource-policy: keep` を
 - **値を回しても OpenD の Pod を作り直さない。** サイドカーは要求ごとにファイルを読む（kubelet が Secret の volume を差し替える）。
 - **送り手（基盤の BFF）は同じ値を env `OpendAuth__CallerSecret` で受ける**（基盤の名前空間の Secret。基盤の構成で配線する）。未構成なら BFF は上流を呼ばず、画面は「接続資格が構成されていません」と示す。
 - ESO 所有（`externalSecrets.enabled=true`）では、Vault の `ai-stock-trading/opend-auth`（プロパティ `caller-secret`）を同期する。値は Git に置かない。
-- egress は絞らない（OpenD は moomoo のサーバと DNS へ出る）。readinessProbe（kubelet）・`kubectl attach` / `exec` / `port-forward` は Pod 網を通らないため影響を受けない。
+- egress は既定で絞らない（OpenD は moomoo のサーバと DNS へ出る）。`opend.networkPolicy.egress.enabled=true`（values-cloud）で出を名前解決と
+  クラスタの外の公開アドレスの TCP だけにする（`opend-egress`。IADR-0631）。readinessProbe（kubelet）・`kubectl attach` / `exec` / `port-forward` は Pod 網を通らないため影響を受けない。
   NetworkPolicy を強制しない CNI では宣言が残るだけで、呼び出し元を絞るのは共有シークレットの 1 段になる。
   k3s（k3d）は上流の既定で組み込みの制御（kube-router 由来）を有効にする（`--disable-network-policy` で外せる。基盤の起動器は付けていない）。
   稼働クラスタで強制されているかは、許可していない Pod から接続して時間切れになることで確かめる（IADR-0566 の確認手順）。
@@ -1219,7 +1231,7 @@ Worker のイメージ（`backend/Dockerfile`）は aspnet の非特権ユーザ
 
 | 段 | Worker 10 本・CronJob（`podSecurity.stage`） | OpenD（`opend.podSecurity.stage`） |
 | --- | --- | --- |
-| 1（既定） | 動作を変えない。Worker は `runAsUser: 0` を明示（イメージが非 root でも root のまま） | root のまま。認証サイドカーだけ `allowPrivilegeEscalation: false`・`capabilities.drop: [ALL]`。**OpenD 本体には何も足さない**（未検証の変更を既定にしない）。`opend.podSecurity.seccomp=true`（明示の opt-in）で Pod に seccomp `RuntimeDefault`・OpenD 本体に権限昇格なし |
+| 1（既定） | 動作を変えない。Worker は `runAsUser: 0` を明示（イメージが非 root でも root のまま） | root のまま。認証サイドカーだけ `allowPrivilegeEscalation: false`・`capabilities.drop: [ALL]`。**OpenD 本体には何も足さない**（未検証の変更を既定にしない）。`opend.podSecurity.seccomp=true`（明示の opt-in）で Pod に seccomp `RuntimeDefault`・OpenD 本体に権限昇格なし。`opend.podSecurity.capabilities.dropAll=true`（明示の opt-in。IADR-0631）で本体の ALL を落とし `add`（DAC_OVERRIDE・FOWNER だけ）を戻す |
 | 2 | root のまま seccomp `RuntimeDefault`・権限昇格なし・ケーパビリティを全て落とす | （受け付けない。段 1 へ繰り上げた） |
 | 3 | 非 root（Worker 1654:1654・fsGroup 1654、CronJob 100:101）。発注執行の鍵の mount は 0440 | 非 root（10001:10001・fsGroup）・ケーパビリティなし・鍵の mount 0440。`opend.home=/home/opend` が要る |
 
