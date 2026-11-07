@@ -56,6 +56,9 @@ internal static class ReportEndpoints
         // FR-15, #1308, IADR-0528 決定3: ある時点で確定していた日報の方針（Stage 0 の記録器の as-of 入力 (c)）。
         read.MapGetConfirmedDailyPolicyAsOf();
 
+        // ---- サービスの身元だけ（NFR-06, IADR-0634）: 市場監視が入れ替えの適用を確定済みの案へ結び付ける照会 ----
+        g.MapWatchlistProposalBinding();
+
         // ---- 利用者のみ（ADR-0003・OwnerOnly）: 一覧・集計・ドラフト・確定。サービスには許可しない ----
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
 

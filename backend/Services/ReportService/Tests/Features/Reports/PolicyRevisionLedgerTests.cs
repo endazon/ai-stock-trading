@@ -357,17 +357,50 @@ public class PolicyRevisionLedgerTests
         (row.WatchlistApplyJson, row.WatchlistAppliedAt).Should().Be((AppliedJson, FirstAt));
     }
 
-    // T-10-1484: 本番のモデル（Npgsql）で、同時実行のトークンは記録時刻（WatchlistAppliedAt）の 1 つだけ（UPDATE は「まだ記録が無い」行だけを
-    // 更新する）。他の列をトークンにすると、試行の完了・確定の時刻の書き込みまで無関係な衝突で落ちる。
+    // T-10-1484: 本番のモデル（Npgsql）で、同時実行のトークンは記録時刻（WatchlistAppliedAt）と、NFR-06, IADR-0634 決定 8 の適用の予約の時刻
+    // （WatchlistApplyReservedAt）の 2 つだけ（UPDATE は「まだ記録・予約が無い」行だけを更新する）。どちらも試行の完了・確定の後にだけ書かれるので、
+    // 完了・確定の時刻の書き込みとは衝突しない。ほかの列をトークンにすると、それらの書き込みまで無関係な衝突で落ちる。
     [Fact]
-    public void 同時実行のトークンは適用の記録時刻だけ()
+    public void 同時実行のトークンは適用の記録時刻と予約の時刻だけ()
     {
         using var npgsql = new ReportDbContext(
             new DbContextOptionsBuilder<ReportDbContext>().UseNpgsql("Host=localhost;Database=report_svc").Options);
         var entity = npgsql.Model.FindEntityType(typeof(PolicyRevisionAttemptRow))!;
 
         entity.GetProperties().Where(p => p.IsConcurrencyToken).Select(p => p.Name)
-            .Should().Equal(nameof(PolicyRevisionAttemptRow.WatchlistAppliedAt));
+            .Should().BeEquivalentTo([nameof(PolicyRevisionAttemptRow.WatchlistAppliedAt), nameof(PolicyRevisionAttemptRow.WatchlistApplyReservedAt)]);
+    }
+
+    // 🔴 NFR-06, IADR-0634 決定 8: 入れ替えの適用の予約は 1 回だけ。別の DbContext（市場監視の別の要求）が先に予約したら、後の方は false。
+    // 適用の記録がある行も予約できない。
+    [Fact]
+    public void 適用の予約は1回だけで先の予約や記録があれば断る()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var id = SeedProposed(dbName);
+        using var first = InMemoryContext(dbName);
+        using var second = InMemoryContext(dbName);
+        second.PolicyRevisionAttempts.Find(id)!.WatchlistApplyReservedAt.Should().BeNull("前提: 後の書き手も「まだ予約が無い」と読んだ");
+
+        new EfPolicyRevisionLedger(first).ReserveWatchlistApply(id, FirstAt).Should().BeTrue();
+        new EfPolicyRevisionLedger(second).ReserveWatchlistApply(id, LaterAt).Should().BeFalse("先の予約を上書きしない");
+        new EfPolicyRevisionLedger(second).ReserveWatchlistApply(id, LaterAt).Should().BeFalse("読み直しても予約済み");
+        using (var check = InMemoryContext(dbName))
+            check.PolicyRevisionAttempts.Single(a => a.Id == id).WatchlistApplyReservedAt.Should().Be(FirstAt);
+
+        // 予約の後でも、ボットの内訳の記録は書ける（予約と記録は別の列）。
+        using (var bot = InMemoryContext(dbName))
+            new EfPolicyRevisionLedger(bot).RecordWatchlistApply(id, AppliedJson, LaterAt).Should().BeTrue();
+
+        var recordedOnly = SeedProposed(dbName);
+        using var db = InMemoryContext(dbName);
+        new EfPolicyRevisionLedger(db).RecordWatchlistApply(recordedOnly, AppliedJson, FirstAt).Should().BeTrue();
+        new EfPolicyRevisionLedger(db).ReserveWatchlistApply(recordedOnly, LaterAt).Should().BeFalse("記録済みの案は予約できない");
+
+        var memory = new InMemoryPolicyRevisionLedger();
+        var memoryId = memory.Begin(Attempt(new DateOnly(2026, 9, 28)));
+        memory.ReserveWatchlistApply(memoryId, FirstAt).Should().BeTrue();
+        memory.ReserveWatchlistApply(memoryId, LaterAt).Should().BeFalse();
     }
 
     // T-10-1485: 内訳の記録の保存が（衝突以外で）失敗したら、例外は上へ（「記録済み」に偽らない）、行は追跡から外れ、同じスコープで記録し直せる。
@@ -526,6 +559,9 @@ public class PolicyRevisionLedgerTests
         public bool RecordWatchlistApply(Guid id, string resultJson, DateTimeOffset recordedAt) =>
             _inner.RecordWatchlistApply(id, resultJson, recordedAt);
 
-        public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt) => _inner.MarkProposalConfirmed(id, confirmedAt);
+        public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt, bool secondFactorVerified = false) =>
+            _inner.MarkProposalConfirmed(id, confirmedAt, secondFactorVerified);
+
+        public bool ReserveWatchlistApply(Guid id, DateTimeOffset reservedAt) => _inner.ReserveWatchlistApply(id, reservedAt);
     }
 }

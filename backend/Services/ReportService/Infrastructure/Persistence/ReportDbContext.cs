@@ -77,6 +77,8 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
             // （WHERE "WatchlistAppliedAt" IS NULL）だけを更新させる。読んでから書くまでの間に別の書き手が記録していれば衝突になり、
             // 後の書き手は先の内訳を上書きしない（EfPolicyRevisionLedger.RecordWatchlistApply が「記録済み」へ写す）。
             e.Property(a => a.WatchlistAppliedAt).IsConcurrencyToken();
+            // NFR-06, IADR-0634 決定 8: 入れ替えの適用の予約も 1 回だけ（同じく同時実行のトークン。先の予約を上書きしない）。
+            e.Property(a => a.WatchlistApplyReservedAt).IsConcurrencyToken();
             // #1025: 確定した版の案を引く（会話キー＋版）。
             e.HasIndex(a => new { a.PeriodKey, a.ReportVersion });
             // 1 日の回数上限の判定（JST の暦日ごとの件数）。

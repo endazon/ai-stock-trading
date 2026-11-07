@@ -377,7 +377,7 @@ function main() {
       'backtest->order-execution',
       'cost-control->configuration',
       'information-collection->cost-control', 'information-collection->market-monitor', 'information-collection->risk-management',
-      'market-monitor->risk-management',
+      'market-monitor->report', 'market-monitor->risk-management',
       'notification->market-monitor', 'notification->report', 'notification->risk-management',
       'order-execution->risk-management',
       'report->audit', 'report->risk-management',

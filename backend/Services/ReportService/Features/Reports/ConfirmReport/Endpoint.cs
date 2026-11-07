@@ -30,7 +30,8 @@ internal static class ConfirmReportEndpoint
     // 方針の改訂案の版の確定（監視銘柄の適用を伴い得る）は PolicyConfirm として記録を分ける。台帳の照会は best-effort で、
     // 失敗しても確定を壊さず ReportConfirm として扱う。
     internal static Action? SecondFactorBeforeCommit(
-        HttpContext http, IPolicyRevisionLedger policyLedger, string periodKey, ConfirmReportRequest req, ILoggerFactory loggerFactory)
+        HttpContext http, IPolicyRevisionLedger policyLedger, string periodKey, ConfirmReportRequest req, ILoggerFactory loggerFactory,
+        System.Runtime.CompilerServices.StrongBox<bool>? verified = null)
     {
         if (http.RequestServices?.GetService<AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorGate>() is not { Mode: not AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorMode.Off } gate)
             return null;
@@ -55,6 +56,9 @@ internal static class ConfirmReportEndpoint
                 req.SecondFactorCode);
             if (!decision.Allowed)
                 throw new AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorRejectedException(decision.Outcome);
+            // NFR-06, IADR-0634 決定 7: 確定が第 2 要素を実際に通ったか（Verified）を、方針の案の台帳へ残すために返す。
+            if (verified is not null)
+                verified.Value = decision.Outcome == AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOutcome.Verified;
         };
     }
 
@@ -89,8 +93,9 @@ internal static class ConfirmReportEndpoint
         // 移る前の日報に残った版 n+1 のドラフトの写しへ失効の印を付ける）。
         var effectiveBefore = svc.EffectiveDailyPeriodKey();
         // NFR-06, FR-14, #1542, IADR-0615: 確定は危険な操作（第 2 要素）。門は確定へ遷移し得るときだけ、書き込みの直前に呼ぶ（決定 9）。
+        var verified = new System.Runtime.CompilerServices.StrongBox<bool>(false);
         var result = svc.Confirm(periodKey, req.ExpectedVersion, actor,
-            SecondFactorBeforeCommit(http, policyLedger, periodKey, req, loggerFactory));
+            SecondFactorBeforeCommit(http, policyLedger, periodKey, req, loggerFactory, verified));
         if (result is null)
             return Results.NotFound();
 
@@ -109,7 +114,7 @@ internal static class ConfirmReportEndpoint
             try
             {
                 if (policyLedger.FindProposed(r.PeriodKey, result.Version - 1) is { } attempt)
-                    policyLedger.MarkProposalConfirmed(attempt.Id, r.ConfirmedAt ?? DateTimeOffset.UtcNow);
+                    policyLedger.MarkProposalConfirmed(attempt.Id, r.ConfirmedAt ?? DateTimeOffset.UtcNow, verified.Value);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

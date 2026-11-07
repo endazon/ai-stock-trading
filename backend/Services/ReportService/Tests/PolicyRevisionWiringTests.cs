@@ -428,6 +428,76 @@ public class PolicyRevisionWiringTests
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
+    // 🔴 NFR-06, IADR-0634 決定 2・7・8: 市場監視が適用の前に引く結び付きの照会と予約は、サービスの身元だけが通る（ボット・利用者は 403）。
+    // 判定は照会と同じ（確定前は 409・案でない版は 404）。応答は案と、その版の確定が第 2 要素で Verified だったか（確定の時の台帳の記録）。
+    // 予約は 1 回だけ（2 回目は 409）。確定が Verified でなかった案は、予約の口を単体で呼ばれても予約しない（403・照会と同じ記録で判定）。
+    [Theory]
+    [InlineData(null, false, false)]
+    [InlineData("Audit", false, false)]
+    [InlineData("Audit", true, true)]
+    public async Task 結び付きの照会と予約はサービスの身元だけが使え確定の第2要素の記録を返す(string? mode, bool withCode, bool verified)
+    {
+        var secret = AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.Totp.EncodeBase32(
+            System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("1234567890", 2))));
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var configured = Configure(baseFactory, new RecordingGateway(ProposalJson));
+        await using var factory = mode is null ? configured : configured.WithWebHostBuilder(b =>
+        {
+            b.UseSetting("OwnerSecondFactor:Mode", mode);
+            b.UseSetting("OwnerSecondFactor:Secret", secret);
+        });
+        await SeedDraftAsync(factory);
+        (await BotClient(factory).PostAsJsonAsync("/reports/policy-revisions", new
+        {
+            instruction = "a",
+            periodKey = PeriodKey,
+            onBehalfOf = "developer",
+            currentWatchlist = new[] { new { symbol = "AAPL", market = "UnitedStates" } },
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+        var service = factory.CreateClient();
+        service.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-service");
+        var query = $"periodKey={PeriodKey}&version=2";
+        var route = $"/reports/policy-revisions/watchlist-proposal/binding?{query}";
+        var reserve = $"/reports/policy-revisions/watchlist-proposal/binding/reserve?{query}";
+
+        (await service.GetAsync(route)).StatusCode.Should().Be(HttpStatusCode.Conflict, "確定されていない版は結び付かない");
+        (await service.PostAsync(reserve, null)).StatusCode.Should().Be(HttpStatusCode.Conflict, "確定されていない版は予約できない");
+
+        string? code = null;
+        if (withCode)
+        {
+            AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.Totp.TryDecodeBase32(secret, out var key);
+            code = AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.Totp.Compute(
+                key, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.Totp.StepOf(DateTimeOffset.UtcNow));
+        }
+
+        (await BotClient(factory).PostAsJsonAsync($"/reports/{PeriodKey}/confirm", new { ExpectedVersion = 2, OnBehalfOf = "developer", SecondFactorCode = code }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var bound = await service.GetFromJsonAsync<JsonElement>(route);
+        bound.GetProperty("proposal").GetProperty("changes").EnumerateArray().Single().GetProperty("symbol").GetString().Should().Be("NVDA");
+        bound.GetProperty("proposal").GetProperty("snapshot").EnumerateArray().Single().GetProperty("symbol").GetString().Should().Be("AAPL");
+        bound.GetProperty("secondFactorVerified").GetBoolean().Should().Be(verified, "確定の時に第 2 要素で Verified だったかの記録");
+        bound.GetProperty("applyReserved").GetBoolean().Should().BeFalse();
+
+        (await BotClient(factory).PostAsync(reserve, null)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "ボットの資格では予約できない");
+        if (verified)
+        {
+            (await service.PostAsync(reserve, null)).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await service.PostAsync(reserve, null)).StatusCode.Should().Be(HttpStatusCode.Conflict, "予約は 1 回だけ（2 度目の適用を拒む）");
+        }
+        else
+        {
+            (await service.PostAsync(reserve, null)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "Verified でない確定の案は予約しない");
+        }
+
+        (await service.GetFromJsonAsync<JsonElement>(route)).GetProperty("applyReserved").GetBoolean().Should().Be(verified, "Verified でなければ予約は残らない");
+
+        (await service.GetAsync($"/reports/policy-revisions/watchlist-proposal/binding?periodKey={PeriodKey}&version=1"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await BotClient(factory).GetAsync(route)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "ボットの資格では引けない");
+        (await UserClient(factory).GetAsync(route)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "利用者のトークンでも引けない");
+    }
+
     private static async Task SeedDraftAsync(WebApplicationFactory<Program> factory, string key)
     {
         (await UserClient(factory).PutAsJsonAsync($"/reports/{key}", new

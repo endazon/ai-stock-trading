@@ -362,6 +362,37 @@ public class StageTransitionApproverTests
         history.Should().ContainSingle().Which.ApprovedBy.Should().Be("developer");
     }
 
+    // ---- 🔴 NFR-06, FR-20, IADR-0634 決定 5: 空売り実弾解禁の verdict の記録も第 2 要素を課す（実弾へ近づく向き） ----
+    // 段 2 で確認コードが無ければ記録しない（403・台帳もイベントも触らない）。段 1 は記録だけで通す。
+    [Theory]
+    [InlineData("Enforce", HttpStatusCode.Forbidden)]
+    [InlineData("Audit", HttpStatusCode.OK)]
+    public async Task 空売り実弾解禁_verdict_の記録は第2要素の段に従う(string mode, HttpStatusCode expected)
+    {
+        using var baseFactory = new RiskWorkerWebApplicationFactory();
+        await using var trusted = WithTrustedClients(baseFactory, OwnerClientId);
+        await using var factory = trusted.WithWebHostBuilder(b => b.UseSetting("OwnerSecondFactor:Mode", mode));
+
+        var (res, published) = await TransitionAsync(factory, BotClient(factory), new
+        {
+            approval = 1, // StageApprovalKind.ShortSellReleaseVerdict
+            onBehalfOf = "developer",
+        });
+
+        res.StatusCode.Should().Be(expected);
+        var history = await HistoryAsync(UserClient(factory));
+        if (expected == HttpStatusCode.OK)
+        {
+            published.Should().ContainSingle();
+            history.Should().ContainSingle();
+        }
+        else
+        {
+            published.Should().BeEmpty("確認コードの無い verdict は記録しない");
+            history.Should().BeEmpty();
+        }
+    }
+
     // ---- 後方互換: onBehalfOf を添えない旧版 Bot／画面は従来どおり ----
     [Fact]
     public async Task onBehalfOf_を添えない要求は従来どおりトークンの主体が承認者になる()

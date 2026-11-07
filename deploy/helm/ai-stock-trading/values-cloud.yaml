@@ -224,7 +224,8 @@ networkPolicy:
       calls: [cost-control, market-monitor, risk-management]
       externalHttps: true
     market-monitor:
-      calls: [risk-management]
+      # NFR-06, IADR-0634: report は入れ替えの適用の結び付きの照会（報告書の台帳）。
+      calls: [report, risk-management]
       externalHttps: true
     notification:
       calls: [market-monitor, report, risk-management]
@@ -338,6 +339,9 @@ services:
       passwordSecret: { name: ast-db-market-monitor-credentials, key: password }
     extraEnv:
       - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
+      # 🔴 NFR-06, IADR-0634: 段 2。入れ替えの適用は、報告書の台帳の確定済み（第 2 要素つき）・未適用の案と一致するときだけ（違えば 403）。
+      - { name: Reports__BaseUrl, value: "http://report-service:8080" }
+      - { name: Watchlist__ProposalBinding__Mode, value: "Enforce" }
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret

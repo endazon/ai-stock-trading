@@ -48,7 +48,17 @@ public interface IPolicyRevisionLedger
     /// これだけがある行が「確定されたが入れ替えの適用を試みていない（Bot が落ちた・照会に失敗した）」であり、台帳で見える。
     /// 既に記録済みなら上書きしない。
     /// </summary>
-    void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt);
+    /// <remarks>
+    /// NFR-06, IADR-0634 決定 7: <paramref name="secondFactorVerified"/> は、この確定が第 2 要素の門で <c>Verified</c> だったか
+    /// （段 1 で確認コードなしに確定した案は false）。市場監視の適用の門はこの記録で判定する。
+    /// </remarks>
+    void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt, bool secondFactorVerified = false);
+
+    /// <summary>
+    /// NFR-06, IADR-0634 決定 8: 入れ替えの適用を<b>予約する</b>（1 回だけ・比較して書く）。まだ予約も適用の記録も無いときだけ予約の時刻を書いて
+    /// true。既に予約・記録があれば false（2 度目の適用を拒む）。市場監視が適用の直前に呼ぶ。
+    /// </summary>
+    bool ReserveWatchlistApply(Guid id, DateTimeOffset reservedAt);
 }
 
 // TryBegin の結果。Begun=false なら書いていない（上限に達していた）。UsedBefore は書く前のその日の試行の数。
@@ -90,4 +100,6 @@ public sealed record PolicyRevisionAttempt(
     string? WatchlistSnapshotJson = null,
     string? WatchlistApplyJson = null,
     DateTimeOffset? WatchlistAppliedAt = null,
-    DateTimeOffset? ProposalConfirmedAt = null);
+    DateTimeOffset? ProposalConfirmedAt = null,
+    bool ProposalSecondFactorVerified = false,
+    DateTimeOffset? WatchlistApplyReservedAt = null);

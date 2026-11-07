@@ -108,7 +108,8 @@ public sealed class StageGateService(
     // 発行時点の情報源フィンガープリントと戦略識別子は**サーバが写し取る**——承認者に手で入力させると
     // 自己申告になり、機械的な突合にならない（打ち間違いが verdict を恒久的に無効化することもある）。
     // 受理しても観測窓（統制違反・約定・稼働・実DD）は区切らない。段階が動いていないためである。
-    public StageTransitionResult RecordShortSellReleaseVerdict(string approver)
+    // NFR-06, FR-20, IADR-0634 決定 5: 受理できた判定だけ、台帳へ追記する直前に第 2 要素の門を呼ぶ（受理不能はコードを消費しない）。
+    public StageTransitionResult RecordShortSellReleaseVerdict(string approver, Action? beforeCommit = null)
     {
         var ledger = ledgerStore.Load();
         var performance = performanceStore.GetCurrent();
@@ -126,6 +127,7 @@ public sealed class StageGateService(
 
         if (result is { Accepted: true, Transition: not null })
         {
+            beforeCommit?.Invoke();
             ledgerStore.Append(result.Transition);
         }
 
