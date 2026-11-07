@@ -145,8 +145,15 @@ spec:
         # 🔴 **この閾値は実測を要しない。** 正規の発行元は必ず印を付けるので、平常は 0 件である。
         # 1 件でも出れば、鍵の配り漏れ（reason=missing / unverifiable）か、ブローカへ書ける主体による偽装・改竄・再送を疑う。
         # for は置かない（1 件で知らせる。拒んだメッセージは処理されないので、続くのを待つ理由が無い）。
+        # 🔴 系列は最初の拒否の計上で生まれる（起動時に 0 で作らない）。increase() は 15 分前に系列が無いと最初の 1 件を
+        # 増分として数えないので、「15 分前に無かった系列が今ある」（unless … offset 15m）を左の枝で拾い、2 件目以降は
+        # 右の枝の increase() で拾う。PromQL では > が unless・or より強く結び付くので、> 0 は右の枝だけに掛かる
+        # （左の枝の値は累積の件数で、在れば 1 以上）。
         - alert: AstMessageOriginRejected
-          expr: sum by (type, reason) (increase(ast_messaging_origin_failures_total{outcome="rejected"}[15m])) > 0
+          expr: >-
+            (sum by (type, reason) (ast_messaging_origin_failures_total{outcome="rejected"})
+              unless sum by (type, reason) (ast_messaging_origin_failures_total{outcome="rejected"} offset 15m))
+            or sum by (type, reason) (increase(ast_messaging_origin_failures_total{outcome="rejected"}[15m])) > 0
           labels:
             severity: warning
             service: ai-stock-trading

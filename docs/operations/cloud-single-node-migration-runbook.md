@@ -186,7 +186,8 @@ done
 - 守りは段 2 で始まる（注文の承認の印・メッセージの発行元の印・所有者のトークンの aud / azp・ボットの許可表・危険な操作の第 2 要素・kill switch の前提条件）。
   - 注文の承認の鍵が無いと、risk-management と order-execution の Pod は起動しない。
   - メッセージの発行元の鍵（`ast-message-origin-keys`）が無いと、鍵を読む 8 サービスの Pod は起動しない。
-    受け手が拒んだメッセージは処理されず、ログ（EventId 16260）とメトリクス `ast_messaging_origin_failures_total{outcome="rejected"}`・警報 `AstMessageOriginRejected` に残る。TOTP が無いと、取引を再開・緩める 7 操作は拒まれる。
+    受け手が拒んだメッセージは処理されず、ログ（EventId 16260）とメトリクス `ast_messaging_origin_failures_total{outcome="rejected"}`・警報 `AstMessageOriginRejected` に残る。
+  - TOTP が無いと、取引を再開・緩める 7 操作は拒まれる。
 - 値を替えたら（作り直し・更新）、ESO が写した後に読む側を作り直す（`kubectl -n ai-stock-trading rollout restart deploy/<名前>`）。クラウドに Reloader は無い。
 - 基盤が CA を作り直したら、`cloud/shared/platform-infra-ca` の更新を ESO が写した後に、取引ユニットのサービスを作り直す。
   切り替えの確かめ方と戻し方は [基盤の TLS 切り替え Runbook](platform-infra-tls-cutover-runbook.md)。
