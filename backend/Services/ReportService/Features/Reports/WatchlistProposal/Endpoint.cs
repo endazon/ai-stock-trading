@@ -1,4 +1,6 @@
+using AiStockTrading.Shared.Infrastructure.Composable.SecondFactor;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using ReportService.Common.Abstractions;
@@ -47,6 +49,29 @@ internal static partial class WatchlistProposalEndpoints
             // NFR-06, #1554, IADR-0622: ボットの許可表の経路（ボットの REST アダプタが呼ぶ）。
             .AllowOwnerBot();
     }
+
+    // 🔴 NFR-06, FR-13, IADR-0634 決定 2: 市場監視（提供側）が、入れ替えの適用の前に「その版で確定された案」を照会する口。
+    // GET /reports/policy-revisions/watchlist-proposal/binding（**サービスの身元だけ**。ボット・利用者のトークンは通さない）。
+    // 判定は照会（Lookup）と同じ 1 つ。加えて、確定が第 2 要素を通ったと言えるか（本サービスの門が Enforce か）を返す。
+    public static void MapWatchlistProposalBinding(this IEndpointRouteBuilder g) =>
+        g.MapGet("/policy-revisions/watchlist-proposal/binding",
+                (string? periodKey, int? version, IPolicyRevisionLedger ledger, IReportStore store, HttpContext http) =>
+                {
+                    var lookup = Lookup(periodKey, version, ledger, store);
+                    var enforced = http.RequestServices.GetService<OwnerSecondFactorGate>() is { Mode: SecondFactorMode.Enforce };
+                    return lookup.Outcome switch
+                    {
+                        ProposalLookupOutcome.Invalid => Results.BadRequest(new { error = lookup.Error }),
+                        ProposalLookupOutcome.NotProposal => Results.NotFound(new { error = lookup.Error }),
+                        ProposalLookupOutcome.NotConfirmedAtVersion => Results.Conflict(new { error = lookup.Error }),
+                        _ => Results.Ok(new WatchlistProposalBindingView(lookup.Proposal!, enforced)),
+                    };
+                })
+            .RequireAuthorization(policy => policy
+                .RequireAuthenticatedUser()
+                .RequireAssertion(ctx => ctx.User.IsInRole(AiStockTradingAuthPolicies.ServiceRole)
+                    && !ctx.User.IsInRole(AiStockTradingAuthPolicies.BotRole)
+                    && !ctx.User.IsInRole(AiStockTradingAuthPolicies.OwnerRole)));
 
     // NFR, IADR-0450, #753（段 5）: 適用の内訳の記録。REST と gRPC 面（ReportOwnerWriteGrpcService）が共有する（1 回だけ・確定された案だけの
     // 条件を 2 箇所に書かない）。
@@ -131,6 +156,10 @@ public sealed record WatchlistProposalView(
     bool ApplyRecorded);
 
 public sealed record WatchlistSnapshotEntryView(string Symbol, string Market);
+
+// NFR-06, IADR-0634 決定 2: 市場監視へ返す結び付きの照会の応答。SecondFactorEnforced は、本サービスの第 2 要素の門が段 2（Enforce）で、
+// 確定が第 2 要素を通らずには起こり得ないこと（照会の時点の構成）。
+public sealed record WatchlistProposalBindingView(WatchlistProposalView Proposal, bool SecondFactorEnforced);
 
 // 適用の内訳の記録。Outcome は Bot が決める種別（applied / stale / snapshot-unknown / indeterminate / failed 等）。
 public sealed record WatchlistApplyResultRequest(

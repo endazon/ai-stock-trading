@@ -428,6 +428,53 @@ public class PolicyRevisionWiringTests
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
+    // 🔴 NFR-06, IADR-0634 決定 2: 市場監視が適用の前に引く結び付きの照会は、サービスの身元だけが通る（ボット・利用者は 403）。
+    // 判定は照会と同じ（確定前は 409・案でない版は 404）。応答は案と、確定が第 2 要素を通ったと言えるか（本サービスの門が Enforce か）。
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("Audit", false)]
+    [InlineData("Enforce", true)]
+    public async Task 結び付きの照会はサービスの身元だけが引け第2要素の段を返す(string? mode, bool enforced)
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var configured = Configure(baseFactory, new RecordingGateway(ProposalJson));
+        await using var factory = mode is null ? configured : configured.WithWebHostBuilder(b => b.UseSetting("OwnerSecondFactor:Mode", mode));
+        await SeedDraftAsync(factory);
+        (await BotClient(factory).PostAsJsonAsync("/reports/policy-revisions", new
+        {
+            instruction = "a",
+            periodKey = PeriodKey,
+            onBehalfOf = "developer",
+            currentWatchlist = new[] { new { symbol = "AAPL", market = "UnitedStates" } },
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+        var service = factory.CreateClient();
+        service.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-service");
+        var route = $"/reports/policy-revisions/watchlist-proposal/binding?periodKey={PeriodKey}&version=2";
+
+        (await service.GetAsync(route)).StatusCode.Should().Be(HttpStatusCode.Conflict, "確定されていない版は結び付かない");
+        if (mode != "Enforce")
+        {
+            (await BotClient(factory).PostAsJsonAsync($"/reports/{PeriodKey}/confirm", new { ExpectedVersion = 2, OnBehalfOf = "developer" }))
+                .StatusCode.Should().Be(HttpStatusCode.OK);
+            var bound = await service.GetFromJsonAsync<JsonElement>(route);
+            bound.GetProperty("proposal").GetProperty("changes").EnumerateArray().Single().GetProperty("symbol").GetString().Should().Be("NVDA");
+            bound.GetProperty("proposal").GetProperty("snapshot").EnumerateArray().Single().GetProperty("symbol").GetString().Should().Be("AAPL");
+            bound.GetProperty("secondFactorEnforced").GetBoolean().Should().Be(enforced);
+        }
+        else
+        {
+            // 段 2 では確認コード無しの確定は通らない（確定されなければ結び付きも生じない）。
+            (await BotClient(factory).PostAsJsonAsync($"/reports/{PeriodKey}/confirm", new { ExpectedVersion = 2, OnBehalfOf = "developer" }))
+                .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            (await service.GetAsync(route)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+
+        (await service.GetAsync($"/reports/policy-revisions/watchlist-proposal/binding?periodKey={PeriodKey}&version=1"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await BotClient(factory).GetAsync(route)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "ボットの資格では引けない");
+        (await UserClient(factory).GetAsync(route)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "利用者のトークンでも引けない");
+    }
+
     private static async Task SeedDraftAsync(WebApplicationFactory<Program> factory, string key)
     {
         (await UserClient(factory).PutAsJsonAsync($"/reports/{key}", new

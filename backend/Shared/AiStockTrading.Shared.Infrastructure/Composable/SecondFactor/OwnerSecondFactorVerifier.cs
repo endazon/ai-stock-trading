@@ -74,6 +74,9 @@ public static class OwnerSecondFactorTargets
     public const string TradingPause = "trading-pause";
     public const string GoodFaithViolations = "good-faith-violations";
 
+    /// <summary>NFR-06, FR-20, IADR-0634 決定 5: 空売りの実弾の解禁の判定の記録（操作の種類は段階の昇格と同じ StagePromote）。</summary>
+    public const string ShortSellReleaseVerdict = "short-sell-release-verdict";
+
     public static string Stage(object targetStage) => $"stage:{targetStage}";
 
     public static string Drift(object? market, string? symbol) => $"drift:{market}:{symbol}";

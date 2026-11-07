@@ -90,7 +90,10 @@ internal static class RequestStageTransitionEndpoint
                 });
             }
 
-            result = svc.RecordShortSellReleaseVerdict(approver.Actor);
+            // 🔴 NFR-06, FR-20, IADR-0634 決定 5: 判定の記録は実弾の解禁の前提の 1 つ（実弾へ近づく向き）なので、昇格と同じく第 2 要素を課す。
+            // 門は受理できた判定の台帳への追記の直前にサービスが呼ぶ（受理不能〔422〕はコードを消費しない）。
+            result = svc.RecordShortSellReleaseVerdict(approver.Actor,
+                RiskSecondFactor.BeforeCommit(http, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.SecondFactorOperation.StagePromote, AiStockTrading.Shared.Infrastructure.Composable.SecondFactor.OwnerSecondFactorTargets.ShortSellReleaseVerdict, req.SecondFactorCode));
         }
         else
         {

@@ -1,0 +1,292 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using AiStockTrading.Shared.Contracts.Trading;
+using AwesomeAssertions;
+using Grpc.Core;
+using Grpc.Net.Client;
+using MarketMonitorService.Domain;
+using MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
+using Proto = AiStockTrading.Shared.Grpc.MarketMonitor.V1;
+
+namespace MarketMonitorService.Tests;
+
+// 🔴 NFR-06, FR-13, FR-14, ADR-0042 決定 1, IADR-0634: 監視銘柄の入れ替えの適用は、提供側（市場監視）で、報告書の台帳の
+// 「その版で確定された（確定は第 2 要素つき）・未適用の案」と要求を結び付けて確かめる。Enforce で結び付かなければ 403（gRPC は
+// PERMISSION_DENIED）で 1 件も適用しない。Audit は記録だけ、Off は照会しない。ボットの渡す任意の銘柄の一覧では入れ替えない。
+public class WatchlistProposalBindingTests
+{
+    private const string ProposalRef = "daily-2026-09-28-v3";
+    private static readonly MonitoredSymbol Aapl = new("AAPL", Market.UnitedStates);
+    private static readonly MonitoredSymbol Msft = new("MSFT", Market.UnitedStates);
+    private static readonly ProposedWatchlistChange AddNvda = new(ProposedWatchlistAction.Add, "NVDA", "AI 需要");
+
+    private sealed class FakeSource(WatchlistProposalLookupResult result) : IWatchlistProposalSource
+    {
+        public List<(string Key, int Version)> Calls { get; } = [];
+
+        public WatchlistProposalLookupResult Result { get; set; } = result;
+
+        public Task<WatchlistProposalLookupResult> FindAsync(string periodKey, int version, CancellationToken cancellationToken)
+        {
+            Calls.Add((periodKey, version));
+            return Task.FromResult(Result);
+        }
+    }
+
+    private static BoundWatchlistProposal Proposal(
+        bool applied = false, bool enforced = true, bool snapshot = true, params (string Action, string Symbol)[] changes) =>
+        new(
+            changes.Length == 0 ? [new BoundWatchlistChange("add", "NVDA")] : [.. changes.Select(c => new BoundWatchlistChange(c.Action, c.Symbol))],
+            snapshot ? [new BoundWatchlistSnapshotEntry("AAPL", "UnitedStates"), new BoundWatchlistSnapshotEntry("MSFT", "UnitedStates")] : null,
+            applied,
+            enforced);
+
+    private static WatchlistProposalLookupResult Found(BoundWatchlistProposal proposal) => new(WatchlistProposalLookupStatus.Found, proposal);
+
+    private static WatchlistProposalBindingGate Gate(WatchlistProposalBindingMode mode, IWatchlistProposalSource source) =>
+        new(new WatchlistProposalBindingOptions { Mode = mode }, source, NullLogger<WatchlistProposalBindingGate>.Instance);
+
+    [Fact]
+    public async Task 確定済み未適用で案と一致すれば結び付き照会は会話キーと版で行う()
+    {
+        var source = new FakeSource(Found(Proposal()));
+
+        var decision = await Gate(WatchlistProposalBindingMode.Enforce, source).CheckAsync(ProposalRef, [Msft, Aapl], [AddNvda], default);
+
+        decision.Should().Be(new WatchlistProposalBindingDecision(WatchlistProposalBindingOutcome.Bound, true));
+        source.Calls.Should().Equal(("daily-2026-09-28", 3));
+    }
+
+    public static TheoryData<string, WatchlistProposalLookupResult, MonitoredSymbol[], ProposedWatchlistChange[], WatchlistProposalBindingOutcome> Unbound() => new()
+    {
+        // 🔴 ボットが案に無い銘柄を足す・別の銘柄へ替える・操作を替える・件数を変える。
+        { ProposalRef, Found(Proposal()), [Aapl, Msft], [new(ProposedWatchlistAction.Add, "TSLA", "r")], WatchlistProposalBindingOutcome.Mismatch },
+        { ProposalRef, Found(Proposal()), [Aapl, Msft], [new(ProposedWatchlistAction.Remove, "NVDA", "r")], WatchlistProposalBindingOutcome.Mismatch },
+        { ProposalRef, Found(Proposal()), [Aapl, Msft], [AddNvda, new(ProposedWatchlistAction.Add, "TSLA", "r")], WatchlistProposalBindingOutcome.Mismatch },
+        // 期待値（案を作った時点の監視銘柄）が台帳と違う（楽観排他の基準のすり替え）。
+        { ProposalRef, Found(Proposal()), [Aapl], [AddNvda], WatchlistProposalBindingOutcome.Mismatch },
+        { ProposalRef, Found(Proposal()), [Aapl, Msft, new("TSLA", Market.UnitedStates)], [AddNvda], WatchlistProposalBindingOutcome.Mismatch },
+        { ProposalRef, Found(Proposal(applied: true)), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.AlreadyApplied },
+        { ProposalRef, Found(Proposal(enforced: false)), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.SecondFactorNotEnforced },
+        { ProposalRef, Found(Proposal(snapshot: false)), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.SnapshotUnknown },
+        { ProposalRef, new(WatchlistProposalLookupStatus.NotConfirmed, null), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.NotConfirmed },
+        { ProposalRef, new(WatchlistProposalLookupStatus.NotProposal, null), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.NotProposal },
+        { ProposalRef, new(WatchlistProposalLookupStatus.Unavailable, null), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.Unavailable },
+        { ProposalRef, new(WatchlistProposalLookupStatus.Invalid, null), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.MalformedReference },
+        // 案の出所が「会話キー-v版」でない（任意の文字列で台帳を引かせない）。
+        { "manual-apply", Found(Proposal()), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.MalformedReference },
+        { "daily-v0", Found(Proposal()), [Aapl, Msft], [AddNvda], WatchlistProposalBindingOutcome.MalformedReference },
+    };
+
+    [Theory]
+    [MemberData(nameof(Unbound))]
+    public async Task 結び付かなければEnforceは拒みAuditは記録だけで通す(
+        string proposalRef, WatchlistProposalLookupResult found, MonitoredSymbol[] expected, ProposedWatchlistChange[] changes,
+        WatchlistProposalBindingOutcome outcome)
+    {
+        (await Gate(WatchlistProposalBindingMode.Enforce, new FakeSource(found)).CheckAsync(proposalRef, expected, changes, default))
+            .Should().Be(new WatchlistProposalBindingDecision(outcome, false));
+        (await Gate(WatchlistProposalBindingMode.Audit, new FakeSource(found)).CheckAsync(proposalRef, expected, changes, default))
+            .Should().Be(new WatchlistProposalBindingDecision(outcome, true));
+    }
+
+    [Fact]
+    public async Task Offは照会しない()
+    {
+        var source = new FakeSource(Found(Proposal()));
+
+        (await Gate(WatchlistProposalBindingMode.Off, source).CheckAsync(ProposalRef, [Aapl], [AddNvda], default))
+            .Should().Be(new WatchlistProposalBindingDecision(WatchlistProposalBindingOutcome.Skipped, true));
+        source.Calls.Should().BeEmpty();
+    }
+
+    // ---- 台帳の照会の口（報告書の GET /reports/policy-revisions/watchlist-proposal/binding） ----
+
+    private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
+    {
+        public List<Uri> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request.RequestUri!);
+            return Task.FromResult(respond(request));
+        }
+    }
+
+    private static HttpWatchlistProposalSource Source(StubHandler handler) =>
+        new(new HttpClient(handler) { BaseAddress = new Uri("http://report-service:8080") }, NullLogger<HttpWatchlistProposalSource>.Instance);
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest, WatchlistProposalLookupStatus.Invalid)]
+    [InlineData(HttpStatusCode.NotFound, WatchlistProposalLookupStatus.NotProposal)]
+    [InlineData(HttpStatusCode.Conflict, WatchlistProposalLookupStatus.NotConfirmed)]
+    [InlineData(HttpStatusCode.Forbidden, WatchlistProposalLookupStatus.Unavailable)]
+    [InlineData(HttpStatusCode.InternalServerError, WatchlistProposalLookupStatus.Unavailable)]
+    public async Task 照会の応答の状態を台帳の判定と届かないに分ける(HttpStatusCode status, WatchlistProposalLookupStatus expected)
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(status));
+
+        (await Source(handler).FindAsync("daily-2026-09-28", 3, default)).Status.Should().Be(expected);
+        handler.Requests.Should().ContainSingle().Which.PathAndQuery
+            .Should().Be("/reports/policy-revisions/watchlist-proposal/binding?periodKey=daily-2026-09-28&version=3");
+    }
+
+    [Fact]
+    public async Task 照会の本文を案として読み読めなければ届かないとする()
+    {
+        var body = """
+            {"proposal":{"attemptId":"6a1f2b3c-0000-4000-8000-000000000001","periodKey":"daily-2026-09-28","reportVersion":3,
+             "changes":[{"action":"add","symbol":"NVDA","reason":"AI 需要"}],
+             "snapshot":[{"symbol":"AAPL","market":"UnitedStates"}],"applyRecorded":false},"secondFactorEnforced":true}
+            """;
+        var ok = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") });
+
+        var found = await Source(ok).FindAsync("daily-2026-09-28", 3, default);
+
+        found.Status.Should().Be(WatchlistProposalLookupStatus.Found);
+        found.Proposal!.Changes.Should().Equal(new BoundWatchlistChange("add", "NVDA"));
+        found.Proposal.Snapshot.Should().Equal(new BoundWatchlistSnapshotEntry("AAPL", "UnitedStates"));
+        found.Proposal.SecondFactorEnforced.Should().BeTrue();
+
+        var broken = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"proposal\":null}") });
+        (await Source(broken).FindAsync("k", 1, default)).Status.Should().Be(WatchlistProposalLookupStatus.Unavailable);
+        var thrown = new StubHandler(_ => throw new HttpRequestException("down"));
+        (await Source(thrown).FindAsync("k", 1, default)).Status.Should().Be(WatchlistProposalLookupStatus.Unavailable);
+    }
+
+    // ---- 本番の組み立て（Program.cs）を通す ----
+
+    private static WebApplicationFactory<Program> Configured(
+        MonitorWorkerWebApplicationFactory baseFactory, string mode, IWatchlistProposalSource? source) =>
+        baseFactory.WithWebHostBuilder(b =>
+        {
+            b.UseSetting("Monitor:DelegatedActor:TrustedClientIds", "ai-stock-trading-owner");
+            b.UseSetting("Watchlist:ProposalBinding:Mode", mode);
+            if (source is not null)
+            {
+                b.ConfigureTestServices(s =>
+                {
+                    s.RemoveAll<WatchlistProposalBindingGate>();
+                    s.AddSingleton(_ => new WatchlistProposalBindingGate(
+                        new WatchlistProposalBindingOptions { Mode = Enum.Parse<WatchlistProposalBindingMode>(mode) }, source,
+                        NullLogger<WatchlistProposalBindingGate>.Instance));
+                });
+            }
+        });
+
+    private static HttpClient Bot(WebApplicationFactory<Program> factory)
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-owner");
+        client.DefaultRequestHeaders.Add(TestAuthHandler.NameHeader, TestAuthHandler.NoName);
+        client.DefaultRequestHeaders.Add(TestAuthHandler.AzpHeader, "ai-stock-trading-owner");
+        return client;
+    }
+
+    private static HttpClient Owner(WebApplicationFactory<Program> factory)
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-owner");
+        return client;
+    }
+
+    private static async Task<List<string>> SymbolsAsync(WebApplicationFactory<Program> factory) =>
+        [.. (await Owner(factory).GetFromJsonAsync<JsonElement>("/monitor/watchlist")).EnumerateArray().Select(e => e.GetProperty("symbol").GetString()!)];
+
+    // 台帳の案（期待値＝いまの監視銘柄・入れ替え＝NVDA の追加）を、立てたホストの監視銘柄から作る。
+    private static async Task<List<string>> LedgerOfAsync(WebApplicationFactory<Program> factory, FakeSource source)
+    {
+        var before = await SymbolsAsync(factory);
+        source.Result = Found(new BoundWatchlistProposal(
+            [new BoundWatchlistChange("add", "NVDA")],
+            [.. before.Select(s => new BoundWatchlistSnapshotEntry(s, "UnitedStates"))],
+            ApplyRecorded: false,
+            SecondFactorEnforced: true));
+        return before;
+    }
+
+    private static object Body(IEnumerable<string> expected, string symbol) => new
+    {
+        ExpectedWatchlist = expected.Select(s => new { Symbol = s, Market = Market.UnitedStates }).ToArray(),
+        Changes = new[] { new { Action = "add", Symbol = symbol, Reason = "r" } },
+        ProposalRef,
+        OnBehalfOf = "developer",
+    };
+
+    [Fact]
+    public async Task Enforceは台帳の案と一致する要求だけを適用し違えば403で何も適用しない()
+    {
+        await using var baseFactory = new MonitorWorkerWebApplicationFactory();
+        var source = new FakeSource(new(WatchlistProposalLookupStatus.Unavailable, null));
+        await using var factory = Configured(baseFactory, "Enforce", source);
+        var before = await LedgerOfAsync(factory, source);
+
+        var forged = await Bot(factory).PostAsJsonAsync("/monitor/watchlist/proposal-apply", Body(before, "TSLA"));
+        forged.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await SymbolsAsync(factory)).Should().NotContain("TSLA");
+
+        var bound = await Bot(factory).PostAsJsonAsync("/monitor/watchlist/proposal-apply", Body(before, "NVDA"));
+        bound.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await SymbolsAsync(factory)).Should().Contain("NVDA");
+    }
+
+    // 宛先（Reports:BaseUrl）が無い本番の組み立てで Enforce なら、照会できないので拒む（閉じる向き）。Audit は記録だけで適用する。
+    [Theory]
+    [InlineData("Enforce", HttpStatusCode.Forbidden)]
+    [InlineData("Audit", HttpStatusCode.OK)]
+    public async Task 台帳へ届かなければEnforceは拒みAuditは適用する(string mode, HttpStatusCode expected)
+    {
+        await using var baseFactory = new MonitorWorkerWebApplicationFactory();
+        await using var factory = Configured(baseFactory, mode, null);
+        var before = await SymbolsAsync(factory);
+
+        var response = await Bot(factory).PostAsJsonAsync("/monitor/watchlist/proposal-apply", Body(before, "NVDA"));
+
+        response.StatusCode.Should().Be(expected);
+    }
+
+    // gRPC 面も同じ処理関数を通る（403 → PERMISSION_DENIED。1 件も適用しない）。
+    [Fact]
+    public async Task gRPC面も結び付かなければPERMISSION_DENIED()
+    {
+        await using var baseFactory = new MonitorWorkerWebApplicationFactory();
+        var source = new FakeSource(new(WatchlistProposalLookupStatus.Unavailable, null));
+        await using var factory = Configured(baseFactory, "Enforce", source);
+        var before = await LedgerOfAsync(factory, source);
+        var request = new Proto.WatchlistProposalApplicationRequest
+        {
+            ExpectedWatchlist = new Proto.WatchlistItems(),
+            Changes = new Proto.WatchlistChangeInstructions(),
+            ProposalRef = ProposalRef,
+            OnBehalfOf = "developer",
+        };
+        request.ExpectedWatchlist.Items.AddRange(before.Select(s => new Proto.WatchlistItem { Symbol = s, Market = Proto.Market.UnitedStates }));
+        request.Changes.Items.Add(new Proto.WatchlistChangeInstruction { Action = "add", Symbol = "TSLA", Reason = "r" });
+        var client = new Proto.WatchlistOwnerWrite.WatchlistOwnerWriteClient(GrpcChannel.ForAddress(
+            factory.Server.BaseAddress, new GrpcChannelOptions { HttpHandler = new BotHeaders(factory.Server.CreateHandler()) }));
+
+        var act = async () => await client.ApplyWatchlistProposalAsync(request);
+
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+        (await SymbolsAsync(factory)).Should().NotContain("TSLA");
+    }
+
+    private sealed class BotHeaders(HttpMessageHandler inner) : DelegatingHandler(inner)
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            request.Headers.TryAddWithoutValidation(TestAuthHandler.RolesHeader, "trading-owner");
+            request.Headers.TryAddWithoutValidation(TestAuthHandler.NameHeader, TestAuthHandler.NoName);
+            request.Headers.TryAddWithoutValidation(TestAuthHandler.AzpHeader, "ai-stock-trading-owner");
+            return base.SendAsync(request, cancellationToken);
+        }
+    }
+}

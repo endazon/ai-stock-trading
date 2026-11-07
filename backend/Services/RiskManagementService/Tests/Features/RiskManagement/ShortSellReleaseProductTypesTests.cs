@@ -371,6 +371,23 @@ public class ShortSellReleaseProductTypesTests
         gate.GetStatus().ShortSellRelease.Status.Should().Be(ShortSellReleaseVerdictStatus.Valid);
     }
 
+    // NFR-06, IADR-0634 決定 5: 受理できた verdict だけ、台帳へ追記する直前に第 2 要素の門（callback）を呼ぶ。門が拒めば追記しない。
+    [Fact]
+    public void verdictの記録は受理できたときだけ追記の直前に門を呼び拒めば記録しない()
+    {
+        var (gate, settings, store) = Build();
+        settings.UpdateGuard(GuardWith(store, ProductType.Cash, ProductType.ShortSell), Owner, "空売りを有効化");
+
+        var refused = () => gate.RecordShortSellReleaseVerdict(Owner, () => throw new InvalidOperationException("門が拒んだ"));
+        refused.Should().Throw<InvalidOperationException>();
+        gate.GetStatus().ShortSellRelease.Verdict.Should().BeNull("門が拒んだ verdict は台帳へ残さない");
+
+        var calls = 0;
+        gate.RecordShortSellReleaseVerdict(Owner, () => calls++).Accepted.Should().BeTrue();
+        calls.Should().Be(1);
+        gate.GetStatus().ShortSellRelease.Verdict.Should().NotBeNull();
+    }
+
     // T-20-5: 受け入れ基準 1。空売り以外の商品種別（信用買い）の有効・無効の変更も契機である（ADR-0034 決定5 の表は 3 種を挙げる）。
     [Fact]
     public void T_20_5_信用買いの有効無効の変更でもverdictは無効になる()
