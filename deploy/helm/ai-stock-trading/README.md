@@ -216,7 +216,7 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   `$(DB_PASSWORD)` で組み、`global.db.password` を描かない。values-cloud は `ast-db-credentials` を使う。
 - **秘密は OpenBao から ESO で写す**（#1560 / IADR-0623）: values-cloud は名前空間の `SecretStore openbao`（kubernetes 認証・role `ast-eso`・
   ServiceAccount `ast-eso-reader`・audience `vault`）を `externalSecrets.openbaoStore.create` で描き、描画が参照する Secret を
-  ExternalSecret で写す（`ast-db-credentials`・`ast-rabbitmq-users`・`ast-secrets`・`ast-owner-totp`・`ast-message-origin-keys`・`moomoo-credentials`・`moomoo-rsa`・
+  ExternalSecret で写す（`ast-db-credentials`・`ast-rabbitmq-users`・`ast-secrets`・`ast-owner-totp`・`ast-message-origin-signing-keys`・`ast-message-origin-verify-keys`・`moomoo-credentials`・`moomoo-rsa`・
   CA の写し `platform-infra-ca`）。例外は `ast-operator-hold`（秘密ではない SSH からの停止の切り替え。管理の外）。
   - ストアの宛先は基盤の OpenBao の TLS の口（`https://openbao.openbao.svc:8443`）で、`externalSecrets.openbaoStore.caProvider`（values-cloud は
     同じ名前空間の ConfigMap `openbao-ca` の `ca.crt`。基盤の `tls-cert.sh` が置く）で受け口を検証する（IADR-0632。基盤の MSP:IADR-0696）。
@@ -235,7 +235,7 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   トークンの取得先は Authority から導く。`global.authValidIssuers`（既定は空）は移行の間だけ旧の発行元を足す（外す時期は
   [認可サーバーの TLS Runbook](../../../docs/operations/cloud-keycloak-tls-runbook.md) の段 6）。
   🔴 Keycloak を呼ぶ Worker を足したら、基盤の `deploy/cloud/infra/networkpolicy.yaml` の Keycloak の入りの一覧にも足すよう基盤へ依頼する。
-- **守りは段 2 で始める**（#1560 / IADR-0623 決定 3・IADR-0627）: `global.orderApprovalSigning`・`messageOrigin`・`ownerTokenBinding`・`ownerBotScope` は `Enforce`、
+- **守りは段 2 で始める**（#1560 / IADR-0623 決定 3・IADR-0633）: `global.orderApprovalSigning`・`messageOrigin`・`ownerTokenBinding`・`ownerBotScope` は `Enforce`、
   risk-management・report の `OwnerSecondFactor__Mode` は `Enforce`、risk-management の `RiskControls__KillSwitch__Precondition` は `Require`。
 - **外の中継（OpenD）の権限を最小にし、サービス間の通信を許可した組だけにする**（[IADR-0631](../../../.ai-context/adr/IADR-0631_cloud-opend-least-privilege-and-service-network-policy.md)）:
   - OpenD: `opend.podSecurity.seccomp: true`（Pod に seccomp `RuntimeDefault`・本体に権限昇格なし）と
@@ -942,20 +942,27 @@ risk-management が発行する注文の承認に HMAC の印を付け、order-e
 - 段 2 へ上げる前に、段 1 のまま両サービスに鍵が載り、order-execution のログに「発行元を確かめられませんでした」が出ないこと、キューと DLQ に印のない承認が残っていないことを確かめる。
 - `--vault` は KV が在れば patch だけ（失敗したら止まる）。KV が無いと確定したときだけ put する（共有の KV の他のキーを消さない）。
 
-## メッセージの発行元の印（`global.messageOrigin`。[IADR-0627](../../../.ai-context/adr/IADR-0627_message-origin-signing-for-control-inputs.md)）
+## メッセージの発行元の署名（`global.messageOrigin`。[IADR-0633](../../../.ai-context/adr/IADR-0633_message-origin-asymmetric-signature.md)。IADR-0627 を置き換える）
 
-統制の入力になるメッセージ（判断・口座・建玉・損切り到達・取消要求など。型の表はコードの `MessageOriginCatalog`）に、発行元のサービスごとの鍵で
-HMAC の印を付け、受け手が「その型を発行してよいサービスか」と印の両方を処理の前に確かめる。
+統制の入力になるメッセージ（判断・口座・建玉・損切り到達・取消要求など。型の表はコードの `MessageOriginCatalog`）に、発行元が自分の
+**秘密の鍵**で署名（ECDSA P-256）し、受け手が「その型を発行してよいサービスか」と、その発行元の**公開の鍵**による署名の両方を処理の前に確かめる。
+受け手は秘密を持たないので、受け手の Pod から他のサービスを発行元として名乗れない。
 
 | 値 | 既定 | 意味 |
 | --- | --- | --- |
 | `mode` | `Report` | 段 1: 受け手は確かめて記録するだけで通す。`Enforce`（段 2）: 確かめられないメッセージを処理しない。他の値は描画で止まる |
-| `secretName` | `ast-message-origin-keys` | 鍵の Secret。キーは発行元の識別子（`trade-decision` など 7 つ）。値は 32 バイト以上の乱数・base64 |
-| `services` | 8 サービス | サービス → 渡す鍵（自分の発行の鍵＋確かめる型の発行元の鍵）。コードの要る鍵と一致させる（`MessageOriginChartTests`） |
+| `signingSecretName` | `ast-message-origin-signing-keys` | 秘密の鍵の Secret。キーは発行元の識別子。値は PKCS#8 DER の base64 |
+| `verifySecretName` | `ast-message-origin-verify-keys` | 公開の鍵の Secret。キーは発行元の識別子。値は SubjectPublicKeyInfo DER の base64 |
+| `signers` | 7 つ | 自分の秘密の鍵を渡すサービス（表の型の発行元）。コードと一致させる（`MessageOriginChartTests`） |
+| `verifiers` | 6 つ | 受け手 → 公開の鍵を渡す発行元。コードの要る鍵と一致させる（同上）。`audit` は記録だけの受け手（拒まない） |
+| `previousVerify` | `[]` | 鍵の入れ替えの間だけ、前の公開の鍵（`previousVerifySecretName`）を受け手へ渡す発行元。env は `MessageOrigin__PreviousVerifyKeys__<発行元>`（段に依らず optional）。発行元でない名前は描画で止まる。手順は手順書 §5.1 |
+| `legacyHmac.enabled` | `false` | 旧い共有の鍵の HMAC の印を移行の間だけ併用する（段 1 でだけ。段 2 と併用すると描画で止まる）。`skipServices` には渡さない |
 
-- env は `MessageOrigin__Mode` と `MessageOrigin__Keys__<発行元>`（発行元の `-` は `_` で書く。シェルの識別子に限るため）。段 1 は `optional`、段 2 は必須。
-- クラウドは `externalSecrets.messageOriginKeys`（OpenBao `cloud/ast/ast-message-origin-keys`）を写す。鍵は基盤の `seed-secrets.sh … gen` で OpenBao の中に作る（手順書 §5）。
-- 段 2 へ上げる前に、段 1 のまま受け手のログに「メッセージの発行元を確かめられませんでした」（EventId 16261）が出ないこと、メトリクス `ast_messaging_origin_failures_total` が 0 であることを確かめる。
+- env は `MessageOrigin__Mode`・`MessageOrigin__SigningKey`（発行元だけ）・`MessageOrigin__VerifyKeys__<発行元>`（発行元の `-` は `_`）。段 1 は `optional`、段 2 は必須。
+- クラウドは `externalSecrets.messageOriginSigningKeys`・`messageOriginVerifyKeys`（OpenBao `cloud/ast/ast-message-origin-signing-keys`・`…-verify-keys`）を写す。
+  鍵の組はオーナーが `scripts/ast-message-origin-keygen.sh --live` で作り、値を表示せずに基盤の `put-external-secret.sh` へ標準入力で渡す（手順書 §5）。
+- 段 2 へ上げる前に、段 1 のまま受け手のログに「メッセージの発行元を確かめられませんでした」（EventId 16261。結果 `legacy` を含む）が出ないこと、
+  メトリクス `ast_messaging_origin_failures_total` が 0 であることを確かめる。
 
 ## 外部連携（fail-safe 既定）
 

@@ -88,7 +88,9 @@ public partial class MessageOriginCatalogCompletenessTests
     [Fact]
     public void 統制に使う受け手の受ける型は表か理由つきの対象外のどちらかにある()
     {
-        var excludedServices = MessageOriginCatalog.ExcludedServices.Select(e => e.Service).ToHashSet(StringComparer.Ordinal);
+        // 対象外のサービスと、記録だけの受け手（表の型をすべて確かめる。IADR-0633 決定 5）は突き合わせの外。
+        var excludedServices = MessageOriginCatalog.ExcludedServices.Select(e => e.Service)
+            .Concat(MessageOriginCatalog.RecordOnlyServices.Select(e => e.Service)).ToHashSet(StringComparer.Ordinal);
         var catalogTypes = MessageOriginCatalog.Rules.Select(r => r.MessageType.Name).ToHashSet(StringComparer.Ordinal);
         foreach (var (service, types) in HandledTypes())
         {
@@ -168,6 +170,20 @@ public partial class MessageOriginCatalogCompletenessTests
     {
         MessageOriginCatalog.ExcludedReceivers.Should().AllSatisfy(e => e.Reason.Should().NotBeNullOrWhiteSpace());
         MessageOriginCatalog.ExcludedServices.Should().AllSatisfy(e => e.Reason.Should().NotBeNullOrWhiteSpace());
+        MessageOriginCatalog.RecordOnlyServices.Should().AllSatisfy(e => e.Reason.Should().NotBeNullOrWhiteSpace());
         MessageOriginCatalog.Rules.Select(r => r.MessageType).Should().OnlyHaveUniqueItems();
+    }
+
+    // 🔴 IADR-0633 決定 5: 監査は記録だけの受け手で、受ける表の型があること（走査の母集合が空なら意味が無い）。
+    [Fact]
+    public void 記録だけの受け手は表の型を受ける()
+    {
+        var handled = HandledTypes();
+        var catalog = MessageOriginCatalog.Rules.Select(r => r.MessageType.Name).ToHashSet(StringComparer.Ordinal);
+        foreach (var (service, _) in MessageOriginCatalog.RecordOnlyServices)
+        {
+            MessageOriginCatalog.ExcludedServices.Select(e => e.Service).Should().NotContain(service);
+            handled[service].Where(catalog.Contains).Should().NotBeEmpty($"{service} は表の型を受ける");
+        }
     }
 }

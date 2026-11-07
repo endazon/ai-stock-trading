@@ -32,15 +32,23 @@ public enum MessageOriginCheck
 
     /// <summary>受け手にその発行元の鍵が無く、確かめられない（段 1 だけで起こる）。</summary>
     Unverifiable = 7,
+
+    /// <summary>
+    /// IADR-0633 決定 4: 新しい署名が無く、旧い共有の鍵の HMAC の印だけが合う（移行の間）。段 1 は記録して通し、段 2 は処理しない。
+    /// </summary>
+    Legacy = 8,
 }
 
 /// <summary>
-/// 🔴 NFR, FR-10, IADR-0627 決定 3・4: 受け手で、表（<see cref="MessageOriginCatalog"/>）の型の発行元を確かめる。
+/// 🔴 NFR, FR-10, IADR-0627 決定 3・4, IADR-0633 決定 2・4・5: 受け手で、表（<see cref="MessageOriginCatalog"/>）の型の発行元を確かめる。
 /// <list type="bullet">
-/// <item>発行元の許可（名乗った発行元がその型を発行してよいサービスか）と、その発行元の鍵による印の両方を確かめる。</item>
+/// <item>発行元の許可（名乗った発行元がその型を発行してよいサービスか）と、その発行元の<b>公開の鍵</b>による署名の両方を確かめる。
+///   新しい署名（<see cref="MessageOriginSignature.SignatureHeader"/>）があればそれだけで判定し、旧い印へ倒さない。
+///   新しい署名が無く旧い HMAC の印だけが合うものは <see cref="MessageOriginCheck.Legacy"/>（段 2 では処理しない）。</item>
 /// <item>時刻の窓（古すぎ・先にありすぎ）と、処理し終えた ID の再到達（再送）を拒む。ID は処理が成功したときにだけ記録する
 ///   （<see cref="MarkHandled"/>。失敗からの再試行は再送に数えない。同じ配信〔同じ封筒〕の再試行も数えない）。</item>
 /// <item>段 1（Report）: 合わないものは構造化した Warning とメトリクスに残して<b>通す</b>。段 2（Enforce）: <b>処理しない</b>。</item>
+/// <item>記録だけの受け手（監査。<see cref="RecordOnly"/>）: 段に依らず、合わないものを記録して<b>通す</b>（証跡を欠かさない）。</item>
 /// </list>
 /// 鍵の値も印の値もログに出さない。
 /// </summary>
@@ -54,6 +62,8 @@ public sealed class MessageOriginVerifier
 
     private readonly MessageOriginMode _mode;
     private readonly MessageOriginSignature _signature;
+    private readonly MessageOriginLegacyHmac _legacy;
+    private readonly bool _recordOnly;
     private readonly TimeSpan _maxAge;
     private readonly TimeSpan _maxFutureSkew;
     private readonly TimeProvider _time;
@@ -69,7 +79,9 @@ public sealed class MessageOriginVerifier
         TimeSpan maxFutureSkew,
         TimeProvider time,
         ILogger<MessageOriginVerifier> logger,
-        BusinessMetrics? metrics = null)
+        BusinessMetrics? metrics = null,
+        MessageOriginLegacyHmac? legacy = null,
+        bool recordOnly = false)
     {
         ArgumentNullException.ThrowIfNull(signature);
         ArgumentNullException.ThrowIfNull(time);
@@ -81,10 +93,15 @@ public sealed class MessageOriginVerifier
         _time = time;
         _logger = logger;
         _metrics = metrics;
+        _legacy = legacy ?? MessageOriginLegacyHmac.None;
+        _recordOnly = recordOnly;
     }
 
     /// <summary>段。</summary>
     public MessageOriginMode Mode => _mode;
+
+    /// <summary>記録だけの受け手か（段に依らず拒まない）。</summary>
+    public bool RecordOnly => _recordOnly;
 
     /// <summary>確かめる（記録も段の判断もしない。試験と <see cref="Admit"/> が使う）。</summary>
     public MessageOriginCheck Check(Envelope envelope)
@@ -103,8 +120,9 @@ public sealed class MessageOriginVerifier
         headers.TryGetValue(MessageOriginSignature.IdHeader, out var idText);
         headers.TryGetValue(MessageOriginSignature.TimeHeader, out var timeText);
         headers.TryGetValue(MessageOriginSignature.SignatureHeader, out var signature);
+        headers.TryGetValue(MessageOriginLegacyHmac.SignatureHeader, out var legacySignature);
         if (string.IsNullOrEmpty(issuer) || string.IsNullOrEmpty(idText) || string.IsNullOrEmpty(timeText)
-            || string.IsNullOrEmpty(signature))
+            || (string.IsNullOrEmpty(signature) && string.IsNullOrEmpty(legacySignature)))
             return MessageOriginCheck.Missing;
 
         if (!rule.Issuers.Contains(issuer, StringComparer.Ordinal))
@@ -115,11 +133,23 @@ public sealed class MessageOriginVerifier
             || ticks < DateTimeOffset.MinValue.UtcTicks || ticks > DateTimeOffset.MaxValue.UtcTicks)
             return MessageOriginCheck.Mismatch;
 
-        if (!_signature.HasKey(issuer))
-            return MessageOriginCheck.Unverifiable;
-
-        if (!_signature.Matches(rule.MessageType, id, issuer, ticks, message, signature))
-            return MessageOriginCheck.Mismatch;
+        var legacyOnly = false;
+        if (!string.IsNullOrEmpty(signature))
+        {
+            // 新しい署名があれば、それだけで判定する（合わなければ旧い印へ倒さない）。
+            if (!_signature.HasVerifyKey(issuer))
+                return MessageOriginCheck.Unverifiable;
+            if (!_signature.Matches(rule.MessageType, id, issuer, ticks, message, signature))
+                return MessageOriginCheck.Mismatch;
+        }
+        else
+        {
+            if (!_legacy.HasKey(issuer))
+                return MessageOriginCheck.Unverifiable;
+            if (!_legacy.Matches(rule.MessageType, id, issuer, ticks, message, legacySignature!))
+                return MessageOriginCheck.Mismatch;
+            legacyOnly = true;
+        }
 
         var now = _time.GetUtcNow().UtcTicks;
         if (ticks < now - _maxAge.Ticks)
@@ -130,10 +160,12 @@ public sealed class MessageOriginVerifier
         // 同じ配信の中の再試行（後処理が処理の記録の後に失敗した場合）は再送に数えない。判定は「記録したときと同じ封筒の
         // 実体」かつ「2 回目以降の試行」の両方（Wolverine はプロセス内の呼び出しで封筒の実体を使い回すので、実体だけでは足りない。
         // 試行の回数は見出しから読まれ得るので、回数だけでも足りない）。ブローカから届き直したもの（再送）は別の実体になる。
-        return _handled.TryGetValue(id, out var handled)
-            && !(envelope.Attempts > 1 && handled.Delivery.TryGetTarget(out var delivered) && ReferenceEquals(delivered, envelope))
-            ? MessageOriginCheck.Replayed
-            : MessageOriginCheck.Valid;
+        if (_handled.TryGetValue(id, out var handled)
+            && !(envelope.Attempts > 1 && handled.Delivery.TryGetTarget(out var delivered) && ReferenceEquals(delivered, envelope)))
+            return MessageOriginCheck.Replayed;
+
+        // 旧い印は、ほかの確かめをすべて通っても段 2 では受けない（段の判断は Admit）。
+        return legacyOnly ? MessageOriginCheck.Legacy : MessageOriginCheck.Valid;
     }
 
     /// <summary>処理へ進めてよいか。段 1 では常に true（記録だけ）。</summary>
@@ -145,7 +177,7 @@ public sealed class MessageOriginVerifier
 
         var type = envelope.Message?.GetType().Name ?? "-";
         envelope.Headers.TryGetValue(MessageOriginSignature.IssuerHeader, out var issuer);
-        var rejected = _mode == MessageOriginMode.Enforce;
+        var rejected = _mode == MessageOriginMode.Enforce && !_recordOnly;
         _metrics?.RecordMessageOriginCheck(type, ResultName(result), rejected);
 
         if (rejected)
@@ -160,7 +192,7 @@ public sealed class MessageOriginVerifier
 
         _logger.LogWarning(
             UnverifiedEvent,
-            "メッセージの発行元を確かめられませんでした（段 1・記録だけで処理は続けます）: 型={MessageType} 名乗った発行元={Issuer} メッセージID={EnvelopeId} 送り元={Source} 結果={Result}",
+            "メッセージの発行元を確かめられませんでした（段 1 か記録だけの受け手のため、記録だけで処理は続けます）: 型={MessageType} 名乗った発行元={Issuer} メッセージID={EnvelopeId} 送り元={Source} 結果={Result}",
             type, Truncate(issuer), envelope.Id, Truncate(envelope.Source), result);
         return true;
     }
@@ -201,6 +233,7 @@ public sealed class MessageOriginVerifier
         MessageOriginCheck.Future => "future",
         MessageOriginCheck.Replayed => "replayed",
         MessageOriginCheck.Unverifiable => "unverifiable",
+        MessageOriginCheck.Legacy => "legacy",
         _ => "unknown",
     };
 
