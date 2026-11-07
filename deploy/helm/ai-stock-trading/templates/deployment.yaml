@@ -395,8 +395,14 @@ spec:
             {{- if and $moLegacy.enabled (eq $mo.mode "Enforce") }}
             {{- fail "global.messageOrigin.legacyHmac.enabled は段 1（Report）でだけ使えます（段 2 では旧い共有の鍵を受け手に持たせない。IADR-0633）。" }}
             {{- end }}
+            {{- /* 🔴 NFR, FR-09, IADR-0638 決定 3: 受け手を新しく足すときの段の下げ（modeOverrides の <サービス>: Report）。鍵の optional は global の段のまま
+                   （下げても鍵の在る無いを隠さない）。値は Report か Enforce だけ。 */}}
+            {{- $moMode := index ($mo.modeOverrides | default dict) $name | default $mo.mode }}
+            {{- if not (has $moMode (list "Report" "Enforce")) }}
+            {{- fail (printf "global.messageOrigin.modeOverrides.%s は Report か Enforce です（値: %v）。" $name $moMode) }}
+            {{- end }}
             - name: MessageOrigin__Mode
-              value: {{ $mo.mode | quote }}
+              value: {{ $moMode | quote }}
             {{- if $moSigns }}
             - name: MessageOrigin__SigningKey
               valueFrom:
@@ -525,6 +531,15 @@ spec:
             {{- end }}
             - name: Auth__OwnerToken__Mode
               value: {{ $otb.mode | default "Report" | quote }}
+            {{- /* 🔴 NFR, FR-10, IADR-0638 決定 4: 所有者のトークンの発行先のクライアント（azp）の許可集合を明示する（空＝描かない＝コードの既定）。
+                   クラウドは Discord ボットのクライアントだけ（コードの既定に残る中継のクライアント名を、基盤の realm に足されても通さない）。 */}}
+            {{- range $i, $c := ($otb.clients | default list) }}
+            {{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._-]*$" $c) }}
+            {{- fail (printf "global.ownerTokenBinding.clients の値がクライアントの名前の形ではありません（%v）。" $c) }}
+            {{- end }}
+            - name: {{ printf "Auth__OwnerToken__Clients__%d" $i }}
+              value: {{ $c | quote }}
+            {{- end }}
             {{- /* 🔴 NFR-06, #1554, IADR-0622: ボットの許可表の段（Report＝許可表の外を記録だけ・Enforce＝拒否）。aud / azp の段とは別。 */}}
             {{- $obs := $g.ownerBotScope | default dict }}
             {{- if not (has ($obs.mode | default "Report") (list "Report" "Enforce")) }}

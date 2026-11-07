@@ -1,6 +1,7 @@
 using AiStockTrading.Shared.Contracts.Logging;
 using Microsoft.Extensions.Logging;
 using NotificationService.Domain;
+using Wolverine.Attributes;
 
 namespace NotificationService.Features.Notifications.AdoptPositionDrift;
 
@@ -13,6 +14,8 @@ namespace NotificationService.Features.Notifications.AdoptPositionDrift;
 // Gateway アダプタが担い、本ハンドラはモーダルの入力を受け取って検証する（GoodFaithViolationCommandHandler と同型）。
 //
 // 🔴 **いずれかの閂で止まればリスク管理を呼ばない**——閂が「呼んだ後で無視する」形なら、台帳が実際に書き換わってしまう。
+// 🔴 NFR, FR-14, IADR-0638 決定 1: 入口は Discord の Gateway だけ。名前がハンドラの規則に当たってもブローカから受けない。
+[WolverineIgnore]
 public sealed class PositionDriftAdoptionCommandHandler(
     IPositionDriftAdoptionController controller,
     DiscordBotOptions options,

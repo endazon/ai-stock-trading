@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using NotificationService.Domain;
+using Wolverine.Attributes;
 
 namespace NotificationService.Features.Notifications.ClearGoodFaithViolations;
 
@@ -12,6 +13,8 @@ namespace NotificationService.Features.Notifications.ClearGoodFaithViolations;
 //
 // 確認ボタン → 確認フレーズのモーダルは Gateway アダプタが担い、本ハンドラはフレーズを受け取って検証する
 // （KillSwitchCommandHandler と同型）。
+// 🔴 NFR, FR-14, IADR-0638 決定 1: 入口は Discord の Gateway だけ。名前がハンドラの規則に当たってもブローカから受けない。
+[WolverineIgnore]
 public sealed class GoodFaithViolationCommandHandler(
     IGoodFaithViolationController controller,
     DiscordBotOptions options,

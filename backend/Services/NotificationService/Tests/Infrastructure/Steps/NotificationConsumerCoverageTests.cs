@@ -5,8 +5,11 @@ using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using JasperFx.CodeGeneration;
+using NotificationService.Domain;
 using Wolverine;
 using Wolverine.Runtime;
+using Wolverine.Runtime.Handlers;
 using Xunit;
 
 namespace NotificationService.Tests;
@@ -64,6 +67,45 @@ public class NotificationConsumerCoverageTests
         missing.Should().BeEmpty(
             "ハンドラのクラスはあるが発見されない状態（public でない・メソッド名が規約外など）は"
             + "**静かな未通知**になる。イベントは流れるが Discord には何も出ない");
+
+        await host.StopAsync();
+    }
+
+    // 🔴 NFR, FR-14, IADR-0638 決定 1: ブローカから受けるのは通知のハンドラの型だけ。Discord のコマンドの処理（*CommandHandler。
+    // 入口は Discord の Gateway だけ）は、名前がハンドラの規則に当たっても Wolverine のハンドラにしない（購読のキュー・exchange を作らない）。
+    // 陰性対照: *CommandHandler から [WolverineIgnore] を外すと、DiscordCommandContext の連鎖ができて赤になる。
+    [Fact]
+    public async Task ブローカから受ける型は通知のハンドラの型だけでDiscordのコマンドは受けない()
+    {
+        var assembly = typeof(OrderExecutedNotificationHandler).Assembly;
+        var notificationTypes = assembly.GetTypes()
+            .Where(t => t is { IsClass: true, IsAbstract: false } && t.Name.EndsWith("NotificationHandler", StringComparison.Ordinal))
+            .Select(t => t.GetMethod("Handle", BindingFlags.Public | BindingFlags.Instance))
+            .Where(m => m is not null)
+            .Select(m => m!.GetParameters()[0].ParameterType)
+            .ToHashSet();
+
+        using var host = await Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
+            {
+                opts.Services.AddSingleton<INotificationSender>(new RecordingNotificationSender());
+                opts.Discovery.IncludeAssembly(assembly);
+                opts.StubAllExternalTransports();
+            })
+            .StartAsync();
+
+        var chains = host.Services.GetServices<ICodeFileCollection>().OfType<HandlerGraph>()
+            .SelectMany(g => g.Chains)
+            .Select(c => c.MessageType)
+            .ToList();
+
+        chains.Should().NotBeEmpty("連鎖の母集合が空なら本テストは何も守っていない");
+        chains.Should().NotContain(typeof(DiscordCommandContext), "Discord のコマンドはブローカから受けない（入口は Gateway だけ）");
+        chains.Where(t => !notificationTypes.Contains(t)).Select(t => t.FullName).Should().BeEmpty(
+            "通知のハンドラ（*NotificationHandler）の外の型をブローカから受けない");
+
+        var runtime = host.Services.GetRequiredService<IWolverineRuntime>();
+        runtime.FindInvoker(typeof(DiscordCommandContext)).GetType().Name.Should().Be("NoHandlerExecutor");
 
         await host.StopAsync();
     }

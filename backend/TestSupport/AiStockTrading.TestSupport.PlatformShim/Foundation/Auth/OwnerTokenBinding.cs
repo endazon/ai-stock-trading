@@ -211,3 +211,51 @@ public sealed class OwnerTokenBindingHandler(
         return LogSanitizer.Sanitize(cut, MaxLoggedChars + 1) ?? string.Empty;
     }
 }
+
+/// <summary>
+/// 🔴 NFR, NFR-06, IADR-0638 決定 5: gRPC 面の所有者の門の宛先（aud）の要件。<paramref name="AllowService"/> は GrpcOwnerOrService
+/// （サービスの分岐を従来どおり通す。サービスのトークンの宛先は IADR-0637 の段が見る）。azp の判定は門の側（<see cref="GrpcOwnerClientGate"/>）が持つ。
+/// </summary>
+public sealed record GrpcOwnerAudienceRequirement(bool AllowService) : IAuthorizationRequirement;
+
+/// <summary>
+/// NFR, IADR-0638 決定 5: <see cref="GrpcOwnerAudienceRequirement"/> の判定器。REST（<see cref="OwnerTokenBindingHandler"/>）と同じ段
+/// （<see cref="OwnerTokenBinding.ModeKey"/>）と許可集合（<see cref="OwnerTokenBinding.AudiencesKey"/>）で宛先を見る。段 1 は記録して通し、段 2 は通さない。
+/// gRPC 面は全体がボットの面（呼び出し元はボットのクライアントだけ）なので、REST の経路ごとの許可表（<see cref="OwnerBotScope"/>）は当てない。
+/// </summary>
+public sealed class GrpcOwnerAudienceHandler(OwnerTokenBindingSettings settings, ILogger<GrpcOwnerAudienceHandler> logger)
+    : AuthorizationHandler<GrpcOwnerAudienceRequirement>
+{
+    protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, GrpcOwnerAudienceRequirement requirement)
+    {
+        var user = context.User;
+        if (user?.Identity?.IsAuthenticated != true)
+            return Task.CompletedTask;
+
+        if (requirement.AllowService && user.IsInRole(AiStockTradingAuthPolicies.ServiceRole))
+        {
+            context.Succeed(requirement);
+            return Task.CompletedTask;
+        }
+
+        if (!user.IsInRole(AiStockTradingAuthPolicies.OwnerRole) && !user.IsInRole(AiStockTradingAuthPolicies.BotRole))
+            return Task.CompletedTask;
+
+        if (user.FindAll(OwnerTokenBinding.AudienceClaim).Any(c => settings.Audiences.Contains(c.Value, StringComparer.Ordinal)))
+        {
+            context.Succeed(requirement);
+            return Task.CompletedTask;
+        }
+
+        var aud = OwnerTokenBindingHandler.Shorten(string.Join(",", user.FindAll(OwnerTokenBinding.AudienceClaim).Select(c => c.Value)));
+        if (settings.Mode == OwnerTokenBindingMode.Enforce)
+        {
+            logger.LogWarning("gRPC 面の所有者のトークンの宛先が許可されていないため拒否します（段 2）: aud={Aud}", aud);
+            return Task.CompletedTask;
+        }
+
+        logger.LogWarning("gRPC 面の所有者のトークンの宛先が許可集合に無いが、段 1 のため通します: aud={Aud}", aud);
+        context.Succeed(requirement);
+        return Task.CompletedTask;
+    }
+}
