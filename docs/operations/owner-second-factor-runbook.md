@@ -137,6 +137,7 @@ KUBECTL="k3s kubectl" bash scripts/ast-owner-totp-enroll.sh status
 - 構成の `OwnerSecondFactor__Mode` を `Enforce` にする（risk-management と report の両方。chart の values）。
 - 進める前に、段 1 の記録で 7 操作のそれぞれに `outcome=Verified` が出ていることを確かめる（Discord の確認の画面で 6 桁を入れて操作する）。
 - 段 2 で拒まれたときの Discord の表示は、いまは汎用の失敗の文言（認可の失敗と同じ）である。段 2 へ進める変更で専用の文言にする。
+- 監視銘柄の入れ替えの `Watchlist__ProposalBinding__Mode` を `Enforce` へ上げても、`Audit` の間に予約されて適用に失敗した案は適用できないままである（予約は戻らない）。その案は設定画面から入れ替える（見つけ方は「方針の確定に伴う監視銘柄の入れ替え」）。
 
 ### 4. 作り直しまで閉じたときに開ける
 

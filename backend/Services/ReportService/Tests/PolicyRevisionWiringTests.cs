@@ -430,7 +430,7 @@ public class PolicyRevisionWiringTests
 
     // 🔴 NFR-06, IADR-0634 決定 2・7・8: 市場監視が適用の前に引く結び付きの照会と予約は、サービスの身元だけが通る（ボット・利用者は 403）。
     // 判定は照会と同じ（確定前は 409・案でない版は 404）。応答は案と、その版の確定が第 2 要素で Verified だったか（確定の時の台帳の記録）。
-    // 予約は 1 回だけ（2 回目は 409）。
+    // 予約は 1 回だけ（2 回目は 409）。確定が Verified でなかった案は、予約の口を単体で呼ばれても予約しない（403・照会と同じ記録で判定）。
     [Theory]
     [InlineData(null, false, false)]
     [InlineData("Audit", false, false)]
@@ -480,9 +480,17 @@ public class PolicyRevisionWiringTests
         bound.GetProperty("applyReserved").GetBoolean().Should().BeFalse();
 
         (await BotClient(factory).PostAsync(reserve, null)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "ボットの資格では予約できない");
-        (await service.PostAsync(reserve, null)).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await service.PostAsync(reserve, null)).StatusCode.Should().Be(HttpStatusCode.Conflict, "予約は 1 回だけ（2 度目の適用を拒む）");
-        (await service.GetFromJsonAsync<JsonElement>(route)).GetProperty("applyReserved").GetBoolean().Should().BeTrue();
+        if (verified)
+        {
+            (await service.PostAsync(reserve, null)).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await service.PostAsync(reserve, null)).StatusCode.Should().Be(HttpStatusCode.Conflict, "予約は 1 回だけ（2 度目の適用を拒む）");
+        }
+        else
+        {
+            (await service.PostAsync(reserve, null)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "Verified でない確定の案は予約しない");
+        }
+
+        (await service.GetFromJsonAsync<JsonElement>(route)).GetProperty("applyReserved").GetBoolean().Should().Be(verified, "Verified でなければ予約は残らない");
 
         (await service.GetAsync($"/reports/policy-revisions/watchlist-proposal/binding?periodKey={PeriodKey}&version=1"))
             .StatusCode.Should().Be(HttpStatusCode.NotFound);

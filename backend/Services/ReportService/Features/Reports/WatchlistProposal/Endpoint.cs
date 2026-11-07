@@ -52,7 +52,8 @@ internal static partial class WatchlistProposalEndpoints
     // 🔴 NFR-06, FR-13, IADR-0634 決定 2・7・8: 市場監視（提供側）が、入れ替えの適用の前に「その版で確定された案」を照会し、
     // 適用の直前に予約する口（**サービスの身元だけ**。ボット・利用者のトークンは通さない）。
     //   GET  /reports/policy-revisions/watchlist-proposal/binding         … 案・確定が第 2 要素で Verified だったか（台帳の記録）・予約の有無
-    //   POST /reports/policy-revisions/watchlist-proposal/binding/reserve … 予約（1 回だけ・比較して書く）。200＝予約した／409＝予約・記録済み
+    //   POST /reports/policy-revisions/watchlist-proposal/binding/reserve … 予約（1 回だけ・比較して書く）。200＝予約した／409＝予約・記録済み／
+    //        403＝確定が第 2 要素で Verified でなかった（口を単体で呼ばれても、照会と同じ記録で二重に守る。予約しない）
     // 判定は照会（Lookup）と同じ 1 つ。
     public static void MapWatchlistProposalBinding(this IEndpointRouteBuilder g)
     {
@@ -80,7 +81,10 @@ internal static partial class WatchlistProposalEndpoints
                         ProposalLookupOutcome.Invalid => Results.BadRequest(new { error = lookup.Error }),
                         ProposalLookupOutcome.NotProposal => Results.NotFound(new { error = lookup.Error }),
                         ProposalLookupOutcome.NotConfirmedAtVersion => Results.Conflict(new { error = lookup.Error }),
-                        _ => ledger.ReserveWatchlistApply(lookup.Attempt!.Id, clock.UtcNow)
+                        _ when !lookup.Attempt!.ProposalSecondFactorVerified => Results.Json(
+                            new { error = "この案の確定は確認コードで確かめられていないため、入れ替えを予約しません。" },
+                            statusCode: StatusCodes.Status403Forbidden),
+                        _ => ledger.ReserveWatchlistApply(lookup.Attempt.Id, clock.UtcNow)
                             ? Results.Ok(new WatchlistApplyRecordedResponse(lookup.Attempt.Id))
                             : Results.Conflict(new { error = "この案の入れ替えは予約・適用済みです（二重に適用しません）。" }),
                     };
