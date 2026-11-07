@@ -9,8 +9,8 @@ updated: 2026-11-07
 <!-- trace:
 ids: [FR-04, FR-08, NFR, NFR-03, NFR-05, NFR-06, FR-10]
 adrs: [ADR-0006, ADR-0024, ADR-0073, ADR-0076, ADR-0078, ADR-0080]
-iadrs: [IADR-0629, IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627]
-specs: [20261107_cloud-keycloak-tls, 20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
+iadrs: [IADR-0630, IADR-0629, IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627]
+specs: [20261107_cloud-db-per-service-users, 20261107_cloud-keycloak-tls, 20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
 issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471]
 -->
 
@@ -123,6 +123,7 @@ issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471]
 | Secret（キー） | OpenBao のパス（property） | 入れ方 |
 | --- | --- | --- |
 | `ast-db-credentials`（`username`・`password`） | `cloud/shared/ast-db` | 基盤の `seed-secrets.sh` が OpenBao の中で作る（オーナーは何も入れない） |
+| `ast-db-<サービス>-credentials`（`username`・`password`。DB を持つ 7 つのサービスごと） | `cloud/shared/ast-db-<サービス>` | 同上。各サービスは自分の Secret だけを読む。上の共有の 1 組は、基盤が共有の利用者を消すまでの移行の間だけ残る（§5.4） |
 | `ast-rabbitmq-users`（11 の利用者名） | `cloud/shared/ast-rabbitmq-users` | 同上 |
 | `ast-secrets` の 3 つの client secret | `cloud/shared/ast-client-secrets`（キーは clientId） | 同上。client ID は chart が字面で足す |
 | CA の写し `platform-infra-ca`（`ca.crt`） | `cloud/shared/platform-infra-ca` | 基盤の `configure.sh` が置く（公開してよい証明書） |
@@ -189,6 +190,10 @@ done
     受け手が拒んだメッセージは処理されず、ログ（EventId 16260）とメトリクス `ast_messaging_origin_failures_total{outcome="rejected"}`・警報 `AstMessageOriginRejected` に残る。
   - TOTP が無いと、取引を再開・緩める 7 操作は拒まれる。
 - 値を替えたら（作り直し・更新）、ESO が写した後に読む側を作り直す（`kubectl -n ai-stock-trading rollout restart deploy/<名前>`）。クラウドに Reloader は無い。
+- DB の資格はサービスごとに分かれている（audit・configuration・cost-control・market-monitor・order-execution・report・risk-management が、それぞれ
+  `ast-db-<サービス>-credentials` を読む）。稼働中の構成を共有の 1 組から移すときは、基盤の手順書の 3 段の順を守る:
+  基盤の段（利用者を作り OWNER を移す）→ この chart を当てる → 基盤の段（共有の利用者を消す）。基盤の段の前にこの chart を当てると、
+  7 つの Secret が同期されず、新しい Pod は起動しない（旧の Pod が残る）。共有の利用者を消した後に、共有の 1 組を読む版へ chart を戻さない。
 - 基盤が CA を作り直したら、`cloud/shared/platform-infra-ca` の更新を ESO が写した後に、取引ユニットのサービスを作り直す。
   切り替えの確かめ方と戻し方は [基盤の TLS 切り替え Runbook](platform-infra-tls-cutover-runbook.md)。
 - 認可サーバー（Keycloak）へは `https://keycloak:8443` で繋ぎ、同じ基盤の CA で検証する（`values-cloud.yaml` の `global.authTls`）。

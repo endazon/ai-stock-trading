@@ -215,6 +215,10 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   ExternalSecret で写す（`ast-db-credentials`・`ast-rabbitmq-users`・`ast-secrets`・`ast-owner-totp`・`ast-message-origin-keys`・`moomoo-credentials`・`moomoo-rsa`・
   CA の写し `platform-infra-ca`）。例外は `ast-operator-hold`（秘密ではない SSH からの停止の切り替え。管理の外）。
   - `global.db.usernameSecret`: DB の利用者名も Secret から読む（`passwordSecret` と一緒に与える）。既定は与えない＝`global.db.username` を描く。
+  - `services.<名前>.dbCredentials.usernameSecret` / `passwordSecret`（IADR-0630。基盤の MSP:IADR-0695 の受け手）: DB の資格をサービスごとに上書きする
+    （2 つを一緒に・同じ Secret・DB を持つサービスだけ。外れれば描画で止める）。与えなければ `global.db` の値（既定・ローカルは変わらない）。
+    values-cloud は DB を持つ 7 つのサービスに `ast-db-<サービス>-credentials` を与え、`externalSecrets.serviceDbCredentials`
+    （`remoteKeyPrefix: shared/ast-db-`）がそれぞれを `cloud/shared/ast-db-<サービス>` から写す（Retain）。
   - `global.infraCa.secretName`: CA を Secret から mount する（`configMap` との併用は描画で止める）。既定は空＝ConfigMap。
   - `externalSecrets.deletionPolicy`・`dbCredentials`・`ownerTotp`・`infraCa`・`appSecrets.clientIds`・`appSecrets.sharedClientSecrets`: 既定はどれも無効・空。
 - **認可サーバー（Keycloak）への通信を TLS で検証する**（[IADR-0629](../../../.ai-context/adr/IADR-0629_cloud-keycloak-tls-receiver.md)。基盤の MSP:IADR-0693 の受け手）:

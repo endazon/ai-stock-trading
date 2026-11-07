@@ -391,14 +391,25 @@ spec:
                   {{- end }}
             {{- end }}
             {{- end }}
+            {{- /* NFR-18, NFR-05, IADR-0630（基盤の MSP:IADR-0695 の受け手）: DB の資格はサービスごとに上書きできる
+                   （services.<名前>.dbCredentials.usernameSecret / passwordSecret。2 つを一緒に与える）。与えなければ global.db の値（既定・ローカルは変わらない）。 */}}
+            {{- $svcDbc := $svc.dbCredentials | default dict }}
+            {{- if and $svcDbc (not $svc.db) }}
+            {{- fail (printf "services.%s.dbCredentials は DB を持つサービス（services.%s.db）にだけ与えてください（IADR-0630）。" $name $name) }}
+            {{- end }}
+            {{- if and $svcDbc (or (not $svcDbc.usernameSecret) (not $svcDbc.passwordSecret)) }}
+            {{- fail (printf "services.%s.dbCredentials は usernameSecret と passwordSecret を一緒に与えてください（利用者名とパスワードを別の資格から組まない。IADR-0630）。" $name) }}
+            {{- end }}
+            {{- $dbPasswordSecret := $svcDbc.passwordSecret | default $g.db.passwordSecret }}
+            {{- $dbUsernameSecret := $svcDbc.usernameSecret | default $g.db.usernameSecret }}
             {{- if $svc.db }}
             # ADR-0001(DB per service): 共有 Postgres 上の専有 DB（user=ai, MSP infra init が作成）。
-            {{- with $g.db.passwordSecret }}
+            {{- with $dbPasswordSecret }}
             {{- /* NFR, ADR-0006, #1525, IADR-0608 決定3: パスワードは Secret から読み、接続文字列は env の参照で組む（値をチャートに書かない）。
                    与えないとき（既定・経路 B）は従来どおり global.db.password を描く。 */}}
             {{- /* NFR-05, #1560, IADR-0623 決定 2: 利用者名も Secret から読める（クラウドの利用者名は基盤が乱数の接尾辞つきで作る）。 */}}
             {{- $dbUser := $g.db.username }}
-            {{- with $g.db.usernameSecret }}
+            {{- with $dbUsernameSecret }}
             {{- $dbUser = "$(DB_USERNAME)" }}
             - name: DB_USERNAME
               valueFrom:

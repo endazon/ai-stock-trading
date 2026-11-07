@@ -111,6 +111,8 @@ global:
     # NFR-05, #1560, IADR-0623: 利用者名も Secret から読む（{name, key}。passwordSecret と一緒に与える）。既定は与えない＝上の username を描く
     #   （経路 B は ai のまま。クラウドの利用者名は基盤が乱数の接尾辞つきで作る）。
     # usernameSecret: { name: ast-db-credentials, key: username }
+    # NFR-18, NFR-05, IADR-0630（基盤の MSP:IADR-0695）: サービスごとに上書きできる（services.<名前>.dbCredentials の usernameSecret と
+    #   passwordSecret を一緒に与える。DB を持つサービスだけ）。与えなければここの値。既定・ローカルは与えない（7 つが ai のまま）。
   # NFR, NFR-18, #1535, IADR-0621: 基盤（DB・ブローカ・LLM ゲートウェイ）のサーバ証明書を発行した CA の ConfigMap（キー caKey）。
   #   基盤の起動器が AST の名前空間へ写す（基盤の IADR-0591 決定 6）。db.tls / rabbitmq.tls のどちらかが有効なとき、
   #   /etc/platform-infra-ca へ読み取り専用・非 optional でマウントする（無ければ Pod が立たない）。
@@ -405,6 +407,11 @@ externalSecrets:
     enabled: false
     targetName: ast-db-credentials
     remoteKey: ""
+  # NFR-18, NFR-05, IADR-0630（基盤の MSP:IADR-0695）: DB のサービスごとの資格（services.<名前>.dbCredentials を持つサービスごとに 1 つ写す）。
+  #   置き場は <remoteKeyPrefix><サービスの名前>（property は username・password）。既定 disabled（既定・ローカルは global.db の 1 組のまま）。
+  serviceDbCredentials:
+    enabled: false
+    remoteKeyPrefix: ""
   # NFR-06, NFR-05, #1560, IADR-0623: 危険な操作の第 2 要素のシークレット（secret）。既定 disabled（連結ローカルは登録のスクリプトが
   #   k8s の Secret を直に作る）。
   ownerTotp:

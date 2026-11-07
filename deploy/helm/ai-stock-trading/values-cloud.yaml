@@ -79,6 +79,9 @@ global:
     usernameSecret:
       name: ast-db-credentials
       key: username
+    # 🔴 NFR-18, IADR-0630（基盤の MSP:IADR-0695）: DB を持つ 7 つのサービスは、上の共有の 1 組ではなく、それぞれ自分の資格
+    #   （services.<名前>.dbCredentials・Secret ast-db-<サービス>-credentials）を読む。上の共有の 1 組は、基盤が共有の利用者を消す
+    #   （最終の段）までの移行の間だけ残す（DB を持つサービスを足したときに dbCredentials を書き忘れると、共有の資格へ戻る。描画の検査が止める）。
   # NFR-18, NFR-05, #1560, IADR-0623: 基盤の CA の写しは ESO が Secret に作る（cloud/shared/platform-infra-ca。公開してよい証明書）。
   infraCa:
     configMap: ""
@@ -125,6 +128,10 @@ externalSecrets:
     enabled: true
     targetName: ast-db-credentials
     remoteKey: shared/ast-db
+  # NFR-18, IADR-0630: DB のサービスごとの資格（services.<名前>.dbCredentials を持つ 7 つ）。置き場は基盤の cloud/shared/ast-db-<サービス>。
+  serviceDbCredentials:
+    enabled: true
+    remoteKeyPrefix: shared/ast-db-
   ownerTotp:
     enabled: true
     targetName: ast-owner-totp
@@ -172,7 +179,26 @@ stage0Recording:
     enabled: false
 
 services:
+  audit:
+    # NFR-18, IADR-0630: 自分の DB の資格だけを読む（基盤の cloud/shared/ast-db-audit。基盤の IADR-0695）。
+    dbCredentials:
+      usernameSecret: { name: ast-db-audit-credentials, key: username }
+      passwordSecret: { name: ast-db-audit-credentials, key: password }
+  configuration:
+    # NFR-18, IADR-0630: 自分の DB の資格だけを読む（基盤の cloud/shared/ast-db-configuration。基盤の IADR-0695）。
+    dbCredentials:
+      usernameSecret: { name: ast-db-configuration-credentials, key: username }
+      passwordSecret: { name: ast-db-configuration-credentials, key: password }
+  cost-control:
+    # NFR-18, IADR-0630: 自分の DB の資格だけを読む（基盤の cloud/shared/ast-db-cost-control。基盤の IADR-0695）。
+    dbCredentials:
+      usernameSecret: { name: ast-db-cost-control-credentials, key: username }
+      passwordSecret: { name: ast-db-cost-control-credentials, key: password }
   risk-management:
+    # NFR-18, IADR-0630: 自分の DB の資格だけを読む（基盤の cloud/shared/ast-db-risk-management。基盤の IADR-0695）。
+    dbCredentials:
+      usernameSecret: { name: ast-db-risk-management-credentials, key: username }
+      passwordSecret: { name: ast-db-risk-management-credentials, key: password }
     extraEnv:
       - { name: MaintenanceMarginEvaluation__Enabled, value: "true" }
       - { name: MaintenanceMarginEvaluation__IntervalSeconds, value: "300" }
@@ -207,6 +233,10 @@ services:
       # 🔴 FR-10, FR-14, #1560, IADR-0620, IADR-0623 決定 3: 段 2。版の無い kill switch の解除を 428 で拒む（ボットは版を添える。#1561）。
       - { name: RiskControls__KillSwitch__Precondition, value: "Require" }
   order-execution:
+    # NFR-18, IADR-0630: 自分の DB の資格だけを読む（基盤の cloud/shared/ast-db-order-execution。基盤の IADR-0695）。
+    dbCredentials:
+      usernameSecret: { name: ast-db-order-execution-credentials, key: username }
+      passwordSecret: { name: ast-db-order-execution-credentials, key: password }
     extraEnv:
       - { name: Reconciliation__Enabled, value: "true" }
       - { name: Reconciliation__UseBrokerProbe, value: "true" }
@@ -225,6 +255,10 @@ services:
       - name: ServiceAuth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
   market-monitor:
+    # NFR-18, IADR-0630: 自分の DB の資格だけを読む（基盤の cloud/shared/ast-db-market-monitor。基盤の IADR-0695）。
+    dbCredentials:
+      usernameSecret: { name: ast-db-market-monitor-credentials, key: username }
+      passwordSecret: { name: ast-db-market-monitor-credentials, key: password }
     extraEnv:
       - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
       - name: ServiceAuth__ClientId
@@ -271,6 +305,10 @@ services:
       - name: ServiceAuth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
   report:
+    # NFR-18, IADR-0630: 自分の DB の資格だけを読む（基盤の cloud/shared/ast-db-report。基盤の IADR-0695）。
+    dbCredentials:
+      usernameSecret: { name: ast-db-report-credentials, key: username }
+      passwordSecret: { name: ast-db-report-credentials, key: password }
     extraEnv:
       - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
       - { name: Audit__BaseUrl, value: "http://audit-service:8080" }

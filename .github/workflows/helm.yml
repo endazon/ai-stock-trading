@@ -367,8 +367,9 @@ jobs:
           conns="$(grep -c 'name: ConnectionStrings__DefaultConnection' <<<"$out" || true)"
           refs="$(grep -cF 'Password=$(DB_PASSWORD)' <<<"$out" || true)"
           [ "$conns" -ge 1 ] && [ "$conns" = "$refs" ] || fail "接続文字列 $conns 件のうち DB_PASSWORD を参照するのは $refs 件。"
-          [ "$(grep -A3 -E '^ +- name: DB_PASSWORD$' <<<"$out" | grep -c 'name: "ast-db-credentials"' || true)" = "$conns" ] \
-            || fail "DB_PASSWORD が Secret ast-db-credentials から読まれていない。"
+          # NFR-18, IADR-0630: DB のパスワードはサービスごとの Secret（ast-db-<サービス>-credentials）から読む（共有の ast-db-credentials は読まない）。
+          [ "$(grep -A3 -E '^ +- name: DB_PASSWORD$' <<<"$out" | grep -cE 'name: "ast-db-[a-z-]+-credentials"' || true)" = "$conns" ] \
+            || fail "DB_PASSWORD がサービスごとの Secret（ast-db-<サービス>-credentials）から読まれていない。"
           if grep -Eq 'Stage0Recording__|PersistentVolumeClaim.*stage0|name: stage0-' <<<"$out"; then fail "values-cloud に Stage 0 の記録の構成が現れた。"; fi
           grep -A1 'name: ReportDraftKnowledge__Enabled' <<<"$out" | grep -q 'value: "false"' || fail "報告書の KB の写しが無効になっていない。"
           grep -A1 'name: Broker__Provider' <<<"$out" | grep -q 'value: "moomoo"' || fail "values-cloud の発注先が moomoo（SIMULATE）でない。"
@@ -518,6 +519,54 @@ jobs:
           fi
           grep -q 'sharedClientSecrets.remoteKey が要ります' <<<"$err" || fail "remoteKey が空のときの失敗の理由が違う: $err"
           echo "values-cloud secrets: refs=$(grep -c . <<<"$refs") externalsecrets=$(grep -c . <<<"$targets") connections=$conns"
+      # NFR-18, NFR-05, IADR-0630（基盤の MSP:IADR-0695 の受け手）: DB の資格をサービスごとに分ける。
+      # 1. values-cloud: DB を持つ 7 つのサービスが、それぞれ自分の Secret（ast-db-<サービス>-credentials）から利用者名とパスワードを読み、
+      #    互いに違う Secret を読む。共有の ast-db-credentials を読むサービスは無い。各 Secret は ESO が cloud/shared/ast-db-<サービス> から写す（Retain）。
+      # 2. 既定・values-local: サービスごとの資格の部品が現れない（利用者名は ai のまま・ExternalSecret は無い。既定の描画は変えない）。
+      # 3. 設定の誤りは描画で止まる（片方だけ・DB を持たないサービス・別々の Secret・置き場の接頭辞が空）。
+      - name: Assert per-service DB credentials (IADR-0630)
+        run: |
+          set -eu
+          fail() { echo "::error::DB のサービスごとの資格（IADR-0630）: $1"; exit 1; }
+          cloud="$CHART/values-cloud.yaml"
+          fixture="$CHART/ci/values-cloud-digests.fixture.yaml"
+          want="audit configuration cost-control market-monitor order-execution report risk-management"
+          out="$(helm template ast "$CHART" -f "$cloud" -f "$fixture")"
+          seen=""
+          for svc in $want; do
+            doc="$(awk -v n="${svc}-service" 'BEGIN{RS="---"} index($0, "\nkind: Deployment\n") && index($0, "\n  name: " n "\n")' <<<"$out")"
+            [ -n "$doc" ] || fail "values-cloud に ${svc}-service の Deployment が無い（抽出の空振り）"
+            for v in DB_USERNAME DB_PASSWORD; do
+              sec="$(grep -A4 -E "^ +- name: ${v}\$" <<<"$doc" | sed -n 's/^ *name: "\(.*\)"$/\1/p')"
+              [ "$sec" = "ast-db-${svc}-credentials" ] || fail "${svc}-service の ${v} が Secret ast-db-${svc}-credentials から来ない（${sec:-なし}）"
+            done
+            grep -qF 'Username=$(DB_USERNAME);Password=$(DB_PASSWORD);' <<<"$doc" || fail "${svc}-service の接続文字列が Secret の利用者名・パスワードで組まれていない"
+            es="$(awk -v n="ast-db-${svc}-credentials" 'BEGIN{RS="---"} index($0, "\nkind: ExternalSecret\n") && index($0, "\n  name: " n "\n")' <<<"$out")"
+            [ -n "$es" ] || fail "ExternalSecret ast-db-${svc}-credentials が無い"
+            [ "$(grep -c "key: \"shared/ast-db-${svc}\"" <<<"$es" || true)" = 2 ] || fail "ast-db-${svc}-credentials が cloud/shared/ast-db-${svc} から写されない"
+            grep -q 'deletionPolicy: Retain' <<<"$es" || fail "ast-db-${svc}-credentials の deletionPolicy が Retain でない"
+            seen="$seen ast-db-${svc}-credentials"
+          done
+          [ "$(tr ' ' '\n' <<<"$seen" | grep -c . | tr -d ' ')" = 7 ] && [ "$(tr ' ' '\n' <<<"$seen" | grep . | sort -u | grep -c .)" = 7 ] || fail "7 つのサービスが互いに違う Secret を読んでいない: $seen"
+          readers="$(grep -cE '^ +- name: DB_(USERNAME|PASSWORD)$' <<<"$out" || true)"
+          [ "$readers" = 14 ] || fail "DB の資格を読む env が 14（7 サービス × 2）でない: $readers"
+          if grep -B1 -A3 -E '^ +- name: DB_(USERNAME|PASSWORD)$' <<<"$out" | grep -q 'name: "ast-db-credentials"'; then fail "共有の ast-db-credentials を読むサービスがある"; fi
+          [ "$(grep -c 'shared/ast-db-' <<<"$out" || true)" = 14 ] || fail "サービスごとの置き場を読む ExternalSecret の行が 14 でない"
+          for prof in "" "-f $CHART/values-local.yaml"; do
+            o="$(helm template ast "$CHART" $prof --set global.authAuthority="$CI_AUTH_AUTHORITY")"
+            if grep -qE 'ast-db-[a-z-]+-credentials|shared/ast-db-|name: DB_USERNAME$' <<<"$o"; then fail "既定または values-local（${prof:-既定}）にサービスごとの資格の部品が現れた"; fi
+          done
+          must_fail() {
+            local label="$1" want="$2"; shift 2
+            local o
+            if o="$(helm template ast "$CHART" -f "$cloud" -f "$fixture" "$@" 2>&1)"; then fail "描画が通ってしまった: $label"; fi
+            grep -qF "$want" <<<"$o" || { echo "::error::$label: 期待した理由（$want）で止まっていない:"; printf '%s\n' "$o" | tail -3; exit 1; }
+          }
+          must_fail "パスワードだけ" "usernameSecret と passwordSecret を一緒に" --set services.audit.dbCredentials.usernameSecret=null
+          must_fail "DB を持たないサービス" "DB を持つサービス" --set services.backtest.dbCredentials.usernameSecret.name=x --set services.backtest.dbCredentials.usernameSecret.key=username --set services.backtest.dbCredentials.passwordSecret.name=x --set services.backtest.dbCredentials.passwordSecret.key=password
+          must_fail "別々の Secret" "同じ Secret に" --set services.audit.dbCredentials.usernameSecret.name=other
+          must_fail "置き場の接頭辞が空" "remoteKeyPrefix が要ります" --set externalSecrets.serviceDbCredentials.remoteKeyPrefix=
+          echo "ok: values-cloud の 7 つのサービスはそれぞれ自分の DB の資格を読み（$seen）、既定・values-local は変わらない"
       # NFR, #1548, IADR-0608 決定 1: values-cloud は values.yaml に直接重ねる。Helm は extraEnv のリストを置き換えるので、
       # values.yaml に足した env を values-cloud の同じサービスへ写し忘れると、クラウドの描画から黙って落ちる。
       # 既定の描画の env（Deployment ごと）が values-cloud（＋検査用の digest）の描画にも在ることを確かめる。
