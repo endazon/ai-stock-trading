@@ -5,6 +5,7 @@ using AuditService.Infrastructure.Persistence;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Grpc;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Wolverine;
@@ -52,10 +53,15 @@ builder.Services.AddScoped<IAuditEventStore, EfAuditEventStore>();
 // **契約イベントの追加に対する追随漏れ**（FR-11「全イベントの時系列記録」の穴）は
 // AuditConsumerCoverageTests がリフレクションで検出する。
 // 再試行（2s/10s/30s）と <queue>_error への退避は共通ヘルパに閉じている（IADR-0129 決定 5）。
-builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
-    ServiceName,
-    builder.Configuration["RabbitMq:ConnectionString"],
-    typeof(PriceMovementDetectedAuditHandler).Assembly));
+builder.Host.UseWolverine(opts =>
+{
+    opts.UseAiStockTradingRabbitMq(
+        ServiceName,
+        builder.Configuration["RabbitMq:ConnectionString"],
+        typeof(PriceMovementDetectedAuditHandler).Assembly);
+    // 🔴 NFR, FR-10, IADR-0627: 統制の入力になる型の発行元の印（送る側）と、受け手での確かめ（構成 MessageOrigin。段 2 で鍵が無ければ起動で止まる）。
+    opts.UseAiStockTradingMessageOrigin(ServiceName, builder.Configuration);
+});
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。

@@ -49,6 +49,9 @@ global:
     mode: Enforce
   ownerBotScope:
     mode: Enforce
+  # 🔴 段 2（IADR-0627）。発行元の鍵（cloud/ast/ast-message-origin-keys）が無ければ、鍵を読むサービスの Pod は起動しない。
+  messageOrigin:
+    mode: Enforce
   # NFR-18, #1535, IADR-0621: 基盤の DB・ブローカへの接続を TLS にする（経路 B の values-local と同じスイッチ）。
   rabbitmq:
     tls:
@@ -115,6 +118,11 @@ externalSecrets:
     enabled: true
     targetName: ast-owner-totp
     remoteKey: ast/ast-owner-totp
+  # NFR, FR-10, IADR-0627: メッセージの発行元の鍵（キー＝発行元の識別子）。基盤の seed-secrets.sh の gen で OpenBao の中に作る（手順書 §5）。
+  messageOriginKeys:
+    enabled: true
+    targetName: ast-message-origin-keys
+    remoteKey: ast/ast-message-origin-keys
   infraCa:
     enabled: true
     targetName: platform-infra-ca

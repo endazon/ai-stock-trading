@@ -9,7 +9,7 @@ updated: 2026-11-07
 <!-- trace:
 ids: [FR-04, FR-08, NFR, NFR-03, NFR-05, NFR-06, FR-10]
 adrs: [ADR-0006, ADR-0024, ADR-0073, ADR-0076, ADR-0078, ADR-0080]
-iadrs: [IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615]
+iadrs: [IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627]
 specs: [20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
 issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471]
 -->
@@ -127,6 +127,7 @@ issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471]
 | `ast-secrets` の 3 つの client secret | `cloud/shared/ast-client-secrets`（キーは clientId） | 同上。client ID は chart が字面で足す |
 | CA の写し `platform-infra-ca`（`ca.crt`） | `cloud/shared/platform-infra-ca` | 基盤の `configure.sh` が置く（公開してよい証明書） |
 | `ast-secrets` の `order-approval-signing-key` | `cloud/ast/ast-secrets` | 基盤の `seed-secrets.sh … gen cloud/ast/ast-secrets order-approval-signing-key 32`（OpenBao の中で乱数。在れば上書きしない） |
+| `ast-message-origin-keys`（`backtest`・`information-collection`・`market-monitor`・`order-execution`・`report`・`risk-management`・`trade-decision`） | `cloud/ast/ast-message-origin-keys` | 基盤の `seed-secrets.sh … gen cloud/ast/ast-message-origin-keys <キー> 32` を 7 つのキーごとに流す（下。OpenBao の中で乱数。在れば上書きしない） |
 | `ast-secrets` の外の値 | `cloud/ast/ast-secrets` | オーナーが `put-external-secret.sh cloud/ast/ast-secrets <キー>` で 1 つずつ入れる（下） |
 | `moomoo-credentials`（`login-account`・`login-pwd-md5`） | `cloud/ast/moomoo-credentials` | オーナーが入れる。パスワードは平文で置かず、MD5 の小文字 16 進を入れる |
 | `moomoo-rsa`（`opend_rsa.pem`） | `cloud/ast/moomoo-rsa` | オーナーが手元で 1024 ビットの鍵を作り、ディスクに書かずに流す（下） |
@@ -150,6 +151,18 @@ read -rs v && printf '%s' "$v" | md5sum | cut -d' ' -f1 | tr -d '\n' | "${PUT[@]
 openssl genrsa -traditional 1024 2>/dev/null | "${PUT[@]}" cloud/ast/moomoo-rsa opend_rsa.pem
 ```
 
+メッセージの発行元の鍵（7 つ。乱数で足りるので、オーナーが値を入れるのではなく OpenBao の中で作る）:
+
+```bash
+# 前置き（秘密は含まない。ファイルのパスだけ）。キーが既に在れば 5 で止まる（作り直さない）。
+SEED=(bash <基盤>/deploy/cloud/vault/seed-secrets.sh --live --operator-file <…>.age --identity <…>)
+for k in backtest information-collection market-monitor order-execution report risk-management trade-decision; do
+  "${SEED[@]}" gen cloud/ast/ast-message-origin-keys "$k" 32
+done
+```
+
+- 7 つが揃うまで配備しない（段 2 では、鍵を読むサービスの Pod が起動しない）。
+
 - RSA の鍵は 1024 ビットにする。手元の PoC がこの長さで動いており、2048 ビットで OpenD が動いた記録は無い（基盤の `gen-rsa` は 2048 未満を作れない）。
 - DB のパスワードと利用者名は接続文字列（`Username=…;Password=…;`）へ埋め込まれる。基盤の生成器は英数字と `_` だけを作るので、`;`・`=`・引用符・空白は入らない。
 
@@ -170,8 +183,10 @@ openssl genrsa -traditional 1024 2>/dev/null | "${PUT[@]}" cloud/ast/moomoo-rsa 
 ### 5.4 配備
 
 - 配備: `helm upgrade --install ast deploy/helm/ai-stock-trading -f deploy/helm/ai-stock-trading/values-cloud.yaml -f <§4 のファイル>`
-- 守りは段 2 で始まる（注文の承認の印・所有者のトークンの aud / azp・ボットの許可表・危険な操作の第 2 要素・kill switch の前提条件）。
-  - 注文の承認の鍵が無いと、risk-management と order-execution の Pod は起動しない。TOTP が無いと、取引を再開・緩める 7 操作は拒まれる。
+- 守りは段 2 で始まる（注文の承認の印・メッセージの発行元の印・所有者のトークンの aud / azp・ボットの許可表・危険な操作の第 2 要素・kill switch の前提条件）。
+  - 注文の承認の鍵が無いと、risk-management と order-execution の Pod は起動しない。
+  - メッセージの発行元の鍵（`ast-message-origin-keys`）が無いと、鍵を読む 8 サービスの Pod は起動しない。
+    受け手が拒んだメッセージは処理されず、ログ（EventId 16260）とメトリクス `ast_messaging_origin_failures_total{outcome="rejected"}`・警報 `AstMessageOriginRejected` に残る。TOTP が無いと、取引を再開・緩める 7 操作は拒まれる。
 - 値を替えたら（作り直し・更新）、ESO が写した後に読む側を作り直す（`kubectl -n ai-stock-trading rollout restart deploy/<名前>`）。クラウドに Reloader は無い。
 - 基盤が CA を作り直したら、`cloud/shared/platform-infra-ca` の更新を ESO が写した後に、取引ユニットのサービスを作り直す。
   切り替えの確かめ方と戻し方は [基盤の TLS 切り替え Runbook](platform-infra-tls-cutover-runbook.md)。

@@ -141,3 +141,18 @@ spec:
               最初に見る場所: 発注執行のログの WRN「発行し終えていなかった約定の再発行に失敗しました」（DecisionId・OrderId が載る）と、
               order_execution_svc の executed_orders で "OrderExecutedPublishPending" が true の行、wolverine スキーマの表（DB の書き込みの失敗を疑う）。
               証券会社の画面で該当の建玉を確かめる。対応手順は運用仕様書「発注執行の送信は保存してから送る」。
+        # 🔴 NFR, FR-10, IADR-0627 決定 4: 統制の入力になるメッセージの発行元を、受け手が段 2 で拒んだ。
+        # 🔴 **この閾値は実測を要しない。** 正規の発行元は必ず印を付けるので、平常は 0 件である。
+        # 1 件でも出れば、鍵の配り漏れ（reason=missing / unverifiable）か、ブローカへ書ける主体による偽装・改竄・再送を疑う。
+        # for は置かない（1 件で知らせる。拒んだメッセージは処理されないので、続くのを待つ理由が無い）。
+        - alert: AstMessageOriginRejected
+          expr: sum by (type, reason) (increase(ast_messaging_origin_failures_total{outcome="rejected"}[15m])) > 0
+          labels:
+            severity: warning
+            service: ai-stock-trading
+          annotations:
+            summary: 受け手が発行元を確かめられないメッセージを処理せずに捨てた
+            description: >-
+              統制の入力になるメッセージ（型は type）を、受け手が段 2 で処理しなかった（理由は reason）。
+              最初に見る場所: 受け手のサービスのログの WRN「メッセージの発行元を確かめられないため処理しません」（EventId 16260。型・名乗った発行元・メッセージ ID が載る）。
+              missing / unverifiable なら鍵の Secret（ast-message-origin-keys）と ESO の同期を、forbidden_issuer / mismatch / replayed ならブローカの利用者と Pod の侵害を疑う。
