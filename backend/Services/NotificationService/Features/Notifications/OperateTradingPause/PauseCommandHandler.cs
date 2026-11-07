@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using NotificationService.Domain;
+using Wolverine.Attributes;
 
 namespace NotificationService.Features.Notifications.OperateTradingPause;
 
@@ -9,6 +10,8 @@ namespace NotificationService.Features.Notifications.OperateTradingPause;
 //
 // 本ハンドラは Discord.Net に依存しない（Gateway アダプタが DiscordCommandContext に変換して渡す）。
 // pause 系以外（kill switch・未知）は本ハンドラでは実行しない（KillSwitchCommandHandler が kill switch を扱う）。
+// 🔴 NFR, FR-14, IADR-0638 決定 1: 入口は Discord の Gateway だけ。名前がハンドラの規則に当たってもブローカから受けない。
+[WolverineIgnore]
 public sealed class PauseCommandHandler(
     IPauseController controller,
     DiscordBotOptions options,

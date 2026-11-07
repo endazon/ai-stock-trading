@@ -96,4 +96,21 @@ public partial class MessageOriginChartTests
         cloud.Should().NotContain("messageOriginKeys:");
         cloud.Should().NotMatchRegex(@"\n +legacyHmac:", "values-cloud は旧い共有の鍵を有効にしない");
     }
+
+    // 🔴 NFR, FR-09, IADR-0638 決定 3: 段の下げは、新しく足した受け手（通知）だけ。既定の values は空、values-cloud は通知の 1 行だけで、
+    //   発行元（署名する側）と既存の受け手を下げない。
+    [Fact]
+    public void 段の下げは既定で空でvalues_cloudは通知だけを段1にする()
+    {
+        var values = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "helm", "ai-stock-trading", "values.yaml")).Replace("\r\n", "\n");
+        MessageOriginBlock().Match(values).Groups[1].Value.Should().MatchRegex(@"(?m)^    modeOverrides: \{\}$");
+
+        var cloud = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "helm", "ai-stock-trading", "values-cloud.yaml")).Replace("\r\n", "\n");
+        var block = MessageOriginBlock().Match(cloud);
+        block.Success.Should().BeTrue();
+        var overrides = Regex.Matches(block.Groups[1].Value, @"(?m)^      ([a-z-]+): ([A-Za-z]+)$")
+            .ToDictionary(m => m.Groups[1].Value, m => m.Groups[2].Value);
+        overrides.Should().BeEquivalentTo(new Dictionary<string, string> { [MessageOriginCatalog.Notification] = "Report" });
+        MessageOriginWiringExtensions.RequiresSigningKey(MessageOriginCatalog.Notification).Should().BeFalse("下げるのは署名しない受け手だけ");
+    }
 }

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using NotificationService.Domain;
+using Wolverine.Attributes;
 
 namespace NotificationService.Features.Notifications.RevisePolicy;
 
@@ -13,6 +14,8 @@ namespace NotificationService.Features.Notifications.RevisePolicy;
 // 確定できたときだけ行う（ADR-0042 決定 1。#1025）。
 //
 // 指示の本文は**ログに出さない**（長さだけ）。本文は報告書の改訂記録（本文）に残る。
+// 🔴 NFR, FR-14, IADR-0638 決定 1: 入口は Discord の Gateway だけ。名前がハンドラの規則に当たってもブローカから受けない。
+[WolverineIgnore]
 public sealed class PolicyRevisionCommandHandler(
     IPolicyRevisionController controller,
     IMarketMonitorWatchlistController watchlist,

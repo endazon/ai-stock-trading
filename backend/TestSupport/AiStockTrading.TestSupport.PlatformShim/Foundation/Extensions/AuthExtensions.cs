@@ -133,6 +133,8 @@ public static class AuthExtensions
         // 🔴 NFR-06, #1554, IADR-0622: ボットの許可表の段（Auth:OwnerBot:Mode。aud / azp の段とは別）。
         services.AddSingleton(OwnerBotScope.Resolve(config));
         services.AddSingleton<IAuthorizationHandler, OwnerTokenBindingHandler>();
+        // 🔴 NFR, IADR-0638 決定 5: gRPC 面の所有者の分岐も同じ段・同じ許可集合で宛先（aud）を確かめる。
+        services.AddSingleton<IAuthorizationHandler, GrpcOwnerAudienceHandler>();
         // 🔴 NFR, IADR-0637: サービスのトークンを口ごとの呼び手の一覧で限る（段 Auth:ServiceToken:Mode。既定 Off）。
         services.AddSingleton(serviceToken);
         services.AddSingleton<IAuthorizationHandler, ServiceCallerHandler>();
@@ -156,12 +158,13 @@ public static class AuthExtensions
             options.AddPolicy(AiStockTradingAuthPolicies.GrpcOwnerOrService, policy => policy
                 .RequireAuthenticatedUser()
                 .RequireAssertion(context => GrpcOwnerClientGate.Allows(context.User, grpcOwnerClients))
-                .AddRequirements(new ServiceCallerRequirement()));
+                .AddRequirements(new GrpcOwnerAudienceRequirement(AllowService: true), new ServiceCallerRequirement()));
 
             // NFR-06, FR-14, ADR-0047 決定 3, IADR-0449 決定 2, #753（段 5）: 所有者限定の gRPC 面の門。所有者の分岐だけ（s2s は通さない）。
             options.AddPolicy(AiStockTradingAuthPolicies.GrpcOwnerOnly, policy => policy
                 .RequireAuthenticatedUser()
-                .RequireAssertion(context => GrpcOwnerClientGate.AllowsOwner(context.User, grpcOwnerClients)));
+                .RequireAssertion(context => GrpcOwnerClientGate.AllowsOwner(context.User, grpcOwnerClients))
+                .AddRequirements(new GrpcOwnerAudienceRequirement(AllowService: false)));
         });
         return services;
     }

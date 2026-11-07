@@ -102,6 +102,9 @@ public partial class MessageOriginCatalogCompletenessTests
                 StringComparer.Ordinal);
             // 表の外の型（サービス内だけで回すローカルの型など）は、表と対象外のどちらにも無く、契約のイベントでもないものに限る。
             var contractEvents = types.Where(t => typeof(TradeDecisionMade).Assembly.GetType($"AiStockTrading.Shared.Contracts.Events.{t}") is not null);
+            // IADR-0638 決定 2: 表の外の型をまとめて確かめないサービス（通知）は、受ける表の型だけを突き合わせる。
+            if (MessageOriginCatalog.ExternalTypesUnverifiedServices.Any(e => e.Service == service))
+                contractEvents = contractEvents.Where(catalogTypes.Contains);
 
             new SortedSet<string>(contractEvents, StringComparer.Ordinal).Should().BeEquivalentTo(
                 expected, $"{service} のハンドラが受ける契約の型は、表の受け手（確かめる）か理由つきの対象外のどちらかに載せる");
@@ -171,6 +174,7 @@ public partial class MessageOriginCatalogCompletenessTests
         MessageOriginCatalog.ExcludedReceivers.Should().AllSatisfy(e => e.Reason.Should().NotBeNullOrWhiteSpace());
         MessageOriginCatalog.ExcludedServices.Should().AllSatisfy(e => e.Reason.Should().NotBeNullOrWhiteSpace());
         MessageOriginCatalog.RecordOnlyServices.Should().AllSatisfy(e => e.Reason.Should().NotBeNullOrWhiteSpace());
+        MessageOriginCatalog.ExternalTypesUnverifiedServices.Should().AllSatisfy(e => e.Reason.Should().NotBeNullOrWhiteSpace());
         MessageOriginCatalog.Rules.Select(r => r.MessageType).Should().OnlyHaveUniqueItems();
     }
 
@@ -185,5 +189,21 @@ public partial class MessageOriginCatalogCompletenessTests
             MessageOriginCatalog.ExcludedServices.Select(e => e.Service).Should().NotContain(service);
             handled[service].Where(catalog.Contains).Should().NotBeEmpty($"{service} は表の型を受ける");
         }
+    }
+
+    // 🔴 NFR, FR-09, IADR-0638 決定 2: 通知は受ける表の型をすべて確かめる（偽の約定・損切り到達・保護レグの事象を利用者へ知らせない）。
+    // 陰性対照: 表の行から Notification を 1 つ外すと、上の突き合わせとここが赤になる。
+    [Fact]
+    public void 通知は受ける表の型をすべて確かめる()
+    {
+        var handled = HandledTypes()["notification"];
+        var catalog = MessageOriginCatalog.Rules.Select(r => r.MessageType.Name).ToHashSet(StringComparer.Ordinal);
+        var received = handled.Where(catalog.Contains).ToList();
+
+        received.Should().Contain([nameof(OrderExecuted), nameof(StopLossTriggered), nameof(PositionDriftAdopted)]);
+        MessageOriginCatalog.VerifiedBy(MessageOriginCatalog.Notification).Select(r => r.MessageType.Name)
+            .Should().BeEquivalentTo(received);
+        MessageOriginCatalog.ExcludedServices.Select(e => e.Service).Should().NotContain(MessageOriginCatalog.Notification);
+        MessageOriginCatalog.IsRecordOnly(MessageOriginCatalog.Notification).Should().BeFalse("通知は段 2 で確かめられないものを知らせない");
     }
 }

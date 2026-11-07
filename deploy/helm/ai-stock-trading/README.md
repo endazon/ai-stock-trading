@@ -962,7 +962,8 @@ risk-management が発行する注文の承認に HMAC の印を付け、order-e
 | `signingSecretName` | `ast-message-origin-signing-keys` | 秘密の鍵の Secret。キーは発行元の識別子。値は PKCS#8 DER の base64 |
 | `verifySecretName` | `ast-message-origin-verify-keys` | 公開の鍵の Secret。キーは発行元の識別子。値は SubjectPublicKeyInfo DER の base64 |
 | `signers` | 7 つ | 自分の秘密の鍵を渡すサービス（表の型の発行元）。コードと一致させる（`MessageOriginChartTests`） |
-| `verifiers` | 6 つ | 受け手 → 公開の鍵を渡す発行元。コードの要る鍵と一致させる（同上）。`audit` は記録だけの受け手（拒まない） |
+| `verifiers` | 7 つ | 受け手 → 公開の鍵を渡す発行元。コードの要る鍵と一致させる（同上）。`audit` は記録だけの受け手（拒まない）。`notification` は受ける表の型（約定・損切り到達・保護レグ・乖離の取り込み・見送り）を確かめる（[IADR-0638](../../../.ai-context/adr/IADR-0638_notification-origin-and-owner-token-hardening.md)） |
+| `modeOverrides` | `{}` | サービスごとの段の下げ（`<サービス>: Report`）。新しく足した受け手を段 1 で当てるときだけ使う。鍵の `optional` は `mode` のまま。values-cloud は `notification: Report`（手順書 §5.1「受け手を足したときの段」） |
 | `previousVerify` | `[]` | 鍵の入れ替えの間だけ、前の公開の鍵（`previousVerifySecretName`）を受け手へ渡す発行元。env は `MessageOrigin__PreviousVerifyKeys__<発行元>`（段に依らず optional）。発行元でない名前は描画で止まる。手順は手順書 §5.1 |
 | `legacyHmac.enabled` | `false` | 旧い共有の鍵の HMAC の印を移行の間だけ併用する（段 1 でだけ。段 2 と併用すると描画で止まる）。`skipServices` には渡さない |
 
@@ -997,6 +998,8 @@ REST の所有者の判定で、ロールに加えてトークンの宛先（aud
 - `Report`（既定・段 1）: 不一致を Warning で残して通す。`Enforce`（段 2）: 拒否する（403）。他の値は描画で止まる。
 - 許可集合の既定は aud `ai-stock-trading-api`（AST 専用。Keycloak の audience mapper で `bff` と `ai-stock-trading-owner` にだけ付ける。MSP 共通の `platform-api` は使わない）・azp `bff` と `ai-stock-trading-owner`。変えるときはサービスの `extraEnv` に配列（`Auth__OwnerToken__Audiences__0` … / `Auth__OwnerToken__Clients__0` …）で書く。
 - 段 2 へ上げる前に、段 1 のまま各サービスのログに「所有者のトークンの宛先またはクライアントが許可集合に無い」が出ないことを確かめる。
+- `clients`（既定 `[]`＝描かない＝コードの既定）: azp の許可集合を明示する。値は auth のサービスへ `Auth__OwnerToken__Clients__<n>` で描く。values-cloud は `[ai-stock-trading-owner]`（基盤の realm に中継のクライアントは無い。[IADR-0638](../../../.ai-context/adr/IADR-0638_notification-origin-and-owner-token-hardening.md)）。
+- gRPC 面の所有者の門（`GrpcOwnerOnly`・`GrpcOwnerOrService` の所有者の分岐）も、同じ `mode` と aud の許可集合で宛先を確かめる（azp は `Auth:GrpcOwnerClients`）。
 
 ## ボットの許可表（`global.ownerBotScope`。#1554 / [IADR-0622](../../../.ai-context/adr/IADR-0622_owner-bot-route-allowlist-and-bot-role.md)）
 

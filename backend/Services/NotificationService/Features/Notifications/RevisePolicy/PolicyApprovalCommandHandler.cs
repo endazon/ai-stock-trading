@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using NotificationService.Domain;
 using NotificationService.Features.Notifications.ReviewReport;
+using Wolverine.Attributes;
 
 namespace NotificationService.Features.Notifications.RevisePolicy;
 
@@ -13,6 +14,8 @@ namespace NotificationService.Features.Notifications.RevisePolicy;
 // 🔴 **案を作った時点の監視銘柄が分からなければ適用しない**（楽観排他の基準が無い）。変わっていれば市場監視が 1 件も適用しない。
 // 🔴 **確定できなかったとき（版落ち・二重押下・失敗）は適用しない**——確定されていない方針に付いた入れ替えを先に効かせない。
 // 🔴 原則 A: 適用の結果が分からない（タイムアウト等）ときは「適用しなかった」と言わず、設定画面での確認を促す。
+// 🔴 NFR, FR-14, IADR-0638 決定 1: 入口は Discord の Gateway だけ。名前がハンドラの規則に当たってもブローカから受けない。
+[WolverineIgnore]
 public sealed class PolicyApprovalCommandHandler(
     ReportCommandHandler reportHandler,
     IPolicyRevisionController policies,
