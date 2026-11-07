@@ -64,10 +64,10 @@ jobs:
       # 既定の値の描画を見る検査は、配備のレルムを明示して描く（下の「未設定なら止まる」の検査だけは渡さない）。
       CI_AUTH_AUTHORITY: http://keycloak:8080/realms/platform
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # バージョンを固定する（ランナー同梱の helm に依存すると、更新で挙動が変わっても気づけない）。
       # v4.2.1 は本ゲートの赤/緑をローカル実証したのと同一バージョン（IADR-0058 の実測表）。
-      - uses: azure/setup-helm@v5
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v4.2.1
       - name: helm lint (strict)

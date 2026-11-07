@@ -1,7 +1,7 @@
 <!-- trace:
 ids: []
 adrs: []
-iadrs: [IADR-0058, IADR-0170, IADR-0184, IADR-0185, IADR-0188]
+iadrs: [IADR-0058, IADR-0170, IADR-0184, IADR-0185, IADR-0188, IADR-0625]
 specs: []
 issues: [#501, #644, planning#315, planning#317, planning#364, planning#408]
 -->
@@ -111,9 +111,12 @@ bash scripts/apply-profile.sh copilot
 ### 5. 週次（マージとは独立）
 
 - **`backlog-audit.yml` が週 1 回（月曜 00:00 UTC）バックログを監査する**
-  （#439。バックログ定期監査自動化の実装ADR。機械検査は warn・AI 監査は提案のみ）。
-  クローズ漏れ・重複起票・`docs/blocked-tasks.md` との突き合わせ・エピック進捗を見て、
-  **単一の追跡 issue へ upsert** する。**issue を自動クローズしない**（提案のみ・判断は人間）。
+  （#439。バックログ定期監査自動化の実装ADR）。**監査は生成 AI を使わない決定的なスクリプト
+  （`scripts/backlog-audit.js`）で行う**。Proposed の IADR・動いていない仕様書と文書・blocked の再検証・
+  blocked 系ラベルと `docs/blocked-tasks.md` の食い違い・題名の一致する issue・エピック進捗・ci-failure・
+  古い PR・計画 ID レンジを数え、**単一の追跡 issue へ upsert** する。**issue を自動クローズしない**
+  （クローズ漏れや分類の誤りは、並んだ候補を見て人が判断する）。issue の題名・本文はデータとしてのみ扱い、
+  シェル・式へは渡さない。書き込みの権限は issues だけである。
   **監査が増える主因は実装速度ではなく「閉じるより速く増えること」だった**という実測が起点である。
 
   > **［2026-08-21 変更］環流記録の未伝達検査（`check-feedback-dispatched.js`）と status 突合検査
@@ -195,6 +198,12 @@ status check の context として存在しない**（必須チェックは chec
 - **`claude-review` の必須化で担保できるのは「レビューが完走した」ことだけである。** 🔴 の指摘が
   あっても success を返す（採否は人間の判断）ため、**必須にしても 🔴 のままのマージは止まらない**。
   あわせて、AI 基盤の停止・トークン失効・レート超過で**全 PR がマージ不能になる**副作用を持つ。
+- **`claude-review` は常に起動し、最初の step（`scripts/pr-trust-gate.js`）が AI を走らせてよい PR かを判定する。**
+  AI を走らせるのは、本リポジトリのブランチから出た PR で、作成者が OWNER / MEMBER / COLLABORATOR（またはログインが
+  `[bot]` で終わる）のときである。同一リポジトリの dependabot と、生成物（`CHANGELOG.md` / `docs/api/openapi.yaml`）だけを
+  変える信頼できる自動 PR は、AI を走らせずに合格になる。**それ以外（フォークからの PR・外部の作成者など）は赤になる**
+  （ジョブ単位の `if:` で外すと skipped が合格扱いになるため、その形を採らない）。書き込み権限を持つ者が差分を読んでから
+  本リポジトリのブランチへ取り込んで出し直す。**ブランチ名（`automation/`）だけでは合格にならない。**
 - `pr-size`（`pr-size.yml`）は **warn 方式の趣旨に反するため必須にしない**（PR サイズ検査の較正を定めた実装ADR）。
 
 これにより、AI が作成した PR も「機械チェック green ＋ 必要なレビュー承認」を満たさない限りマージされない。

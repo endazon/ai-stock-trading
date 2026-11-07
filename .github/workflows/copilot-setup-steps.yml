@@ -29,6 +29,11 @@ on:
     paths:
       - .github/workflows/copilot-setup-steps.yml
 
+# NFR: ワークフロー単位は読むだけにする（リポジトリ既定の権限に頼らない）。書き込みが要るジョブは
+# ジョブの permissions で足す（ci-failure-issue.yml を呼ぶ report-failure ジョブ等）。
+permissions:
+  contents: read
+
 jobs:
   # ジョブ名は固定（変更不可）
   copilot-setup-steps:
@@ -38,11 +43,11 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # ↓ 技術スタックに合わせて差し替える（既定は C#/.NET 例）
       - name: Setup .NET
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: "10.0.403" # #1478: 厳密な版（"10.0.x" は配布元の 409 で導入できない）。全箇所で同じ値であることを scripts.repo.test.js が見る
 

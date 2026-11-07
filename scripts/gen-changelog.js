@@ -9,7 +9,6 @@
  *   node scripts/gen-changelog.js [--out CHANGELOG.md]
  *   --out 省略時は標準出力。
  */
-const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -73,14 +72,16 @@ const TYPE_LABEL = {
 const TYPE_ORDER = ['feat', 'fix', 'perf', 'refactor', 'docs', 'test', 'build', 'ci', 'style', 'chore'];
 
 // 🔴 git の出力を読む exec には `maxBuffer` を必ず渡す（#1009）。既定の 1 MiB を超えると `ENOBUFS` になる。
-const { GIT_MAX_BUFFER } = require('./lib/git-read.js');
+// NFR: git は**引数の配列**で起動する（gitArgv。シェルを通さない）。タグ名は `;` `$(...)` 等を含みうる
+// （git の参照名はこれらを許す）ため、文字列へ連結するとコマンドとして解釈される。
+const { gitArgv, isSafeRevArg } = require('./lib/git-read.js');
 
 function git(args) {
-  return execSync(`git ${args}`, { encoding: 'utf8', maxBuffer: GIT_MAX_BUFFER }).trim();
+  return gitArgv(args, { stdio: ['ignore', 'pipe', 'inherit'] }).trim();
 }
 
 function isGitRepo() {
-  try { git('rev-parse --is-inside-work-tree'); return true; } catch (e) { return false; }
+  try { git(['rev-parse', '--is-inside-work-tree']); return true; } catch (e) { return false; }
 }
 
 function parseArgs(argv) {
@@ -95,8 +96,9 @@ function parseArgs(argv) {
 /** タグを作成日時の降順で返す */
 function tags() {
   try {
-    const out = git('tag --sort=-creatordate');
-    return out ? out.split('\n').filter(Boolean) : [];
+    const out = git(['tag', '--sort=-creatordate']);
+    // `-` で始まる名前はオプションと取り違えるので扱わない（git は作らせないが、念のため）。
+    return out ? out.split('\n').filter(Boolean).filter(isSafeRevArg) : [];
   } catch (e) { return []; }
 }
 
@@ -111,10 +113,7 @@ function tags() {
 function commits(range) {
   let raw = '';
   try {
-    raw = execSync(`git log ${range} --no-merges --pretty=format:%h%x1f%s`, {
-      encoding: 'utf8',
-      maxBuffer: GIT_MAX_BUFFER,
-    });
+    raw = gitArgv(['log', range, '--no-merges', '--pretty=format:%h%x1f%s'], { stdio: ['ignore', 'pipe', 'inherit'] });
   } catch (e) {
     throw new Error(`git log ${range} を読めなかった（CHANGELOG を空の節で上書きしない）: ${e.message}`);
   }
@@ -175,7 +174,7 @@ function main() {
   for (let i = 0; i < tagList.length; i++) {
     const range = i + 1 < tagList.length ? `${tagList[i + 1]}..${tagList[i]}` : tagList[i];
     let date = '';
-    try { date = git(`log -1 --pretty=format:%ad --date=short ${tagList[i]}`); } catch (e) { /* noop */ }
+    try { date = git(['log', '-1', '--pretty=format:%ad', '--date=short', tagList[i]]); } catch (e) { /* noop */ }
     out.push(renderSection(`${tagList[i]}${date ? ` - ${date}` : ''}`, commits(range)));
   }
 

@@ -30,12 +30,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
 
@@ -56,7 +56,7 @@ jobs:
       #   c) 現状のまま運用し、当該 PR のチェックを手動承認する（毎回の手作業が必要）。
       - name: Create PR with CHANGELOG update
         if: startsWith(github.ref, 'refs/heads/')
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           token: ${{ secrets.AUTOMATION_PR_TOKEN || secrets.GITHUB_TOKEN }}
           add-paths: CHANGELOG.md
@@ -76,6 +76,6 @@ jobs:
 
       - name: Create / update GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           body_path: RELEASE_NOTES.md

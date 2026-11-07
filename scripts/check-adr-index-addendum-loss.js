@@ -107,11 +107,10 @@
  *        読めなかった検査が成功を報告すると、「配線が消えても全部緑」になる（未知 ≠ 無し）。
  */
 
-const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { warn, notice } = require('./lib/ci-annotate.js');
-const { GIT_MAX_BUFFER, isShallowSkip } = require('./lib/git-read.js');
+const { isShallowSkip, gitArgv, isSafeRevArg } = require('./lib/git-read.js');
 
 const REPO = path.join(__dirname, '..');
 const INDEX_PATH = '.ai-context/adr/README.md';
@@ -164,16 +163,27 @@ function normalizeMark(mark) {
 const REMOVE_TOKEN = '[remove-adr-addendum]';
 const REMOVE_LINE_RE = /^\[remove-adr-addendum\]\s+(IADR-\d{3,4})\s+(\*|［[^］]*］)$/;
 
-function sh(cmd) {
-  // 🔴 `maxBuffer` を必ず渡す（#1009）。既定の 1 MiB では索引 README 1 枚で `ENOBUFS` になる。
-  return execSync(cmd, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: GIT_MAX_BUFFER });
+/**
+ * git を**引数の配列**で起動する（NFR。シェルを通さない）。範囲は COMMIT_RANGE / GITHUB_BASE_REF から組むため、
+ * 文字列へ連結するとメタ文字がコマンドとして解釈される。🔴 `maxBuffer`（#1009。索引 README 1 枚で 1 MiB を超える）は
+ * gitArgv が渡す。
+ */
+function sh(args) {
+  return gitArgv(args, { cwd: REPO });
+}
+
+/** 版・範囲を git へ渡す前の確認。`-` で始まる値はオプションと取り違えるので、読み取り失敗として扱う。 */
+function checkedRev(rev) {
+  if (!isSafeRevArg(rev)) throw new Error(`版として扱えない値: ${JSON.stringify(rev)}`);
+  return rev;
 }
 
 function revExists(rev) {
+  if (!isSafeRevArg(rev)) return false;
   try {
-    // 🔴 `^{commit}` は**引用符で囲む**。Windows の `cmd.exe` では `^` がエスケープ文字であり、
-    // 裸で渡すと `^` が食われて必ず「存在しない」へ倒れる（＝手元では常に skip する検査器になる）。
-    sh(`git rev-parse --verify --quiet "${rev}^{commit}"`);
+    // シェルを通さないので `^{commit}` を引用符で守る必要は無い（旧: Windows の cmd.exe では `^` が
+    // エスケープ文字で、裸だと必ず「存在しない」へ倒れた）。
+    sh(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`]);
     return true;
   } catch {
     return false;
@@ -204,7 +214,7 @@ function resolveRange(explicit) {
  *   `A..B`  → base = theirs = A、ours = B（**厳格モード**。A の印をすべて要求する。事故の再現用）
  */
 function parseRange(range, opts = {}) {
-  const mergeBase = opts.mergeBase ?? ((a, b) => sh(`git merge-base ${a} ${b}`).trim());
+  const mergeBase = opts.mergeBase ?? ((a, b) => sh(['merge-base', checkedRev(a), checkedRev(b)]).trim());
   const three = range.includes('...');
   const [left, rightRaw] = range.split(three ? '...' : '..');
   const theirs = left || 'HEAD';
@@ -219,7 +229,7 @@ function readAt(rev, { preferWorktree = false } = {}) {
     const p = path.join(REPO, INDEX_PATH);
     if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8');
   }
-  return sh(`git show ${rev}:${INDEX_PATH}`);
+  return sh(['show', `${rev === '' ? '' : checkedRev(rev)}:${INDEX_PATH}`]);
 }
 
 /**
@@ -569,7 +579,7 @@ function main(opts = {}) {
 function safeLog(range) {
   try {
     // `A...B` は `git log` では左右対称差になる。撤去の宣言は**我々のコミット**にあるので `A..B` で読む。
-    return sh(`git log --format=%B ${range.replace('...', '..')}`);
+    return sh(['log', '--format=%B', checkedRev(range.replace('...', '..'))]);
   } catch {
     return '';
   }

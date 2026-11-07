@@ -49,10 +49,9 @@
  *   手元では範囲が決まらず常に skip していた。姉妹検査器は既に囲んでいた）。
  */
 
-const { execSync } = require('child_process');
 const path = require('path');
 const { warn, notice } = require('./lib/ci-annotate.js');
-const { GIT_MAX_BUFFER, isShallowSkip } = require('./lib/git-read.js');
+const { isShallowSkip, gitArgv, isSafeRevArg } = require('./lib/git-read.js');
 
 const REPO = path.join(__dirname, '..');
 const INDEX_PATH = '.ai-context/adr/README.md';
@@ -80,16 +79,25 @@ function declaresSkip(text) {
     .some((line) => line.trim() === SKIP_TOKEN);
 }
 
-function sh(cmd) {
-  // 🔴 `maxBuffer` を必ず渡す（#1009）。既定の 1 MiB では索引 README の差分で `ENOBUFS` になりうる。
-  return execSync(cmd, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: GIT_MAX_BUFFER });
+/**
+ * git を**引数の配列**で起動する（NFR。シェルを通さない）。範囲は COMMIT_RANGE / GITHUB_BASE_REF から組むため、
+ * 文字列へ連結するとメタ文字がコマンドとして解釈される。🔴 `maxBuffer`（#1009）は gitArgv が渡す。
+ */
+function sh(args) {
+  return gitArgv(args, { cwd: REPO });
+}
+
+/** 範囲を git へ渡す前の確認。`-` で始まる値はオプションと取り違えるので、読み取り失敗として扱う。 */
+function checkedRange(range) {
+  if (!isSafeRevArg(range)) throw new Error(`範囲として扱えない値: ${JSON.stringify(range)}`);
+  return range;
 }
 
 function revExists(rev) {
+  if (!isSafeRevArg(rev)) return false;
   try {
-    // 🔴 `^{commit}` は引用符で囲む。Windows の `cmd.exe` では `^` がエスケープ文字であり、裸だと
-    // 必ず「存在しない」へ倒れて手元では常に skip する（check-adr-index-addendum-loss.js と同じ。#1009）。
-    sh(`git rev-parse --verify --quiet "${rev}^{commit}"`);
+    // シェルを通さないので `^{commit}` を引用符で守る必要は無い（旧: Windows の cmd.exe 対策。#1009）。
+    sh(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`]);
     return true;
   } catch {
     return false;
@@ -119,7 +127,7 @@ function resolveRange(explicit) {
  */
 function collect(range, opts = {}) {
   const git = opts.readGit ?? sh; // テスト用の差し替え（#1009）
-  const nameStatus = opts.nameStatus ?? git(`git diff --name-only ${range}`);
+  const nameStatus = opts.nameStatus ?? git(['diff', '--name-only', checkedRange(range)]);
   const changedAdrs = new Map(); // IADR-XXXX -> path
   let indexTouched = false;
   for (const line of nameStatus.split('\n')) {
@@ -130,7 +138,7 @@ function collect(range, opts = {}) {
     if (m) changedAdrs.set(m[1], f);
   }
 
-  const indexDiff = opts.indexDiff ?? (indexTouched ? git(`git diff -U0 ${range} -- ${INDEX_PATH}`) : '');
+  const indexDiff = opts.indexDiff ?? (indexTouched ? git(['diff', '-U0', checkedRange(range), '--', INDEX_PATH]) : '');
   const rowsTouched = new Set();
   for (const line of indexDiff.split('\n')) {
     if (!/^[+-]/.test(line) || /^(\+\+\+|---)/.test(line)) continue;
@@ -143,7 +151,7 @@ function collect(range, opts = {}) {
 function hasSkipToken(range, opts = {}) {
   const body = opts.commitBodies ?? (() => {
     try {
-      return sh(`git log --format=%B ${range}`);
+      return sh(['log', '--format=%B', checkedRange(range)]);
     } catch {
       return '';
     }

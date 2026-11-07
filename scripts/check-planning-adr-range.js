@@ -12,6 +12,8 @@
  *   （2026-09-09・run 34303693213 の #483 §6）。本スクリプトは Claude ステップの**前**に走り、
  *   `PLANNING_REPO_TOKEN`（cross-repo 読み取り用の secret）で計画側を取り、結果 JSON を書く。
  *   AI はそのファイルを読んで報告するだけになる（cross-repo の資格情報を AI に持たせない）。
+ *   ［NFR / IADR-0625］監査本体は生成 AI を使わない `backlog-audit.js` に置き換えた。結果 JSON は
+ *   `backlog-audit.js --plan-range` が読み、報告の節に載せる（JSON のキーの契約は変えていない）。
  *
  * 出典の変更（planning#591 Q2・計画 ADR-0093 決定 1・2026-09-09）:
  *   従前は計画リポの `07_adr/` ディレクトリ一覧を取り、**ADR の最大番号だけ**を突き合わせていた。
@@ -197,7 +199,7 @@ function describe(rows) {
  * 全体の結合点。例外は投げない。計画側の取得失敗は unverified、宣言の読み取り失敗は error を返す
  * （#1208 / IADR-0504。後者は本リポジトリの欠陥であり、main が exit 1 にする）。
  * 既存の JSON キー（status / declaredMax / planningMax / reason / checkedAt / source）は維持する
- * —— backlog-audit.yml のプロンプトと scripts.repo.test.js が読んでいる契約である。
+ * —— backlog-audit.js（`--plan-range`）と scripts.repo.test.js が読んでいる契約である。
  */
 function resolve({ token, readDeclaredFn = readDeclaredRanges, fetchFn = fetchPlanningRanges } = {}) {
   let declared = null;

@@ -19,11 +19,10 @@
  * 使い方:
  *   node scripts/check-commit-messages.js [--range base..head] [--verbose]
  */
-const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { warn, notice } = require('./lib/ci-annotate.js');
-const { GIT_MAX_BUFFER, isShallowSkip } = require('./lib/git-read.js');
+const { isShallowSkip, gitArgv, isSafeRevArg } = require('./lib/git-read.js');
 const crossRepoRefs = require('./check-cross-repo-refs.js');
 
 // 規約導入前の既存コミットの恒久適用除外リスト（force push 禁止のため件名を書き換えられない）。
@@ -153,13 +152,11 @@ function parseArgs(argv) {
 /**
  * git を実行して出力を返す（失敗は例外）。🔴 `maxBuffer` を必ず渡す（#1009）——既定の 1 MiB を
  * 超えると `ENOBUFS` になり、旧コードは範囲の読み取り失敗として検査を skip（exit 0）していた。
+ * NFR: `args` は**引数の配列**で、シェルを通さずに git を起動する（範囲は COMMIT_RANGE / GITHUB_BASE_REF
+ * から組むため、文字列へ連結するとメタ文字がコマンドとして解釈される）。`maxBuffer` は gitArgv が渡す。
  */
 function gitRead(args) {
-  return execSync(`git ${args}`, {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-    maxBuffer: GIT_MAX_BUFFER,
-  }).trim();
+  return gitArgv(args).trim();
 }
 
 function tryGit(args) {
@@ -171,7 +168,8 @@ function tryGit(args) {
 }
 
 function revExists(ref) {
-  return tryGit(`rev-parse --verify --quiet ${ref}`) !== null;
+  if (!isSafeRevArg(ref)) return false;
+  return tryGit(['rev-parse', '--verify', '--quiet', ref]) !== null;
 }
 
 /** 検査範囲を決定する。決められない場合は null（= 全コミットは検査しない）を返す。 */
@@ -210,7 +208,9 @@ function collectCommits(range, opts = {}) {
   const fmt = `%H${US}%s${US}%an${US}%ae${US}%B`;
   let raw;
   try {
-    raw = read(`log ${range} --no-merges --pretty=format:${fmt}${RS}`);
+    // NFR: `-` で始まる値はオプションと取り違えるので、git へ渡さず読み取り失敗として扱う。
+    if (!isSafeRevArg(range)) throw new Error(`範囲として扱えない値: ${JSON.stringify(range)}`);
+    raw = read(['log', range, '--no-merges', `--pretty=format:${fmt}${RS}`]);
   } catch (e) {
     process.stderr.write(`検査範囲を git log できなかった: ${range}（${e.message}）\n`);
     if (isShallowSkip(e, { shallow: opts.shallow })) return null;
@@ -620,7 +620,7 @@ function main() {
     process.exit(checkSingleTitle(title, process.env.PR_AUTHOR, prNumber));
   }
 
-  if (tryGit('rev-parse --is-inside-work-tree') !== 'true') {
+  if (tryGit(['rev-parse', '--is-inside-work-tree']) !== 'true') {
     process.stderr.write('git リポジトリではないため検査をスキップする。\n');
     process.exit(0);
   }

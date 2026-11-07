@@ -87,15 +87,19 @@ function listWorkflowFiles(dir) {
  */
 function collectUses(text) {
   const found = [];
-  const re = /^\s*(?:-\s*)?uses:\s*['"]?([^'"\s]+)['"]?/gm;
+  // NFR: 40 桁の SHA で固定した行は、同じ行の版の注記（`uses: x/y@<sha> # v7.0.1`）を版として読む
+  // （Dependabot が SHA と注記を対で更新する形）。注記の無い SHA は従来どおり比較対象外。
+  const re = /^\s*(?:-\s*)?uses:\s*['"]?([^'"\s]+)['"]?[ \t]*(?:#[ \t]*(v?\d[^\s]*))?/gm;
   let m;
   while ((m = re.exec(text)) !== null) {
     const spec = m[1];
+    const pinnedVersion = m[2];
     if (spec.startsWith('.') || spec.startsWith('docker://')) continue;
     const at = spec.lastIndexOf('@');
     if (at === -1) continue;
     const name = spec.slice(0, at);
-    const ref = spec.slice(at + 1);
+    const sha = spec.slice(at + 1);
+    const ref = /^[0-9a-f]{40}$/.test(sha) && pinnedVersion ? pinnedVersion : sha;
     const parts = name.split('/');
     if (parts.length < 2) continue;
     found.push({ action: `${parts[0]}/${parts[1]}`, ref, raw: spec });
@@ -335,6 +339,18 @@ function selfTest() {
   });
   add('SHA pin はメジャーを取れない（比較対象外）', () => majorOf('a81bbbf8298c0fa03ea29cdc473d45769f953675') === null);
   add('v7.0.1 のようなパッチ付きも読める', () => majorOf('v7.0.1') === 7);
+  add('SHA 固定＋版の注記はその版で読む', () => {
+    const u = collectUses('  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n');
+    return u.length === 1 && majorOf(u[0].ref) === 7 && u[0].action === 'actions/checkout';
+  });
+  add('SHA 固定で注記が無ければ比較対象外のまま', () => {
+    const u = collectUses('  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n');
+    return u.length === 1 && majorOf(u[0].ref) === null;
+  });
+  add('タグ指定の行の注記は版として読まない', () => {
+    const u = collectUses('  - uses: actions/checkout@v7 # v4\n');
+    return u.length === 1 && majorOf(u[0].ref) === 7;
+  });
 
   add('下限を下回れば ERROR（実障害 upload-artifact@v4 の形）', () => {
     const r = evaluate(mkFound([['actions/upload-artifact', 4]]), manifest);

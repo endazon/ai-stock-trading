@@ -50,12 +50,20 @@ concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+# NFR: ワークフロー単位は読むだけにする（リポジトリ既定の権限に頼らない）。書き込み（スティッキーコメント・
+# レビュー・issue の起票）は claude-review ジョブの permissions が持つ。
+permissions:
+  contents: read
+
 jobs:
   claude-review:
-    # dependabot に加え、bot が自動生成する PR（CHANGELOG 更新等）も除外する。
-    # GITHUB_TOKEN で作られた PR はワークフローが `action_required`（承認待ち）で
-    # 止まるため、対象に含めても実行されずキューを汚すだけである（changelog.yml 参照）。
-    if: ${{ github.actor != 'dependabot[bot]' && !startsWith(github.head_ref, 'automation/') }}
+    # NFR, IADR-0625: ジョブ単位の `if:` で外さない。`claude-review` は必須チェックであり、skipped は必須チェック上
+    # 「合格」として扱われる（フォークからの PR・外部の作成者・ブランチ名だけを `automation/` に似せた PR まで合格になる）。
+    # ジョブは常に走らせ、checkout の直後の Gate（scripts/pr-trust-gate.js）が GitHub の認証した値で判定する:
+    #   - 本リポジトリのブランチから出た PR で、作成者が OWNER / MEMBER / COLLABORATOR、またはログインが `[bot]` で終わる → AI を走らせる
+    #   - 同一リポジトリの dependabot、または生成物（CHANGELOG.md / docs/api/openapi.yaml）だけを変える信頼できる自動 PR
+    #     → AI を走らせずに合格（GITHUB_TOKEN で作られた PR はそもそも `action_required` で止まる。changelog.yml 参照）
+    #   - それ以外 → 赤（書き込み権限を持つ者が差分を読み、本リポジトリのブランチから出し直す）
     runs-on: ubuntu-latest
     # ハングした実行が上限まで回り続けるのを防ぐ。
     timeout-minutes: 20
@@ -74,7 +82,7 @@ jobs:
       actions: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           # 実装リポの checkout / push には既定の GITHUB_TOKEN を使う（上の
@@ -82,6 +90,20 @@ jobs:
           # 上書きしないこと。上書きすると checkout がその資格情報を永続化し、
           # 後段の git push もそのトークンで実行されるため、実装リポへの書き込み
           # 権限が無い PAT だと 403（Permission denied）になる。
+
+      # NFR, IADR-0625: AI を走らせてよい PR かをここで判定する（上のジョブの注記）。値は env で渡し、run へ式で展開しない。
+      - name: Gate (trusted PR)
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/pr-trust-gate.js
 
       # 資料再編（ADR-0029 決定 2）で本リポジトリは planning への依存を持たない。以前ここにあった
       # 「計画リポジトリ(project-planning)を submodule 参照している場合のみ有効」な submodule
@@ -112,6 +134,7 @@ jobs:
       # 🔴 --allowedTools と .claude/settings.json は触っていない（3 系統一致の規約。
       # check-ai-workflow-config.js が STRICT で見ている）。変えたのは**事前導入の有無だけ**である。
       - name: Detect whether this PR is docs-only
+        if: ${{ steps.gate.outputs.run == 'true' }}
         id: touched
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -143,8 +166,8 @@ jobs:
       # 検証(build/test)を @claude セッション内で実走するための SDK 準備。
       # 技術スタックに合わせて書き換える（既定は C#/.NET 10。ci.example.yml と揃える。
       # 他スタックは actions/setup-node / actions/setup-python 等に置き換える）。
-      - uses: actions/setup-dotnet@v6
-        if: steps.touched.outputs.setup == 'true'
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        if: ${{ steps.gate.outputs.run == 'true' && (steps.touched.outputs.setup == 'true') }}
         with:
           dotnet-version: "10.0.403" # #1478: 厳密な版（"10.0.x" は配布元の 409 で導入できない）。全箇所で同じ値であることを scripts.repo.test.js が見る
 
@@ -152,7 +175,7 @@ jobs:
       # 本リポジトリは tool manifest（.config/dotnet-tools.json）を持たないためグローバル導入する。
       # 導入に失敗してもレビュー自体は続ける（EF の主張だけが「未検証」になる）。
       - name: Install dotnet-ef
-        if: steps.touched.outputs.setup == 'true'
+        if: ${{ steps.gate.outputs.run == 'true' && (steps.touched.outputs.setup == 'true') }}
         continue-on-error: true
         run: dotnet tool install --global dotnet-ef
 
@@ -162,27 +185,27 @@ jobs:
       # 【重要・#391】許可リストへ足すだけでは実行できない。node_modules が無ければ typecheck も
       # vitest も動かず、レビューは「実行したが失敗した」と報告する。原因が環境不備であることは
       # 本文からは判らないため、**拒否されるより質が悪い**。許可とセットアップは必ず対で入れる。
-      - uses: actions/setup-node@v7
-        if: steps.touched.outputs.setup == 'true'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: ${{ steps.gate.outputs.run == 'true' && (steps.touched.outputs.setup == 'true') }}
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend deps
-        if: steps.touched.outputs.setup == 'true'
+        if: ${{ steps.gate.outputs.run == 'true' && (steps.touched.outputs.setup == 'true') }}
         continue-on-error: true
         run: npm ci
         working-directory: frontend
       # Playwright（E2E）は利用者裁定によりレビューでも実走を許可する（2026-08-05・#391 ①）。
       # ブラウザ取得に 1〜2 分かかるが、E2E の主張を未検証のまま通すほうが害が大きいと判断した。
       # NFR / IADR-0208: ブラウザをキャッシュする（ci.yml の frontend-e2e と同じキー）。
-      - uses: actions/cache@v6
-        if: steps.touched.outputs.setup == 'true'
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: ${{ steps.gate.outputs.run == 'true' && (steps.touched.outputs.setup == 'true') }}
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
       - name: Install Playwright browser (chromium)
-        if: steps.touched.outputs.setup == 'true'
+        if: ${{ steps.gate.outputs.run == 'true' && (steps.touched.outputs.setup == 'true') }}
         continue-on-error: true
         run: npm run e2e:install
         working-directory: frontend
@@ -191,6 +214,7 @@ jobs:
       # 「@claude opus / sonnet / haiku」で切り替える。未指定時は既定 claude-sonnet-5-5。
       # 本文はコマンドインジェクション防止のため env 経由で受け取り、run へ直接展開しない。
       - name: Select model from mention
+        if: ${{ steps.gate.outputs.run == 'true' }}
         id: model
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
@@ -208,8 +232,9 @@ jobs:
           echo "Selected model: $MODEL"
 
       - name: Run Claude Code Review
+        if: ${{ steps.gate.outputs.run == 'true' }}
         id: claude
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@4845bacbb38b3c4b15d948f035349786f678e068 # v1.0.267
         # gh CLI（Issue 発行等）を既定トークンで認証する。gh は GH_TOKEN/GITHUB_TOKEN を参照する。
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -538,7 +563,7 @@ jobs:
       # if: always() が必須である（上の step が失敗した場合こそ内訳を知りたい）。
       # 実行ログを読めない構成では warn を出して exit 0（fail-open）。
       - name: Check permission denials
-        if: always()
+        if: always() && steps.gate.outputs.run == 'true'
         env:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         run: node scripts/check-permission-denials.js "$EXECUTION_FILE"
@@ -561,7 +586,7 @@ jobs:
       # PR の変更ファイルを CHANGED_FILES で渡す（上の「Detect whether this PR is docs-only」と同じ取り方）。
       # 差分を引けなければ空で渡し、検査器はその判定だけを warn 付きで skip する（fail-open）。
       - name: Check review verdict
-        if: always()
+        if: always() && steps.gate.outputs.run == 'true'
         env:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

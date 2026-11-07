@@ -49,6 +49,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# NFR: ワークフロー単位は読むだけにする（リポジトリ既定の権限に頼らない）。書き込みが要るジョブは
+# ジョブの permissions で足す（ci-failure-issue.yml を呼ぶ report-failure ジョブ等）。
+permissions:
+  contents: read
+
 jobs:
   # 🔴 **変更領域の判定は、専用ジョブを置かず各ジョブが自前で行う**（NFR / IADR-0208 決定 12）。
   #
@@ -81,10 +86,10 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
       - name: Check commit messages
@@ -105,10 +110,10 @@ jobs:
   scripts-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
       - name: Run scripts unit tests
@@ -145,14 +150,14 @@ jobs:
     env:
       PIPELINE_CONFIG: "deploy/helm/ai-stock-trading/files/pipeline.json"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # check-action-versions の --compare-with-ref が統合ブランチ時点のワークフローを
           # 読むため、履歴が要る（shallow だと当該検査が warn で skip される）。
           # adr-index-sync も diff 範囲の解決に履歴を使う。
           # 履歴は現在 50 コミット程度なので全取得しても安い。
           fetch-depth: 0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
 
@@ -536,26 +541,21 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
-    # 🔴 NFR / IADR-0208 決定 8: changelog の自動 PR（automation/*）では回さない。
-    # 実測で automation/changelog-update-develop の PR が CI を毎回起動し、
-    # 6 件以上が action_required のまま積み上がっていた。生成物だけの PR に
-    # restore / build / test は要らない。
-    #
-    # ⚠️ 必須チェックのジョブへ if: を付けてよい根拠: **`if` でスキップされたジョブは
-    # 必須チェック上「合格」として扱われる**（docs/ai-workflow.md に明記）。
-    # `paths:` でワークフローごと起動しない場合と違い、恒久 pending にはならない。
-    # claude-code-review.yml が既に同型の除外条件を持っている（:69）。
+    # NFR / IADR-0208 決定 8 は「changelog の自動 PR（automation/*）では回さない」をジョブ単位の if: で実現していたが、
+    # IADR-0625 でやめた（下の注記）。
     #
     # NFR / IADR-0208 決定 11: backend に影響しない変更だけの PR では回さない
     # （dotnet format は backend しか見ない）。判定は changes ジョブが持つ。
     #
     # 🔴 **`needs:` を持たない。** 上流ジョブの失敗で skip され、
     # **必須チェックが黙って「合格」になる**経路を構造的に断つため（決定 12）。
-    if: ${{ !startsWith(github.head_ref, 'automation/') }}
+    # NFR, IADR-0625: ブランチ名（`automation/`）でジョブを外さない。外すとジョブは skipped になり、必須チェック上は
+    # 「合格」として扱われる —— ブランチ名は PR を出す人が自由に付けられる（フォークの PR でも同じ）。
+    # 生成物だけの自動 PR は、下の Gate（detect-changed-areas.js。変更ファイルで判定する）が中身を skip する。
     steps:
       # 変更領域の判定（IADR-0208 決定 12）。`--git` が HEAD^1..HEAD の差分を自分で取る。
       # 🔴 差分が取れなければ判定器は **backend=true（走らせる）へ倒す**。落とさない。
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2 # HEAD^1 の解決に必要な最小。pull_request では HEAD^1 が base である
       - name: Gate
@@ -577,13 +577,13 @@ jobs:
       # して引用しないこと。
       # packages.lock.json を持たないため setup-dotnet の cache: true は使えない
       # （ロックファイルのハッシュをキーにする実装のため）。
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: ${{ steps.gate.outputs.backend == 'true' }}
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
           restore-keys: nuget-${{ runner.os }}-
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         if: ${{ steps.gate.outputs.backend == 'true' }}
         with:
           dotnet-version: "10.0.403" # #1478: 厳密な版（"10.0.x" は配布元の 409 で導入できない）。全箇所で同じ値であることを scripts.repo.test.js が見る
@@ -607,7 +607,9 @@ jobs:
   backend-test:
     # 🔴 **`needs:` を持たない**（決定 12）。直列の前置きを消し、シャードを即座に起動させる。
     # backend 非変更なら下のステップが全部 skip され、ジョブは数十秒で success になる。
-    if: ${{ !startsWith(github.head_ref, 'automation/') }}
+    # NFR, IADR-0625: ブランチ名（`automation/`）でジョブを外さない。外すとジョブは skipped になり、必須チェック上は
+    # 「合格」として扱われる —— ブランチ名は PR を出す人が自由に付けられる（フォークの PR でも同じ）。
+    # 生成物だけの自動 PR は、下の Gate（detect-changed-areas.js。変更ファイルで判定する）が中身を skip する。
     runs-on: ubuntu-latest
     strategy:
       # 🔴 fail-fast を切る。1 シャードが落ちても他を走り切らせ、
@@ -626,7 +628,7 @@ jobs:
     steps:
       # 変更領域の判定（決定 12）。`--git` が HEAD^1..HEAD の差分を自分で取る。
       # 🔴 差分が取れなければ判定器は **backend=true（走らせる）へ倒す**。落とさない。
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2 # HEAD^1 の解決に必要な最小。pull_request では HEAD^1 が base である
       - name: Gate
@@ -635,13 +637,13 @@ jobs:
       # 🔴 キャッシュは**ブランチ単位でスコープされる**（実測 2026-08-21）。
       # base が温まっていれば新規 PR ブランチは初回からヒットする。
       # develop へマージ直後の初回 run が miss するのは壊れているのではない。
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: ${{ steps.gate.outputs.backend == 'true' }}
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
           restore-keys: nuget-${{ runner.os }}-
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         if: ${{ steps.gate.outputs.backend == 'true' }}
         with:
           dotnet-version: "10.0.403" # #1478: 厳密な版（"10.0.x" は配布元の 409 で導入できない）。全箇所で同じ値であることを scripts.repo.test.js が見る
@@ -762,7 +764,7 @@ jobs:
       # 常時上げると保管と転送を毎 run 払うことになる（IADR-0208 のレイテンシ・費用の方針）。
       - name: Upload test diagnostics
         if: ${{ failure() && steps.gate.outputs.backend == 'true' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-diagnostics-shard-${{ matrix.shard }}
           path: |
@@ -793,7 +795,7 @@ jobs:
             echo "::error::シャード ${{ matrix.shard }}: カバレッジレポートが $want 件でなく $got 件である。テストが走っていないか二重に走っている。"
             exit 1
           fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ steps.gate.outputs.backend == 'true' }}
         with:
           name: coverage-shard-${{ matrix.shard }}
@@ -813,7 +815,10 @@ jobs:
     needs: [backend-test]
     # 🔴 always() が要る。脚が skip / 失敗しても集約は必ず report しなければ、
     # 必須チェックが恒久 pending になりマージできなくなる。
-    if: ${{ always() && !startsWith(github.head_ref, 'automation/') }}
+    # NFR, IADR-0625: ブランチ名（`automation/`）でジョブを外さない。外すとジョブは skipped になり、必須チェック上は
+    # 「合格」として扱われる —— ブランチ名は PR を出す人が自由に付けられる（フォークの PR でも同じ）。
+    # 生成物だけの自動 PR は、脚と下の Gate（detect-changed-areas.js。変更ファイルで判定する）が中身を skip する。
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       # 🔴 判定を最初に置く。「backend 非変更だから緑」と「脚が落ちたのに緑」を
@@ -827,7 +832,7 @@ jobs:
             success) echo "全シャードが成功した（または backend 非変更で中身が skip された）。" ;;
             *) echo "::error::backend-test が ${{ needs.backend-test.result }} である。"; exit 1 ;;
           esac
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2 # HEAD^1 の解決に必要な最小
       # 🔴 集約ジョブも**自前で**判定する（決定 12）。脚が「中身を skip して success」なのか
@@ -840,7 +845,7 @@ jobs:
       # 依存を持たず、ランナー既定の Node で動く）。集約ジョブは必須チェックの最後尾なので、
       # ここの数秒はそのまま待ち時間になる。
       # 全シャードのレポートを 1 箇所へ集める。merge-multiple で同名パスも共存させる。
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: ${{ steps.gate.outputs.backend == 'true' }}
         with:
           pattern: coverage-shard-*
@@ -884,22 +889,17 @@ jobs:
   # 疎通は実基盤依存として後続スライスへ分離するため、本ジョブは Node のみ（Docker 不要）で完結する。
   frontend:
     runs-on: ubuntu-latest
-    # 🔴 NFR / IADR-0208 決定 8: changelog の自動 PR（automation/*）では回さない。
-    # 実測で automation/changelog-update-develop の PR が CI を毎回起動し、
-    # 6 件以上が action_required のまま積み上がっていた。生成物だけの PR に
-    # restore / build / test は要らない。
-    #
-    # ⚠️ 必須チェックのジョブへ if: を付けてよい根拠: **`if` でスキップされたジョブは
-    # 必須チェック上「合格」として扱われる**（docs/ai-workflow.md に明記）。
-    # `paths:` でワークフローごと起動しない場合と違い、恒久 pending にはならない。
-    # claude-code-review.yml が既に同型の除外条件を持っている（:69）。
-    if: ${{ !startsWith(github.head_ref, 'automation/') }}
+    # NFR / IADR-0208 決定 8 は「changelog の自動 PR（automation/*）では回さない」をジョブ単位の if: で実現していたが、
+    # IADR-0625 でやめた（下の注記）。
+    # NFR, IADR-0625: ブランチ名（`automation/`）でジョブを外さない。外すとジョブは skipped になり、必須チェック上は
+    # 「合格」として扱われる —— ブランチ名は PR を出す人が自由に付けられる（フォークの PR でも同じ）。
+    # このジョブは生成物だけの自動 PR でも走る（変更ファイルで中身を出し分ける Gate を持たない。所要は数分）。
     defaults:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           cache: npm
@@ -925,24 +925,19 @@ jobs:
   # 実 BFF/Keycloak/クラスタ疎通には依存させない（実基盤 live 検証は #82 系／MSP#284 へ分離）。Docker 不要・frontend/ に閉じる。
   frontend-e2e:
     runs-on: ubuntu-latest
-    # 🔴 NFR / IADR-0208 決定 8: changelog の自動 PR（automation/*）では回さない。
-    # 実測で automation/changelog-update-develop の PR が CI を毎回起動し、
-    # 6 件以上が action_required のまま積み上がっていた。生成物だけの PR に
-    # restore / build / test は要らない。
-    #
-    # ⚠️ 必須チェックのジョブへ if: を付けてよい根拠: **`if` でスキップされたジョブは
-    # 必須チェック上「合格」として扱われる**（docs/ai-workflow.md に明記）。
-    # `paths:` でワークフローごと起動しない場合と違い、恒久 pending にはならない。
-    # claude-code-review.yml が既に同型の除外条件を持っている（:69）。
-    if: ${{ !startsWith(github.head_ref, 'automation/') }}
+    # NFR / IADR-0208 決定 8 は「changelog の自動 PR（automation/*）では回さない」をジョブ単位の if: で実現していたが、
+    # IADR-0625 でやめた（下の注記）。
+    # NFR, IADR-0625: ブランチ名（`automation/`）でジョブを外さない。外すとジョブは skipped になり、必須チェック上は
+    # 「合格」として扱われる —— ブランチ名は PR を出す人が自由に付けられる（フォークの PR でも同じ）。
+    # このジョブは生成物だけの自動 PR でも走る（変更ファイルで中身を出し分ける Gate を持たない。所要は数分）。
     # NFR / #1421（E-72）/ IADR-0603: 上限を置く（既定の 360 分まで掛け続けない）。実測の所要は数分である。
     timeout-minutes: 30
     defaults:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           cache: npm
@@ -952,7 +947,7 @@ jobs:
       # NFR / IADR-0208: Playwright のブラウザをキャッシュする。実測で毎回 31 秒掛かっていた
       # （e2e:install = playwright install --with-deps chromium。apt-get も叩く）。
       # キーは package-lock.json のハッシュ（= @playwright/test の版が変われば取り直す）。
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
@@ -983,7 +978,7 @@ jobs:
       # 下の e2e-flaky-streak ジョブと、develop の後の実行が「連続して flaky か」を見るための履歴。
       - name: Upload flaky summary
         if: ${{ !cancelled() && steps.tally.outcome == 'success' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-flaky-summary
           path: ${{ runner.temp }}/e2e-flaky/e2e-flaky-summary.json
@@ -992,7 +987,7 @@ jobs:
       # NFR / #1421 / IADR-0603: レポートは**失敗時だけでなく常に**残す（flaky の再試行の trace を後から読むため）。
       - name: Upload Playwright report
         if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
           path: frontend/playwright-report/
@@ -1012,14 +1007,14 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
       - name: Download this run's flaky summary
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: e2e-flaky-summary
           path: ${{ runner.temp }}/e2e-flaky-current
