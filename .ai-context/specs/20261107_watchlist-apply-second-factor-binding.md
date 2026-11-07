@@ -34,7 +34,10 @@ plan_refs:
 - 適用の口で TOTP をもう一度確かめる形は採らない。確定で使ったコードは再利用を拒まれる（IADR-0626 決定 4）ので、ボットは利用者に 2 つ目のコードを求めることになる。
 - 採る形: **確定の第 2 要素は報告書で確かめ、適用は市場監視（提供側）が報告書の台帳へ照会して、その確定に結び付ける。**
   - 照会の口は報告書の `GET /reports/policy-revisions/watchlist-proposal/binding`（サービスの身元だけ。ボット・利用者は通さない）。
-  - 判定は既存の `Lookup` と同じ。加えて、報告書の第 2 要素が段 2（Enforce）かどうか（`secondFactorEnforced`）を返す。
+  - 判定は既存の `Lookup` と同じ。加えて、その案の確定が第 2 要素を通ったか（確定の時の記録 `ProposalSecondFactorVerified`。照会では `secondFactorVerified`）を返す。
+    - 照会の時点の構成（段）では判定しない。段 1 で確認コードなしに確定した案を、段 2 へ上げた後に適用させないため。
+  - 予約の口は報告書の `POST /reports/policy-revisions/watchlist-proposal/binding/reserve`（サービスの身元だけ）。
+    - 予約の時刻 `WatchlistApplyReservedAt` は同時実行のトークンで、1 つの案につき 1 回だけ通る（二重適用を止める）。
   - 市場監視の門（`WatchlistProposalBindingGate`）は `OwnerSecondFactorGate` と同じ形にする。
     - 段は Off / Audit / Enforce（`Watchlist:ProposalBinding:Mode`）。Audit は記録だけ、Enforce は結び付いたときだけ適用する。
     - 照会が届かない・読めないときは `Unavailable` とし、Enforce では拒む。
@@ -44,10 +47,14 @@ plan_refs:
 
 1. `proposalRef` が `<会話キー>-v<版>` の形で読める（ボットが送る形。`PolicyApprovalCommandHandler`）。
 2. 報告書がその版の案を持ち、**その版で確定されている**（`Lookup` の Found）。
-3. 報告書の第 2 要素が Enforce である（確定が第 2 要素を通ったことを意味する）。
+3. その案の確定が第 2 要素を通った記録がある（`secondFactorVerified=true`。確定の時に報告書が `ProposalSecondFactorVerified` へ残した値）。
 4. 適用の記録がまだ無い（`ApplyRecorded=false`）。
 5. 案を作った時点の監視銘柄（`Snapshot`）があり、要求の `expectedWatchlist` と集合として一致する。
-6. 要求の `changes` が台帳の `Changes` と、操作と銘柄の並びで一致する（理由の文は比べない。適用は要求の値で行うが、2 つは同じものになる）。
+6. 要求の `changes` が台帳の `Changes` と、操作と銘柄の並びで一致する（理由の文は比べない）。
+7. 1〜6 を満たしたら、台帳で適用を予約する。予約が通ったときだけ適用する（予約済みなら `AlreadyApplied`、届かなければ `Unavailable`）。
+
+結び付いたら、適用と変更履歴には台帳の入れ替え（理由も台帳の確定済みの値）を使う。要求の理由は使わない。
+予約の後に適用が失敗した（409・400）案は、予約を戻さない（戻すと二重適用の窓ができる）。入れ替えは設定画面から行う。
 
 拒否は 403（固定の文言。入力を含まない）。gRPC 面は `PERMISSION_DENIED`。ボットは非 2xx を「適用しなかった」と扱う（既存の `Rejected`）。
 
@@ -80,15 +87,19 @@ plan_refs:
    - 確定されていない版
    - 適用済み
    - `proposalRef` の形の違い
-   - 報告書の第 2 要素が Enforce でない
-   - 照会が届かない
+   - 確定の第 2 要素の記録が無い（`secondFactorVerified=false`。段 1 で確認コードなしに確定した案を含む）
+   - 照会・予約が届かない
+   - 同じ案の 2 度目（予約済み。監視銘柄を変えない案でも止まる）
+   適用と変更履歴の理由は台帳の値になる。
 2. Audit は、結び付かなくても記録して適用する。Off は照会しない。
-3. gRPC 面も同じ判定になる（403 → `PERMISSION_DENIED`）。
-4. 報告書の照会の口は、サービスの身元だけが通る（ボット・利用者のトークンは 403）。
+3. gRPC 面も同じ判定になる（一致する要求は適用し、403 → `PERMISSION_DENIED`。同じ案の 2 度目も `PERMISSION_DENIED`）。
+4. 報告書の照会と予約の口は、サービスの身元だけが通る（ボット・利用者のトークンは 403）。
+   - 報告書は、方針の案の確定が `Verified` だったときだけ `ProposalSecondFactorVerified` を true にする。
+   - 予約は 1 つの案につき 1 回だけ通る。実 PostgreSQL で 2 つの予約を同時に流しても、通るのは 1 件だけ（統合試験）。
 5. 空売りの解禁の判定は、受理できるときだけ第 2 要素を通す（Enforce でコードが無ければ記録しない）。受理できない判定は門を呼ばない。
 6. chart: 3 つのプロファイルに env が揃う。values-cloud は Enforce で、NetworkPolicy が市場監視から報告書への通信を許す。
 
-## 8. ［2026-11-07 追記 / レビュー］結び付きを強める 4 点
+## 8. ［2026-11-07 追記 / レビュー］結び付きを強める 4 点（§2・§3・§7 へ反映済み）
 
 1. 確定の第 2 要素は、照会の時点の構成ではなく、確定の時の記録で判定する。報告書は、方針の案の行の `ProposalSecondFactorVerified` に `Verified` だったかを残す（移行 `AddPolicyProposalSecondFactorAndApplyReservation`）。
 2. 二重適用を止めるため、台帳で適用を予約する（`WatchlistApplyReservedAt`・同時実行のトークン・1 回だけ）。市場監視は結び付いた要求だけを予約し、2 度目は拒む。

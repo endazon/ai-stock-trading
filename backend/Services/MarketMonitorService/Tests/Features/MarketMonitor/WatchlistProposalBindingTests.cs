@@ -344,6 +344,41 @@ public class WatchlistProposalBindingTests
         var source = new FakeSource(new(WatchlistProposalLookupStatus.Unavailable, null));
         await using var factory = Configured(baseFactory, "Enforce", source);
         var before = await LedgerOfAsync(factory, source);
+        var client = GrpcClient(factory);
+
+        var act = async () => await client.ApplyWatchlistProposalAsync(GrpcRequest(before, "TSLA"));
+
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+        (await SymbolsAsync(factory)).Should().NotContain("TSLA");
+    }
+
+    // gRPC 面の陽性: 台帳の案と一致する要求は通り、台帳の理由で適用する。同じ案の 2 度目は予約が通らず PERMISSION_DENIED。
+    [Fact]
+    public async Task gRPC面も台帳の案と一致する要求は適用し2度目はPERMISSION_DENIED()
+    {
+        await using var baseFactory = new MonitorWorkerWebApplicationFactory();
+        var source = new FakeSource(new(WatchlistProposalLookupStatus.Unavailable, null));
+        await using var factory = Configured(baseFactory, "Enforce", source);
+        var before = await LedgerOfAsync(factory, source);
+        var client = GrpcClient(factory);
+
+        var applied = await client.ApplyWatchlistProposalAsync(GrpcRequest(before, "NVDA"));
+
+        applied.Items.Should().ContainSingle(i => i.Symbol == "NVDA" && i.Action == "add" && i.Applied);
+        (await SymbolsAsync(factory)).Should().Contain("NVDA");
+        var history = await Owner(factory).GetFromJsonAsync<JsonElement>("/monitor/watchlist/history");
+        history.EnumerateArray().Should().Contain(h => h.GetProperty("reason").GetString()!.StartsWith("台帳の理由"));
+
+        var again = async () => await client.ApplyWatchlistProposalAsync(GrpcRequest(before, "NVDA"));
+        (await again.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+    }
+
+    private static Proto.WatchlistOwnerWrite.WatchlistOwnerWriteClient GrpcClient(WebApplicationFactory<Program> factory) =>
+        new(GrpcChannel.ForAddress(
+            factory.Server.BaseAddress, new GrpcChannelOptions { HttpHandler = new BotHeaders(factory.Server.CreateHandler()) }));
+
+    private static Proto.WatchlistProposalApplicationRequest GrpcRequest(IEnumerable<string> expected, string symbol)
+    {
         var request = new Proto.WatchlistProposalApplicationRequest
         {
             ExpectedWatchlist = new Proto.WatchlistItems(),
@@ -351,15 +386,9 @@ public class WatchlistProposalBindingTests
             ProposalRef = ProposalRef,
             OnBehalfOf = "developer",
         };
-        request.ExpectedWatchlist.Items.AddRange(before.Select(s => new Proto.WatchlistItem { Symbol = s, Market = Proto.Market.UnitedStates }));
-        request.Changes.Items.Add(new Proto.WatchlistChangeInstruction { Action = "add", Symbol = "TSLA", Reason = "r" });
-        var client = new Proto.WatchlistOwnerWrite.WatchlistOwnerWriteClient(GrpcChannel.ForAddress(
-            factory.Server.BaseAddress, new GrpcChannelOptions { HttpHandler = new BotHeaders(factory.Server.CreateHandler()) }));
-
-        var act = async () => await client.ApplyWatchlistProposalAsync(request);
-
-        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
-        (await SymbolsAsync(factory)).Should().NotContain("TSLA");
+        request.ExpectedWatchlist.Items.AddRange(expected.Select(s => new Proto.WatchlistItem { Symbol = s, Market = Proto.Market.UnitedStates }));
+        request.Changes.Items.Add(new Proto.WatchlistChangeInstruction { Action = "add", Symbol = symbol, Reason = "r" });
+        return request;
     }
 
     private sealed class BotHeaders(HttpMessageHandler inner) : DelegatingHandler(inner)
