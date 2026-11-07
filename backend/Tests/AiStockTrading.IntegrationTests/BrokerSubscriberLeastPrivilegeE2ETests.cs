@@ -13,7 +13,7 @@ using Xunit;
 
 namespace AiStockTrading.IntegrationTests;
 
-// 🔴 NFR-18, IADR-0628: **購読側の利用者に、購読する exchange の configure を与えなくても、購読は動く**（クラウドの段 2 の権限の形）。
+// 🔴 NFR-18, IADR-0628, IADR-0635: **購読側の利用者に、購読する exchange の configure を与えなくても、購読は動く**（クラウドの段 2 の権限の形）。
 //
 // 共通配線を Passive（クラウドの切り替え）で起こすと、購読側は購読の exchange を受動で宣言し（在るかの確かめだけ）、キューの宣言と
 // 束ねは続ける。RabbitMQ の queue.bind に要るのはキューの write と exchange の read で、受動の宣言は configure を要らない。
@@ -52,16 +52,15 @@ public sealed partial class BrokerSubscriberLeastPrivilegeE2ETests : IAsyncLifet
         BscLeastPrivilegeProbeReceiver.Reset();
 
         await RabbitMqCtlAsync("add_user", SubscriberUser, _subscriberPassword);
-        // 基盤の生成器（gen-rabbitmq-permissions.js）がクラウドの購読側に与える形: 自分のキュー（接頭辞）・応答キュー・共有のデッドレター・
-        // 既定の exchange（戻し）。購読の exchange は read だけ（configure も write も無い）。
+        // 基盤の生成器（gen-rabbitmq-permissions.js）がクラウドの購読側に与える形: 自分のキュー（接頭辞。デッドレターもこの中。IADR-0635）・
+        // 応答キュー・既定の exchange（戻し）。購読の exchange は read だけ（configure も write も無い）。共有のデッドレターは無い。
         var own = Regex.Escape($"{SubscriberService}.") + ".*";
         const string response = @"wolverine\.response\..*";
-        const string deadLetter = @"wolverine-dead-letter-queue";
         await RabbitMqCtlAsync(
             "set_permissions", "-p", "/", SubscriberUser,
-            $"^({own}|{response}|{deadLetter})$",
-            $"^({own}|{deadLetter}|amq\\.default)$",
-            $"^({own}|{response}|{deadLetter}|{Regex.Escape(Exchange)})$");
+            $"^({own}|{response})$",
+            $"^({own}|amq\\.default)$",
+            $"^({own}|{response}|{Regex.Escape(Exchange)})$");
     }
 
     public async ValueTask DisposeAsync()
