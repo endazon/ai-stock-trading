@@ -613,6 +613,7 @@
 
 ### ドキュメント
 
+- **NFR**: CHANGELOG を自動更新 (#1593) (a40319b5)
 - **NFR**: CHANGELOG を自動更新 (#1586) (74530656)
 - **NFR**: CHANGELOG を自動更新 (#1569) (08634c6a)
 - **NFR**: CHANGELOG を自動更新 (#1565) (7d485f68)
@@ -823,6 +824,9 @@
 
 ### その他
 
+- **NFR**: フロントエンドの vitest 5・plugin-react 6（vite 8）・@lingui/* 6.12 を 1 本で上げる (#1604) (baf41579)
+- **deps-dev**: bump @playwright/test from 1.61.1 to 1.64.1 in /frontend (#1602) (b2a2e876)
+- **deps-dev**: bump @types/node from 22.20.1 to 26.6.6 in /frontend (#1599) (67e06c08)
 - **NFR**: フロントエンドの ESLint を 10 系へ上げ、develop の npm ci の ERESOLVE を直す（IADR-0640） (#1595) (e2c66f9c)
 - **deps-dev**: bump @eslint/js from 9.39.5 to 10.0.1 in /frontend (#1572) (1e89cc10)
 - **deps-dev**: bump typescript-eslint from 8.64.0 to 8.72.1 in /frontend (#1578) (e9c36bfd)
