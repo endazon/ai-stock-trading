@@ -118,17 +118,25 @@ reset; rc="$(run status)"
 check "status は 0" "$([ "$rc" = 0 ] && echo 0 || echo 1)"
 check "status は変える動詞を使わない" "$(grep -Eq '(^| )(create|apply|delete|label|scale|patch)( |$)' "$STATE/calls.log" && echo 1 || echo 0)"
 
-# chart は risk-management と report で同じ Secret を optional で読む（values.yaml・values-local.yaml）。
-# values-local・values-cloud は 2 サービスの extraEnv を丸ごと置き換えるので、無いとその profile では門が Off のままになる。
+# 既定（values.yaml）は risk-management と report が同じ Secret を optional で読む（report は宛先が無いので Audit の間は自分で確かめる）。
+# NFR-06, IADR-0626 決定 1: values-local・values-cloud は report がリスク管理へ問い合わせる（RiskManagement__BaseUrl）ので、
+# Secret を読むのは risk-management だけ。extraEnv は丸ごと置き換わるので、risk-management の側が無いとその profile では門が Off のままになる。
 for v in values.yaml values-local.yaml values-cloud.yaml; do
-	check "$v: 2 サービスが ast-owner-totp を optional で読む" \
-		"$([ "$(grep -c 'secretKeyRef: { name: ast-owner-totp, key: secret, optional: true }' "$ROOT_DIR/deploy/helm/ai-stock-trading/$v")" = 2 ] && echo 0 || echo 1)"
+	want=1; [ "$v" = values.yaml ] && want=2
+	check "$v: ast-owner-totp を optional で読むのが ${want} 本" \
+		"$([ "$(grep -c 'secretKeyRef: { name: ast-owner-totp, key: secret, optional: true }' "$ROOT_DIR/deploy/helm/ai-stock-trading/$v")" = "$want" ] && echo 0 || echo 1)"
 done
 # values-cloud の描画（helm があるときだけ）でも、risk-management と report が段と Secret の参照を持つ。
 if command -v helm >/dev/null 2>&1; then
 	chart="$ROOT_DIR/deploy/helm/ai-stock-trading"
 	rendered="$(helm template ast "$chart" -f "$chart/values-cloud.yaml" -f "$chart/ci/values-cloud-digests.fixture.yaml" 2>/dev/null)"
-	check "values-cloud の描画: ast-owner-totp の参照が 2 本" "$([ "$(printf '%s\n' "$rendered" | grep -A1 'secretKeyRef:' | grep -c 'name: ast-owner-totp')" = 2 ] && echo 0 || echo 1)"
+	check "values-cloud の描画: ast-owner-totp の参照が 1 本（risk-management だけ）" "$([ "$(printf '%s\n' "$rendered" | grep -A1 'secretKeyRef:' | grep -c 'name: ast-owner-totp')" = 1 ] && echo 0 || echo 1)"
+	# NFR-06, IADR-0626 決定 1: report の Deployment は、照合の宛先（RiskManagement__BaseUrl）を持ち、Secret を読まない（宛先が無いと Enforce は拒む）。
+	report="$(printf '%s\n' "$rendered" | awk '/^---/{doc=""} {doc=doc $0 "\n"} /^kind: Deployment$/{dep=1} END{}' ; printf '%s\n' "$rendered" | awk 'BEGIN{RS="\n---"} /kind: Deployment/ && /name: report-service\n/ {print}')"
+	check "values-cloud の描画: report が RiskManagement__BaseUrl を持つ" \
+		"$(printf '%s\n' "$report" | grep -A1 'name: RiskManagement__BaseUrl$' | grep -q 'value: "http://risk-management-service:8080"' && echo 0 || echo 1)"
+	check "values-cloud の描画: report は ast-owner-totp を読まない" \
+		"$(printf '%s\n' "$report" | grep -q 'name: ast-owner-totp' && echo 1 || echo 0)"
 	# NFR-05, #1560, IADR-0623: クラウドでは ESO が OpenBao の cloud/ast/ast-owner-totp から写す。
 	check "values-cloud の描画: ExternalSecret ast-owner-totp が cloud/ast/ast-owner-totp の secret を写す" \
 		"$(printf '%s\n' "$rendered" | grep -A2 'remoteRef:' | grep -A1 'key: "ast/ast-owner-totp"' | grep -q 'property: secret' && echo 0 || echo 1)"

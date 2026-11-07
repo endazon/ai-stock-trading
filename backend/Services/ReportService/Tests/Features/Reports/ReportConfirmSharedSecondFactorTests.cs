@@ -56,17 +56,43 @@ public class ReportConfirmSharedSecondFactorTests
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
+    // 欠けたコードも持ち主へ問い合わせ、持ち主の判定（停止中は LockedOut）に揃える。Enforce ではどちらも確定しない。
     [Fact]
-    public async Task コードが無ければ問い合わせない()
+    public async Task コードが無くても持ち主に判定させる()
     {
-        var owner = new OwnerStub("Verified");
+        var owner = new OwnerStub("Missing");
         await using var factory = Factory(owner);
         var client = Owner(factory);
         var started = await StartAsync(client);
 
         (await client.PostAsJsonAsync($"/reports/{started.PeriodKey}/confirm", new { ExpectedVersion = started.Version }))
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        owner.Requests.Should().BeEmpty();
+        owner.Requests.Should().ContainSingle().Which.Code.Should().BeNull();
+    }
+
+    // 🔴 IADR-0626 決定 1（2026-11-07 追記）: Enforce で宛先が無ければ、プロセスの中の状態へ落とさず拒む（正しいコードでも）。
+    // Audit は従来どおりプロセスの中の状態で確かめて通す（単体の実行）。
+    [Theory]
+    [InlineData(null, "Enforce", HttpStatusCode.Forbidden)]
+    [InlineData("not a uri", "Enforce", HttpStatusCode.Forbidden)]
+    [InlineData(null, "Audit", HttpStatusCode.OK)]
+    public async Task 宛先が無ければEnforceは正しいコードでも拒み_Auditは通す(string? baseUrl, string mode, HttpStatusCode expected)
+    {
+        var secret = Totp.EncodeBase32(System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("1234567890", 2))));
+        await using var factory = new ReportWorkerWebApplicationFactory().WithWebHostBuilder(b =>
+        {
+            b.UseSetting($"{OwnerSecondFactorOptions.SectionName}:Mode", mode);
+            b.UseSetting($"{OwnerSecondFactorOptions.SectionName}:Secret", secret);
+            if (baseUrl is not null)
+                b.UseSetting("RiskManagement:BaseUrl", baseUrl);
+        });
+        var client = Owner(factory);
+        var started = await StartAsync(client);
+        Totp.TryDecodeBase32(secret, out var key);
+        var code = Totp.Compute(key, Totp.StepOf(DateTimeOffset.UtcNow));
+
+        (await client.PostAsJsonAsync($"/reports/{started.PeriodKey}/confirm", new { ExpectedVersion = started.Version, SecondFactorCode = code }))
+            .StatusCode.Should().Be(expected);
     }
 
     private static WebApplicationFactory<Program> Factory(OwnerStub owner) =>

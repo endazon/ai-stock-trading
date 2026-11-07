@@ -117,6 +117,7 @@ public sealed class TotpOwnerSecondFactorVerifier : IOwnerSecondFactorVerifier
     private readonly byte[]? _key;
     private readonly string _fingerprint = string.Empty;
     private readonly Lock _gate = new();
+    private int _unavailableStreak;
 
     public TotpOwnerSecondFactorVerifier(
         OwnerSecondFactorOptions options,
@@ -154,15 +155,25 @@ public sealed class TotpOwnerSecondFactorVerifier : IOwnerSecondFactorVerifier
         var normalizedTarget = OwnerSecondFactorTargets.Normalize(target);
         var now = _time.GetUtcNow();
         Decision decision;
+        int streak;
         try
         {
             lock (_gate)
+            {
                 decision = _store.Update(_fingerprint, state => Decide(state, now, operation, normalizedTarget, code));
+                _unavailableStreak = 0;
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            lock (_gate)
+                streak = ++_unavailableStreak;
             _logger.LogError(ex, "{Marker} 第 2 要素の状態を読み書きできませんでした（operation={Operation}）。確かめられないものとして扱います。",
                 OwnerSecondFactorGate.LogMarker, operation);
+            // IADR-0626 決定 3（2026-11-07 追記）: 確かめられなかったことも監査・通知へ流す（通知は続いた 1 回目だけ。数の欄は 0）。
+            // 発行も失敗する障害（メッセージを出せない）では Notify がログに残すだけになる。
+            Notify(new OwnerSecondFactorChecked(
+                operation.ToString(), normalizedTarget, nameof(SecondFactorOutcome.Unavailable), 0, 0, null, false, false, now, streak));
             return SecondFactorOutcome.Unavailable;
         }
 
@@ -265,6 +276,16 @@ public sealed class TotpOwnerSecondFactorVerifier : IOwnerSecondFactorVerifier
     }
 }
 
+/// <summary>
+/// NFR-06, IADR-0626 決定 1: 共有の状態の持ち主へ届けられない構成（Enforce なのに宛先が無い・読めない）で使う。
+/// 欠けを含め、すべて <see cref="SecondFactorOutcome.Unavailable"/>（停止中かどうかも判定できないため。閉じる向き）。
+/// プロセスの中の状態へ黙って落とすと、失敗の数が 2 サービスで別々になり、試行の上限が実質 2 倍になる。
+/// </summary>
+public sealed class UnavailableOwnerSecondFactorVerifier : IOwnerSecondFactorVerifier
+{
+    public SecondFactorOutcome Verify(SecondFactorOperation operation, string target, string? code) => SecondFactorOutcome.Unavailable;
+}
+
 /// <summary>NFR-06, IADR-0626 決定 1: 状態の持ち主（リスク管理）へ問い合わせる口の要求と応答。</summary>
 public sealed record OwnerSecondFactorVerifyRequest(string Operation, string Target, string? Code);
 
@@ -275,7 +296,7 @@ public sealed record OwnerSecondFactorVerifyResponse(string Outcome);
 /// NFR-06, FR-14, IADR-0626 決定 1: 状態の持ち主（リスク管理）へ問い合わせて確かめる（報告書の側）。
 /// <list type="bullet">
 ///   <item>宛先は <c>POST /risk-controls/owner-second-factor/verify</c>（サービスの身元だけが呼べる）。</item>
-///   <item>コードの欠けは問い合わせずに <see cref="SecondFactorOutcome.Missing"/>（状態を変えないため）。</item>
+///   <item>コードの欠けも問い合わせ、持ち主の判定（停止中は LockedOut）に揃える。</item>
 ///   <item>届かない・2xx でない・知らない応答は <see cref="SecondFactorOutcome.Unavailable"/>（Enforce は拒む）。</item>
 /// </list>
 /// 🔴 呼び手（門の callback）は同期であるため、ここで待つ（ASP.NET Core には同期文脈が無い。時間の上限は HttpClient の Timeout）。
@@ -286,9 +307,8 @@ public sealed class RemoteOwnerSecondFactorVerifier(HttpClient http, ILogger log
 
     public SecondFactorOutcome Verify(SecondFactorOperation operation, string target, string? code)
     {
-        if (string.IsNullOrEmpty(code))
-            return SecondFactorOutcome.Missing;
-
+        // 🔴 欠けたコードも問い合わせる（持ち主が停止中なら LockedOut、そうでなければ Missing を返す＝判定の優先順位を持ち主と揃える。
+        // 持ち主は欠けを数えないので、問い合わせても状態は変わらない）。
         try
         {
             using var response = http.PostAsJsonAsync(

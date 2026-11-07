@@ -4,7 +4,8 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // リスク管理（2 サービスで共有する状態の持ち主）が発行し、監査が記録し、通知がオーナーへ知らせる。
 //
 // 🔴 **コードそのものは載せない。** 載せるのは操作・対象・結果・失敗の数・停止の状態だけである。
-// 発行するのは Verified・Invalid・Replayed・LockedOut の 4 つ（欠け〔Missing〕・未構成〔NotConfigured〕は状態を変えないので発行しない）。
+// 発行するのは Verified・Invalid・Replayed・LockedOut・Unavailable の 5 つ（欠け〔Missing〕・未構成〔NotConfigured〕は状態を変えないので発行しない）。
+// Unavailable は状態を読み書きできなかったこと（数の欄は 0）。メッセージも出せない障害ではログだけになる。
 public record OwnerSecondFactorChecked(
     // 操作の種類（SecondFactorOperation の名前。例 KillSwitchDisengage）。
     string Operation,
@@ -22,4 +23,6 @@ public record OwnerSecondFactorChecked(
     bool ManualUnlockRequired,
     // この確かめで止め始めたか（停止の通知の起点）。
     bool LockStarted,
-    DateTimeOffset CheckedAt);
+    DateTimeOffset CheckedAt,
+    // 状態を読み書きできない（Unavailable）が続いた回数（この確かめを含む。Unavailable 以外は 0）。通知は 1 回目だけ。
+    int UnavailableStreak = 0);

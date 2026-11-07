@@ -569,6 +569,16 @@ public class NotificationTemplateGoldenTests
                     + "止めている間は正しいコードも受け付けません。心当たりが無ければ、誰かが試しています。",
                 NotificationSeverity.Critical)),
 
+        // 状態を読み書きできない（続いた 1 回目）。段 2 では確認コードを要する操作が拒まれ続けることを書く。
+        ["OwnerSecondFactorChecked/確かめられない"] = (
+            new OwnerSecondFactorChecked("KillSwitchDisengage", "kill-switch", "Unavailable", 0, 0, null, false, false, T, 1),
+            new NotificationMessage(
+                "確認コード: 確かめられない状態です",
+                "操作 KillSwitchDisengage（対象 kill-switch）の確認コードを確かめる状態を読み書きできません（2026-08-28 03:00:00Z）。"
+                    + "直るまで、確認コードを要する操作は段 2 ではすべて拒まれます（止める向きの操作は使えます）。"
+                    + "リスク管理の DB の稼働を確かめてください。",
+                NotificationSeverity.Critical)),
+
         // 🔴 手動の解除まで閉じたら、時間では解けないことと、止める向きは使えることを書く。
         ["OwnerSecondFactorChecked/手動の解除"] = (
             new OwnerSecondFactorChecked("TradingResume", "trading-pause", "Invalid", 0, 4, null, true, true, T),

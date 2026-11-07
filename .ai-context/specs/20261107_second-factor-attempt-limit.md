@@ -76,3 +76,5 @@ plan_refs:
 ## 母集合（規則 9・10）
 
 - 誤りの側の語（「15 分ロック」「1 回ずつ使える」「プロセスの中」「連続 5 回」）で `docs/`・`deploy/`・`scripts/`・`.ai-context/adr/` を走査した。追随が要るのは手順書 1 本（限界の節・失敗の分岐・段の節）と、IADR-0615 への追記（決定 8・残る制約 2 を本 IADR が置き換える）。chart・他の運用文書は止め方・共有に触れていない（除外）。作業仕様書（凍結）は直さない。
+
+［2026-11-07 追記］監査の指摘で、報告書が Enforce で宛先を持たないときにプロセスの中の状態へ落ちる形を閉じる向きへ直した（`UnavailableOwnerSecondFactorVerifier`。試験は `ReportConfirmSharedSecondFactorTests` の「宛先が無ければ…」）。values-local・values-cloud の報告書から Secret の参照を外し、`ast-owner-totp-enroll.test.sh` の本数の検査と、values-cloud の描画で報告書が宛先を持ち Secret を読まないことの検査を足した（helm は手元に無く、描画の検査は合成の YAML で awk の抽出だけを確かめた）。対象外の「chart の値は触らない」はこの追記で改める。

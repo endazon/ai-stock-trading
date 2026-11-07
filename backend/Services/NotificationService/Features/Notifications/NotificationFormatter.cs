@@ -806,7 +806,7 @@ public static class NotificationFormatter
 
     // NFR-06, FR-14, FR-09, IADR-0626 決定 3・4: 危険な操作の確認コード（認証アプリの 6 桁）を確かめた結果。
     // 成功は「何に使われたか」（操作と対象）を、失敗は数と止まるまでの残りを、停止は解ける時刻か手動の解除の手順を知らせる。
-    // 止めている間の試行（LockedOut）は知らせない（null。連打で通知を溢れさせない。監査には全件が残る）。
+    // 止めている間の試行（LockedOut）と、2 回目以降の Unavailable は知らせない（null。連打で通知を溢れさせない。監査には全件が残る）。
     // 🔴 コードそのものはイベントに無い（載せようがない）。
     public static NotificationMessage? From(OwnerSecondFactorChecked e)
     {
@@ -844,6 +844,12 @@ public static class NotificationFormatter
                 $"{what}の確認コードが{(e.Outcome == "Replayed" ? "使用済みでした" : "違っていました")}（{at}・続けて {e.ConsecutiveFailures} 回）。"
                 + "続けて失敗すると、確認コードを要する操作を止めます。心当たりが無ければ、誰かが試しています。",
                 NotificationSeverity.Warning),
+            // IADR-0626 決定 3（2026-11-07 追記）: 状態を読み書きできない。続いた 1 回目だけ知らせる（連続は監査にだけ残る）。
+            "Unavailable" when e.UnavailableStreak == 1 => new NotificationMessage(
+                "確認コード: 確かめられない状態です",
+                $"{what}の確認コードを確かめる状態を読み書きできません（{at}）。直るまで、確認コードを要する操作は"
+                + "段 2 ではすべて拒まれます（止める向きの操作は使えます）。リスク管理の DB の稼働を確かめてください。",
+                NotificationSeverity.Critical),
             _ => null,
         };
     }

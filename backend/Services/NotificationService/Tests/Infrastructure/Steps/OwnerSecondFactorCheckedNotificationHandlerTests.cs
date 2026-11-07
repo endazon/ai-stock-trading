@@ -29,4 +29,20 @@ public class OwnerSecondFactorCheckedNotificationHandlerTests
 
         sender.Sent.Should().HaveCount(expected);
     }
+
+    // IADR-0626 決定 3（2026-11-07 追記）: 状態を読み書きできないことは、続いた 1 回目だけ知らせる。
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 0)]
+    [InlineData(10, 0)]
+    public async Task 確かめられない状態は続いた1回目だけ知らせる(int streak, int expected)
+    {
+        var sender = new RecordingNotificationSender();
+
+        await new OwnerSecondFactorCheckedNotificationHandler(sender).Handle(
+            new OwnerSecondFactorChecked("StagePromote", "stage:Stage3", "Unavailable", 0, 0, null, false, false, T, streak),
+            CancellationToken.None);
+
+        sender.Sent.Should().HaveCount(expected);
+    }
 }

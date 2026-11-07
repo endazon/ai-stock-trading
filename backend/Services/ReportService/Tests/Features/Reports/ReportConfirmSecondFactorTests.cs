@@ -12,6 +12,7 @@ using ReportService.Features.Reports.ConfirmReport;
 using Proto = AiStockTrading.Shared.Grpc.Report.V1;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Xunit;
 
 namespace ReportService.Tests.Features.Reports;
@@ -164,13 +165,36 @@ public class ReportConfirmSecondFactorTests
         }
     }
 
+    // 🔴 IADR-0626 決定 1: Enforce は状態の持ち主（リスク管理）への宛先が無ければ拒む。Enforce の試験は宛先を与え、
+    // 持ち主の代わりに同じシークレットで確かめる口（OwnerVerifierHandler）へ届ける。
     private static WebApplicationFactory<Program> Factory(string? mode) =>
         new ReportWorkerWebApplicationFactory().WithWebHostBuilder(b =>
         {
             if (mode is not null)
                 b.UseSetting($"{OwnerSecondFactorOptions.SectionName}:Mode", mode);
             b.UseSetting($"{OwnerSecondFactorOptions.SectionName}:Secret", Secret);
+            if (mode == "Enforce")
+            {
+                var owner = new OwnerVerifierHandler(new TotpOwnerSecondFactorVerifier(
+                    new OwnerSecondFactorOptions { Mode = SecondFactorMode.Enforce, Secret = Secret },
+                    new InMemoryOwnerSecondFactorStateStore(), TimeProvider.System, NullLogger.Instance));
+                b.UseSetting("RiskManagement:BaseUrl", "http://risk-management");
+                b.ConfigureTestServices(s => s.AddHttpClient("risk-ledger").ConfigurePrimaryHttpMessageHandler(() => owner));
+            }
         });
+
+    // 持ち主（リスク管理）の確かめの口の代わり。ほかの照会は 404（供給元は未供給に倒れる）。
+    private sealed class OwnerVerifierHandler(IOwnerSecondFactorVerifier owner) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri?.AbsolutePath != RemoteOwnerSecondFactorVerifier.Route)
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            var body = (await request.Content!.ReadFromJsonAsync<OwnerSecondFactorVerifyRequest>(cancellationToken))!;
+            var outcome = owner.Verify(Enum.Parse<SecondFactorOperation>(body.Operation), body.Target, body.Code);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new OwnerSecondFactorVerifyResponse(outcome.ToString())) };
+        }
+    }
 
     private static HttpClient Owner(WebApplicationFactory<Program> factory)
     {

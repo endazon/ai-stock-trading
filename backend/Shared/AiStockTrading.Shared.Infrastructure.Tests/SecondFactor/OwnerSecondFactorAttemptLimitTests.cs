@@ -302,10 +302,70 @@ public class OwnerSecondFactorAttemptLimitTests
 
         verifier.Verify(SecondFactorOperation.PolicyConfirm, "report:x@v1", "123456").Should().Be(SecondFactorOutcome.Unavailable);
         handler.Calls.Should().Be(1);
+    }
 
-        verifier.Verify(SecondFactorOperation.PolicyConfirm, "report:x@v1", null).Should().Be(SecondFactorOutcome.Missing);
-        verifier.Verify(SecondFactorOperation.PolicyConfirm, "report:x@v1", "").Should().Be(SecondFactorOutcome.Missing);
-        handler.Calls.Should().Be(1, "欠けは状態を変えないので問い合わせない");
+    // 🔴 欠けたコードも持ち主へ問い合わせ、持ち主の判定に揃える（停止中は欠けでも LockedOut。停止していなければ Missing・数えない）。
+    [Fact]
+    public void 欠けたコードも持ち主に判定させ_停止中はLockedOutに揃う()
+    {
+        var store = new InMemoryOwnerSecondFactorStateStore();
+        var clock = new ManualClock();
+        var owner = new TotpOwnerSecondFactorVerifier(Options(RfcSecret), store, clock, NullLogger.Instance);
+        var handler = new OwnerEndpointStub(owner);
+        var remote = new RemoteOwnerSecondFactorVerifier(new HttpClient(handler) { BaseAddress = new Uri("http://risk-management") }, NullLogger.Instance);
+
+        remote.Verify(SecondFactorOperation.ReportConfirm, "report:x@v1", null).Should().Be(SecondFactorOutcome.Missing);
+        Peek(store).ConsecutiveFailures.Should().Be(0, "持ち主は欠けを数えない");
+
+        FailTimes(new OwnerSecondFactorGate(Options(RfcSecret), owner, NullLogger.Instance), clock, 5);
+        remote.Verify(SecondFactorOperation.ReportConfirm, "report:x@v1", null).Should().Be(SecondFactorOutcome.LockedOut);
+        remote.Verify(SecondFactorOperation.ReportConfirm, "report:x@v1", "").Should().Be(SecondFactorOutcome.LockedOut);
+        owner.Verify(SecondFactorOperation.KillSwitchDisengage, Target, null).Should().Be(SecondFactorOutcome.LockedOut, "持ち主の側と同じ");
+        handler.Requests.Should().HaveCount(3);
+    }
+
+    // IADR-0626 決定 3（2026-11-07 追記）: 状態を読み書きできないことも知らせる。続いた回数を載せ、成功で数え直す。
+    [Fact]
+    public void 状態を読み書きできないことも発行し_続いた回数を載せる()
+    {
+        var store = new FlakyStore();
+        var clock = new ManualClock();
+        var observer = new RecordingObserver();
+        var verifier = new TotpOwnerSecondFactorVerifier(Options(RfcSecret), store, clock, NullLogger.Instance, observer);
+
+        store.Broken = true;
+        verifier.Verify(SecondFactorOperation.TradingResume, Target, "000000").Should().Be(SecondFactorOutcome.Unavailable);
+        verifier.Verify(SecondFactorOperation.TradingResume, Target, "000000").Should().Be(SecondFactorOutcome.Unavailable);
+        store.Broken = false;
+        verifier.Verify(SecondFactorOperation.TradingResume, Target, CodeAt(clock.Now)).Should().Be(SecondFactorOutcome.Verified);
+        store.Broken = true;
+        verifier.Verify(SecondFactorOperation.TradingResume, Target, null).Should().Be(SecondFactorOutcome.Unavailable);
+
+        observer.Checks.Select(c => (c.Outcome, c.UnavailableStreak)).Should().Equal(
+            ("Unavailable", 1), ("Unavailable", 2), ("Verified", 0), ("Unavailable", 1));
+    }
+
+    [Fact]
+    public void 状態も発行も失敗するときはログだけで_結果は変えない()
+    {
+        var clock = new ManualClock();
+        var verifier = new TotpOwnerSecondFactorVerifier(Options(RfcSecret), new BrokenStore(), clock, NullLogger.Instance, new ThrowingObserver());
+
+        verifier.Verify(SecondFactorOperation.TradingResume, Target, CodeAt(clock.Now)).Should().Be(SecondFactorOutcome.Unavailable);
+    }
+
+    // IADR-0626 決定 1（2026-11-07 追記）: 持ち主へ届けられない構成では、欠けのほかはすべて確かめられないとする（Enforce は拒む）。
+    [Fact]
+    public void 持ち主へ届けられない構成は確かめられないとして閉じる()
+    {
+        var gate = new OwnerSecondFactorGate(
+            new OwnerSecondFactorOptions { Mode = SecondFactorMode.Enforce }, new UnavailableOwnerSecondFactorVerifier(), NullLogger.Instance);
+        var clock = new ManualClock();
+
+        gate.Check(SecondFactorOperation.ReportConfirm, "report:x@v1", CodeAt(clock.Now))
+            .Should().Be(new SecondFactorDecision(SecondFactorOutcome.Unavailable, false));
+        gate.Check(SecondFactorOperation.ReportConfirm, "report:x@v1", null)
+            .Should().Be(new SecondFactorDecision(SecondFactorOutcome.Unavailable, false), "停止中かどうかも判定できない");
     }
 
     // ---- 補助 ----
@@ -365,6 +425,16 @@ public class OwnerSecondFactorAttemptLimitTests
     private sealed class ThrowingObserver : IOwnerSecondFactorObserver
     {
         public void OnChecked(OwnerSecondFactorChecked check) => throw new InvalidOperationException("broker down");
+    }
+
+    private sealed class FlakyStore : IOwnerSecondFactorStateStore
+    {
+        private readonly InMemoryOwnerSecondFactorStateStore _inner = new();
+
+        public bool Broken { get; set; }
+
+        public T Update<T>(string secretFingerprint, Func<OwnerSecondFactorState, (OwnerSecondFactorState Next, T Result)> decide) =>
+            Broken ? throw new InvalidOperationException("db down") : _inner.Update(secretFingerprint, decide);
     }
 
     private sealed class BrokenStore : IOwnerSecondFactorStateStore

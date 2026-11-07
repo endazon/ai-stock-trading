@@ -321,7 +321,8 @@
     "ManualUnlockRequired": "Boolean",
     "Operation": "String",
     "Outcome": "String",
-    "Target": "String"
+    "Target": "String",
+    "UnavailableStreak": "Int32"
   },
   "PositionCloseAbandoned": {
     "AbandonedAt": "DateTimeOffset",
