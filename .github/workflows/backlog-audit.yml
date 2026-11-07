@@ -1,17 +1,28 @@
-# NFR / #439 / IADR-0170: バックログの週次監査。
+# NFR / #439 / IADR-0170 / IADR-0625: バックログの週次監査。
 #
 # 背景（2026-08-07 のバックログ監査の実測）:
 #   issue が増える主因は実装速度ではなく「閉じるより速く増えること」であった
 #   （14 日で 起票 111 / クローズ 86 / 純増 +25）。その一部は**定期的に見れば分かる無駄**である
-#   ——クローズ漏れ（当時の open 37 件のうち 3 件＝8%）・重複起票・環流の未起票・blocked の滞留。
-#   **いずれも誰も定期的に見ていなかった。**
+#   ——クローズ漏れ・重複起票・blocked の滞留。**いずれも誰も定期的に見ていなかった。**
 #
 # 【最重要】本監査は issue を自動でクローズしない（IADR-0170 決定5）。
 #   提案の一覧を単一の追跡 issue へ upsert し、判断は人間に残す。
-#   誤クローズは「調べ直す」という別の無駄を生み、放置のコストを上回る。
 #
-# 認証・許可リストの流儀は claude-code-review.yml に揃える（3 系統の同期対象。
-# .claude/settings.json / claude-coding.yml / claude-code-review.yml ＋ 本ファイル）。
+# 【IADR-0625】監査は生成 AI を使わない決定的なスクリプト（scripts/backlog-audit.js）で行う。
+#   - 数えられる面（Proposed の IADR・動いていない仕様書／文書・blocked の再検証・ラベルと一覧の食い違い・
+#     題名の一致する issue・エピックの進捗・ci-failure・古い PR・計画 ID レンジ）は機械で数える。
+#   - 判断が要る面（クローズ漏れの判定・blocked の分類の誤り）は、候補を並べて人が判断する。
+#   - issue の題名・本文は**データとしてのみ**扱う。シェル・式へは渡さない（スクリプトが GitHub API を
+#     fetch で読み、報告へは無害化した題名と番号だけを載せる）。本ファイルの run にイベントの値は出てこない。
+#   - 書き込みは issues だけ（追跡 issue と、計画 ID レンジのずれの専用 issue）。AI の資格情報・id-token は持たない。
+#
+# 再開の手順（2026-11 時点でワークフローは手動で無効化されている。本ファイルの変更では有効化しない。再開は利用者が行う）:
+#   1. 本ファイルの変更が develop に入っていることを確かめる（`claude-code-action` を含まないこと）。
+#   2. Actions → Backlog Audit → 「Enable workflow」（または `gh workflow enable backlog-audit.yml`）。
+#   3. 「Run workflow」で手動実行し、追跡 issue（ラベル backlog-audit）の本文が更新されたこと、
+#      ジョブの Summary に同じ報告が出たことを確かめる。以後は週次で動く。
+#
+# 失敗したら ci-failure-issue.yml が別スレッドの issue を立てる（監査が黙って止まらない）。
 name: Backlog Audit
 
 on:
@@ -25,57 +36,43 @@ concurrency:
   group: backlog-audit
   cancel-in-progress: false
 
+# NFR: ワークフロー単位は読むだけにし、書き込みは要るジョブにだけ置く。
+permissions:
+  contents: read
+
 jobs:
   backlog-audit:
     runs-on: ubuntu-latest
-    # ハングした実行が上限まで回り続けるのを防ぐ（レビューより広く読むため長めに取る）。
-    timeout-minutes: 30
+    timeout-minutes: 15
+    # 追跡 issue・専用 issue の作成と本文の置き換え（issues: write）と、動いていない PR の列挙（pull-requests: read）。
     permissions:
       contents: read
       issues: write
       pull-requests: read
-      id-token: write
-      # CI の状態・ログを参照するために必要（claude-code-review.yml と同じ理由）。
-      actions: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          # 後段は git を使わない（ファイルを読むだけ）。トークンを作業ツリーへ残さない。
+          persist-credentials: false
 
-      # NFR / #711: run success でも issue の産出・更新が無い（「指摘なし」と「黙って落ちた」の
-      # 区別が付かない）事象を検出するため、run 開始時刻を先頭で記録する。後段の
-      # `Verify backlog audit output` がこの時刻より issue.updated_at が新しいかを確認する。
-      # Claude ステップより**前**に取ることが重要——後で取ると、その間に起きた正当な更新まで
-      # 「run 開始より前」と誤判定し得る。
+      # NFR / #711: 「run success なのに issue が更新されていない」を検出するため、run 開始時刻を先頭で記録する。
       - name: Record run start time
         id: run_start
         run: echo "run_start=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      # 監査プロンプトが node で検査器を実走するため setup-node は維持する。
-      # （旧 check-feedback-dispatched.js のステップは資料再編 ADR-0029 決定 5 で撤去した。
-      #   環流はファイルではなく planning の issue で管理され、突合対象が存在しない。）
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
 
-      # NFR / #717 / #710: 監査項目 6（計画 ADR レンジ鮮度）は AI ではなく決定的なステップで解決する。
-      # `secrets.GITHUB_TOKEN` は本リポジトリしか読めず、AI が `mcp__github__get_file_contents` で
-      # `endazon/project-planning` を読もうとすると 404 になる（2026-09-09・run 34303693213 の #483 §6
-      # で実測。項目 6 が恒久的に「未確認」になっていた）。cross-repo 読み取り用の
-      # `PLANNING_REPO_TOKEN`（#496 で PR CI から使えることが実測済み）で計画側の一覧を取り、
-      # 宣言（traceability.repo.md）との突き合わせ結果を JSON に書く。AI はそのファイルを読んで
-      # 報告するだけ（cross-repo の資格情報を AI に持たせない）。secret が無い／API が失敗しても
-      # exit 0 で `status: unverified` を書く（fail-open。項目 6 の検証不能で他 5 項目を巻き込まない）。
-      # 出力先はワークスペース内（AI の Read が届く範囲。contents: read のため永続しない）。
-      #
-      # NFR / #1208 / IADR-0504: 宣言のずれ（behind / ahead）を検知したら、同じステップが専用 issue
-      # （ラベル plan-range-lag）を起票し、ずれが続く間は毎週本文を上書きする（--upsert-issue。GITHUB_TOKEN・
-      # issues: write）。2026-10-05 の本監査は behind を検知したが #483 の 1 行に載っただけで誰も引き直さず、
-      # 2 日後に全体監査が同じ遅れを指摘した（#1199。同型 3 回目）。検知を「作業」へ変える段が欠けていた。
-      # 自動クローズはしない（IADR-0170 決定6）。exit 1 になるのは、宣言が読めない（本リポジトリの欠陥）か、
-      # ずれを検知したのに issue へ書けなかったときだけである。計画側に届かない（unverified）ときは exit 0 の
-      # まま warning と項目 6 の「未確認」で明示する（計画 ADR-0093 決定 3。監査の他項目を巻き込まない）。
+      # 集計ロジックの回帰試験。壊れた集計を追跡 issue へ載せない（黙って壊れた監視は、無いより悪い）。
+      - name: Self-test
+        id: selftest
+        run: node scripts/backlog-audit.js --self-test
+
+      # NFR / #717 / #1208 / IADR-0504: 計画 ID レンジ宣言と計画側の実物の突合。ずれ（behind / ahead）を
+      # 検知したら専用 issue（ラベル plan-range-lag）を起票・上書きする。計画側に届かなければ exit 0 の
+      # unverified で、報告に「未確認」として数える。exit 1 は宣言が読めないときと、ずれを issue へ書けなかったときだけ。
       - name: Resolve planning ADR range
         env:
           PLANNING_REPO_TOKEN: ${{ secrets.PLANNING_REPO_TOKEN }}
@@ -84,210 +81,40 @@ jobs:
         run: node scripts/check-planning-adr-range.js --out .backlog-audit/planning-adr-range.json --upsert-issue
 
       - name: Run backlog audit
-        # 前段（計画 ID レンジ）が exit 1 でも監査本体は走らせる（#1208。項目 6 は JSON の status で報告される）。
+        id: audit
+        # 前段（計画 ID レンジ）が落ちても監査は出す。自己試験が落ちたときだけは出さない。
+        if: ${{ !cancelled() && steps.selftest.outcome == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/backlog-audit.js --post --plan-range .backlog-audit/planning-adr-range.json --out .backlog-audit/report.md
+
+      - name: Publish the report to the step summary
         if: ${{ !cancelled() }}
-        # **`id` は必須である。** 後段の権限拒否検査が `steps.claude.outputs.execution_file` を
-        # 参照する（claude-coding.yml / claude-code-review.yml と同じ配線）。実行ログのパスを
-        # ハードコードすると、アクション側が出力先を変えたときに**検査が黙って no-op になる**
-        # （`check-permission-denials.js` は読めないと warn を出して exit 0 する fail-open である）。
-        # 週次のスケジュール実行は誰も見ていないため、その warn は長期間気付かれない。
-        id: claude
-        uses: anthropics/claude-code-action@v1
-        # gh CLI（issue list / view / create / edit）を既定トークンで認証する。gh は
-        # GH_TOKEN / GITHUB_TOKEN を環境変数から読む。claude-coding.yml / claude-code-review.yml と
-        # 同じ配線（#711 追補で揃えた。`with.github_token` は MCP GitHub ツールへ渡るだけで、
-        # Bash から呼ぶ gh には届かない）。
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          # 認証はどちらか一方を登録する（サブスク = OAuth トークン / API = API キー）。
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          # 許可リストは初回スケジュール実行（2026-08-10・run 31348684057）の権限拒否 75 件の
-          # 実測から拡張した（#478。分類の方針は IADR-0145 = 「許可リストで直せるか」で分ける）。
-          #   - 追加できるのは **.claude/settings.json の allow に既に在るツールだけ**である
-          #     （ci.yml の ai-workflow-config が STRICT で 3 系統の乖離を失敗にする。
-          #     settings.json 自体は deny 規則により AI が編集できず、同期は人手が要る〔B-6〕。
-          #     gh pr list / gh label list / gh search / gh api / wc の追加は settings.json への
-          #     人手適用待ちとして作業仕様書 20260814_478 §残作業に記録した）。
-          #   - PR の参照は MCP（pull_request_read / list_pull_requests）と gh pr view で行う。
-          #   - `git -C planning …` の許可は撤去した（資料再編 ADR-0029 決定 2 で planning
-          #     submodule 自体が撤去済み。settings.json との 3 系統一致は ai-workflow-config が検査する）。
-          #   - Write を許可する。結果 issue の長い本文は `--body-file` で渡すのが唯一堅牢な形であり、
-          #     本ジョブは contents: read のため書いたファイルはどこへも永続しない
-          #     （レビュー用ワークフローの「書き込み手段を持たない設計」とは目的が異なる）。
-          #   - 許可リストで直せない形（パイプ・ループ・リダイレクト・引用符内の `|`）は
-          #     プロンプト側の「使ってよいコマンドの形」で回避する（下記）。
-          # 【#711・2026-09-09 実測】監査が 15〜16 ターン・3 分未満で終わり #483 へ何も書かない事象の
-          # 原因は、AI が**監査全体をサブエージェント（Agent ツール）へバックグラウンドで委任し、
-          # 自分は 2 ターンで「完了したらお知らせします」と終了した**ことである（run 34303318956 の
-          # 実行記録 artifact で確認。親が終わると headless の run は子を待たずに終了し、
-          # 「Terminate orphan process」で子が殺される）。08-31 の正常回（36 ターン・10 分）は
-          # 委任していない。--disallowedTools で Agent（旧名 Task）を塞ぎ、プロンプトでも禁じる。
-          # 許可リスト（--allowedTools）は変えていない。
-          claude_args: |
-            --disallowedTools "Agent,Task"
-            --allowedTools "Read,Grep,Glob,Write,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(echo:*),Bash(node:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue edit:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__list_issues,mcp__github__search_issues,mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__pull_request_read,mcp__github__get_pull_request,mcp__github__list_pull_requests,mcp__github__list_sub_issues,mcp__github__get_file_contents,mcp__github__list_workflow_runs,mcp__github__actions_list"
-          prompt: |
-            このリポジトリのバックログを監査し、結果を**単一の追跡 issue へ upsert** してください。
+        run: |
+          if [ -s .backlog-audit/report.md ]; then
+            cat .backlog-audit/report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::報告ファイルが空である。産出が無いまま success にしない。"
+            exit 1
+          fi
 
-            ## 実行の形（最重要）
-
-            - **サブエージェント（Agent / Task ツール）へ委任してはいけません。** 調査から issue の
-              upsert まで、**すべてをこのセッション内であなた自身が順に実行**してください。
-              この run は headless であり、あなたの応答が終わった時点で終了します。バックグラウンドの
-              エージェントは完了を待たれずに強制終了され、**issue は更新されず、このジョブは後段の
-              産出検証で fail します**（2026-09-09 の実測。#711）。
-            - 「起動しました。完了したらお知らせします」で応答を終えることは、本 run では
-              **何もしなかったことと同じ**です。
-
-            ## 最重要の制約
-
-            - **issue を自動でクローズしてはいけません。** 提案の一覧を出すだけです。
-              誤クローズは「調べ直す」という別の無駄を生み、放置のコストを上回ります。
-            - **タイトルからの推測で「実装済み」と判定してはいけません。**
-              実コード・実ワークフローを読んで確認し、**根拠（ファイルパス・行・ジョブ名）を添えて**ください。
-              根拠を示せないものは「要確認」に留めます。
-            - 断定できないものは断定しないでください。**「分からない」と書くほうが有用です。**
-
-            ## 監査する 6 点
-
-            1. **クローズ漏れ** — open な issue のうち、「やること」が既に実装・CI 化されているもの。
-               2026-08-07 の監査では #319 / #391 / #356 の 3 件がこれに該当しました
-               （#319 は CI で実効していることを実測して初めて判明しました）。
-
-            2. **重複起票** — 主題が重なる issue の組。**先着（番号の小さい方）を正**とします。
-               2026-08-07 には計画リポジトリ側で同一主題が 3 件ずつ、16 分間に 14 件起票され、
-               3 つの命名規約が混在していました（並行エージェントが互いの起票を見ずに書いたためです）。
-
-            3. **blocked の棚卸し** — `docs/blocked-tasks.md` の A 群（実機・実環境）・B 群（権限・人間の判断）と
-               open issue を突き合わせ、**解消済みなのに残っている行**と **issue が無い項目**を出してください。
-               あわせて `blocked:env` / `blocked:decision` / `blocked:human` ラベルの付け漏れも挙げてください
-               （これらを分母から外すと「AI が今日着手できる issue」が見えます）。
-
-            4. **エピックの進捗** — #344 の子 issue の状態を集計してください。
-
-            5. **blocked 判定の再検証**（#473 / IADR-0185 決定4） — `docs/blocked-tasks.md` の
-               「なぜ AI にできないか」列を点検し、**環境固有の観測を恒久制約と誤分類していないもの**を
-               挙げてください。「その環境で失敗した」「その認証では権限が無かった」は環境に対する観測であり、
-               環境が変われば消えます。恒久制約（実資金の移動・利用者本人の承認・法的判断など）と
-               混ざっていないかを見てください。判定に「最後に測った時点」が無い行も挙げてください
-               （時点の無い判定は、再検証すべきかどうかを判断できません）。
-               根拠は microservices-platform の実測です —— 「AI だけでは完結しない」と保留された 3 件
-               （MSP#554 / MSP#556 / MSP#562）が、別の環境では 3 件とも実施でき同日中に着地しました（MSP#617）。
-               本リポにも前例があります（A-4 の「日銀サイトが自動取得を拒否」は実測で覆りました）。
-               **分類を書き換えるのはあなたではありません**。候補と根拠を出すだけです（最重要の制約と同じ）。
-
-            6. **計画 ID レンジ鮮度**（#710 / #717 / planning#591） — `.claude/rules/traceability.repo.md`
-               「起点 ID の種別（固有）」節が宣言する FR / UC / SC / ADR の上限と、計画リポジトリが
-               公開する `tools/doc-checks/kg-ranges.json`（実物からの導出結果。planning の
-               ADR-0093 決定 1）の突き合わせ結果は、
-               **本 run の前段ステップが `.backlog-audit/planning-adr-range.json` に書いています。**
-               Read ツールでそのファイルを読み、`status` に従って報告してください。
-               **`scanned`（突き合わせられた種別の数）を必ず添えてください**——`scanned: 0` は
-               「ずれが無い」ではなく「検査が動いていない」です。種別ごとの内訳は `ranges` にあります:
-               `ok` = 一致（`declaredMax` を根拠に添える）／ `behind` = 宣言が計画側の実在に
-               追いついていない（レンジ宣言の更新漏れ。`reason` をそのまま引用）／ `ahead` = 宣言が
-               実在を超えている／ `unverified` = 検証できなかった（`reason` を引用し「未確認」と書く）／
-               `error` = 宣言そのものが読めない（`reason` を引用し、要対応として書く）。
-               **`behind` / `ahead` のときは前段が専用 issue（ラベル `plan-range-lag`）を起票・更新済みです**
-               （#1208）。番号は同じ JSON の `lagIssue.number` にあります。報告へ添えてください
-               （`lagIssue.action: failed` なら起票できなかった理由が `lagIssue.reason` にあります。そのまま引用してください）。
-               **同じ内容の issue を自分で起票しないでください**（重複になります）。
-               **`endazon/project-planning` を自分で読みに行かないでください**——この run の
-               トークンでは 404 になります（2026-09-09 実測）。2026-09-09 の #710 は
-               `ADR-0001..0032` の宣言が計画側の実在 `0035` まで 3 件遅れていた事例です——
-               気付かれないまま放置すると、実在する新しい ADR を引くコミット件名・PR タイトルが
-               「存在しない ADR」として恒久的に拒否され続けます。
-
-            ## 環流（計画へのフィードバック）について
-
-            環流は project-planning の GitHub issue（feedback.yml・decision-needed ラベル）へ
-            一本化されました（資料再編 ADR-0029 決定 5）。本リポジトリに環流記録ファイルは無く、
-            未伝達の突合対象も存在しません。**環流の滞留監査は planning 側の週次棚卸し
-            （stocktake.yml）が担うため、本監査では扱いません。** 実装作業の中で「計画書の誤り・
-            不足に気づいたのに issue 未起票」の形跡（コード内 TODO・PR 本文の言及など）を見つけた
-            場合のみ、候補として挙げてください（起票の代行はしないこと）。
-
-            **確認できなかった項目は「未確認」と明記してください**（確認したふりをしないこと）。
-
-            ## 出力
-
-            タイトル `chore(NFR): バックログ定期監査の結果` の issue を検索し、
-            - 在れば**本文を全面的に置き換え**（upsert。コメントを積み上げない）
-            - 無ければ新規作成
-
-            してください。本文には**実施日**と**各項目の根拠**を必ず含めてください。
-            該当が 0 件の項目は「該当なし」と明記してください（黙って省略しないこと）。
-            **本文冒頭に実施日（本日）を必ず書き換えてください。** これは体裁の指示ではありません
-            ——本 run が issue へ実際に書き込んだかどうかを、後段のステップが
-            `issue.updated_at` と本 run の開始時刻の比較だけで機械的に検証します（#711）。
-            実施日を古いまま・空のままにする、あるいは編集を忘れて over-write しないと、
-            本文の中身にかかわらず**その検証が失敗し、このジョブは fail します**。
-            長い本文は Write でファイルへ下書きし、`gh issue create --body-file <path>` /
-            `gh issue edit <番号> --body-file <path>` で渡してください（引用符の入れ子が要らない唯一の形です）。
-
-            ## 使ってよいコマンドの形（重要）
-
-            この CI にはツール実行を承認する人間がいません。**許可リストに無い形は黙って拒否され、
-            あなたの調査はその分だけ欠けます**（初回実行では拒否 75 件で結果 issue が出ませんでした。#478）。
-            次の形だけを使ってください。
-
-            - **1 コマンド 1 実行**。パイプ（`|`）・`for` / `while` ループ・`xargs`・複合コマンド
-              （`A && B` / `A; B`）・コマンド置換は**許可判定が分割してしまうため使えません**。
-              件数勘定や整形は、一度素の出力を読み、**必要なら node で処理**してください
-              （`Bash(node:*)` は許可済み。`wc` は許可されていません）。
-            - **リダイレクト（`>` `>>` `2>&1` `2>/dev/null`）を使わない**。出力はそのまま読みます。
-              ファイルへ書くのは Write ツールだけです（issue 本文の下書き用）。
-            - **`--jq` や `grep -E` の引用符の中にも `|` を書かない**。許可判定は引用符の中の `|` も
-              パイプとして分割します。`--jq '.[] | .number'` は拒否されます——`--json number` で受けて
-              node で処理するか、`--jq` を使わず素の JSON を読んでください。
-            - **python3・mkdir・find は使わない**（許可されていません）。走査は Glob / Grep / rg で行います。
-            - gh で使えるのは **issue list/view/create/edit・pr view・run list** です。
-              **`gh api`・`gh pr list`・`gh label list`・`gh search` は許可されていません**——
-              PR の一覧・詳細は MCP ツール（`list_pull_requests` / `pull_request_read`）で、
-              ラベルは `gh issue list --json labels` で読んでください。issue のタイムラインや
-              cross-reference など**上記の手段で確認できないものは「未確認」と明記**してください
-              （確認したふりをしないこと）。
-
-      # NFR / #711: Claude ステップの実行記録（各ターンのツール呼び出しと結果）を artifact として
-      # 残す。アクションは「full output hidden for security」でジョブログに出さないため、
-      # 産出検証が fail したときに**なぜ書けなかったか**（gh の認証失敗・検索の空振り・
-      # 途中終了）をこの記録でしか追えない。失敗時だけでなく常に残す——「成功したがおかしい」
-      # 回（15 ターンで success）こそ比較対象が要る。保管は 30 日（週次 run 4 回ぶん）。
-      # 公開範囲はリポジトリの Actions を読める者に限られ、GITHUB_TOKEN は記録に含まれない
-      # （アクションが env を書き出さない。gh の出力は issue 本文と JSON のみ）。
-      - name: Upload audit transcript
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: backlog-audit-transcript-${{ github.run_id }}
-          path: ${{ steps.claude.outputs.execution_file }}
-          if-no-files-found: warn
-          retention-days: 30
-
-      # AI がツール権限拒否に当たっていないかを検査する。
-      # 拒否が起きると監査は静かに劣化する（「調べていない」ことが本文からは判らない）。
-      - name: Check permission denials
-        if: always()
-        env:
-          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-        run: node scripts/check-permission-denials.js "$EXECUTION_FILE"
-
-      # NFR / #711: run success（かつ権限拒否も許容範囲）でも、結果 issue（#483）へ実際には
-      # 何も書けていない事象を検出する。「今週は指摘なしだった」（issue は更新されたが内容が
-      # 「該当なし」ばかり）と「今週は黙って落ちた」（issue が更新すらされていない）は
-      # run success という外形だけでは区別できないため、**issue.updated_at が本 run の開始時刻
-      # より新しいか**だけを機械的に見る。本文の質（監査の妥当性）は見ない——それは人間の
-      # レビュー対象である。always() にしているのは、Claude ステップ自体が失敗した場合こそ
-      # 「産出が無い」ことを確実に検出したいため（権限拒否検査の対象外の失敗形もここで拾える）。
+      # NFR / #711: 追跡 issue の updated_at が本 run の開始時刻より新しいかを、スクリプトとは別に確かめる。
+      # 番号は前段が GITHUB_OUTPUT へ書いた値（無ければ既定の #483）。
       - name: Verify backlog audit output
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_START_TIME: ${{ steps.run_start.outputs.run_start }}
-          # 実行記録が読めれば、fail の理由の手掛かり（サブエージェントへの委任・ターン数）を
-          # 併記する。無くても判定自体は変わらない（fail-open な補助情報）。
-          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-        run: node scripts/check-backlog-audit-output.js
+          ISSUE_NUMBER: ${{ steps.audit.outputs.issue_number }}
+        run: node scripts/check-backlog-audit-output.js --issue-number "${ISSUE_NUMBER:-483}"
+
+  report-failure:
+    needs: [backlog-audit]
+    if: always() && contains(needs.*.result, 'failure')
+    uses: ./.github/workflows/ci-failure-issue.yml
+    permissions:
+      contents: read
+      issues: write
+    with:
+      marker_key: backlog-audit

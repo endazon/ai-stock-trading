@@ -3681,24 +3681,21 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.match(wf, /RUN_START_TIME/, 'RUN_START_TIME が後段へ渡されていない');
     });
 
-    // 2026-09-07 / 09-09 の 3 回、監査が 2〜16 ターンで終わり #483 へ何も書かなかった。
-    // 原因（run 34303318956 の実行記録 artifact で確認）: AI が監査全体を Agent ツールへ
-    // バックグラウンド委任して 2 ターンで終了し、headless の run が子を待たずに終わった。
-    // 対処は --disallowedTools で Agent/Task を塞ぐこと＋プロンプトでの禁止。あわせて
-    // 姉妹ワークフローと同じ GH_TOKEN の配線と、実行記録の artifact 保全（次の再発を追える）。
-    ok('backlog-audit.yml: Agent/Task への委任を塞ぎ、GH_TOKEN を渡し、実行記録を artifact に残す（#711）', () => {
+    // 旧版（AI）は監査を委任して 2 ターンで終わり #483 へ何も書かない回があった（#711）。IADR-0625 で決定的な
+    // スクリプトへ置き換えた後も「success だが無産出」を作らない配線を固定する: 自己試験が通ったときだけ投稿し、
+    // 報告を step summary へ出し（空なら赤）、産出検証へ投稿先の番号を渡し、失敗は ci-failure-issue.yml へ渡す。
+    ok('backlog-audit.yml: 自己試験・投稿・step summary・産出検証・失敗の通知が配線されている（#711 / IADR-0625）', () => {
       const wf = fsBa.readFileSync(pathBa.join(REPO_ROOT_BA, '.github', 'workflows', 'backlog-audit.yml'), 'utf8');
-      const claudeStep = wf.slice(wf.indexOf('id: claude'), wf.indexOf('- name: Upload audit transcript'));
-      assert.ok(claudeStep.length > 0, 'Claude ステップ（id: claude）と transcript upload ステップの並びが崩れている');
-      assert.match(claudeStep, /^\s+env:\n\s+GH_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/m, 'Claude ステップに GH_TOKEN の env が無い（Bash の gh が未認証になる）');
-      assert.match(wf, /uses: actions\/upload-artifact@v\d+/, '実行記録を残す upload-artifact ステップが無い');
-      assert.match(wf, /path: \$\{\{ steps\.claude\.outputs\.execution_file \}\}/, 'artifact の path が steps.claude.outputs.execution_file を参照していない');
-      const uploadStep = wf.slice(wf.indexOf('- name: Upload audit transcript'), wf.indexOf('- name: Check permission denials'));
-      assert.match(uploadStep, /if: always\(\)/, 'transcript upload が always() でない（失敗時こそ要る）');
-      assert.match(claudeStep, /--disallowedTools "Agent,Task"/, 'claude_args に --disallowedTools "Agent,Task" が無い（監査をサブエージェントへ委任して 2 ターンで終わる再発を塞げない）');
-      assert.match(claudeStep, /サブエージェント（Agent \/ Task ツール）へ委任してはいけません/, 'プロンプトに委任禁止の指示が無い');
-      const verifyStep = wf.slice(wf.indexOf('- name: Verify backlog audit output'));
-      assert.match(verifyStep, /EXECUTION_FILE: \$\{\{ steps\.claude\.outputs\.execution_file \}\}/, '産出検証へ実行記録（EXECUTION_FILE）が渡されていない（fail 時の手掛かりが出ない）');
+      const step = (name, next) => wf.slice(wf.indexOf(`- name: ${name}`), next ? wf.indexOf(`- name: ${next}`) : undefined);
+      assert.match(step('Self-test', 'Resolve planning ADR range'), /id: selftest\n\s+run: node scripts\/backlog-audit\.js --self-test/, '自己試験のステップが無い');
+      const audit = step('Run backlog audit', 'Publish the report to the step summary');
+      assert.match(audit, /if: \$\{\{ !cancelled\(\) && steps\.selftest\.outcome == 'success' \}\}/, '自己試験が落ちても投稿する／前段の失敗で止まる');
+      assert.match(audit, /id: audit/, '投稿のステップに id が無い（産出検証が番号を読めない）');
+      assert.match(step('Publish the report to the step summary', 'Verify backlog audit output'), /exit 1/, '報告が空でも緑になる');
+      const verify = step('Verify backlog audit output');
+      assert.match(verify, /if: always\(\)/, '産出検証が always() でない');
+      assert.match(verify, /ISSUE_NUMBER: \$\{\{ steps\.audit\.outputs\.issue_number \}\}/, '産出検証へ投稿先の番号が渡されていない');
+      assert.match(wf, /uses: \.\/\.github\/workflows\/ci-failure-issue\.yml/, '失敗の通知（ci-failure-issue.yml）が無い');
     });
 
     // #717: 監査項目 6 は AI が project-planning を読む設計だったが GITHUB_TOKEN では 404 になる。
@@ -3745,21 +3742,21 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.match(step, /check-planning-adr-range\.js --out \S+ --upsert-issue/, '前段が --upsert-issue を渡していない（検知が作業にならない）');
       assert.match(step, /GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/, '起票用の GITHUB_TOKEN が渡されていない');
       assert.match(step, /GITHUB_REPOSITORY: \$\{\{ github\.repository \}\}/, '起票先の GITHUB_REPOSITORY が渡されていない');
-      const claude = wf.slice(wf.indexOf('- name: Run backlog audit'), wf.indexOf('uses: anthropics/claude-code-action'));
-      assert.match(claude, /if: \$\{\{ !cancelled\(\) \}\}/, '前段が exit 1 のとき監査本体まで止まる');
+      const audit = wf.slice(wf.indexOf('- name: Run backlog audit'), wf.indexOf('- name: Publish the report to the step summary'));
+      assert.match(audit, /if: \$\{\{ !cancelled\(\)/, '前段が exit 1 のとき監査本体まで止まる');
       assert.match(wf, /\n {6}issues: write\n/, 'ジョブに issues: write が無い（起票できない）');
-      assert.match(wf, /plan-range-lag/, 'プロンプトが専用 issue に触れていない（AI が重複起票し得る）');
+      assert.match(wf, /plan-range-lag/, '専用 issue（plan-range-lag）に触れていない（監査が同じ内容を重ねて起票し得る）');
     });
 
     ok('backlog-audit.yml: 項目 6 は前段ステップの JSON を読む配線になっている（#717）', () => {
       const wf = fsBa.readFileSync(pathBa.join(REPO_ROOT_BA, '.github', 'workflows', 'backlog-audit.yml'), 'utf8');
       const stepIdx = wf.indexOf('- name: Resolve planning ADR range');
-      const claudeIdx = wf.indexOf('- name: Run backlog audit');
-      assert.ok(stepIdx > 0 && claudeIdx > stepIdx, '前段ステップが Claude ステップより前に無い');
-      const step = wf.slice(stepIdx, claudeIdx);
+      const auditIdx = wf.indexOf('- name: Run backlog audit');
+      assert.ok(stepIdx > 0 && auditIdx > stepIdx, '前段ステップが監査のステップより前に無い');
+      const step = wf.slice(stepIdx, auditIdx);
       assert.match(step, /PLANNING_REPO_TOKEN: \$\{\{ secrets\.PLANNING_REPO_TOKEN \}\}/, 'cross-repo 用 secret が渡されていない');
-      assert.match(step, /check-planning-adr-range\.js --out \.backlog-audit\/planning-adr-range\.json/, '出力先がプロンプトの参照先と一致していない');
-      assert.match(wf, /\.backlog-audit\/planning-adr-range\.json` に書いています/, 'プロンプト項目 6 が前段の JSON を参照していない');
+      assert.match(step, /check-planning-adr-range\.js --out \.backlog-audit\/planning-adr-range\.json/, '出力先が監査の読み先と一致していない');
+      assert.match(wf, /backlog-audit\.js --post --plan-range \.backlog-audit\/planning-adr-range\.json/, '監査が前段の JSON を読んでいない');
       assert.doesNotMatch(wf, /許可済み・パイプ等を\s*使わない 1 回の呼び出しで済みます/, '誤った「許可済み」の記述が残っている');
     });
 
@@ -5554,6 +5551,490 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       const text = fs.readFileSync(RUNBOOK, 'utf8');
       assert.deepStrictEqual(missing(text.replace(/二重にログインしない/g, '')), ['二重ログインの禁止']);
       assert.ok(missing(text.replace(/^## 10\. 戻し方.*$/m, '## 10. 片付け')).includes('戻し方（クラウドの OpenD を先に止める）'));
+    });
+  }
+
+  // --- NFR: ワークフローの起動者と入力の扱い（claude-coding.yml・全ワークフローの run） -------------------
+  //
+  //   1. 全ワークフローの run の本文に、外から与えられる値（github.event.* / inputs.* / github.head_ref /
+  //      github.ref / github.ref_name）の式を直接展開しない。値は env で渡す。
+  //   2. claude-coding.yml の job の if は、句ごとに「本文の書き手」の author_association を
+  //      OWNER / MEMBER / COLLABORATOR に絞る（@claude と書いた人が書き込み権限を持つ人に限られる）。
+  //   3. claude-coding.yml は既定の権限を contents: read に置き、外部の uses: を 40 桁の SHA ＋同じ行の
+  //      `# vX.Y.Z` で固定する（check-action-versions.js は注記から版を読む）。
+  // YAML パーサは scripts-tests ジョブに無いので行で読み、変異試験で読み取りの穴を塞ぐ。
+  {
+    const fs = require('fs');
+    const path = require('path');
+    const WF = path.join(__dirname, '..', '.github/workflows');
+    const UNTRUSTED = /\$\{\{[^}]*\b(github\.event\.|inputs\.|github\.head_ref\b|github\.ref\b|github\.ref_name\b)/;
+
+    /** run の本文（1 行形とブロック形）の行を返す。[{ line, text }] */
+    const runLines = (yml) => {
+      const out = [];
+      const lines = yml.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const m = /^(\s*)(?:- )?run:\s*(.*)$/.exec(lines[i]);
+        if (!m) continue;
+        const keyIndent = m[1].length + (lines[i].trimStart().startsWith('- ') ? 2 : 0);
+        const rest = m[2];
+        if (!/^[|>][-+]?\s*$/.test(rest)) { out.push({ line: i + 1, text: rest }); continue; }
+        for (let j = i + 1; j < lines.length; j++) {
+          const l = lines[j];
+          if (l.trim() === '') continue;
+          if (l.length - l.trimStart().length <= keyIndent) break;
+          out.push({ line: j + 1, text: l });
+        }
+      }
+      return out;
+    };
+    const untrustedInRun = (yml) => runLines(yml).filter((r) => UNTRUSTED.test(r.text));
+
+    ok('NFR: run の本文に外から与えられる値の式を直接展開しない（全ワークフロー）', () => {
+      const files = fs.readdirSync(WF).filter((f) => f.endsWith('.yml'));
+      assert.ok(files.length >= 10, `ワークフローを読めていない: ${files.length}`);
+      let scanned = 0;
+      const bad = [];
+      for (const f of files) {
+        const yml = fs.readFileSync(path.join(WF, f), 'utf8');
+        scanned += runLines(yml).length;
+        for (const r of untrustedInRun(yml)) bad.push(`${f}:${r.line}: ${r.text.trim()}`);
+      }
+      assert.ok(scanned > 100, `run の行を読めていない（0 件走査の疑い）: ${scanned}`);
+      assert.deepStrictEqual(bad, [], `env で渡すこと:\n${bad.join('\n')}`);
+    });
+
+    ok('NFR: 変異試験 —— 1 行形・ブロック形の run へ式を戻すと検出し、env と with は対象外', () => {
+      const one = 'jobs:\n  a:\n    steps:\n      - name: x\n        run: node a.js --tag "${{ inputs.tag || github.ref }}"\n';
+      assert.strictEqual(untrustedInRun(one).length, 1, '1 行形を検出しない');
+      const blk = 'jobs:\n  a:\n    steps:\n      - run: |\n          echo ok\n          echo "${{ github.event.pull_request.title }}"\n      - name: y\n        with:\n          tag_name: ${{ inputs.tag }}\n';
+      assert.strictEqual(untrustedInRun(blk).length, 1, 'ブロック形を検出しない／with を誤検出する');
+      const safe = 'jobs:\n  a:\n    steps:\n      - name: x\n        env:\n          RELEASE_TAG: ${{ inputs.tag || github.ref }}\n        run: node a.js --tag "$RELEASE_TAG"\n      - run: echo "${{ matrix.unit }} ${{ github.sha }}"\n';
+      assert.strictEqual(untrustedInRun(safe).length, 0, 'env 経由・信頼できる文脈を誤検出する');
+      // 現物を戻した形でも落ちる（陽性対照）。claude-coding.yml の本文は env 経由で受けている。
+      const cc = fs.readFileSync(path.join(WF, 'claude-coding.yml'), 'utf8');
+      assert.ok(cc.includes('BODY="${COMMENT_BODY}'), 'claude-coding.yml が env 経由で本文を受けていない');
+      const reverted = cc.replace('BODY="${COMMENT_BODY}', 'BODY="${{ github.event.comment.body }}');
+      assert.strictEqual(untrustedInRun(reverted).length, 1, '現物へ戻した式を検出しない');
+    });
+
+    /** claude-coding.yml の claude ジョブの if の句（`(github.event_name == ...` で始まる行）。 */
+    const codingClauses = (yml) => {
+      const i = yml.indexOf('\n  claude:\n');
+      assert.ok(i >= 0, 'claude ジョブが見つからない');
+      const m = /\n    if: \|\n((?:      .*\n)+)/.exec(yml.slice(i));
+      assert.ok(m, 'claude ジョブの if（ブロック形）が見つからない');
+      return m[1].split('\n').map((l) => l.trim()).filter((l) => l.startsWith('(github.event_name =='));
+    };
+    const EXPECT_AUTHOR = {
+      issue_comment: 'github.event.comment.author_association',
+      pull_request_review_comment: 'github.event.comment.author_association',
+      pull_request_review: 'github.event.review.author_association',
+      issues: 'github.event.issue.author_association',
+    };
+    const TRUSTED = `contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), `;
+    const codingViolations = (yml) => {
+      const out = [];
+      const seen = new Set();
+      for (const c of codingClauses(yml)) {
+        const ev = /github\.event_name == '([a-z_]+)'/.exec(c)?.[1];
+        seen.add(ev);
+        if (!EXPECT_AUTHOR[ev]) { out.push(`想定外のイベント: ${ev}`); continue; }
+        if (!c.includes(`${TRUSTED}${EXPECT_AUTHOR[ev]})`)) out.push(`${ev}: 本文の書き手の判定が無い`);
+      }
+      for (const ev of Object.keys(EXPECT_AUTHOR)) if (!seen.has(ev)) out.push(`${ev} の句が無い`);
+      return out;
+    };
+
+    ok('NFR: claude-coding.yml は句ごとに本文の書き手を OWNER / MEMBER / COLLABORATOR に絞る', () => {
+      const yml = fs.readFileSync(path.join(WF, 'claude-coding.yml'), 'utf8');
+      assert.strictEqual(codingClauses(yml).length, 4, '句の数が 4 でない（読み取りの穴の疑い）');
+      assert.deepStrictEqual(codingViolations(yml), []);
+    });
+
+    ok('NFR: 変異試験 —— 1 句から書き手の判定を外す・判定の対象を取り違えると落ちる', () => {
+      const yml = fs.readFileSync(path.join(WF, 'claude-coding.yml'), 'utf8');
+      const drop = yml.replace(` && ${TRUSTED}github.event.review.author_association)`, '');
+      assert.notStrictEqual(drop, yml, '変異させる箇所が見つからない');
+      assert.deepStrictEqual(codingViolations(drop), ['pull_request_review: 本文の書き手の判定が無い']);
+      const swap = yml.replace(`${TRUSTED}github.event.issue.author_association)`, `${TRUSTED}github.event.sender.author_association)`);
+      assert.notStrictEqual(swap, yml, '変異させる箇所が見つからない');
+      assert.deepStrictEqual(codingViolations(swap), ['issues: 本文の書き手の判定が無い']);
+    });
+
+    /** 外部の uses:（./ と docker:// を除く）のうち、SHA ＋版の注記で固定していない行。 */
+    const unpinnedUses = (yml) => {
+      const out = [];
+      const re = /^\s*(?:-\s*)?uses:\s*['"]?([^'"\s]+)['"]?([^\n]*)$/gm;
+      let m;
+      while ((m = re.exec(yml)) !== null) {
+        if (m[1].startsWith('./') || m[1].startsWith('docker://')) continue;
+        if (/@[0-9a-f]{40}$/.test(m[1]) && /^\s+#\s*v\d/.test(m[2])) continue;
+        out.push(m[1]);
+      }
+      return out;
+    };
+
+    ok('NFR: claude-coding.yml は既定の権限を contents: read に置き、外部の uses: を SHA ＋版の注記で固定する', () => {
+      const yml = fs.readFileSync(path.join(WF, 'claude-coding.yml'), 'utf8');
+      assert.match(yml, /\npermissions:\n  contents: read\n/, 'ワークフロー既定の権限が contents: read でない');
+      const uses = yml.match(/^\s*(?:-\s*)?uses:/gm) || [];
+      assert.ok(uses.length >= 3, `uses: を読めていない: ${uses.length}`);
+      assert.deepStrictEqual(unpinnedUses(yml), []);
+    });
+
+    ok('NFR: 変異試験 —— タグ指定・注記なしの SHA へ戻すと落ちる', () => {
+      assert.deepStrictEqual(unpinnedUses('      - uses: actions/checkout@v7\n'), ['actions/checkout@v7']);
+      const bare = '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n';
+      assert.deepStrictEqual(unpinnedUses(bare), ['actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1']);
+      assert.deepStrictEqual(unpinnedUses('      - uses: ./.github/workflows/x.yml\n'), []);
+      assert.deepStrictEqual(unpinnedUses(`${bare.trimEnd()} # v7.0.1\n`), []);
+    });
+
+    // NFR, IADR-0625: 実装用の許可ツールは基盤の最小化に揃える（find / sed を持たず、node は scripts/ の前置だけ）。
+    ok('NFR: claude-coding.yml の許可ツールは最小化した形を保つ（find / sed / 広い node を持たない）', () => {
+      const yml = fs.readFileSync(path.join(WF, 'claude-coding.yml'), 'utf8');
+      const m = /^ +--allowedTools "([^"]+)"/m.exec(yml);
+      assert.ok(m, '許可ツール一覧を読めない');
+      const tools = m[1].split(',');
+      assert.ok(tools.length > 30, `許可ツール一覧を読めていない: ${tools.length}`);
+      for (const t of ['Bash(find:*)', 'Bash(sed:*)', 'Bash(awk:*)', 'Bash(node:*)']) assert.ok(!tools.includes(t), `${t} が戻っている`);
+      assert.ok(tools.includes('Bash(node scripts/:*)'), 'node の狭めた形が無い');
+      assert.ok(!tools.some((t) => /^Bash\((?:bash|sh|python3?|npx|curl|wget)(?::\*)?\)$/.test(t)), '汎用の実行系が許可されている');
+    });
+
+    ok('NFR: settings.json との突き合わせ —— 狭めた形は広い形があれば覆われ、無ければ警告する', () => {
+      const os = require('os');
+      const { parityWarnings } = require('./check-ai-workflow-config.js');
+      assert.strictEqual(typeof parityWarnings, 'function', 'parityWarnings を公開していない');
+      const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ast-parity-'));
+      try {
+        const sp = path.join(work, 'settings.json');
+        const perFile = [{ file: 'claude-coding.yml', tools: ['Read', 'Bash(node scripts/:*)'] }];
+        fs.writeFileSync(sp, JSON.stringify({ permissions: { allow: ['Read', 'Bash(node:*)'] } }));
+        assert.deepStrictEqual(parityWarnings(perFile, sp), [], '広い形で覆われているのに警告する');
+        fs.writeFileSync(sp, JSON.stringify({ permissions: { allow: ['Read'] } }));
+        assert.strictEqual(parityWarnings(perFile, sp).length, 1, '覆われていないのに警告しない');
+        // 宣言外の狭めた形は覆われたと見なさない。
+        fs.writeFileSync(sp, JSON.stringify({ permissions: { allow: ['Read', 'Bash(dotnet:*)'] } }));
+        assert.strictEqual(parityWarnings([{ file: 'x.yml', tools: ['Bash(dotnet test:*)'] }], sp).length, 1, '宣言外を覆われたと見なしている');
+      } finally {
+        fs.rmSync(work, { recursive: true, force: true });
+      }
+    });
+
+    // NFR, IADR-0625: Dependabot は使用スタックのエコシステム（nuget / npm）と Actions を見る。
+    ok('NFR: dependabot.yml は github-actions・nuget（/）・npm（/frontend）を対象にする', () => {
+      const dep = fs.readFileSync(path.join(__dirname, '..', '.github', 'dependabot.yml'), 'utf8').replace(/^\s*#.*$/gm, '');
+      const entries = [...dep.matchAll(/- package-ecosystem: "([^"]+)"\n\s+directory: "([^"]+)"/g)].map((x) => `${x[1]} ${x[2]}`);
+      for (const want of ['github-actions /', 'nuget /', 'npm /frontend', 'docker /backend']) {
+        assert.ok(entries.includes(want), `${want} が無い（実物: ${entries.join(' / ')}）`);
+      }
+    });
+  }
+
+  // --- NFR: 検査器が git へ渡す値をシェルを通さずに渡す（execSync の文字列連結をやめる） -----------------
+  //
+  //   範囲（--range / COMMIT_RANGE / GITHUB_BASE_REF から組む）とタグ名は、シェルの文字列へ連結すると
+  //   メタ文字（`;` `$(...)` 等）がコマンドとして解釈される。git の参照名はこれらの文字を許す。
+  //   引数の配列で git を直接起動し（execFileSync）、`-` で始まる値はオプションと取り違えないよう拒む。
+  //   検査は「メタ文字を含む値を与えても、副作用のファイルが作られない」ことを実バイナリで確かめる。
+  {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const { spawnSync } = require('child_process');
+    const ROOT = path.resolve(__dirname, '..');
+
+    /** メタ文字を含む値の候補。`marker` が作られたら、値がシェルで解釈されたことになる。 */
+    const metaValues = (marker) => [
+      `HEAD;touch ${marker};#`,
+      `HEAD$(touch ${marker})`,
+      `HEAD\`touch ${marker}\``,
+    ];
+    const runWithRange = (script, range, extraArgs = []) => spawnSync(process.execPath, [path.join(__dirname, script), ...extraArgs], {
+      cwd: ROOT, encoding: 'utf8', env: { ...process.env, COMMIT_RANGE: range, GITHUB_BASE_REF: '', GITHUB_ACTIONS: '' }, timeout: 60000,
+    });
+
+    for (const script of ['check-commit-messages.js', 'check-adr-index-sync.js', 'check-adr-index-addendum-loss.js']) {
+      ok(`NFR: ${script} は範囲の値をシェルへ渡さない（メタ文字を含めても副作用が起きない）`, () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nfr-argv-'));
+        try {
+          for (const [i, p] of metaValues(path.join(dir, 'side-effect-marker')).entries()) {
+            runWithRange(script, p);
+            assert.ok(!fs.existsSync(path.join(dir, 'side-effect-marker')), `候補 ${i} がシェルで解釈された: ${p}`);
+          }
+          // GITHUB_BASE_REF から組む経路（origin/<base>）も同じ。
+          const viaBase = spawnSync(process.execPath, [path.join(__dirname, script)], {
+            cwd: ROOT, encoding: 'utf8', timeout: 60000,
+            env: { ...process.env, COMMIT_RANGE: '', GITHUB_BASE_REF: `develop;touch ${path.join(dir, 'side-effect-marker')};#`, GITHUB_ACTIONS: '' },
+          });
+          assert.ok(viaBase.status !== null, 'プロセスが起動していない');
+          assert.ok(!fs.existsSync(path.join(dir, 'side-effect-marker')), 'GITHUB_BASE_REF がシェルで解釈された');
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+      });
+    }
+
+    ok('NFR: gen-changelog.js はタグ名をシェルへ渡さない（メタ文字を含むタグでも副作用が起きない）', () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nfr-changelog-'));
+      try {
+        const repo = path.join(dir, 'repo');
+        fs.mkdirSync(repo);
+        const git = (...a) => {
+          const r = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...a], { cwd: repo, encoding: 'utf8' });
+          assert.strictEqual(r.status, 0, `git ${a.join(' ')}: ${r.stderr}`);
+        };
+        git('init', '-q');
+        fs.writeFileSync(path.join(repo, 'a.txt'), 'a\n');
+        git('add', 'a.txt');
+        git('commit', '-q', '-m', 'feat(NFR): 一つ目');
+        const marker = path.join(dir, 'side-effect-marker');
+        git('tag', `v1;touch\${IFS}${marker};#`);
+        fs.writeFileSync(path.join(repo, 'b.txt'), 'b\n');
+        git('add', 'b.txt');
+        git('commit', '-q', '-m', 'fix(NFR): 二つ目');
+        git('tag', `v2$(touch\${IFS}${marker})`);
+        const out = path.join(dir, 'CHANGELOG.md');
+        const r = spawnSync(process.execPath, [path.join(__dirname, 'gen-changelog.js'), '--out', out], { cwd: repo, encoding: 'utf8', timeout: 60000 });
+        assert.ok(!fs.existsSync(marker), `タグ名がシェルで解釈された（exit ${r.status}）`);
+        assert.strictEqual(r.status, 0, `gen-changelog が落ちた: ${r.stderr}`);
+        const text = fs.readFileSync(out, 'utf8');
+        assert.match(text, /一つ目/);
+        assert.match(text, /二つ目/);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    ok('NFR: lib/git-read.js の gitArgv は配列以外と `-` で始まる値を拒む', () => {
+      const { gitArgv, isSafeRevArg } = require('./lib/git-read.js');
+      assert.throws(() => gitArgv('log HEAD'), /配列/);
+      assert.strictEqual(isSafeRevArg('origin/develop..HEAD'), true);
+      assert.strictEqual(isSafeRevArg('--output=/tmp/x'), false);
+      assert.strictEqual(isSafeRevArg('-p'), false);
+      assert.strictEqual(isSafeRevArg('a\nb'), false);
+      assert.strictEqual(isSafeRevArg(''), false);
+      assert.strictEqual(gitArgv(['rev-parse', '--is-inside-work-tree'], { cwd: ROOT }).trim(), 'true');
+    });
+
+    // 静的な後戻り止め: ワークフローから呼ばれる検査器とフックは execSync（シェル経由）を使わない。
+    const SHELL_EXEC = /\bexecSync\s*\(|(?<![.\w])exec\s*\(\s*[`'"]|(?:spawn|exec)\w*\s*\([^)]*shell:\s*true/;
+    const shellExecIn = (text) => text.split('\n').map((l, i) => ({ l, i: i + 1 }))
+      .filter(({ l }) => !/^\s*(\/\/|\*)/.test(l) && SHELL_EXEC.test(l.replace(/'[^']*'|"[^"]*"/g, (s) => (/execSync/.test(s) ? '""' : s))));
+    ok('NFR: scripts/（試験を除く）と .claude/hooks/ は execSync・shell: true でコマンドを起動しない', () => {
+      const files = [];
+      const walk = (d) => {
+        for (const n of fs.readdirSync(d)) {
+          const p = path.join(d, n);
+          if (fs.statSync(p).isDirectory()) { if (n !== 'node_modules') walk(p); continue; }
+          if (/\.js$/.test(n) && !/\.test\.js$/.test(n)) files.push(p);
+        }
+      };
+      walk(path.join(ROOT, 'scripts'));
+      walk(path.join(ROOT, '.claude', 'hooks'));
+      assert.ok(files.length > 50, `走査対象を読めていない: ${files.length}`);
+      const bad = [];
+      for (const f of files) for (const { l, i } of shellExecIn(fs.readFileSync(f, 'utf8'))) bad.push(`${path.relative(ROOT, f)}:${i}: ${l.trim()}`);
+      assert.deepStrictEqual(bad, [], `execFileSync と引数の配列で起動すること:\n${bad.join('\n')}`);
+    });
+    ok('NFR: 変異試験 —— execSync の呼び出しを戻すと検出し、コメント中の言及は対象外', () => {
+      assert.strictEqual(shellExecIn("  return execSync(`git ${args}`, { encoding: 'utf8' });\n").length, 1);
+      assert.strictEqual(shellExecIn("  const r = spawnSync('git', a, { shell: true });\n").length, 1);
+      assert.strictEqual(shellExecIn(' * `execSync` の既定 maxBuffer は 1 MiB\n// execSync(\n').length, 0);
+      assert.strictEqual(shellExecIn("  return execFileSync('git', args, { encoding: 'utf8' });\n").length, 0);
+      assert.strictEqual(shellExecIn("  listFiles(dir, root, { yaml: false, shell: true });\n").length, 0, 'プロセスの起動でない shell: true を誤検出する');
+      assert.strictEqual(shellExecIn("  const m = /x/.exec(`${y}`);\n").length, 0, '正規表現の exec を誤検出する');
+      assert.strictEqual(shellExecIn("  exec(`git ${a}`, cb);\n").length, 1, 'child_process.exec を検出しない');
+    });
+  }
+
+  // --- NFR: ワークフローの権限・版の固定・AI の起動条件（全ワークフロー） ---------------------------------
+  //
+  //   1. すべてのワークフローがワークフロー単位の permissions を持つ（リポジトリ既定の権限に頼らない）。
+  //   2. 外部の uses: はすべて 40 桁の SHA ＋同じ行の `# vX.Y.Z` で固定する。
+  //   3. claude-code-review.yml は、同じリポジトリのブランチから出た PR で、かつ作成者が
+  //      OWNER / MEMBER / COLLABORATOR（または bot）のときだけ起動する。
+  //   4. backlog-audit.yml は AI を使わない決定的なスクリプトで動き、書き込みは issues だけに置く。
+  {
+    const fs = require('fs');
+    const path = require('path');
+    const WF = path.join(__dirname, '..', '.github/workflows');
+    const read = (f) => fs.readFileSync(path.join(WF, f), 'utf8');
+    const workflows = () => fs.readdirSync(WF).filter((f) => f.endsWith('.yml')).sort();
+
+    const unpinned = (yml) => {
+      const out = [];
+      const re = /^\s*(?:-\s*)?uses:\s*['"]?([^'"\s]+)['"]?([^\n]*)$/gm;
+      let m;
+      while ((m = re.exec(yml)) !== null) {
+        if (m[1].startsWith('./') || m[1].startsWith('docker://')) continue;
+        if (/@[0-9a-f]{40}$/.test(m[1]) && /^\s+#\s*v\d+\.\d+\.\d+/.test(m[2])) continue;
+        out.push(m[1]);
+      }
+      return out;
+    };
+
+    ok('NFR: すべてのワークフローがワークフロー単位の permissions を持つ', () => {
+      const files = workflows();
+      assert.ok(files.length >= 10, `ワークフローを読めていない: ${files.length}`);
+      const missing = files.filter((f) => !/\npermissions:\s*(\{\}\s*)?\n/.test(`\n${read(f)}`));
+      assert.deepStrictEqual(missing, [], `ワークフロー単位の permissions が無い: ${missing.join(', ')}`);
+    });
+
+    ok('NFR: すべてのワークフローの外部の uses: が SHA ＋版の注記で固定されている', () => {
+      let total = 0;
+      const bad = [];
+      for (const f of workflows()) {
+        const yml = read(f);
+        total += (yml.match(/^\s*(?:-\s*)?uses:/gm) || []).length;
+        for (const u of unpinned(yml)) bad.push(`${f}: ${u}`);
+      }
+      assert.ok(total > 50, `uses: を読めていない: ${total}`);
+      assert.deepStrictEqual(bad, []);
+    });
+
+    ok('NFR: 変異試験 —— 版の注記が vX.Y.Z でない固定・タグ指定は検出する', () => {
+      const sha = '3d3c42e5aac5ba805825da76410c181273ba90b1';
+      assert.deepStrictEqual(unpinned(`      - uses: actions/checkout@${sha} # v7\n`), [`actions/checkout@${sha}`]);
+      assert.deepStrictEqual(unpinned('      - uses: actions/checkout@v7\n'), ['actions/checkout@v7']);
+      assert.deepStrictEqual(unpinned(`      - uses: actions/checkout@${sha} # v7.0.1\n`), []);
+    });
+
+    // ★ claude-review は必須チェックである。ジョブ単位の if: で外すと skipped が「合格」になるので、
+    //   ジョブは常に走らせ、checkout の直後の Gate（pr-trust-gate.js）が判定し、後続の step はすべて Gate の結果で出し分ける。
+    /** claude-review ジョブの本文と step の列（`      - ` 単位）。 */
+    const reviewSteps = (yml) => {
+      const i = yml.indexOf('\n  claude-review:\n');
+      assert.ok(i >= 0, 'claude-review ジョブが見つからない');
+      const rest = yml.slice(i + 1);
+      const j = rest.slice(1).search(/\n {2}[A-Za-z0-9_-]+:\n/);
+      const job = j < 0 ? rest : rest.slice(0, j + 1);
+      const at = job.indexOf('\n    steps:\n');
+      const head = job.slice(0, at);
+      const steps = job.slice(at + '\n    steps:\n'.length).split(/\n(?= {6}- )/).filter((b) => /^ {6}- /.test(b));
+      return { head, steps };
+    };
+    const reviewViolations = (yml) => {
+      const out = [];
+      const { head, steps } = reviewSteps(yml);
+      if (/\n {4}if:/.test(head.replace(/\n\s*#.*/g, ''))) out.push('ジョブ単位の if: がある（skipped が必須チェック上の合格になる）');
+      const gi = steps.findIndex((s) => /- name: Gate \(trusted PR\)/.test(s));
+      if (gi < 0) { out.push('Gate (trusted PR) の step が無い'); return out; }
+      const g = steps[gi];
+      if (!/\n {8}id: gate\n/.test(g) || !/\n {8}run: node scripts\/pr-trust-gate\.js\n/.test(`${g}\n`)) out.push('Gate が pr-trust-gate.js を id: gate で走らせていない');
+      for (const k of ['HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}', 'PR_AUTHOR: ${{ github.event.pull_request.user.login }}', 'PR_ASSOCIATION: ${{ github.event.pull_request.author_association }}', 'REPOSITORY: ${{ github.repository }}']) {
+        if (!g.includes(k)) out.push(`Gate の env に無い: ${k}`);
+      }
+      if (!steps.slice(0, gi).some((s) => /uses: actions\/checkout@/.test(s)) || gi > 1) out.push('Gate が checkout の直後に無い');
+      steps.slice(gi + 1).forEach((s) => {
+        const ifLine = (/\n {8}if: (.*)/.exec(s) || [])[1] || '';
+        if (!ifLine.includes("steps.gate.outputs.run == 'true'")) out.push(`Gate の結果で出し分けていない step: ${s.split('\n')[0].trim()}`);
+      });
+      if (!/\npermissions:\n  contents: read\n/.test(yml)) out.push('ワークフロー単位の permissions が contents: read でない');
+      if (/pull_request_target/.test(yml.replace(/^\s*#.*$/gm, ''))) out.push('pull_request_target を使っている');
+      return out;
+    };
+
+    ok('NFR: claude-code-review.yml はジョブを常に走らせ、Gate（pr-trust-gate.js）の結果で後続の step を出し分ける', () => {
+      assert.deepStrictEqual(reviewViolations(read('claude-code-review.yml')), []);
+      assert.ok(reviewSteps(read('claude-code-review.yml')).steps.length >= 5, 'step を読めていない');
+    });
+
+    ok('NFR: 変異試験 —— ジョブ単位の if を戻す・Gate を外す・1 step の出し分けを外すと落ちる', () => {
+      const yml = read('claude-code-review.yml');
+      const withIf = yml.replace('\n  claude-review:\n', "\n  claude-review:\n    if: ${{ !startsWith(github.head_ref, 'automation/') }}\n");
+      assert.ok(reviewViolations(withIf).some((v) => v.includes('ジョブ単位の if')));
+      const noGate = yml.replace('- name: Gate (trusted PR)', '- name: Other');
+      assert.ok(reviewViolations(noGate).some((v) => v.includes('Gate (trusted PR) の step が無い')));
+      const i = yml.indexOf('- name: Run Claude Code Review');
+      const unguarded = yml.slice(0, i) + yml.slice(i).replace("        if: ${{ steps.gate.outputs.run == 'true' }}\n", '');
+      assert.notStrictEqual(unguarded, yml, '変異させる箇所が見つからない');
+      assert.ok(reviewViolations(unguarded).some((v) => v.includes('Run Claude Code Review')), '1 step の出し分けを外しても落ちない');
+    });
+
+    ok('NFR: pr-trust-gate.js の自己試験が通り、ブランチ名だけを偽った PR は合格（skip）にならない', () => {
+      const { execFileSync } = require('child_process');
+      execFileSync(process.execPath, [path.join(__dirname, 'pr-trust-gate.js'), '--self-test'], { cwd: path.join(__dirname, '..'), stdio: 'pipe' });
+      const { decide } = require('./pr-trust-gate.js');
+      const base = { eventName: 'pull_request', repository: 'o/r', headRepo: 'o/r', author: 'github-actions[bot]', association: 'NONE', files: ['CHANGELOG.md'] };
+      assert.strictEqual(decide({ ...base, headRef: 'automation/changelog-update-develop' }).decision, 'skip', '正当な生成物の自動 PR を skip しない');
+      assert.strictEqual(decide({ ...base, headRef: 'automation/x', headRepo: 'fork/r' }).decision, 'refuse', 'フォークの automation/ を合格にした');
+      assert.strictEqual(decide({ ...base, headRef: 'automation/x', author: 'mallory', association: 'CONTRIBUTOR' }).decision, 'refuse', '外部の作成者の automation/ を合格にした');
+      assert.strictEqual(decide({ ...base, headRef: 'automation/x', association: 'OWNER', author: 'o', files: ['CHANGELOG.md', 'scripts/x.js'] }).decision, 'run', '生成物以外を含む automation/ を合格にした');
+    });
+
+    /** ジョブ単位の if: のうち、PR を出す人が自由に付けられる値（github.head_ref）で決めているもの。 */
+    const headRefJobIfs = (yml) => {
+      const out = [];
+      const lines = yml.split('\n');
+      lines.forEach((l, i) => {
+        if (!/^ {4}if:/.test(l)) return;
+        let cond = l;
+        for (let k = i + 1; k < lines.length && /^ {6}\S/.test(lines[k]); k++) cond += ` ${lines[k].trim()}`;
+        if (/github\.head_ref/.test(cond)) out.push(`${i + 1}: ${cond.trim()}`);
+      });
+      return out;
+    };
+    ok('NFR: どのワークフローもジョブ単位の if: をブランチ名（github.head_ref）で決めない', () => {
+      const bad = [];
+      for (const f of fs.readdirSync(WF).filter((x) => x.endsWith('.yml'))) for (const b of headRefJobIfs(read(f))) bad.push(`${f}:${b}`);
+      assert.deepStrictEqual(bad, [], bad.join('\n'));
+    });
+    ok('NFR: 変異試験 —— ジョブ単位の if: にブランチ名の条件を戻すと検出する（1 行形・折り返し形）', () => {
+      assert.strictEqual(headRefJobIfs("jobs:\n  lint:\n    if: ${{ !startsWith(github.head_ref, 'automation/') }}\n").length, 1);
+      assert.strictEqual(headRefJobIfs("jobs:\n  x:\n    if: >-\n      ${{ always()\n      && !startsWith(github.head_ref, 'automation/') }}\n").length, 1);
+      assert.strictEqual(headRefJobIfs("jobs:\n  x:\n    steps:\n      - run: echo\n        if: ${{ github.head_ref != '' }}\n").length, 0, 'step の if まで拾っている');
+    });
+
+    /** backlog-audit.yml の違反（AI の不使用・権限・決定的スクリプトの配線）。 */
+    const auditViolations = (yml) => {
+      const out = [];
+      const body = yml.replace(/^\s*#.*$/gm, '');
+      if (/claude-code-action|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|claude_args/.test(body)) out.push('AI のアクション・資格情報が残っている');
+      if (/id-token:/.test(body)) out.push('id-token の権限が残っている');
+      if (!/\npermissions:\n  contents: read\n/.test(body)) out.push('ワークフロー単位の permissions が contents: read でない');
+      const job = /\n  backlog-audit:\n[\s\S]*?\n    permissions:\n((?: {6}[a-z-]+: [a-z]+\n)+)/.exec(body);
+      if (!job) out.push('backlog-audit ジョブの permissions が無い');
+      else {
+        const perms = Object.fromEntries(job[1].trim().split('\n').map((l) => l.trim().split(/:\s*/)));
+        const want = { contents: 'read', issues: 'write', 'pull-requests': 'read' };
+        if (JSON.stringify(perms) !== JSON.stringify(want)) out.push(`ジョブの permissions が想定と違う: ${JSON.stringify(perms)}`);
+      }
+      if (!/node scripts\/backlog-audit\.js --post /.test(body)) out.push('決定的な監査スクリプトを呼んでいない');
+      if (!/persist-credentials: false/.test(body)) out.push('checkout が資格情報を残す');
+      if (/\$\{\{[^}]*github\.event\.(issue|comment|pull_request)/.test(body)) out.push('issue・コメントの値を式で展開している');
+      return out;
+    };
+
+    ok('NFR: backlog-audit.yml は AI を使わず、書き込みは issues だけに置く', () => {
+      assert.deepStrictEqual(auditViolations(read('backlog-audit.yml')), []);
+    });
+
+    ok('NFR: 変異試験 —— AI のアクション・id-token・広い権限を戻すと落ちる', () => {
+      const yml = read('backlog-audit.yml');
+      assert.ok(auditViolations(`${yml}\n      - uses: anthropics/claude-code-action@4845bacbb38b3c4b15d948f035349786f678e068 # v1.0.267\n`).length > 0);
+      const wide = yml.replace('      pull-requests: read\n', '      pull-requests: write\n');
+      assert.notStrictEqual(wide, yml);
+      assert.ok(auditViolations(wide).some((v) => v.includes('permissions')));
+      const idt = yml.replace('      pull-requests: read\n', '      pull-requests: read\n      id-token: write\n');
+      assert.ok(auditViolations(idt).length > 0);
+    });
+
+    ok('NFR: backlog-audit.js の自己試験が通る', () => {
+      const { execFileSync } = require('child_process');
+      execFileSync(process.execPath, [path.join(__dirname, 'backlog-audit.js'), '--self-test'], { cwd: path.join(__dirname, '..'), stdio: 'pipe' });
+    });
+
+    ok('NFR: backlog-audit.js は外から書かれた題名を報告へ載せる前に無害化する', () => {
+      const { safeText } = require('./backlog-audit.js');
+      const s = safeText('x <!-- backlog-audit --> @someone `a` [l](http://e)\nnext');
+      assert.ok(!s.includes('<!--'), s);
+      assert.ok(!/(^|\s)@someone/.test(s), s);
+      assert.ok(!s.includes('\n'), s);
+      assert.ok(!s.includes('`'), s);
+      assert.ok(safeText('a'.repeat(500)).length <= 121);
     });
   }
 };

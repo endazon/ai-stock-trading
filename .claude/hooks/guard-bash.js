@@ -6,7 +6,7 @@
  */
 'use strict';
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 // rm に再帰(-r/-R/--recursive)と強制(-f/--force)の両方が付くか判定する。
 // 同一束（-rf / -fr）でも分割（-r -f / --recursive --force）でも検知する。
@@ -39,7 +39,7 @@ function readsSensitiveFile(cmd) {
 function isCommitOnDefaultBranch(cmd) {
   if (!/\bgit\s+commit\b/.test(cmd)) return false;
   try {
-    const branch = execSync('git symbolic-ref --short HEAD', {
+    const branch = execFileSync('git', ['symbolic-ref', '--short', 'HEAD'], {
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 3000,
     }).toString().trim();

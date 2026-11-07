@@ -8,6 +8,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # NFR, IADR-0625: 外部の uses: は SHA ＋同じ行の `# vX.Y.Z` で固定している。Dependabot は SHA と注記を対で更新する。
+    # CodeQL は同じ workflow 内の codeql-action（init / autobuild / analyze）が同じ版であることを要求するため、1 本の PR にまとめる。
+    groups:
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
 
   # NFR, IADR-0609, #1526: Worker 共有イメージ（backend/Dockerfile）の基底イメージは digest で固定している。
   # digest の更新（基底のセキュリティ修正の取り込み）を提案させる。既定は自動マージしない（人手レビュー必須）。
@@ -17,16 +23,18 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
 
-  # 使用スタックに合わせて有効化（コメント解除）:
-  # - package-ecosystem: "nuget"       # C# / .NET
-  #   directory: "/"
-  #   schedule:
-  #     interval: "weekly"
-  # - package-ecosystem: "npm"         # Node.js
-  #   directory: "/"
-  #   schedule:
-  #     interval: "weekly"
-  # - package-ecosystem: "pip"         # Python
-  #   directory: "/"
-  #   schedule:
-  #     interval: "weekly"
+  # NFR, IADR-0625: 使用スタックのエコシステムを有効化する（依存の更新とセキュリティ修正の取り込み）。
+  # - nuget: ルートの Directory.Packages.props（Central Package Management）を単一情報源として更新する。
+  # - npm:   frontend/（package-lock.json）を更新する。scripts/ と .claude/hooks/ の package.json は依存を持たない。
+  # 既定は自動マージしない（人手レビュー必須）。同時に開く PR は各 5 本まで。
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5

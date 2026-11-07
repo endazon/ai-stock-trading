@@ -7,7 +7,7 @@
  */
 'use strict';
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 const CODE_EXT = /\.(c|cc|cpp|h|hpp|cs|java|kt|go|rs|rb|php|py|js|jsx|ts|tsx|vue|swift|scala|sql)$/i;
 
@@ -18,7 +18,8 @@ function tryGit(args) {
   try {
     // 最悪 6 回呼ばれる（rev-parse ×4 → diff → ls-files）ため、合計が全体の
     // 安全弁（5 秒）を超えないよう 1 回あたりを 0.8 秒に保つ（6 × 800ms = 4800ms < 5000ms）。
-    return execSync(`git ${args}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 800 }).trim();
+    // NFR: 引数の配列で git を直接起動する（シェルを通さない）。
+    return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 800 }).trim();
   } catch (e) { return null; }
 }
 
@@ -28,10 +29,10 @@ function hasWorkSpec() {
     // 蓄積しても判定が形骸化しないよう、現在のブランチで追加された仕様書を数える
     // （統合ブランチとの差分＋未追跡の新規ファイル）。base を解決できない環境では
     // 「1 つでもあれば合格」の従来判定へ退避する（誤検知より見逃しを選ぶ・警告のみのため）。
-    const base = BASE_CANDIDATES.find((r) => tryGit(`rev-parse --verify --quiet ${r}`) !== null);
+    const base = BASE_CANDIDATES.find((r) => tryGit(['rev-parse', '--verify', '--quiet', r]) !== null);
     if (base) {
-      const diffed = tryGit(`diff --name-only --diff-filter=A ${base} -- .ai-context/specs`) || '';
-      const untracked = tryGit('ls-files --others --exclude-standard -- .ai-context/specs') || '';
+      const diffed = tryGit(['diff', '--name-only', '--diff-filter=A', base, '--', '.ai-context/specs']) || '';
+      const untracked = tryGit(['ls-files', '--others', '--exclude-standard', '--', '.ai-context/specs']) || '';
       return `${diffed}\n${untracked}`.split('\n').some((f) => f.trim().endsWith('.md'));
     }
     const files = fs.readdirSync('.ai-context/specs');

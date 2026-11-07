@@ -53,10 +53,10 @@ jobs:
   watch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # NFR / #709: 他ワークフロー・devcontainer と Node のバージョンを揃える（本ファイルだけ 22 だった）。
       # 2026-09-12 / IADR-0338 決定 3: 全体を 22 へ（`@lingui/cli` 6.x が Node >=22.19 を要求。合成先の基盤も 22）。
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
       # 判定ロジックの回帰試験。監視そのものが壊れていないことを毎回確かめる
