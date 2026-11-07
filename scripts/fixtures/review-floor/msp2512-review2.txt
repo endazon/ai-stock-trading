@@ -1,0 +1,39 @@
+**Claude finished @endazon's task in 3m 7s** —— [View job](https://github.com/endazon/microservices-platform/actions/runs/42396353370)
+
+---
+## AI コードレビュー結果
+
+変更 5 ファイル中 5 ファイルを読んだ（生成物の除外なし）。前回のレビュー本文は流用せず、この head の `git diff origin/develop...HEAD` を読み直した。
+
+### 🔴 重大
+- （指摘なし）
+
+### 🟡 推奨
+- **PR 本文が旧番号 IADR-0706 のまま。** 最新のコミットで IADR-0704 へ改番済みで、ファイル名・索引・試験・PR タイトルは 0704 に揃っている。本文の「関連 ADR」「IADR-0706 の 2 試験」「マージ順（IADR-0704・0705 の後）」「手元の検証」の各記述は現状と合わない。本文を直すこと。
+
+### 🟢 軽微
+- 作業仕様書 AC3 と IADR の記述が「欠番 0704・0705 は開いている PR が埋める」のままで、0704 は本 PR 自身になった。仕様書は `status: in-progress` なので、マージ前に「0705 が欠番」の趣旨へ直せる。
+- 試験の `block` は `\n\n` で節の終端を切る。節の途中に空行が入ると、後半の語句が検査範囲から外れる。prompt を整形するときは注意すること。
+
+### ✅ 確認できたこと（このセッションで実走）
+- `git diff --name-only origin/develop...HEAD`: 5 ファイル（IADR-0704・ADR 索引・作業仕様書・`claude-code-review.yml`・`scripts.repo.test.js`）。5 ファイルすべての差分または全文を行単位で読んだ。
+- `node -e "…spawnSync('node',['scripts/scripts.test.js'],{env:{REQUIRE_REPO_TESTS:'1'}…"`（`scripts.test.js` 全件）: **exit 0、1295 tests passed**。前回の欠番による赤は、IADR-0704 を本 PR が使うことで解消している。IADR-0704 の 2 試験（5 語句の固定と陰性対照）は ok だった。
+- `node scripts/check-trace-blocks.js`: OK（206 件）。
+- `node scripts/gen-knowledge-graph.js --check`: OK。
+- `node scripts/check-doc-links.js`: OK（2147 件。凍結記録の 1 件は既知の fail-open）。
+- `node scripts/check-doc-updated.js --base origin/develop`: OK（変更された docs 0 件）。
+- `node scripts/check-commit-messages.js`: 2 件すべて適合。
+- `node scripts/check-plan-id-qualification.js`: OK（4367 件）。
+- `gh run list`: PR Title・PR Size・Image Mapping は success。Claude Code Review（本ジョブ）は in_progress。`scripts-tests` の success は本レビュー時点では一覧に出ておらず、未確認。
+- トレーサビリティ: ブランチ名・コミット件名・試験・YAML コメントに `NFR` と `IADR-0704`。`NFR` は無採番だが、メタ作業なので規約上許される。IADR の `related_ids` に自 ID はない。ADR 制約は IADR-0538 の検査器・必須チェック名・`track_progress` を変えておらず、違反はない。
+- 実装の確認: prompt の追記は【検証の下限】節の先頭 6 行で、試験が固定する 5 語句（流用しない・push のたびに・全ファイルを読み直す・前回以後だけは満たさない・M の数え方）は prompt に存在する。過剰実装はない。
+
+### 🔍 実行できなかったこと
+- 変異試験（prompt の語句を書き換えて再実行する追試）: 書き込み不可のため未検証。ただし試験内の陰性対照（文字列置換で赤になること）は実走で ok だった。
+- actionlint: 手元に無く未実行。YAML は差分を読んだ範囲で構文が崩れていない。
+- 同じ head の CI `scripts-tests` の success: 本レビュー時点では未確認。上のとおり全件を手元で実走し緑だった。
+- 計画書原文: 確認不要（NFR 無採番のメタ作業）。
+
+---
+*レビュー観点: トレーサビリティ / 受け入れ基準 / ADR 制約 / 品質 / AI 固有リスク*
+ ・ branch: `fix/NFR-ai-review-full-diff-every-head`
