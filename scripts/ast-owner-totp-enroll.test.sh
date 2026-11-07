@@ -132,7 +132,7 @@ if command -v helm >/dev/null 2>&1; then
 	rendered="$(helm template ast "$chart" -f "$chart/values-cloud.yaml" -f "$chart/ci/values-cloud-digests.fixture.yaml" 2>/dev/null)"
 	check "values-cloud の描画: ast-owner-totp の参照が 1 本（risk-management だけ）" "$([ "$(printf '%s\n' "$rendered" | grep -A1 'secretKeyRef:' | grep -c 'name: ast-owner-totp')" = 1 ] && echo 0 || echo 1)"
 	# NFR-06, IADR-0626 決定 1: report の Deployment は、照合の宛先（RiskManagement__BaseUrl）を持ち、Secret を読まない（宛先が無いと Enforce は拒む）。
-	report="$(printf '%s\n' "$rendered" | awk '/^---/{doc=""} {doc=doc $0 "\n"} /^kind: Deployment$/{dep=1} END{}' ; printf '%s\n' "$rendered" | awk 'BEGIN{RS="\n---"} /kind: Deployment/ && /name: report-service\n/ {print}')"
+	report="$(printf '%s\n' "$rendered" | awk 'BEGIN{RS="\n---\n"} /\nkind: Deployment\n/ && /\n  name: report-service\n/ {print}')"
 	check "values-cloud の描画: report が RiskManagement__BaseUrl を持つ" \
 		"$(printf '%s\n' "$report" | grep -A1 'name: RiskManagement__BaseUrl$' | grep -q 'value: "http://risk-management-service:8080"' && echo 0 || echo 1)"
 	check "values-cloud の描画: report は ast-owner-totp を読まない" \

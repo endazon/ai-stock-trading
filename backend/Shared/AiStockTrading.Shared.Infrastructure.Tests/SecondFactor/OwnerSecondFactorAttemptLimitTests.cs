@@ -295,7 +295,7 @@ public class OwnerSecondFactorAttemptLimitTests
     }
 
     [Fact]
-    public void 持ち主へ届かなければ確かめられないとし_欠けたコードは問い合わせない()
+    public void 持ち主へ届かなければ確かめられないとし_問い合わせは1回だけ()
     {
         var handler = new CannedHandler(HttpStatusCode.OK, "{\"outcome\":\"Verified\"}") { Throw = true };
         var verifier = new RemoteOwnerSecondFactorVerifier(new HttpClient(handler) { BaseAddress = new Uri("http://risk-management") }, NullLogger.Instance);
