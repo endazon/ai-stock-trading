@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 // IADR-0340 決定 2: **`i18n` は `@lingui/core` ではなく本ユニットの `lib/i18n` から受け取る。**
 // 本モジュールは route factory の `lazyRouteComponent` が動的 import する**遅延チャンクの入口**であり、
 // この import が本ユニットの文言カタログ（ja・442 キー）を初期ロードではなく遅延側へ連れてくる。
@@ -546,10 +546,18 @@ function GuardForm({ guard }: { guard: TradingGuardSettings }) {
   const dangers = dangerousChanges(guard, form);
   // 危険確認は「その時点の危険リスト」に紐付ける。確認後にさらに危険な変更が増えたら確認を外し、再確認を要求する
   // （fail-safe。IADR-0086 決定3 の趣旨＝差分を都度確認させる / #188 AI 再レビュー指摘）。
+  //
+  // NFR / IADR-0640: ESLint 10 系への移行で `react-hooks/set-state-in-effect`（eslint-plugin-react-hooks 7 の
+  // recommended）がここを検出した。上の `guardSignature` と同じ「前回のシグネチャを state に持ち、描画中に
+  // 同期的に比較・調整する」形へ寄せる。**挙動は厳しい側へ倒れる**——effect 版は危険リストが変わった描画の
+  // commit 後に確認を外していたため、その間は古い確認のまま `blocked` が偽になり得た。描画中に外せば
+  // 危険リストが変わったその描画から確認は外れている（mount 時は初期値 false のため従来と同じ）。
   const dangersSignature = dangers.join('｜');
-  useEffect(() => {
+  const [confirmedDangersSignature, setConfirmedDangersSignature] = useState(dangersSignature);
+  if (confirmedDangersSignature !== dangersSignature) {
+    setConfirmedDangersSignature(dangersSignature);
     setConfirmDanger(false);
-  }, [dangersSignature]);
+  }
 
   const blocked = reason.trim() === '' || save.isPending || (dangers.length > 0 && !confirmDanger);
 
