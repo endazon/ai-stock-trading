@@ -13,7 +13,7 @@ using Xunit;
 
 namespace AiStockTrading.IntegrationTests;
 
-// 🔴 NFR-18, IADR-0635: **デッドレターはサービスごと。共有のデッドレターの権限が無い利用者でも、起動し、失敗したメッセージは自分の DLQ へ移る。**
+// 🔴 NFR-18, IADR-0636: **デッドレターはサービスごと。共有のデッドレターの権限が無い利用者でも、起動し、失敗したメッセージは自分の DLQ へ移る。**
 //
 // 実ブローカ（Testcontainers の RabbitMQ 3.13）で、基盤の生成器がクラウドの購読側に与える形の権限（自分の接頭辞・応答キュー・既定の
 // exchange・購読の exchange の read。共有の wolverine-dead-letter-queue は含めない）の利用者を作り、
@@ -153,7 +153,7 @@ public sealed class BrokerPerServiceDeadLetterE2ETests : IAsyncLifetime
     }
 }
 
-/// <summary>NFR-18, IADR-0635: 本試験の型（入れ子にしない＝ exchange の名前が型の完全名になる）。</summary>
+/// <summary>NFR-18, IADR-0636: 本試験の型（入れ子にしない＝ exchange の名前が型の完全名になる）。</summary>
 public sealed record DlqProbeFailing(string Id);
 
 /// <summary>
@@ -170,6 +170,6 @@ public sealed class DlqProbeFailingReceiver
     public void Handle(DlqProbeFailing message)
     {
         Interlocked.Increment(ref _attempts);
-        throw new InvalidOperationException($"NFR-18, IADR-0635: デッドレターへの移送を確かめるための失敗（{message.Id}）");
+        throw new InvalidOperationException($"NFR-18, IADR-0636: デッドレターへの移送を確かめるための失敗（{message.Id}）");
     }
 }

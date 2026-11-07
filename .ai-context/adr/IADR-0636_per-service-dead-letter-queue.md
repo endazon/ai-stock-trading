@@ -1,5 +1,5 @@
 ---
-title: IADR-0635 Wolverine の transport の既定のデッドレター（既定の名前は全サービスで同じ wolverine-dead-letter-queue）を、共通配線でサービスごとの名前（<ServiceName>.dead-letter）にする。受信キューのデッドレター（<queue>_error）は変えない。ブローカの権限に共有のデッドレターが要らなくなる
+title: IADR-0636 Wolverine の transport の既定のデッドレター（既定の名前は全サービスで同じ wolverine-dead-letter-queue）を、共通配線でサービスごとの名前（<ServiceName>.dead-letter）にする。受信キューのデッドレター（<queue>_error）は変えない。ブローカの権限に共有のデッドレターが要らなくなる
 type: impl-adr
 status: Accepted
 related_ids: [NFR-18, ADR-0013, IADR-0129, IADR-0628, MSP:IADR-0681, MSP:IADR-0694, MSP:IADR-0699]
@@ -10,7 +10,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0013_messaging-follow-wolverine-kafka.md （メッセージング）
 ---
 
-# IADR-0635: デッドレターをサービスごとにする
+# IADR-0636: デッドレターをサービスごとにする
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 

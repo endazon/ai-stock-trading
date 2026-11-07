@@ -13,7 +13,7 @@ using Xunit;
 
 namespace AiStockTrading.TestSupport.PlatformShim.Tests;
 
-// 🔴 NFR-18, IADR-0635: **全サービスのデッドレター（受信キューの DLQ と transport の既定の DLQ）は、そのサービスの接頭辞の中にある。**
+// 🔴 NFR-18, IADR-0636: **全サービスのデッドレター（受信キューの DLQ と transport の既定の DLQ）は、そのサービスの接頭辞の中にある。**
 //
 // Wolverine は transport の既定の DLQ（既定の名前は全サービスで同じ wolverine-dead-letter-queue）を起動のたびに宣言する
 // （キュー・同名の exchange・束ね。RabbitMqTransport の enabledDeadLetterQueues。WolverineFx.RabbitMQ 6.24.5 を逆コンパイルして確かめた）。

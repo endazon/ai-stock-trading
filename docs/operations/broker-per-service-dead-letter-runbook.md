@@ -9,7 +9,7 @@ updated: 2026-11-07
 <!-- trace:
 ids: [NFR-18]
 adrs: [ADR-0013]
-iadrs: [IADR-0635, IADR-0129, IADR-0628, MSP:IADR-0699, MSP:IADR-0694]
+iadrs: [IADR-0636, IADR-0129, IADR-0628, MSP:IADR-0699, MSP:IADR-0694]
 specs: [20261107_broker-per-service-dead-letter]
 issues: []
 -->

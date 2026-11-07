@@ -2,7 +2,7 @@
 title: Wolverine の transport の既定のデッドレターをサービスごとの名前（<ServiceName>.dead-letter）にし、ブローカの権限に共有のデッドレターが要らないようにする（共通配線・単体と実ブローカの試験・移行の手順書）
 type: spec
 status: accepted
-related_ids: [NFR-18, ADR-0013, IADR-0635, IADR-0129, IADR-0628, MSP:IADR-0699, MSP:IADR-0681, MSP:IADR-0694]
+related_ids: [NFR-18, ADR-0013, IADR-0636, IADR-0129, IADR-0628, MSP:IADR-0699, MSP:IADR-0681, MSP:IADR-0694]
 author: claude (Claude Code)
 created: 2026-11-07
 updated: 2026-11-07
@@ -16,7 +16,7 @@ plan_refs:
 
 - 所有者の裁定（2026-11-07「全部直してから稼働」）の一部。基盤（MSP）のクラウドのブローカの権限で、取引ユニットの全 11 利用者が共有の
   デッドレター `wolverine-dead-letter-queue` に configure・write・read を持つ。これをサービスごとにし、各利用者は自分の DLQ だけを持つ。
-- 起点 ID はブローカの最小権限の一連（IADR-0628・MSP:IADR-0681／0694）と同じ `NFR-18`。決定は [IADR-0635](../adr/IADR-0635_per-service-dead-letter-queue.md)。
+- 起点 ID はブローカの最小権限の一連（IADR-0628・MSP:IADR-0681／0694）と同じ `NFR-18`。決定は [IADR-0636](../adr/IADR-0636_per-service-dead-letter-queue.md)。
 - 基盤の側は MSP の作業仕様書 `20261107_broker-per-service-dead-letter`（MSP:IADR-0699）。
 
 ## 1. 現状（develop `2e95ee467`。shallow ではない）
@@ -43,7 +43,7 @@ plan_refs:
 | `docs/operations/wolverine-queue-cleanup-runbook.md`（MassTransit の `_error`） | 変えない（別の主題） |
 | `NotificationService` の注記（再試行→デッドレター） | 変えない（一般の記述で正しい） |
 | `SubscribedExchangeDeclarationTests`（デッドレターの exchange は受動にしない） | 変えない（受信キューの DLQ の話で正しい） |
-| 既存の IADR-0129・IADR-0395 の本文 | 凍結記録のため書き換えない。transport の既定の扱いは IADR-0635 に書く |
+| 既存の IADR-0129・IADR-0395 の本文 | 凍結記録のため書き換えない。transport の既定の扱いは IADR-0636 に書く |
 
 ## 3. 作るもの
 
