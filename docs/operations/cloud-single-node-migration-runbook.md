@@ -9,8 +9,8 @@ updated: 2026-11-07
 <!-- trace:
 ids: [FR-04, FR-08, NFR, NFR-03, NFR-05, NFR-06, FR-10]
 adrs: [ADR-0006, ADR-0024, ADR-0073, ADR-0076, ADR-0078, ADR-0080]
-iadrs: [IADR-0630, IADR-0629, IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627]
-specs: [20261107_cloud-db-per-service-users, 20261107_cloud-keycloak-tls, 20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
+iadrs: [IADR-0631, IADR-0630, IADR-0629, IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627]
+specs: [20261107_cloud-openbao-tls-store, 20261107_cloud-db-per-service-users, 20261107_cloud-keycloak-tls, 20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
 issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471]
 -->
 
@@ -194,6 +194,13 @@ done
   `ast-db-<サービス>-credentials` を読む）。稼働中の構成を共有の 1 組から移すときは、基盤の手順書の 3 段の順を守る:
   基盤の段（利用者を作り OWNER を移す）→ この chart を当てる → 基盤の段（共有の利用者を消す）。基盤の段の前にこの chart を当てると、
   7 つの Secret が同期されず、新しい Pod は起動しない（旧の Pod が残る）。共有の利用者を消した後に、共有の 1 組を読む版へ chart を戻さない。
+- 秘密のストア（`SecretStore openbao`）は、基盤の OpenBao の TLS の口（`https://openbao.openbao.svc:8443`）へ、同じ名前空間の ConfigMap `openbao-ca` の CA で検証して話す。
+  - 🔴 **稼働中の構成を平文の口から移すときは、基盤の手順の後にこの chart を当てる**: 基盤の受け口の証明書（`tls-cert.sh issue`）→ 基盤の併存の段
+    （平文と TLS の両方を受ける）→ 基盤のストア → **この chart** → 基盤が平文を閉じる。先に当てると、ストアが平文の受け口へ https で話して届かない
+    （写した Secret は残るが、更新が止まる）。手順は基盤の「秘匿管理の受け口の TLS」の手順書（`docs/operations/cloud-openbao-tls-runbook.md`）の段 0〜段 4。
+  - 名前空間を新しく作るとき（この chart を初めて入れるとき）は、入れた後に基盤の `bash deploy/cloud/vault/tls-cert.sh --live publish-ca --namespace ai-stock-trading`
+    で ConfigMap を置く。置くまでストアは Ready にならない（ESO が繰り返し試す）。
+  - 確かめ: `kubectl -n ai-stock-trading get secretstore openbao` が Ready。ExternalSecret の 1 つを force-sync して SecretSynced。
 - 基盤が CA を作り直したら、`cloud/shared/platform-infra-ca` の更新を ESO が写した後に、取引ユニットのサービスを作り直す。
   切り替えの確かめ方と戻し方は [基盤の TLS 切り替え Runbook](platform-infra-tls-cutover-runbook.md)。
 - 認可サーバー（Keycloak）へは `https://keycloak:8443` で繋ぎ、同じ基盤の CA で検証する（`values-cloud.yaml` の `global.authTls`）。

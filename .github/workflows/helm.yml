@@ -470,6 +470,8 @@ jobs:
       # 1. 描画が参照する Secret（secretKeyRef・volume）は、ast-operator-hold（秘密ではない停止の切り替え）を除き、どれも
       #    ExternalSecret の同期先である（手で作る Secret が残らない）。ExternalSecret はどれも名前空間の SecretStore openbao を使う。
       # 2. SecretStore openbao は kubernetes 認証・role ast-eso・ServiceAccount ast-eso-reader・audience vault（基盤の取り決め）。
+      #    NFR-05, IADR-0631: 宛先は基盤の OpenBao の TLS の口（https・8443）で、受け口の CA（ConfigMap openbao-ca）で検証する。
+      #    http の宛先・CA の欠落は描画で止まる。
       # 3. DB の利用者名は Secret から読む（クラウド）。既定と経路 B（values-local）は従来どおり固定の ai を描く（利用者名の Secret を読まない）。
       # 4. 5 つの守りが段 2（Enforce・Require）。既定と経路 B は段 1 のまま。
       - name: Assert values-cloud secrets from OpenBao and stage 2
@@ -491,6 +493,15 @@ jobs:
           grep -A3 'serviceAccountRef:' <<<"$store" | grep -q 'name: ast-eso-reader' || fail "SecretStore openbao の ServiceAccount が ast-eso-reader でない。"
           grep -A3 'serviceAccountRef:' <<<"$store" | grep -A1 'audiences:' | grep -q '"vault"' || fail "SecretStore openbao の audience が vault でない。"
           grep -q '^  name: ast-eso-reader$' <<<"$out" || fail "ServiceAccount ast-eso-reader が描かれない。"
+          grep -qx '      server: "https://openbao.openbao.svc:8443"' <<<"$store" || fail "SecretStore openbao の宛先が基盤の OpenBao の TLS の口（https・8443）でない。"
+          grep -A3 '^      caProvider:$' <<<"$store" | tr -d ' ' | tr '\n' ' ' | grep -qx 'caProvider: type:"ConfigMap" name:"openbao-ca" key:"ca.crt" ' \
+            || fail "SecretStore openbao が受け口の CA（ConfigMap openbao-ca の ca.crt）で検証しない。"
+          if grep -Eqi 'insecure|skipverify|skip_verify|http://openbao' <<<"$store"; then fail "SecretStore openbao に平文の宛先か検証を外す指定がある。"; fi
+          for bad in 'externalSecrets.openbaoStore.server=http://openbao.openbao.svc:8200' 'externalSecrets.openbaoStore.caProvider.name=' 'externalSecrets.openbaoStore.caProvider=null'; do
+            if helm template ast "$CHART" -f "$CHART/values-cloud.yaml" -f "$CHART/ci/values-cloud-digests.fixture.yaml" --set "$bad" >/dev/null 2>&1; then
+              fail "SecretStore openbao の TLS の設定を外した（$bad）のに描画が通った。"
+            fi
+          done
           conns="$(grep -c 'name: ConnectionStrings__DefaultConnection' <<<"$out" || true)"
           users="$(grep -cF 'Username=$(DB_USERNAME);' <<<"$out" || true)"
           [ "$conns" -ge 1 ] && [ "$conns" = "$users" ] || fail "values-cloud の接続文字列 $conns 件のうち利用者名を Secret から読むのは $users 件。"

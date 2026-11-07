@@ -114,7 +114,13 @@ externalSecrets:
   deletionPolicy: Retain
   openbaoStore:
     create: true
-    server: http://openbao.openbao.svc:8200
+    # NFR-05, IADR-0631（基盤の MSP:IADR-0696）: 基盤の OpenBao の受け口は TLS の 8443 だけ。CA は基盤の tls-cert.sh が
+    #   この名前空間に置く ConfigMap openbao-ca（キー ca.crt）で検証する。🔴 基盤の併存の段の後に当てる（手順書 §5.4）。
+    server: https://openbao.openbao.svc:8443
+    caProvider:
+      type: ConfigMap
+      name: openbao-ca
+      key: ca.crt
     path: cloud
     role: ast-eso
     serviceAccountName: ast-eso-reader
