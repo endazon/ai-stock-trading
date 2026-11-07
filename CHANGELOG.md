@@ -253,6 +253,8 @@
 
 ### 不具合修正
 
+- **NFR**: 稼働の前に実行環境とイメージを硬くする（Worker の段 3・費用の停止を読めないときの段・基盤の CA を基盤の宛先だけで信頼・OpenD の基底と配布物の照合・稼働のイメージの curl と依存の監査） (#1597) (cb3bd489)
+- **NFR-06**: 通知のコマンドの処理をブローカのハンドラにせず、通知は受ける統制の事象の発行元を確かめ、所有者のトークンの許可集合と gRPC 面の宛先を硬くする (#1596) (5c13606e)
 - **NFR-05**: サービス間の認証の身元をサービスごとに分け、受け側は宛先と口ごとの呼び手の一覧で確かめる (#1592) (3a2027e1)
 - **NFR-06**: 監視銘柄の入れ替えの適用を、提供側で第 2 要素つきの確定済みの案に結び付けて確かめる (#1588) (426d7d4c)
 - **NFR-18**: Wolverine の既定のデッドレターをサービスごとの名前にし、ブローカの権限に共有のデッドレターを要らなくする（IADR-0636） (#1591) (8146c094)
@@ -611,6 +613,7 @@
 
 ### ドキュメント
 
+- **NFR**: CHANGELOG を自動更新 (#1586) (74530656)
 - **NFR**: CHANGELOG を自動更新 (#1569) (08634c6a)
 - **NFR**: CHANGELOG を自動更新 (#1565) (7d485f68)
 - **NFR**: CHANGELOG を自動更新 (#1563) (503392dd)
@@ -820,6 +823,16 @@
 
 ### その他
 
+- **NFR**: フロントエンドの ESLint を 10 系へ上げ、develop の npm ci の ERESOLVE を直す（IADR-0640） (#1595) (e2c66f9c)
+- **deps-dev**: bump @eslint/js from 9.39.5 to 10.0.1 in /frontend (#1572) (1e89cc10)
+- **deps-dev**: bump typescript-eslint from 8.64.0 to 8.72.1 in /frontend (#1578) (e9c36bfd)
+- **deps**: bump @tanstack/react-query from 5.102.8 to 5.105.3 in /frontend (#1576) (eb6ca12d)
+- **deps-dev**: bump @testing-library/user-event from 14.6.1 to 14.6.8 in /frontend (#1574) (b37b4849)
+- **deps**: bump dotnet/sdk from `de4fe90` to `212fe4c` in /backend (#1571) (da194336)
+- **deps-dev**: bump @lingui/format-po from 6.7.0 to 6.12.0 in /frontend (#1573) (c38b3301)
+- **deps**: bump anthropics/claude-code-action from 1.0.267 to 1.0.268 (#1577) (5bf2810b)
+- **deps**: bump the codeql-action group with 3 updates (#1575) (7ff84818)
+- **deps**: bump dotnet/aspnet from `de0ee35` to `1a48394` in /backend (#1570) (39c0ac79)
 - **NFR**: 公開のファイルから非公開の指摘の識別子を除き、advisory の識別子を allowlist の検査器で止める (#1567) (3141b4f7)
 - **NFR**: values-cloud の各サービスの env が既定（values.yaml）の描画から抜けていないことを CI で確かめる（理由付きの除外表。#1548） (#1550) (3999ca8c)
 - **ADR-0006**: 単一ノードのクラウドへ移すための values-cloud（RAG なし・digest 固定・DB のパスワードは Secret）と、検索を使わない判断の明示・移行の手順書を足す（#1525） (#1537) (ffbfc2f8)
