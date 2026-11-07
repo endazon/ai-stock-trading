@@ -384,6 +384,9 @@ jobs:
           mqs="$(grep -c 'name: RabbitMq__ConnectionString' <<<"$out" || true)"
           amqps="$(grep -A1 'name: RabbitMq__ConnectionString' <<<"$out" | grep -cE 'value: "amqps://ast-[a-z-]+:\$\(RABBITMQ_PASSWORD\)@rabbitmq:5671"' || true)"
           [ "$mqs" -ge 11 ] && [ "$mqs" = "$amqps" ] || fail "values-cloud のブローカの宛先 $mqs 件のうち amqps:5671 は $amqps 件。"
+          # NFR-18, IADR-0628: クラウドでは購読側は購読の exchange を宣言しない（ブローカに繋ぐ全 Worker に Passive）。
+          passive="$(grep -A1 -E '^ +- name: WOLVERINE_SUBSCRIBED_EXCHANGES$' <<<"$out" | grep -c 'value: "Passive"' || true)"
+          [ "$passive" = "$mqs" ] || fail "values-cloud のブローカに繋ぐ $mqs 件のうち購読の exchange を受動で宣言するのは $passive 件。"
           gws="$(grep -A1 'name: LlmGateway__BaseUrl' <<<"$out" | grep -c 'value: "https://llmgateway-service.microservices-platform:8080"' || true)"
           [ "$gws" = 2 ] || fail "values-cloud の LLM ゲートウェイの宛先（取引判断・報告書）のうち https は $gws 件（2 件のはず）。"
           if grep -q 'http://llmgateway-service' <<<"$out"; then fail "values-cloud の描画に LLM ゲートウェイの平文の宛先が現れた。"; fi
@@ -391,6 +394,7 @@ jobs:
             # NFR, #1529, IADR-0612: 既定の authAuthority は空で描画が止まるため、配備の値を与えて描く（values-local は明示済み）。
             o="$(helm template ast "$CHART" $prof --set global.authAuthority="$CI_AUTH_AUTHORITY")"
             if grep -Eq '@sha256:|name: DB_PASSWORD$' <<<"$o"; then fail "既定または values-local の描画に digest か DB_PASSWORD が現れた（部品が漏れた）。"; fi
+            if grep -q 'name: WOLVERINE_SUBSCRIBED_EXCHANGES$' <<<"$o"; then fail "既定または values-local の描画に購読の exchange の受動の宣言が現れた（従来の挙動を変えない。IADR-0628）。"; fi
           done
           if grep -q 'values-cloud' deploy/argocd/application.yaml; then fail "ArgoCD の Application が values-cloud を参照している（最初の稼働では使わない）。"; fi
           echo "values-cloud: images=$(grep -c . <<<"$images") connections=$conns tls-db=$full amqps=$amqps https-gateway=$gws"

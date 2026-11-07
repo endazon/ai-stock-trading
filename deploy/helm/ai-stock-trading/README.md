@@ -21,6 +21,10 @@ MSP 側で `platform-infra` と AST 用 DB（user `ai`・`*_svc`）・Keycloak r
 - 従来経路（`AST_ESO=0`）: 起動器は Secret を作らない。基盤のブローカのユーザーと同じ値で先に作る（無ければ起動器が helm の前で止まる）。
 - 既定のユーザー（`guest`）は使わない。旧キー `global.rabbitmqConnectionString` は廃止で、与えると描画で止まる。
 - Secret が無い・値が違うと、新しい Pod が起動しない（旧 Pod は残る）。
+- **購読する exchange の宣言**（`global.rabbitmq.subscribedExchanges`。[IADR-0628](../../../.ai-context/adr/IADR-0628_subscriber-passive-exchange-declaration.md)）: 既定 `Declare`（購読側も宣言する・従来）。
+  values-cloud は `Passive`（env `WOLVERINE_SUBSCRIBED_EXCHANGES=Passive`）で、購読側は在るかを確かめるだけにする。購読側の権限から購読の exchange の
+  configure を外せる（基盤の生成器）。exchange は基盤のブローカの起動の直後の初期化が先に宣言する。無い間は購読側の起動がブローカの初期化の再試行で待ち、
+  尽きれば Pod が再起動する（束ねの無いまま動かない）。
 
 ## デプロイ
 

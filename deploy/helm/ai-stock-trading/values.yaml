@@ -28,6 +28,10 @@ global:
     tls:
       enabled: false
       port: 5671
+    # NFR-18, IADR-0628: 購読する exchange（自分のキューを束ねる exchange）の宣言の仕方。Declare（既定・従来）＝購読側も宣言する
+    #   （ブローカの権限に購読の exchange の configure が要る）／Passive＝在るかを確かめるだけ（configure は要らない。exchange は
+    #   発行側か基盤のブローカの初期化が先に宣言する）。Passive のときだけ env WOLVERINE_SUBSCRIBED_EXCHANGES を描く。クラウドは values-cloud が Passive。
+    subscribedExchanges: Declare
   otlpEndpoint: http://otel-collector:4317
   # 🔴 NFR, #1529, IADR-0612: 認証のレルム（Authority）。**既定は空で、未設定なら描画で止まる**（単体実行向けのレルムを既定にしない）。
   #   配備の values で必ず明示する（values-local は platform。クラウドは values-cloud）。
