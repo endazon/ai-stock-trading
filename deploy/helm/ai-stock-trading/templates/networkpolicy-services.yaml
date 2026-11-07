@@ -1,0 +1,192 @@
+{{- /*
+  NFR, IADR-0631: 取引ユニットの 11 サービスの通信を、許可した組だけにする（入り・出）。既定 networkPolicy.enabled=false＝何も描かない。
+
+  - 名前空間の全 Pod に既定の拒否（ast-default-deny。入り・出）を置き、サービスごとの方針で要る組だけを足す（NetworkPolicy は和で効く）。
+  - 入り: 呼び手として宣言したサービス（networkPolicy.services.<呼び手>.calls に自分を含むもの）からの 8080 と（あれば）gRPC の口だけ。
+  - 出 : 名前解決・基盤（DB を持つサービスだけ Postgres。全サービスがブローカ・Keycloak・collector）・宣言した呼び先の 8080 と gRPC の口・
+         LLM ゲートウェイ（llmGateway: true）・OpenD の API（opend: true）・クラスタの外の 443（externalHttps: true）。
+  - 応答: NetworkPolicy は接続の状態で応答を通すので、受けた接続への返りの規則は要らない。
+  - 既定の拒否の外にあるもの（描かなくても落ちない）: readinessProbe（kubelet がノードから打つ）・kubectl exec / port-forward / attach
+    （API サーバ → kubelet の経路）。🔴 稼働のクラスタで先に確かめる手順は docs/operations/cloud-network-policy-runbook.md。
+  - 🔴 NetworkPolicy を強制しない CNI では無害な宣言として残るだけである（k3s は組み込みの制御で強制する）。
+*/ -}}
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+{{- $g := .Values.global }}
+{{- $decl := $np.services | default dict }}
+{{- range $name, $_ := .Values.services }}
+{{- if not (hasKey $decl $name) }}
+{{- fail (printf "networkPolicy.enabled=true には networkPolicy.services.%s（呼び先・外への口の宣言）が要ります。呼ばないなら {} を書きます（IADR-0631）。" $name) }}
+{{- end }}
+{{- end }}
+{{- range $name, $d := $decl }}
+{{- if not (hasKey $.Values.services $name) }}
+{{- fail (printf "networkPolicy.services.%s は services に無い名前です（IADR-0631）。" $name) }}
+{{- end }}
+{{- range $callee := ($d | default dict).calls | default list }}
+{{- if not (hasKey $.Values.services $callee) }}
+{{- fail (printf "networkPolicy.services.%s.calls の %s は services に無い名前です（IADR-0631）。" $name $callee) }}
+{{- end }}
+{{- if eq $callee $name }}
+{{- fail (printf "networkPolicy.services.%s.calls に自分を書かないでください（IADR-0631）。" $name) }}
+{{- end }}
+{{- end }}
+{{- if and ($d | default dict).opend (not $.Values.opend.enabled) }}
+{{- fail (printf "networkPolicy.services.%s.opend=true には opend.enabled=true が要ります（IADR-0631）。" $name) }}
+{{- end }}
+{{- end }}
+{{- if .Values.tradingCycle.cronjob.enabled }}
+{{- fail "networkPolicy.enabled=true と tradingCycle.cronjob.enabled=true は併用できません（CronJob の通信の組を宣言していないため、既定の拒否で止まります。IADR-0631）。" }}
+{{- end }}
+{{- if .Values.opend.enabled }}
+{{- $onp := .Values.opend.networkPolicy }}
+{{- if or (not $onp.enabled) (not ($onp.egress | default dict).enabled) }}
+{{- fail "networkPolicy.enabled=true で opend.enabled=true のときは opend.networkPolicy.enabled と opend.networkPolicy.egress.enabled も true にします（既定の拒否の下で OpenD の入り・出の許可が無いと発注経路が止まります。IADR-0631）。" }}
+{{- end }}
+{{- $opendClients := list }}
+{{- range $name, $d := $decl }}
+{{- if ($d | default dict).opend }}
+{{- $opendClients = append $opendClients (printf "%s-service" $name) }}
+{{- end }}
+{{- end }}
+{{- if or (ne (len $onp.apiClientPodLabels) 1) (ne (len $opendClients) 1) (ne (toString (index $onp.apiClientPodLabels "app")) (toString (first $opendClients))) }}
+{{- fail (printf "OpenD の API の呼び手は 1 つで、opend.networkPolicy.apiClientPodLabels（app: %v）と networkPolicy.services.<名前>.opend=true（%v）が一致する必要があります（IADR-0631）。" (index $onp.apiClientPodLabels "app") $opendClients) }}
+{{- end }}
+{{- end }}
+{{- $mq := $g.rabbitmq }}
+{{- $mqPort := $mq.port }}
+{{- if and $mq.tls $mq.tls.enabled }}
+{{- $mqPort = $mq.tls.port }}
+{{- end }}
+{{- $except := concat ($np.publicEgress.except | default list) ($np.publicEgress.extraExcept | default list) }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ast-default-deny
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/part-of: ai-stock-trading
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+{{- range $name, $svc := .Values.services }}
+{{- $d := index $decl $name | default dict }}
+{{- /* 自分を呼ぶサービス（呼び手の宣言の逆引き）。 */}}
+{{- $callers := list }}
+{{- range $caller, $cd := $decl }}
+{{- if has $name (($cd | default dict).calls | default list) }}
+{{- $callers = append $callers (printf "%s-service" $caller) }}
+{{- end }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-service
+  namespace: {{ $.Values.namespace.name }}
+  labels:
+    app: {{ $name }}-service
+    app.kubernetes.io/part-of: ai-stock-trading
+spec:
+  podSelector:
+    matchLabels: { app: {{ $name }}-service }
+  policyTypes: [Ingress, Egress]
+  {{- if $callers }}
+  ingress:
+    # 呼び手（networkPolicy.services.<呼び手>.calls に {{ $name }} を含むもの）だけ。
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app, operator: In, values: [{{ join ", " (sortAlpha $callers) }}] }
+      ports:
+        - { protocol: TCP, port: 8080 }
+        {{- if $svc.grpcPort }}
+        - { protocol: TCP, port: {{ $svc.grpcPort }} }
+        {{- end }}
+  {{- else }}
+  # 呼び手が無い＝どこからも受けない（入りの規則を描かない＝全て拒否）。
+  ingress: []
+  {{- end }}
+  egress:
+    # 名前解決。
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $np.dns.namespace | quote }} } }
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.dns.podLabels | nindent 14 }}
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    {{- if $svc.db }}
+    # 基盤の Postgres（DB を持つサービスだけ）。
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $np.infra.namespace | quote }} } }
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.infra.postgres.podLabels | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: {{ $g.db.port }} }
+    {{- end }}
+    # 基盤のブローカ・Keycloak・collector（全サービス）。
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $np.infra.namespace | quote }} } }
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.infra.rabbitmq.podLabels | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: {{ $mqPort }} }
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $np.infra.namespace | quote }} } }
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.infra.keycloak.podLabels | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: {{ $np.infra.keycloak.port }} }
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $np.infra.namespace | quote }} } }
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.infra.otelCollector.podLabels | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: {{ $np.infra.otelCollector.port }} }
+    {{- range $callee := (sortAlpha ($d.calls | default list)) }}
+    {{- $calleeSvc := index $.Values.services $callee }}
+    # 呼び先 {{ $callee }}（取引ユニットの中）。
+    - to:
+        - podSelector:
+            matchLabels: { app: {{ $callee }}-service }
+      ports:
+        - { protocol: TCP, port: 8080 }
+        {{- if $calleeSvc.grpcPort }}
+        - { protocol: TCP, port: {{ $calleeSvc.grpcPort }} }
+        {{- end }}
+    {{- end }}
+    {{- if $d.opend }}
+    # OpenD の API（発注執行だけ。opend.networkPolicy.apiClientPodLabels と同じ組）。
+    - to:
+        - podSelector:
+            matchLabels: { app: opend }
+      ports:
+        - { protocol: TCP, port: {{ $.Values.opend.apiPort }} }
+    {{- end }}
+    {{- if $d.llmGateway }}
+    # 基盤の LLM ゲートウェイ。
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $np.llmGateway.namespace | quote }} } }
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.llmGateway.podLabels | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: {{ $np.llmGateway.port }} }
+    {{- end }}
+    {{- if $d.externalHttps }}
+    # クラスタの外の HTTPS（情報源・市況・為替・Discord）。私設・リンクローカル・CGNAT・ループバック・ノードの公開アドレスへは出さない。
+    - to:
+        - ipBlock:
+            cidr: {{ $np.publicEgress.cidr }}
+            except: [{{ join ", " $except }}]
+      ports:
+        - { protocol: TCP, port: 443 }
+    {{- end }}
+{{- end }}
+{{- end }}

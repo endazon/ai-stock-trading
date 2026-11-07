@@ -28,6 +28,8 @@ on:
       - "scripts/helm-pod-security.test.js"
       - "backend/Dockerfile"
       - "deploy/opend/k8s/opend.yaml"
+      # NFR, IADR-0631: OpenD の権限と取引ユニットの通信の制限の描画検査。
+      - "scripts/helm-network-policy.test.js"
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
@@ -43,6 +45,8 @@ on:
       - "scripts/helm-pod-security.test.js"
       - "backend/Dockerfile"
       - "deploy/opend/k8s/opend.yaml"
+      # NFR, IADR-0631: OpenD の権限と取引ユニットの通信の制限の描画検査。
+      - "scripts/helm-network-policy.test.js"
 
 # NFR / IADR-0208 決定 1: 連続 push で古い実行を捨てる（PR のみ）。
 # 本ワークフローは約 40 回の `helm template` を直列に回すため、重複実行の無駄が大きい。
@@ -116,6 +120,11 @@ jobs:
       # Pod Security Admission の水準、描画で止まる条件、Dockerfile・起動器・生 manifest との一致、変異。
       - name: Test pod security settings (render, supply, mutation)
         run: node scripts/helm-pod-security.test.js
+      # NFR, IADR-0631: values-cloud の OpenD の権限（seccomp・権限昇格なし・ALL を落として DAC_OVERRIDE・FOWNER だけ）、
+      # 11 サービスと OpenD の NetworkPolicy の在り、呼び手の一覧と env（*__BaseUrl 等）の一致、既定とローカルが変わらないこと、
+      # 描画で止まる条件、変異（修正を外すと赤）を固定する。
+      - name: Test OpenD privileges and service NetworkPolicy (render, env match, mutation)
+        run: node scripts/helm-network-policy.test.js
       # #584 / IADR-0284 決定5（段0）/ IADR-0328: east-west gRPC の h2c ポート（services.<name>.grpcPort）。
       # 既定では**どのサービスも宣言しない**ため既定描画では評価されない。ON にした派生を描画し、
       # 有効化時に初めて壊れるテンプレートを CI で捕まえる（IADR-0058 の核心）。

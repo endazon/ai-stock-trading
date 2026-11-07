@@ -37,7 +37,8 @@ issues: [MSP#2492]
 
 - 切り替えは `global.authTls.enabled`（既定 `false`）。`values-cloud.yaml` だけが `true` にする。既定（`values.yaml`）と経路 B（`values-local.yaml`）の描画は変わらない（バイト等価。CI の helm.yml が固定する）。
 - `global.authTls.enabled=true` で Authority が `https://` でない・CA の設定（`global.infraCa`）が無いときは、描画で止まる（黙って平文へ戻らない）。
-- 取引ユニットの chart には Keycloak への出の NetworkPolicy は無い（出は絞っていない）。直すポートは無い。
+- 取引ユニットの chart の通信の制限（`values-cloud.yaml` の `networkPolicy`）は、Keycloak への出を 8443 だけ許す（`networkPolicy.infra.keycloak.port`。
+  Authority の口と違えば描画の検査が止める）。手順は[通信の制限の Runbook](cloud-network-policy-runbook.md)。
 - CronJob（`tradingCycle.cronjob`）はクラウドでは無効である。基盤の CA を持たず、基盤の Keycloak の入りの一覧にも無い。クラウドで有効にするなら、両方を先に足す。
 
 ## 移行の段（基盤の手順書の段 0〜6 との対応）
