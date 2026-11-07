@@ -1,7 +1,7 @@
 ---
 title: サービス間の認証の身元をサービスごとに分け、口ごとに呼んでよいサービスを限る（クラウド）
 type: spec
-status: in-progress
+status: done
 related_ids: [NFR, NFR-05, NFR-06, FR-14, ADR-0047, ADR-0080, IADR-0637, IADR-0611, IADR-0626, IADR-0623, IADR-0051, MSP:IADR-0689, MSP:IADR-0700]
 author: claude (Claude Code)
 created: 2026-11-07
@@ -114,20 +114,25 @@ clientId は `ai-stock-trading-svc-<サービス>`（基盤の realm-for-cloud.j
 
 ## 受け入れ基準
 
-- [ ] AC1: Enforce で一覧に無い azp のサービスのトークンは 403（大小文字・空白の変種・旧の共有クライアントも）。名前の無い口も 403。所有者のトークンは変わらない。
-- [ ] AC2: Enforce で宛先が `ai-stock-trading-api` でないトークンは 401（サービス・所有者とも。無い・platform-api・大文字）。
-- [ ] AC3: 旧の共有クライアントは移行の段（LegacyClients）だけ通り、外すと 401（宛先が無い）／403（宛先があっても一覧に無い）。
-- [ ] AC4: 確かめの口は報告書のクライアントだけ（ほかの 6 つと旧の共有クライアントは 403）。リスク管理の既定の一覧で効く。
-- [ ] AC5: Off（既定）・Report は従前どおり通る（陰性対照: 同じトークンが Enforce で落ちる）。構成の誤り（未知の段・1 つの値）は起動で止まる。
-- [ ] AC6: helm の描画で、7 サービスがそれぞれ別の Secret・別の clientId を読み、共有の ast-secrets を読まない。受け側は Enforce＋移行の段。口の一覧の呼び手は描画に在る。
+- [x] AC1: Enforce で一覧に無い azp のサービスのトークンは 403（大小文字・空白の変種・旧の共有クライアントも）。名前の無い口も 403。所有者のトークンは変わらない。
+- [x] AC2: Enforce で宛先が `ai-stock-trading-api` でないトークンは 401（サービス・所有者とも。無い・platform-api・大文字）。
+- [x] AC3: 旧の共有クライアントは移行の段（LegacyClients）だけ通り、外すと 401（宛先が無い）／403（宛先があっても一覧に無い）。
+- [x] AC4: 確かめの口は報告書のクライアントだけ（ほかの 6 つと旧の共有クライアントは 403）。リスク管理の既定の一覧で効く。
+- [x] AC5: Off（既定）・Report は従前どおり通る（陰性対照: 同じトークンが Enforce で落ちる）。構成の誤り（未知の段・1 つの値）は起動で止まる。
+- [x] AC6: helm の描画で、7 サービスがそれぞれ別の Secret・別の clientId を読み、共有の ast-secrets を読まない。受け側は Enforce＋移行の段。口の一覧の呼び手は描画に在る。
   既定・ローカルは変わらない。同じ clientId の 2 重・未知の段は描画で止まる。描画物を崩すと判定が赤（変異）。
-- [ ] AC7: 修正を外すと試験が赤になる（下の「陰性対照」）。
+- [x] AC7: 修正を外すと試験が赤になる（下の「陰性対照」）。
+- [x] AC8: gRPC の口の名前（型の `[ServiceCallers]`）が段 Enforce で判定に届く。一覧に在る呼び手は通り、ほかは PERMISSION_DENIED（監査の AuditEventsRead で見る）。
+- [x] AC9: 各サービスの本物の経路表で、サービスのロールで通り得る経路はどれも口の名前を持つ。名前を付けない経路は理由つきの除外表に置く（費用統制の `GET /costs/review`・`GET /costs/usage`。サービスの呼び手が無い）。
 
 ## 試験
 
 - `PlatformShim.Tests/ServiceCallerPolicyTests`（本物の JwtBearer と TestServer。AC1〜3・5）。
 - `RiskManagementService.Tests/ServiceCallerAllowlistTests`（本物の既定の一覧。AC4 と読み取りの口）。
 - `scripts/helm-service-auth-clients.test.js`（AC6。helm.yml）。
+- `AuditService.Tests/AuditEventsReadGrpcServiceCallerTests`（AC8。陰性対照: 型の `[ServiceCallers]` を外すと赤）。
+- 各サービスの `ServiceCallerCoverageTests`（AC9。判定は PlatformShim の `ServiceCallerCoverage`。8 サービス。backtest・notification はサービスに開いた経路が無いので置かない。
+  陰性対照: 費用統制の `GET /costs/state` の `.RequireServiceCallers` を外すと赤）。
 - 陰性対照: 要件を OwnerOrService から外す・JwtBearer の宛先の確かめを外す・確かめの口の `.RequireServiceCallers` を外すと、上の試験が赤になることを確かめた（結果は PR）。
 
 ## 適用の順序と戻し方
@@ -139,3 +144,8 @@ clientId は `ai-stock-trading-svc-<サービス>`（基盤の realm-for-cloud.j
 1. gRPC の口はサービスの型ごとの一覧（メソッドごとではない）。クラウドは gRPC を結線しない。
 2. CronJob（run-once）は最終の段で通らない（クラウドでは無効）。有効にするなら CronJob のクライアントを足す。
 3. 口の既定の一覧はコード（イメージの中）にある。一覧を変えるにはイメージを作り直すか env で上書きする（`Auth__ServiceCallers__<名前>__0=...`）。
+
+## ［2026-11-07 追記］レビューの指摘への対応
+
+- 移行の段の間は、旧の共有クライアントが確かめの口も通る（IADR-0626 の追記に例外を明記し、手順書の段 3 を本番の取引の前の必須の段にした）。
+- 費用統制の `GET /costs/review`・`GET /costs/usage` は認可は OwnerOrService だが、呼び手の側の実装が無い（母集合の表に無いのは正しい）。段 Enforce ではサービスから 403。

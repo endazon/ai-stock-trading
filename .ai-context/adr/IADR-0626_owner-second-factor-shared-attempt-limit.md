@@ -100,5 +100,7 @@ J-4（操作への結び付き）:
 
 - 確かめの口（`POST /risk-controls/owner-second-factor/verify`）に口の名前 `risk-controls.owner-second-factor.verify` を付け、既定の一覧（`ServiceCallerNames.DefaultCallers`）で
   報告書のクライアント（`ai-stock-trading-svc-report`）だけを許した（段 `Auth:ServiceToken:Mode=Enforce` のとき。ほかのサービスのクライアントは 403）。
-- 移行の段（`Auth:ServiceToken:LegacyClients`）の間は、旧の共有クライアントも通る（全サービスが自分のクライアントへ移ってから外す）。
-- 既定（Off）・ローカル・CI は従前どおり（サービスのロールなら呼べる）。上の「残る制約 4」「フォローアップ（azp の一覧）」は、クラウドの最終の段で解ける。
+- 🔴 **例外: 移行の段（`Auth:ServiceToken:LegacyClients` に旧の共有クライアント `ai-stock-trading-svc` が在る間）は除く。** 旧の共有クライアントは口の名前と一覧を見ずに
+  サービスに開いたすべての口を通るので、確かめの口も通る。旧の共有クライアントの資格は 7 つのサービスが持っていたため、その間は**残る制約 4 は実質残る**。
+  values-cloud の初回は移行の段である。解けるのは、取引ユニットの手順書（サービスごとの機密クライアントの Runbook）の段 3 で `legacyClients` を外した後である。
+- 既定（Off）・ローカル・CI は従前どおり（サービスのロールなら呼べる）。上の「残る制約 4」「フォローアップ（azp の一覧）」は、クラウドの段 3 の後に解ける。

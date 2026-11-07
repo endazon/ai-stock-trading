@@ -58,7 +58,8 @@ issues: []
      -f deploy/helm/ai-stock-trading/values-cloud.yaml -f <digest のファイル>
    ```
 
-   - 受け側（認証を持つ 8 サービス）に `Auth__ServiceToken__Mode=Enforce` と `Auth__ServiceToken__LegacyClients__0=ai-stock-trading-svc` が描かれる。
+   - 受け側（認証を持つ 8 サービス: audit・configuration・cost-control・information-collection・market-monitor・order-execution・report・risk-management。
+     `helm template` で `Auth__Authority` を持つ Deployment の数。backtest・notification・trade-decision・opend は受け側でない）に `Auth__ServiceToken__Mode=Enforce` と `Auth__ServiceToken__LegacyClients__0=ai-stock-trading-svc` が描かれる。
    - 入れ替えの途中で旧の Pod（共有の資格）が呼んでも、移行の段なので通る（受けた回は「移行の段の共有クライアント」の Warning で残る）。
 2. 確かめ:
    - 11 サービスが Ready。`ast-service-auth-<サービス>` が無いと、その Pod は起動しない（`CreateContainerConfigError`）。
@@ -68,7 +69,10 @@ issues: []
 
 ### 段 3: 旧の共有クライアントを外す
 
-**いつ**: 段 2 から**1 日**、受け側のログに「移行の段の共有クライアント」が出ないことを確かめた後。
+**いつ**: 段 2 から**1 日**、受け側のログに「移行の段の共有クライアント」が出ないことを確かめた後。**本番の取引（実資金）へ進む前に必ず済ませる。**
+
+🔴 **段 3 までは、第 2 要素の確かめの口を呼べるのが報告書だけにならない。** 移行の段の旧の共有クライアントは、口の名前と一覧を見ずに通る。その資格は 7 つのサービスが
+持っていたので、どのサービスの旧い資格でも確かめの口（危険な操作の第 2 要素）を呼べる。段 2 と段 3 の間を長く置かない。目安は上の 1 日である。
 
 1. `values-cloud.yaml` の `global.serviceTokenBinding.legacyClients` を空にし、`externalSecrets.appSecrets` の `service-auth-client-*`（旧の共有クライアントの id と secret）を外す変更を入れ、配備する。
 2. 確かめ: 段 2 の確かめと同じ。加えて、旧の共有クライアントのトークンは 401 になる（宛先を持たない）。
