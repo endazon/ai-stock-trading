@@ -253,9 +253,11 @@ const NOT_MET = '(?:満たし(?:て(?:い)?)?(?:ない|ません)|満たさな�
 function findFloorAdmissions(text) {
   return normalize(text)
     .split('\n')
-    // 引用（インラインコード・「」・『』）の中は数えない。検査器そのものを論じるレビュー（本検査器の PR 等）が
-    // 「下限…満たしていない」を引用しただけで自己発火する（planning#319 知見 3 と同型）のを防ぐ。
-    .map((line) => line.replace(/`[^`]*`/g, '').replace(/「[^」]*」/g, '').replace(/『[^』]*』/g, ''))
+    // 引用（インラインコード・「」・『』・引用ブロック・語句を紹介する括弧）の中は数えない。検査器そのものを論じるレビュー
+    // （本検査器の PR 等）が「下限…満たしていない」を引用しただけで自己発火する（planning#319 知見 3 と同型）のを防ぐ。
+    // 引用ブロックと語句の括弧は #1597・MSP#2512 / IADR-0643（stripQuotes の注記）。
+    .filter((line) => !BLOCKQUOTE_LINE.test(line))
+    .map(stripQuotes)
     .filter((line) => line.includes('下限'))
     .filter((line) => new RegExp(NOT_MET).test(line))
     // 「満たしていない項目は無い」は否定の否定（違反ではない）
@@ -300,10 +302,63 @@ const NON_GENERATED_TARGET = /テスト|Tests?\b|docs|文書|仕様|IADR|ADR|本
 /** 計画書（読む対象のファイルではない）についての文。 */
 const PLAN_DOC = /計画書|計画\s*ADR|計画リポ(?:ジトリ)?/g;
 
-/** 引用（インラインコード・「」・『』）を外す。検査器そのものを論じるレビューで自己発火しないため。 */
-function stripQuotes(s) {
-  return s.replace(/`[^`]*`/g, '').replace(/「[^」]*」/g, '').replace(/『[^』]*』/g, '');
+/**
+ * 未精読の型に当たった文の、読んでいない物が**コマンドの出力そのもの**である文（#1597 / IADR-0643）。
+ *
+ * #1597 の 3 回目の AI レビューは 43/43 を申告し、変更ファイルは読んでいた。落ちたのは `helm template` の行の
+ * 「他の Worker の出力は全行を読んでいない。」で、描画の出力を全部は読んでいないという意味だった。
+ * 基盤（MSP）の同じ直しと同じ条件（基盤には行の単位の除外〔MSP#2276〕もあるが、本リポには足さない）。
+ *
+ * 🔴 **下限を緩めないため、狭く外す**。次を**すべて**満たす文だけを外す（判定の単位は行ではなく文）。
+ *   1. 当たった型のすべてで、一致の直前が OUTPUT_AS_OBJECT（出力・描画・描画結果・ログ・実行結果 ＋ は・を・も・の）で終わる。
+ *      「出力が大きく、全行は読んでいない」（出力は理由で、読んでいない物が書かれていない）は当たらない。
+ *   2. 文（引用の中も含む）が FILE_TARGET（差分・ファイル・本文・テスト・拡張子 等）を含まない。
+ *   3. 文（引用の中も含む）が、変更ファイルのパスも名前も含まない。
+ */
+const OUTPUT_AS_OBJECT = /(?:出力|描画結果|描画|ログ|実行結果)(?:は|を|も|の)\s*$/;
+const FILE_TARGET =
+  /差分|diff|変更ファイル|ファイル|全文|本文|コード|テスト|試験|文書|仕様|IADR|ADR|README|\.(?:cs|csproj|props|slnx|tsx?|jsx?|ya?ml|md|json|sh|po)\b/i;
+
+/** 文（引用の中も含む）が変更ファイルのパスか名前（basename。4 文字以上）を含むか。 */
+function mentionsChangedFile(sentence, changedFiles) {
+  return (changedFiles || []).some((f) => {
+    const base = f.split('/').pop();
+    return sentence.includes(f) || (base.length >= 4 && sentence.includes(base));
+  });
 }
+
+/** 未精読の型に当たった文が、コマンドの出力そのものを読んでいないと書いた文か（上の 3 条件）。 */
+function aboutOutputAsObject(bareSentence, quotedSentence, hitPatterns, changedFiles) {
+  return (
+    hitPatterns.length > 0 &&
+    hitPatterns.every((re) => {
+      const m = re.exec(bareSentence);
+      return m && OUTPUT_AS_OBJECT.test(bareSentence.slice(0, m.index));
+    }) &&
+    !FILE_TARGET.test(quotedSentence) &&
+    !mentionsChangedFile(quotedSentence, changedFiles)
+  );
+}
+
+/**
+ * 引用（インラインコード・「」・『』）を外す。検査器そのものを論じるレビューで自己発火しないため。
+ *
+ * MSP#2512 / IADR-0643: 語句を紹介する括弧（直前が QUOTED_TERM の語）の中も外す。#2512 の本文
+ * 「試験が固定する 5 語句（流用しない・…・前回以後だけは満たさない・M の数え方）は prompt に存在する。」が、同じ行の
+ * 「【検証の下限】」と合わさって下限の自己申告に当たった。🔴 **括弧一般は外さない** ——「下限は満たしていない（時間切れ）」の
+ * ような本当の申告の補足や、「（`helm template` の描画は）」のような主語を消さないため、語句の紹介の括弧に限る。
+ */
+const QUOTED_TERM = /(語句|文言|文字列|フレーズ|表現)\s*[(（][^)）]*[)）]/g;
+function stripQuotes(s) {
+  return s
+    .replace(/`[^`]*`/g, '')
+    .replace(/「[^」]*」/g, '')
+    .replace(/『[^』]*』/g, '')
+    .replace(QUOTED_TERM, '$1');
+}
+
+/** 引用ブロック（Markdown の行頭 `>`）の行。中身は引用なので自己申告として数えない（MSP#2512 / IADR-0643）。 */
+const BLOCKQUOTE_LINE = /^\s{0,3}>/;
 
 /** 冒頭（最初の判定の見出しより前）。parseReadDeclaration と同じ切り方。 */
 function preambleOf(text) {
@@ -317,24 +372,30 @@ function preambleOf(text) {
  *
  * @param {string} text  レビュー本文
  * @param {{ k: number }|null} decl  冒頭の申告（生成物の除外数 K を使う）
+ * @param {string[]} [unreadable]  レビューする側が読めない変更ファイル（#1546）
+ * @param {string[]|null} [changedFiles]  変更ファイル（#1597 の除外の条件 3。無ければ条件 3 は常に満たす）
  * @returns {{ sentence: string, generated: boolean }[]}
  */
-function findNotReadAdmissions(text, decl, unreadable = []) {
+function findNotReadAdmissions(text, decl, unreadable = [], changedFiles = null) {
   const k = decl ? decl.k : 0;
   const scope = `${preambleOf(text)}\n${confirmedSections(normalize(text))}`;
   const out = [];
-  for (const raw of scope.split(/\n|(?<=。)/)) {
+  // 引用ブロックの行は数えない（MSP#2512 / IADR-0643）
+  const lines = scope.split('\n').filter((line) => !BLOCKQUOTE_LINE.test(line));
+  for (const raw of lines.join('\n').split(/\n|(?<=。)/)) {
     const sentence = raw.trim();
     if (!sentence) continue;
     const bare = stripQuotes(sentence);
-    const hit = NOT_READ_PATTERNS.some((re) => {
+    const hits = NOT_READ_PATTERNS.filter((re) => {
       const m = re.exec(bare);
       return m && !NOT_READ_NEGATED.test(bare.slice(m.index + m[0].length));
     });
-    if (!hit) continue;
+    if (!hits.length) continue;
     // 計画書は読む対象のファイルではない（🔍 の「計画書は未検証」と同じ扱い）。ただし計画書とテスト等を並べた文は数える
     // （生成物と同じ規則。#1346 の AI レビュー 🟢）
     if (new RegExp(PLAN_DOC.source).test(bare) && !NON_GENERATED_TARGET.test(bare.replace(PLAN_DOC, ''))) continue;
+    // #1597 / IADR-0643: 読んでいない物がコマンドの出力そのものである文は数えない（3 条件・文の単位。上の注記）
+    if (aboutOutputAsObject(bare, sentence, hits, changedFiles)) continue;
     // #1546: レビューする側が読めない秘密系の設定ファイル（N から差し引いた分）だけについての文は数えない。
     const names = unreadable.map((f) => f.split('/').pop());
     if (names.some((nm) => sentence.includes(nm))) {
@@ -451,7 +512,7 @@ function findFloorViolations(body, changedFiles) {
 
   // 申告の数を満たすときだけ見る（満たさなければ上の (a) がすでに赤。同じ欠落を 2 度数えない）
   if (decl && decl.m !== null && decl.m + decl.k + s >= decl.n) {
-    for (const { sentence, generated } of findNotReadAdmissions(text, decl, reviewerUnreadable(changedFiles))) {
+    for (const { sentence, generated } of findNotReadAdmissions(text, decl, reviewerUnreadable(changedFiles), changedFiles)) {
       problems.push(
         `下限「変更ファイルは全部読む」の自己申告: ${decl.m} ファイルを読んだと申告したが、本文が精読していないと書いている —— 「${sentence.slice(0, 120)}」` +
           (generated && !decl.k ? '（生成物なら、冒頭で「生成物 K ファイルを除外」と申告して M から外す）' : '')
@@ -602,6 +663,57 @@ function selfTest() {
     assert.deepStrictEqual(findFloorViolations(review(head) + tail, []), []);
   });
 
+  // MSP#2512 / IADR-0643: 語句を紹介する括弧・引用ブロックの中は、下限の自己申告として数えない（陽性の対照つき）。
+  const confirmed = (line) => `\n### ✅ 確認できたこと\n${line}\n`;
+  T('下限: MSP#2512 —— 語句を紹介する括弧・引用ブロックの中の「満たさない」は数えず、本当の申告は赤のまま', () => {
+    const head = '変更 2 ファイル中 2 ファイルを読んだ（生成物の除外なし）。';
+    for (const line of [
+      '- 実装の確認: prompt の追記は【検証の下限】節の先頭 6 行で、試験が固定する 5 語句（流用しない・push のたびに・全ファイルを読み直す・前回以後だけは満たさない・M の数え方）は prompt に存在する。',
+      '- 【検証の下限】の文言(前回以後だけは満たさない)が prompt にある。',
+      '> 前回以後のコミットだけを読むのは下限を満たさない。',
+      '> 他の Worker の差分は全行を読んでいない。',
+    ]) {
+      assert.deepStrictEqual(findFloorViolations(review(head) + confirmed(line), []), [], line);
+    }
+    for (const line of [
+      '- 下限は満たしていない（時間切れ）。', // 語句の紹介ではない括弧（補足）は外さない
+      '- 【検証の下限】は満たさない（前回以後だけを読んだ）。', // 申告は括弧の外
+      '- 下限の語句（全部読む）を守れず、下限を満たしていない。', // 括弧の外にも申告がある
+      '- 引用: > 下限を満たしていない。', // 行頭でない `>` は引用ブロックではない
+    ]) {
+      const v = findFloorViolations(review(head) + confirmed(line), []);
+      assert.strictEqual(v.length, 1, line);
+      assert.match(v[0], /下限を満たしていないと書いている/, line);
+    }
+  });
+
+  // #1597 / IADR-0643: 読んでいない物がコマンドの出力そのもので、文が変更ファイルを指さないなら数えない（陽性の対照つき）。
+  const changed1597 = ['deploy/helm/ai-stock-trading/templates/deployment.yaml', 'deploy/helm/ai-stock-trading/values-cloud.yaml', 'src/a/Worker.cs'];
+  const helmLine1597 = (tail) =>
+    `- \`helm lint\`: OK。\n- \`helm template ast ... -f values-cloud.yaml -f ci/values-cloud-digests.fixture.yaml --show-only templates/deployment.yaml\`: 描画に成功。冒頭の audit-service で \`runAsNonRoot: true\` を確認した。${tail}`;
+  const notRead = (x) => /精読していないと書いている/.test(x);
+  T('下限: #1597 —— コマンドの行で「他の Worker の出力は全行を読んでいない」は数えない（出力そのものが読んでいない物）', () => {
+    const head = '変更 3 ファイル中 3 ファイルを読んだ（生成物の除外なし）。';
+    for (const tail of ['他の Worker の出力は全行を読んでいない。', '残りの描画結果は精読していない。', 'ログの全行は読んでいない。']) {
+      assert.deepStrictEqual(findFloorViolations(review(head) + confirmed(helmLine1597(tail)), changed1597).filter(notRead), [], tail);
+    }
+  });
+
+  T('下限: #1597 ★陽性対照 —— 出力が理由の文・変更ファイル・差分・テストを指す文は、コマンドの行でも赤のまま', () => {
+    const head = '変更 3 ファイル中 3 ファイルを読んだ（生成物の除外なし）。';
+    for (const tail of [
+      '出力が大きく、全行は読んでいない。', // 出力は理由で、読んでいない物が書かれていない（条件 1）
+      '`deployment.yaml` の出力は全行を読んでいない。', // 変更ファイルの名前と拡張子（条件 2・3）
+      '`Worker.cs` の出力は全行を読んでいない。', // 変更ファイルの名前（条件 3）
+      '差分の出力は全行を読んでいない。', // ファイルを指す語（条件 2）
+      'テストの出力は全行を読んでいない。', // ファイルを指す語（条件 2）
+      '他の Worker の出力は全行を読み、テンプレートは精読していない。', // 2 つ目の型の直前が出力でない（条件 1）
+      '他の Worker のテンプレートは全行を読んでいない。', // 読んでいない物が出力でない（条件 1）
+    ]) {
+      assert.strictEqual(findFloorViolations(review(head) + confirmed(helmLine1597(tail)), changed1597).filter(notRead).length, 1, tail);
+    }
+  });
+
   T('下限: 生成物だけを精読しない文は K>0 の申告があれば緑、K の申告が無ければ赤', () => {
     const line = '`Designer.cs` と `ModelSnapshot` は生成物なので読んでいない。要点だけ確認した `Designer.cs` もある。';
     assert.deepStrictEqual(findFloorViolations(review(`変更 5 ファイル中 3 ファイルを読んだ（生成物 2 ファイルを除外）。${line}`), []), []);
@@ -734,6 +846,8 @@ module.exports = {
   parseReadDeclaration,
   findFloorAdmissions,
   findNotReadAdmissions,
+  aboutOutputAsObject,
+  stripQuotes,
   findFloorViolations,
   reviewerUnreadable,
   parseChangedFiles,

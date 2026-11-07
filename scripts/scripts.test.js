@@ -827,6 +827,105 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
       fsRf.rmSync(dir, { recursive: true, force: true }); // 本試験が作った一時ディレクトリだけを消す
     }
   });
+  // #1597 / IADR-0643: レビュー本文の、コマンドの出力そのものを読んでいないと書いた文と、引用（語句を紹介する括弧）で赤になった実本文（同型 2 回）。
+  // #1597 の 3 回目（run 42382006516）は `helm template` の行の「他の Worker の出力は全行を読んでいない。」で、MSP#2512 の 2 回目
+  // （run 42396353370）は語句の括弧の中の「前回以後だけは満たさない」で落ちた。どちらも変更ファイルは全部読んでいた。
+  const PR1597 = fixture('pr1597-review3.txt');
+  const PR1597_FILES = [
+    ".ai-context/adr/IADR-0639_runtime-image-and-trust-hardening.md",
+    ".ai-context/adr/README.md",
+    ".ai-context/specs/20261107_runtime-image-and-trust-hardening.md",
+    ".github/dependabot.yml",
+    ".github/workflows/helm.yml",
+    "Directory.Build.props",
+    "backend/Dockerfile",
+    "backend/Services/NotificationService/Infrastructure/ExternalServices/DiscordOwnerAuthExtensions.cs",
+    "backend/Services/ReportService/Program.cs",
+    "backend/Services/ReportService/Tests/LlmGatewayInfraCaTrustWiringTests.cs",
+    "backend/Services/TradeDecisionService/Features/TradeDecision/ILlmCostHaltGate.cs",
+    "backend/Services/TradeDecisionService/Infrastructure/ExternalServices/FailClosedLlmCostHaltGate.cs",
+    "backend/Services/TradeDecisionService/Infrastructure/ExternalServices/GrpcLlmCostHaltGate.cs",
+    "backend/Services/TradeDecisionService/Infrastructure/ExternalServices/HttpLlmCostHaltGate.cs",
+    "backend/Services/TradeDecisionService/Program.cs",
+    "backend/Services/TradeDecisionService/Tests/Infrastructure/ExternalServices/CostControlHaltReadContractTests.cs",
+    "backend/Services/TradeDecisionService/Tests/Infrastructure/ExternalServices/FailClosedLlmCostHaltGateTests.cs",
+    "backend/Services/TradeDecisionService/Tests/LlmCostHaltUnavailableModeWiringTests.cs",
+    "backend/Services/TradeDecisionService/Tests/LlmGatewayInfraCaTrustWiringTests.cs",
+    "backend/Shared/AiStockTrading.Shared.Infrastructure/Composable/Http/PlatformInfraCaTrust.cs",
+    "backend/Shared/AiStockTrading.Shared.KnowledgeBase/Foundation/Extensions/KnowledgeBaseAuthExtensions.cs",
+    "backend/TestSupport/AiStockTrading.TestSupport.PlatformShim.Tests/PlatformInfraCaDestinationWiringTests.cs",
+    "backend/TestSupport/AiStockTrading.TestSupport.PlatformShim.Tests/PlatformInfraCaTrustLoadWarningTests.cs",
+    "backend/TestSupport/AiStockTrading.TestSupport.PlatformShim.Tests/PlatformInfraCaTrustTests.cs",
+    "backend/TestSupport/AiStockTrading.TestSupport.PlatformShim/Foundation/Auth/PlatformRealmAuthExtensions.cs",
+    "backend/TestSupport/AiStockTrading.TestSupport.PlatformShim/Foundation/Auth/ServiceAuthExtensions.cs",
+    "backend/TestSupport/AiStockTrading.TestSupport.PlatformShim/Foundation/Extensions/AuthExtensions.cs",
+    "backend/TestSupport/AiStockTrading.TestSupport.PlatformShim/Foundation/Extensions/WolverineExtensions.cs",
+    "backend/TestSupport/AiStockTrading.TestSupport.PlatformShim/Foundation/Tls/PlatformInfraCaTrust.cs",
+    "deploy/helm/ai-stock-trading/README.md",
+    "deploy/helm/ai-stock-trading/templates/deployment.yaml",
+    "deploy/helm/ai-stock-trading/values-cloud.yaml",
+    "deploy/helm/ai-stock-trading/values.yaml",
+    "deploy/opend/Dockerfile",
+    "deploy/opend/README.md",
+    "deploy/opend/opend-tarball.sha256",
+    "docker-compose.yml",
+    "docs/operations/cloud-keycloak-tls-runbook.md",
+    "docs/operations/cloud-single-node-migration-runbook.md",
+    "docs/security/security.md",
+    "scripts/helm-pod-security.test.js",
+    "scripts/opend-build.sh",
+    "scripts/scripts.repo.test.js",
+  ];
+  const MSP2512 = fixture('msp2512-review2.txt');
+  const MSP2512_FILES = [
+    ".ai-context/adr/IADR-0704_ai-review-full-diff-every-head.md",
+    ".ai-context/adr/README.md",
+    ".ai-context/specs/20261108_ai-review-full-diff-every-head.md",
+    ".github/workflows/claude-code-review.yml",
+    "scripts/scripts.repo.test.js",
+  ];
+  const from1597 = '他の Worker の出力は全行を読んでいない。';
+  const from2512 = '前回以後だけは満たさない・M の数え方）は prompt に存在する。';
+  ok('下限[#1597]: #1597 と MSP#2512 の実本文は、出力・引用の文で赤にならない', () => {
+    assert.ok(PR1597.includes(from1597) && MSP2512.includes(from2512), '実本文の該当の文が無い（fixture が変わった）');
+    assert.deepStrictEqual(findFloorViolations(PR1597, PR1597_FILES), []);
+    assert.deepStrictEqual(findFloorViolations(MSP2512, MSP2512_FILES), []);
+  });
+  ok('下限[#1597]: ★陽性対照 —— 同じ実本文でも、申告が括弧の外にあるか、文が変更ファイル・差分を指せば赤', () => {
+    for (const [body, changed, from, to, re] of [
+      [MSP2512, MSP2512_FILES, from2512, '前回以後だけは満たさない・M の数え方）は prompt に存在する。ただし本レビューは下限を満たしていない。', /下限を満たしていないと書いている/],
+      [PR1597, PR1597_FILES, from1597, '`deployment.yaml` の出力は全行を読んでいない。', /精読していないと書いている/],
+      [PR1597, PR1597_FILES, from1597, '他の Worker の差分は全行を読んでいない。', /精読していないと書いている/],
+      [PR1597, PR1597_FILES, from1597, '出力が大きく、全行は読んでいない。', /精読していないと書いている/],
+    ]) {
+      const v = findFloorViolations(body.replace(from, to), changed);
+      assert.strictEqual(v.length, 1, to);
+      assert.match(v[0], re, to);
+    }
+  });
+  {
+    // ★陰性対照（変異）: 直しを外した検査器では、2 本の実本文が赤に戻る（＝試験が直しを見ていることの固定）。
+    const SRC = fsRf.readFileSync(pathRf.join(__dirname, 'check-review-verdict.js'), 'utf8');
+    const mutate = (from, to) => {
+      assert.ok(SRC.includes(from), `変異の置換元が無い（検査器の書き方が変わった）: ${from}`);
+      const file = pathRf.join(__dirname, `.mutant-check-review-verdict-${process.pid}-${Math.random().toString(36).slice(2)}.js`);
+      fsRf.writeFileSync(file, SRC.replace(from, to));
+      try {
+        delete require.cache[file];
+        return require(file);
+      } finally {
+        fsRf.rmSync(file, { force: true });
+      }
+    };
+    for (const c of [
+      { name: '語句を紹介する括弧の除外', from: ".replace(QUOTED_TERM, '$1')", to: '', body: MSP2512, changed: MSP2512_FILES },
+      { name: '出力そのものの除外', from: 'if (aboutOutputAsObject(bare, sentence, hits, changedFiles)) continue;', to: '', body: PR1597, changed: PR1597_FILES },
+    ]) {
+      ok(`下限[#1597]: ★変異 —— ${c.name}を外すと実本文が赤に戻る`, () => {
+        assert.strictEqual(mutate(c.from, c.to).findFloorViolations(c.body, c.changed).length, 1);
+      });
+    }
+  }
 }
 
 // --- check-action-versions: 配布テンプレートの Actions が巻き戻らないようにする（issue planning#148） ---

@@ -1,0 +1,50 @@
+**Claude finished @endazon's task in 6m 37s** —— [View job](https://github.com/endazon/ai-stock-trading/actions/runs/42382006516)
+
+---
+## AI コードレビュー結果
+
+変更 43 ファイル中 43 ファイルを読んだ（生成物 0 ファイルを除外）。差分は 1 行ずつ読んだ。削除された `Shared.Infrastructure/.../PlatformInfraCaTrust.cs` は、移送先 `PlatformShim/Foundation/Tls/PlatformInfraCaTrust.cs` と突き合わせた。
+
+前回のレビューで 🔴 とした PR 本文の食い違いは解消している。本文は IADR-0639 と仕様書 `20261107_runtime-image-and-trust-hardening.md` に沿った内容になった。
+
+### 🔴 重大
+- （指摘なし）
+
+### 🟡 推奨
+- **`deploy/opend/opend-tarball.sha256` は実エントリが 0 行。** 行を足す PR が入るまで OpenD のイメージをビルドできない（`opend-build.sh` も Dockerfile も fail-closed）。PR 本文と手順書の冒頭に明記されていて、設計どおりである。マージ後、稼働前にこの作業を忘れないこと。
+- **NuGet Audit は、コードを変えなくても新しい advisory で CI とイメージのビルドを赤くする。** 手順書 §11 の対処は十分に書かれている。Dependabot の NuGet が有効であることだけ確認するとよい。
+- **段 3 と `readOnlyRootFilesystem` は実機で未確認。** 描画と静的テストだけで固定されている。初日の確認項目（手順書 §9）に落とし方まで書いてあるので、そのとおり実測すること。
+- **基盤宛ての HttpClient を新しく足すと、`.TrustPlatformInfraCa()` を付け忘れる危険が残る。** 付け忘れると TLS で落ちる。`PlatformInfraCaTrust` の冒頭コメントと runbook に注意書きはある。配線漏れを機械で止める検査は無い。同型の漏れが 2 回出たら検査器を検討する程度でよい。
+- **Enforce は費用統制が 15 分を超えて落ちると、全 LLM 判断を見送る。** 損切りなど LLM を使わない保護は止まらない。意図どおりである。
+
+### 🟢 軽微
+- `FailClosedLlmCostHaltGate` は、読めない間は判断のたびに Warning または Error を出す。量が気になれば間引きを検討。
+- `deploy/opend/Dockerfile` の RUN は `A || (… exit 1) && sha256sum -c … && … || (echo …)` の連鎖である。sha256 の検証が失敗すると、末尾の `||` の別のエラー文言（「コマンドライン OpenD が見つかりません」）が出るが、ビルドは非ゼロで止まる。誤解を招く文言なので、グループ分けするとよい。
+- `opend-build.sh` の awk は `$2 == f` で照合する。`sha256sum` のバイナリ印（`*ファイル名`）付きの行は一致しない。記録は「ファイル名」前提の書式なので、実害は無い。
+- `PlatformInfraCaTrust` の名前空間が `...TestSupport.PlatformShim...` になった。製品コードが TestSupport 名前空間に依存する構図は既存のとおりで、本 PR で新設した問題ではない。
+
+### 確認できたこと
+- `dotnet build backend/backend.slnx --no-restore`: 成功（警告 0・エラー 0）。
+- `dotnet test .../TradeDecisionService.Tests.csproj --no-build`: 2264 件中 2264 件成功。
+- `dotnet test .../AiStockTrading.TestSupport.PlatformShim.Tests.csproj --no-build`: 689 件中 689 件成功。
+- `dotnet format backend/backend.slnx --verify-no-changes --no-restore`: 出力なし（差分なし）。
+- `scripts.test.js`（`REQUIRE_REPO_TESTS=1`、子プロセス形）: 627 件中 627 件成功。
+- `check-trace-blocks`: OK（66 件）。
+- `gen-knowledge-graph --check`: OK。
+- `check-doc-links`: OK（1455 件）。
+- `check-adr-index-sync`: OK。
+- `check-commit-messages`: 検査対象 9 件すべて適合。
+- `check-plan-id-qualification`: OK。
+- `helm lint deploy/helm/ai-stock-trading -f values-local.yaml`: 失敗 0（INFO は icon のみ）。
+- `helm template ast ... -f values-cloud.yaml -f ci/values-cloud-digests.fixture.yaml --show-only templates/deployment.yaml`: 描画に成功。冒頭の audit-service で `runAsNonRoot: true`・`runAsUser: 1654`・`readOnlyRootFilesystem: true` を確認した。他の Worker の出力は全行を読んでいない。
+
+### 🔍 実行できなかったこと
+- 計画書（NFR-05・NFR-13・NFR-18・ADR-0074）との照合は未検証（計画リポ参照不可）。
+- ReportService・NotificationService・KnowledgeBase のテストは未実行。ビルドの成功までしか確認していない。
+- 変異・陰性対照の追試は未検証（書き換えを伴う）。
+- compose の healthcheck の実行、`opend-build.sh` の偽配布物でのビルド、`docker build`、NuGet Audit が実際の脆弱性で失敗する挙動は、環境上未実行のため未検証。
+- `helm.yml` に追加された assert の `run` は、自分では実行していない。この PR の Helm ワークフローの結果も未確認。
+
+---
+*レビュー観点: トレーサビリティ / 受け入れ基準 / ADR 制約 / 品質 / AI 固有リスク*
+ ・ branch: `fix/NFR-runtime-image-hardening`
