@@ -48,7 +48,7 @@ RUN if grep -Ev '^[[:space:]]*(//|\*|/\*)' "$(dirname "${SERVICE_PROJECT}")/Prog
     fi
 RUN dotnet publish "${SERVICE_PROJECT}" -c Release -o /app --no-restore
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:de0ee358cdd672f7017a003bed21e9ac9ed48a27c922a59b18175b6e82fa7fee AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:1a48394b6f29d3a32c79d9edecd4abda0ecbe8776d567dbfc4590ed6979c740c AS runtime
 ARG SERVICE_DLL
 # dev/E2E 目的の軽量 healthcheck プローブ（compose の healthcheck が /health/ready を叩く・IADR-0049）。
 # 本番配備は platform（#24）の管掌。aspnet 既定タグは Debian ベースで apt を持つ。
