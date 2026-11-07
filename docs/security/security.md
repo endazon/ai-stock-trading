@@ -3,14 +3,14 @@ title: セキュリティ仕様書
 type: security-spec
 status: review
 created: 2026-08-07
-updated: 2026-11-06
+updated: 2026-11-07
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-02, FR-08, FR-10, FR-11, FR-13, FR-14, FR-19, FR-20, NFR-05, NFR-06, NFR-10, NFR, UC-06, UC-07]
 adrs: [ADR-0003, ADR-0004, ADR-0012, MSP:ADR-0004, MSP:ADR-0024]
-iadrs: [IADR-0610, IADR-0011, IADR-0019, IADR-0324, IADR-0051, IADR-0056, IADR-0059, IADR-0060, IADR-0062, IADR-0072, IADR-0111, IADR-0164, IADR-0169, IADR-0171, IADR-0174, IADR-0175, IADR-0176, IADR-0314, IADR-0061, IADR-0316, IADR-0496, IADR-0622]
-specs: [20261105_1527_order-approval-signature, 20260807_450_security-spec-from-measurement, 20260910_727_msp-linked-realm-unification, 20260909_627_mesh-sidecar-injection-switch, 20260909_708_log-forging-sanitization, 20261007_1192_aspnetcore-env-production, 20261106_1554_owner-bot-scope]
+iadrs: [IADR-0628, IADR-0610, IADR-0011, IADR-0019, IADR-0324, IADR-0051, IADR-0056, IADR-0059, IADR-0060, IADR-0062, IADR-0072, IADR-0111, IADR-0164, IADR-0169, IADR-0171, IADR-0174, IADR-0175, IADR-0176, IADR-0314, IADR-0061, IADR-0316, IADR-0496, IADR-0622]
+specs: [20261107_cloud-keycloak-tls, 20261105_1527_order-approval-signature, 20260807_450_security-spec-from-measurement, 20260910_727_msp-linked-realm-unification, 20260909_627_mesh-sidecar-injection-switch, 20260909_708_log-forging-sanitization, 20261007_1192_aspnetcore-env-production, 20261106_1554_owner-bot-scope]
 issues: [#24, #318, #346, #450, #456, #627, #708, #727, #1192, #1554, MSP#445, MSP#1015, MSP#1372]
 -->
 
@@ -99,6 +99,7 @@ issues: [#24, #318, #346, #450, #456, #627, #708, #727, #1192, #1554, MSP#445, M
 | --- | --- |
 | Authority | `Auth:Authority`。Development（docker-compose）の既定は単体実行向けのレルム `http://keycloak:8080/realms/ai-stock-trading`。**Production では明示が必須で、単体実行向けのレルムは明示の opt-in が無い限り起動で止まる**。chart の既定 `global.authAuthority` は空で、未設定なら描画で止まる（[#1529](https://github.com/endazon/ai-stock-trading/issues/1529)） |
 | Authority（基盤連結の k8s） | `values-local.yaml` の `global.authAuthority` を基盤レルム `http://keycloak:8080/realms/platform` へ向ける。統合 SPA の身元は基盤レルムでしか成立せず、AST レルムで検証すると issuer 不一致の 401 → SPA が再ログインを繰り返す（2026-09-10 実測）。同じ 1 値から `ServiceAuth`・run-once・Discord OwnerAuth の token エンドポイントも導出されるため、s2s も揃って移る |
+| Authority（クラウド）とメタデータの取得 | `values-cloud.yaml` の `global.authAuthority` は `https://keycloak:8443/realms/platform`、`global.authTls.enabled=true`。認証を持つサービスは `Auth:RequireHttpsMetadata=true` を受け、**Authority が https でなければ起動で止まる**（真偽値でない値も止まる）。既定・経路 B は `false`（クラスタ内の平文）。サーバ証明書は基盤の CA をシステムの信頼ストア（`SSL_CERT_DIR`）へ足して検証する。移行の間だけ `Auth:ValidIssuers`（`global.authValidIssuers`）で旧の発行元を足す（発行元の検証は弱めない）。手順は [認可サーバーの TLS Runbook](../operations/cloud-keycloak-tls-runbook.md) |
 | ロールの取り出し | Keycloak の `realm_access.roles` を `KeycloakRolesClaimsTransformation` で `ClaimTypes.Role` へ展開する。**標準ハンドラは展開しない**ため、これが無いと `RequireRole` が実トークンにマッチしない |
 | 名前クレーム | `preferred_username`。**既定マップ（`unique_name`）のままだと実トークンで `Name` が null になり、監査ログの subject が `anonymous` へ潰れる** |
 
