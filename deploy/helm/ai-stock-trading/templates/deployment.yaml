@@ -258,7 +258,7 @@ spec:
             {{- end }}
             {{- if include "ast.egressProxy.applies" (dict "root" $ "name" $name) }}
             - name: HTTPS_PROXY
-              value: {{ $.Values.networkPolicy.egressProxy.url | quote }}
+              value: {{ include "ast.egressProxy.url" (dict "root" $ "name" $name) | quote }}
             - name: NO_PROXY
               value: {{ include "ast.egressProxy.noProxy" $ | quote }}
             {{- end }}

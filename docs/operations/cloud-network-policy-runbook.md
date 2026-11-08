@@ -9,9 +9,9 @@ updated: 2026-11-08
 <!-- trace:
 ids: [NFR]
 adrs: [ADR-0006, ADR-0024, ADR-0002]
-iadrs: [IADR-0631, IADR-0609, IADR-0566, IADR-0608, IADR-0629, IADR-0621, IADR-0644]
-specs: [20261107_cloud-opend-isolation-netpol, 20261108_egress-via-platform-proxy]
-issues: []
+iadrs: [IADR-0631, IADR-0609, IADR-0566, IADR-0608, IADR-0629, IADR-0621, IADR-0644, IADR-0647]
+specs: [20261107_cloud-opend-isolation-netpol, 20261108_egress-via-platform-proxy, 20261108_egress-proxy-per-source-ports]
+issues: [MSP#2517]
 -->
 
 # 運用 Runbook: クラウドの通信の制限の適用と切り戻し
@@ -143,8 +143,25 @@ NetworkPolicy には「記録だけして通す」段が無い。誤った方針
 | 段 | サービスの env | 出の方針 |
 | --- | --- | --- |
 | `Off`（既定） | 変えない | 外の 443（従来どおり） |
-| `Report` | `HTTPS_PROXY`（中継）・`NO_PROXY`（クラスタの中の名前）を渡す | 中継の 3128 **と** 外の 443 |
-| `Enforce` | 同上 | 中継の 3128 **だけ** |
+| `Report` | `HTTPS_PROXY`（中継の**そのサービスの受け口**）・`NO_PROXY`（クラスタの中の名前）を渡す | 中継のそのサービスの受け口 **と** 外の 443 |
+| `Enforce` | 同上 | 中継のそのサービスの受け口 **だけ** |
+
+- 中継の受け口は**送り元ごとに分かれる**（基盤の中継は、受けた口で送り元を見分け、送り元ごとの許可表を使う）。割り当ては次のとおりで、
+  `values-cloud.yaml` の `networkPolicy.services.<名前>.egressProxyPort` が持つ（基盤の割り当てと同じ値。変えるときは基盤と対で変える）。
+  `HTTPS_PROXY` は `http://egress-proxy.platform-infra.svc.cluster.local:<受け口>`、出の方針もその受け口の TCP だけを許す。
+
+| サービス | 受け口 |
+| --- | --- |
+| information-collection | 3141 |
+| market-monitor | 3142 |
+| notification | 3143 |
+| report | 3144 |
+| risk-management | 3145 |
+| trade-decision | 3146 |
+
+  - 基盤は OpenD にも 3147 を割り当てているが、取引ユニットは使わない（OpenD は中継を通らない）。
+  - `Report`・`Enforce` で、`externalHttps` のサービスの受け口が無い・受け口が重なる・`externalHttps` でないサービスに受け口がある・
+    旧の単一の `networkPolicy.egressProxy.url` / `port` を書いた、のいずれも描画で止まる。
 
 - 段を変えると、6 つのサービスの Pod が作り直される（env が変わる）。OpenD は作り直されない。
 - 宛先の一覧（中継の許可表に載せる名前。いずれも 443）は次の表である。設定（`values-cloud.yaml` の env）を変えて情報源を足したら、表と基盤の許可表も直す。
@@ -160,19 +177,23 @@ NetworkPolicy には「記録だけして通す」段が無い。誤った方針
 
 ### 前提（基盤の側。🔴 これが揃うまで `Off` のまま）
 
-1. 基盤の中継が、名前空間 `ai-stock-trading` の 6 つのサービスの Pod からの 3128 を受ける（中継の入りの方針）。
-   確かめ: `kubectl -n platform-infra get networkpolicy egress-proxy -o yaml` の `ingress` に、`kubernetes.io/metadata.name: ai-stock-trading` の名前空間と
-   6 つのサービスの `app` ラベルがある。
-2. 中継の許可表に、6 つのサービスの宛先の名前がある（送り元ごとの表なら、送り元ごとに）。確かめは基盤の手順書の方法で行う。
-3. 基盤の中継が `report` の段で動いているか、`enforce` なら上の表が全て載っていること。
+🔴 **基盤の中継を送り元ごとの受け口に分ける変更が、基盤のリポジトリでマージされ、クラスタへ当てられていることが前提である。**
+当てる前の基盤の中継は 3128 の 1 つの口だけを持ち、上の受け口は存在しない（`Report` に上げると外への HTTPS が届かなくなる）。
+
+1. 基盤の中継が、上の 6 つの受け口を持つ。確かめ: `kubectl -n platform-infra get svc egress-proxy -o jsonpath='{.spec.ports[*].port}'` に 3141〜3146 がある。
+2. 基盤の中継の入りの方針が、名前空間 `ai-stock-trading` の各サービスの Pod から**そのサービスの受け口だけ**を受ける。
+   確かめ: `kubectl -n platform-infra get networkpolicy -o yaml` の中継の入りに、`kubernetes.io/metadata.name: ai-stock-trading` の名前空間と
+   各サービスの `app` ラベルと受け口の組がある。
+3. 中継の送り元ごとの許可表に、上の宛先の表の名前がある（notification には Discord の再接続先として `*.discord.gg` の形）。確かめは基盤の手順書の方法で行う。
+4. 基盤の中継が `report` の段で動いているか、`enforce` なら上の表が全て載っていること。
 
 ### 段 Report に上げる（場の時間外。新規発注の一時停止を入れたまま）
 
 1. `helm upgrade … -f values-cloud.yaml -f <digest のファイル> -f <配備の値のファイル> --set networkPolicy.egressProxy.mode=Report`
 2. 6 つのサービスの Pod が Ready に戻ることを確かめる。`kubectl -n ai-stock-trading get deploy notification-service -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="HTTPS_PROXY")].value}'`
-   が中継の URL であること（6 つとも。他の 5 つのサービスには無い）。
+   が `http://egress-proxy.platform-infra.svc.cluster.local:3143`（notification の受け口）であること。6 つとも自分の受け口であること。他の 5 つのサービスには無い。
 3. 中継のログ（`kubectl -n platform-infra logs deploy/egress-proxy`）に、取引ユニットの宛先の `allow:` が出て、`deny:` が無いこと。
-   `report:`（許可表に無いが report の段で通した）が出たら、その宛先を作業仕様書の表と突き合わせ、基盤の許可表へ足す（足すべきでない宛先なら設定を直す）。
+   `report:`（許可表に無いが report の段で通した）が出たら、その宛先を上の宛先の表と突き合わせ、基盤のその送り元の許可表へ足す（足すべきでない宛先なら設定を直す）。
 4. 少なくとも 1 営業日（情報収集の巡回・市況・為替・日報の生成・Discord の通知とボットの応答を含む）を通し、3 を毎回確かめる。
    Discord のボットは再接続のときに別の名前の Gateway へ繋ぐことがある。数日のうちに再接続が起きたかをボットのログで確かめ、その名前も `allow:` であること。
 5. 一時停止を解く。

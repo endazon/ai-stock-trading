@@ -20,6 +20,7 @@
  *   7. NFR, IADR-0644: 外への HTTPS の中継（networkPolicy.egressProxy.mode）の段ごとの形:
  *      - Off（既定）: どの Deployment にも HTTPS_PROXY・NO_PROXY が無く、中継の口も描かない（従来どおり外の 443）。
  *      - Report: externalHttps のサービス（だけ）が HTTPS_PROXY を持ち、出は中継の口と外の 443 の両方。
+ *        中継の受け口は送り元ごと（IADR-0647）: HTTPS_PROXY の口と出の方針の口が、そのサービスの割り当て（PROXY_PORTS）だけである。
  *      - Enforce: 同じく HTTPS_PROXY を持ち、出は中継の口だけ（取引ユニットのサービスの方針に ipBlock が無い。OpenD の出は残る）。
  *      - NO_PROXY（.NET の読み方を写した判定）が、env のクラスタの中の宛先を全て外し、外の宛先（情報源・市況・為替・Discord）を外さない。
  *   8. NFR, IADR-0644 決定 3: 外への ipBlock の除外に、ノード自身の公開アドレス（extraExcept。検査用の digest の fixture が与える）が入り、
@@ -51,7 +52,16 @@ const REQUIRED_EXCEPT = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '169.2
 const INFRA_NS = 'platform-infra';
 // NFR, IADR-0644: ノード自身の公開アドレスの除外（ci/values-cloud-digests.fixture.yaml の検査用の値。文書用のアドレスの範囲）。
 const NODE_EXCEPT = '203.0.113.10/32';
-const PROXY_URL = 'http://egress-proxy.platform-infra.svc.cluster.local:3128';
+const PROXY_BASE = 'http://egress-proxy.platform-infra.svc.cluster.local';
+// NFR, IADR-0647: 基盤の外向きの中継の送り元ごとの受け口（基盤の割り当て。OpenD の 3147 は使わない）。
+const PROXY_PORTS = {
+  'information-collection-service': 3141,
+  'market-monitor-service': 3142,
+  'notification-service': 3143,
+  'report-service': 3144,
+  'risk-management-service': 3145,
+  'trade-decision-service': 3146,
+};
 // 外の宛先の見本（作業仕様書 20261108_egress-via-platform-proxy の宛先の表）。NO_PROXY がこれを外してはならない。
 const EXTERNAL_HOSTS = ['finnhub.io', 'news.google.com', 'data.sec.gov', 'www.sec.gov', 'api.stlouisfed.org', 'www.stat-search.boj.or.jp', 'api.edinet-fsa.go.jp', 'cdn.finra.org', 'discord.com', 'gateway.discord.gg'];
 const ENFORCE = ['--set', 'networkPolicy.egressProxy.mode=Enforce'];
@@ -179,7 +189,8 @@ function requiredEdges(dep, astApps, mode = 'Off') {
     let m;
     if (name === 'NO_PROXY') continue;
     if (name === 'HTTPS_PROXY') {
-      if (value === PROXY_URL) add(`infra:egress-proxy`, 3128);
+      const pm = value.startsWith(`${PROXY_BASE}:`) ? /^:(\d+)$/.exec(value.slice(PROXY_BASE.length)) : null;
+      if (pm) add(`infra:egress-proxy`, Number(pm[1]));
       else add(`unknown:${value}`, 0);
       continue;
     }
@@ -396,8 +407,14 @@ function egressProxyViolations(text, mode) {
       if (hasIp) v.push(`${d.name}: HTTPS_PROXY が無いのに外の 443 を許している`);
       continue;
     }
-    if (env.get('HTTPS_PROXY') !== PROXY_URL) v.push(`${d.name}: HTTPS_PROXY が ${PROXY_URL} でない（${env.get('HTTPS_PROXY')}）`);
+    const want = PROXY_PORTS[d.name];
+    if (!want) v.push(`${d.name}: 中継の受け口の割り当てが無いのに HTTPS_PROXY がある`);
+    else if (env.get('HTTPS_PROXY') !== `${PROXY_BASE}:${want}`) v.push(`${d.name}: HTTPS_PROXY が ${PROXY_BASE}:${want} でない（${env.get('HTTPS_PROXY')}）`);
     if (!hasProxy) v.push(`${d.name}: 中継の口を許していない`);
+    else {
+      const ports = pol.egress.filter((r) => r.peers.some((p) => p.ns === INFRA_NS && p.apps.includes('egress-proxy'))).flatMap((r) => r.ports.map((x) => `${x.protocol}/${x.port}`));
+      if (ports.join() !== `TCP/${want}`) v.push(`${d.name}: 中継への出が自分の受け口 TCP/${want} だけでない（${ports.join(',')}）`);
+    }
     if (mode === 'Enforce' && hasIp) v.push(`${d.name}: 段 Enforce なのに外の 443 の ipBlock がある`);
     if (mode === 'Report' && !hasIp) v.push(`${d.name}: 段 Report なのに外の 443 の ipBlock が無い`);
     const np = env.get('NO_PROXY') || '';
@@ -515,6 +532,25 @@ function main() {
     assert.strictEqual(policies(t).filter((p) => p.egress.some((r) => r.peers.some((x) => x.cidr))).length, 0, 'ipBlock が描かれた');
     assert.ok(policies(t).length >= 12, '方針の母集合が痩せた');
   });
+  ok('7. Report で受け口の無いサービスがあれば止まる（notification）', () => mustFail([...CLOUD, ...REPORT, '--set', 'networkPolicy.services.notification.egressProxyPort=null'], 'networkPolicy.services.notification.egressProxyPort（基盤の中継のこのサービスの受け口）が要ります'));
+  ok('7. Enforce で受け口の無いサービスがあれば止まる（trade-decision）', () => mustFail([...CLOUD, ...ENFORCE, '--set', 'networkPolicy.services.trade-decision.egressProxyPort=null'], 'networkPolicy.services.trade-decision.egressProxyPort（基盤の中継のこのサービスの受け口）が要ります'));
+  ok('7. 陰性対照: Off なら受け口が無くても通り、中継の口も HTTPS_PROXY も描かない', () => {
+    const t = mustRender([...CLOUD, '--set', 'networkPolicy.services.notification.egressProxyPort=null']);
+    assert.deepStrictEqual(egressProxyViolations(t, 'Off'), []);
+  });
+  ok('7. 受け口が重なると止まる', () => mustFail([...CLOUD, '--set', 'networkPolicy.services.report.egressProxyPort=3143'], 'が重なっています'));
+  ok('7. 受け口が範囲の外なら止まる', () => mustFail([...CLOUD, ...REPORT, '--set', 'networkPolicy.services.report.egressProxyPort=80'], '1024〜65535'));
+  ok('7. externalHttps でないサービスに受け口を書くと止まる', () => mustFail([...CLOUD, '--set', 'networkPolicy.services.audit.egressProxyPort=3150'], 'externalHttps: true のサービスだけ'));
+  ok('7. 旧の単一の url / port を書くと止まる', () => {
+    mustFail([...CLOUD, '--set', 'networkPolicy.egressProxy.url=http://egress-proxy:3128'], 'url / port は使いません');
+    mustFail([...CLOUD, '--set', 'networkPolicy.egressProxy.port=3128'], 'url / port は使いません');
+  });
+  ok('7. values-cloud の受け口の割り当てが基盤の割り当てと一致する', () => {
+    const t = fs.readFileSync(path.join(REPO_ROOT, CHART, 'values-cloud.yaml'), 'utf8');
+    for (const [app, port] of Object.entries(PROXY_PORTS)) {
+      assert.strictEqual(readValue(t, `networkPolicy.services.${app.replace(/-service$/, '')}.egressProxyPort`), String(port), app);
+    }
+  });
   ok('7. 段が値域の外なら止まる', () => mustFail([...CLOUD, '--set', 'networkPolicy.egressProxy.mode=On'], 'Off / Report / Enforce'));
   ok('7. 段を引用符なしの真偽で書くと止まる', () => mustFail([...CLOUD, '--set', 'networkPolicy.egressProxy.mode=false'], '文字列で書きます'));
   ok('7. 段 Report に networkPolicy.enabled=false は止まる', () => mustFail([...CLOUD, ...REPORT, '--set', 'networkPolicy.enabled=false'], 'networkPolicy.enabled=true が要ります'));
@@ -537,17 +573,19 @@ function main() {
   red('呼び先を 1 つ減らす（trade-decision → report だけ）', envMatchViolations, [...CLOUD, '--set', 'networkPolicy.services.trade-decision.calls={report}']);
   red('呼ばない組を足す（audit → report）', envMatchViolations, [...CLOUD, '--set', 'networkPolicy.services.audit.calls={report}']);
   red('外へ出ないサービスに 443 を足す（audit）', envMatchViolations, [...CLOUD, '--set', 'networkPolicy.services.audit.externalHttps=true']);
-  red('外へ出るサービスから 443 を外す（notification）', envMatchViolations, [...CLOUD, '--set', 'networkPolicy.services.notification.externalHttps=false']);
+  red('外へ出るサービスから 443 を外す（notification）', envMatchViolations, [...CLOUD, '--set', 'networkPolicy.services.notification.externalHttps=false', '--set', 'networkPolicy.services.notification.egressProxyPort=null']);
   red('LLM ゲートウェイの出を外す（report）', envMatchViolations, [...CLOUD, '--set', 'networkPolicy.services.report.llmGateway=false']);
   red('Keycloak の口を env と違えて描く', envMatchViolations, [...CLOUD, '--set', 'networkPolicy.infra.keycloak.port=8080']);
   red('env に呼び先を足して宣言を直さない（audit → configuration）', envMatchViolations, [...CLOUD, '--set', 'services.audit.extraEnv[0].name=Configuration__BaseUrl', '--set', 'services.audit.extraEnv[0].value=http://configuration-service:8080']);
   ok('変異: Report の描画を Enforce の期待で読む（外の 443 が残る）→ 赤', () => assert.ok(egressProxyViolations(report, 'Enforce').length > 0));
   ok('変異: Enforce の描画を Off の期待で読む → 赤', () => assert.ok(egressProxyViolations(enforce, 'Off').length > 0));
   ok('変異: Off の描画を Enforce の期待で読む（env と方針）→ 赤', () => assert.ok(envMatchViolations(cloud, 'Enforce').length > 0));
-  red('Enforce で外へ出るサービスの宣言を外す（notification。中継も外の 443 も無くなる）', (t) => envMatchViolations(t, 'Enforce'), [...CLOUD, ...ENFORCE, '--set', 'networkPolicy.services.notification.externalHttps=false']);
+  red('Enforce で外へ出るサービスの宣言を外す（notification。中継も外の 443 も無くなる）', (t) => envMatchViolations(t, 'Enforce'), [...CLOUD, ...ENFORCE, '--set', 'networkPolicy.services.notification.externalHttps=false', '--set', 'networkPolicy.services.notification.egressProxyPort=null']);
   red('Enforce で基盤の別名を NO_PROXY から落とす（infraAliases.enabled=false → keycloak が中継へ回る）', (t) => egressProxyViolations(t, 'Enforce'), [...CLOUD, ...ENFORCE, '--set', 'infraAliases.enabled=false']);
   red('Enforce で外の宛先を NO_PROXY に足す（finnhub.io）', (t) => egressProxyViolations(t, 'Enforce'), [...CLOUD, ...ENFORCE, '--set', 'networkPolicy.egressProxy.noProxyExtra={finnhub.io}']);
-  red('Enforce で中継の宛先を違える', (t) => egressProxyViolations(t, 'Enforce'), [...CLOUD, ...ENFORCE, '--set', 'networkPolicy.egressProxy.url=http://other:3128']);
+  red('Enforce で中継の宛先の名前を違える', (t) => egressProxyViolations(t, 'Enforce'), [...CLOUD, ...ENFORCE, '--set', 'networkPolicy.egressProxy.host=other']);
+  red('Enforce で 2 つのサービスの受け口を入れ替える（notification ↔ report）', (t) => egressProxyViolations(t, 'Enforce'), [...CLOUD, ...ENFORCE, '--set', 'networkPolicy.services.notification.egressProxyPort=3144', '--set', 'networkPolicy.services.report.egressProxyPort=3143']);
+  red('Report で 1 つのサービスの受け口を別の空きへ変える（risk-management → 3150）', (t) => egressProxyViolations(t, 'Report'), [...CLOUD, ...REPORT, '--set', 'networkPolicy.services.risk-management.egressProxyPort=3150']);
   ok('変異: 描画物の外への除外からノードの公開アドレスを消す → 赤', () => assert.ok(presenceViolations(cloud.split(`, ${NODE_EXCEPT}`).join('')).some((x) => x.includes(NODE_EXCEPT))));
   red('ローカルで OpenD の出を有効にする', (t) => unchangedViolations(t, 'values-local'), [...LOCAL_PROFILES[1].args, ...ENABLE_ALL, '--set', 'opend.networkPolicy.egress.enabled=true', '--set-json', `networkPolicy.publicEgress.extraExcept=["${NODE_EXCEPT}"]`]);
   red('ローカルで OpenD のケーパビリティの削除を有効にする', (t) => unchangedViolations(t, 'values-local'), [...LOCAL_PROFILES[1].args, ...ENABLE_ALL, '--set', 'opend.podSecurity.capabilities.dropAll=true']);
