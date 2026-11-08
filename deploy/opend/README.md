@@ -345,6 +345,9 @@ moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で稼働中�
 ## 既知のリスク・制約（dev 割り切り）
 
 - **root 実行**: コンテナは既定 root で動く（OpenD は `$HOME/.com.moomoo.OpenD` を使うため）。
+  クラウド（chart の `values-cloud.yaml`）は非 root（段 3。uid 10001・HOME `/home/opend`）と読み取り専用のルートで動かす
+  （[IADR-0646](../../.ai-context/adr/IADR-0646_service-to-service-tls-and-opend-nonroot.md)。`entrypoint.sh` は env `OPEND_WORK_DIR` があれば
+  `/opt/opend` の写しをそこに作って起動する）。実 OpenD での確かめはクラウドの初日の確認項目にある。
   #132 でイメージに **uid/gid 10001 と `/home/opend` を用意済み**で、chart の `opend.home=/home/opend` ＋
   `opend.securityContext` で非 root へ切り替えられる（`USER` は切り替えていない＝既定は現行維持）。
   **実 OpenD では未検証**（HOME 変更でデバイス信頼を失う恐れ）。恒久の秘匿は Vault/External Secrets

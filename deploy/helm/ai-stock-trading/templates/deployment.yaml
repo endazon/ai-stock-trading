@@ -63,7 +63,13 @@
 {{- fail "global.authTls.enabled のときは global.infraCa.configMap（または secretName）/ caKey が要ります（認可サーバーの証明書を基盤の CA で検証する。IADR-0629）。" -}}
 {{- end -}}
 {{- end -}}
-{{- $infraCaMount := or $dbTls $mqTls $authTls -}}
+{{- /* NFR, NFR-05, IADR-0646: サービス間の HTTP の TLS の段（templates/_service-tls.tpl）。Off 以外では呼び手が受け側の証明書を
+       基盤の CA で確かめるので、全 Worker に CA をマウントする（PlatformInfraCa__CertificatePath）。 */ -}}
+{{- $svcTlsMode := include "ast.serviceTls.mode" . -}}
+{{- $svcTls := ne $svcTlsMode "Off" -}}
+{{- $svcTlsPort := int (toString (.Values.global.serviceTls | default dict).port) -}}
+{{- $svcTlsPlain := ne $svcTlsMode "Enforce" -}}
+{{- $infraCaMount := or $dbTls $mqTls $authTls $svcTls -}}
 {{- if and $g.db.usernameSecret (not $g.db.passwordSecret) -}}
 {{- fail "global.db.usernameSecret は global.db.passwordSecret と一緒に与えてください（接続文字列を Secret の参照で組む形だけが利用者名を Secret から読む。IADR-0623）。" -}}
 {{- end -}}
@@ -208,7 +214,17 @@ spec:
           {{- . | nindent 10 }}
           {{- end }}
           ports:
+            {{- if $svcTlsPlain }}
             - containerPort: 8080
+            {{- if $svcTls }}
+              name: http
+            {{- end }}
+            {{- end }}
+            {{- if $svcTls }}
+            {{- /* NFR, NFR-05, IADR-0646: TLS の受け口（Listen・Call は平文の 8080 と併存。Enforce はこれだけ）。 */}}
+            - containerPort: {{ $svcTlsPort }}
+              name: https
+            {{- end }}
             {{- if $svc.grpcPort }}
               {{- /* NFR, IADR-0284 決定5（段0）, IADR-0328, #584: 複数ポートになるので名前を付ける
                      （grpcPort 未宣言のサービスは追加前とバイト等価）。 */}}
@@ -244,8 +260,19 @@ spec:
             - name: Serilog__MinimumLevel__Default
               value: {{ . | quote }}
             {{- end }}
+            {{- if not $svcTls }}
             - name: ASPNETCORE_URLS
               value: http://+:8080
+            {{- else }}
+            {{- /* NFR, NFR-05, IADR-0646: Kestrel の HTTPS。証明書は基盤の PKI が発行し ESO が写した Secret（tls.crt・tls.key）を読む。
+                   🔴 Enforce は平文の口を持たない（Listen・Call は戻しのために 8080 を残す）。 */}}
+            - name: ASPNETCORE_URLS
+              value: {{ ternary (printf "http://+:8080;https://+:%d" $svcTlsPort) (printf "https://+:%d" $svcTlsPort) $svcTlsPlain | quote }}
+            - name: Kestrel__Certificates__Default__Path
+              value: {{ printf "%s/tls.crt" $.Values.global.serviceTls.mountPath | quote }}
+            - name: Kestrel__Certificates__Default__KeyPath
+              value: {{ printf "%s/tls.key" $.Values.global.serviceTls.mountPath | quote }}
+            {{- end }}
             {{- /* NFR, ADR-0006, #778: 512Mi の小容器で ASP.NET Core 既定の Server GC は、ヒープ上限（limit の 75%）に
                    達する前にネイティブ分を含む RSS が limit を超えて OOMKilled になる（audit-service が 3h で 5 回・
                    risk-management も 1 回実測）。Workstation GC ＋ GCConserveMemory で RSS を抑える。全 .NET サービス共通。 */}}
@@ -582,7 +609,8 @@ spec:
                   {{- end }}
               {{- else }}
               {{- /* #245, IADR-0102: 上記 $envOverrides に同名の非空値があればそれを使う（無ければ values の値）。 */}}
-              value: {{ index $envOverrides $e.name | default $e.value | quote }}
+              {{- /* NFR, NFR-05, IADR-0646: Call・Enforce では取引ユニットの呼び先（http://<サービス>-service:8080）を TLS の口へ替える。 */}}
+              value: {{ include "ast.serviceTls.rewrite" (dict "root" $ "value" (index $envOverrides $e.name | default $e.value)) | quote }}
               {{- end }}
             {{- end }}
             {{- /* NFR, IADR-0284 決定 5（段 1〜5）, IADR-0489, IADR-0559（#1391: 発注執行を足した）, #753: east-west gRPC の呼び出し側の宣言（`<提供側>__Grpc`）。
@@ -691,7 +719,13 @@ spec:
           readinessProbe:
             httpGet:
               path: /health/ready
+              {{- /* NFR, IADR-0646: Enforce は TLS の口を打つ（kubelet は証明書を確かめない）。 */}}
+              {{- if $svcTlsPlain }}
               port: 8080
+              {{- else }}
+              port: {{ $svcTlsPort }}
+              scheme: HTTPS
+              {{- end }}
             initialDelaySeconds: {{ $ready.initialDelaySeconds }}
             periodSeconds: {{ $ready.periodSeconds }}
             timeoutSeconds: {{ $ready.timeoutSeconds }}
@@ -699,7 +733,12 @@ spec:
           livenessProbe:
             httpGet:
               path: /health/live
+              {{- if $svcTlsPlain }}
               port: 8080
+              {{- else }}
+              port: {{ $svcTlsPort }}
+              scheme: HTTPS
+              {{- end }}
             initialDelaySeconds: 20
             periodSeconds: 20
           resources:
@@ -729,6 +768,11 @@ spec:
             {{- /* NFR, NFR-18, #1535, IADR-0621: 基盤の CA（公開してよい証明書だけ）。 */}}
             - name: platform-infra-ca
               mountPath: /etc/platform-infra-ca
+              readOnly: true
+            {{- end }}
+            {{- if $svcTls }}
+            - name: service-tls
+              mountPath: {{ $.Values.global.serviceTls.mountPath | quote }}
               readOnly: true
             {{- end }}
       volumes:
@@ -766,6 +810,16 @@ spec:
             items:
               - key: {{ $infraCa.caKey }}
                 path: {{ $infraCa.caKey }}
+      {{- end }}
+      {{- if $svcTls }}
+        {{- /* NFR, NFR-05, IADR-0646: サービス証明書（非 optional。無ければ Pod は起動しない＝黙って平文へ戻らない）。鍵は所有者だけ（段 3 は fsGroup ＋ 0440）。 */}}
+        - name: service-tls
+          secret:
+            secretName: {{ include "ast.serviceTls.secretName" (dict "root" $ "name" $name) }}
+            defaultMode: {{ include "ast.podSecurity.secretMode" (dict "root" $ "mode" 256) }}
+            items:
+              - { key: tls.crt, path: tls.crt }
+              - { key: tls.key, path: tls.key }
       {{- end }}
       {{- if $readOnlyRoot }}
         - name: tmp

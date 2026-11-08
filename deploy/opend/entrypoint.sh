@@ -272,6 +272,29 @@ watch_captcha() {
 # deploy/opend/entrypoint.test.sh から関数だけを読み込むための入口（起動手順は実行しない）。
 # scripts/k8s-local-deploy.sh の AST_DEPLOY_LIB と同じ idiom（#263 / IADR-0109）。
 # コンテナ実行時には設定されない（Dockerfile / chart のいずれにも現れない）。
+# NFR, IADR-0646: ルートを読み取り専用にした段（chart の opend.podSecurity.readOnlyRootFilesystem）で、OpenD の配布物が書く場所を
+# 作業の場所（emptyDir。env OPEND_WORK_DIR）へ寄せる。配布物（src）の各項目を写し（OpenD.xml と、src の中に mount された RSA 鍵の
+# ディレクトリ skip は写さない＝鍵を emptyDir へ複製しない）、OpenD はそこから起動する（実行ファイルの隣と作業ディレクトリが書ける）。
+# 前回の写し（emptyDir はコンテナの再起動で消えない）は項目ごとに置き換える（OpenD が書いたファイルのうち配布物に無いものは残る）。
+prepare_work_dir() {
+	src="$1"
+	dst="$2"
+	skip="${3:-}"
+	case "$dst" in
+		"$src" | "$src"/*) echo "ERROR: OPEND_WORK_DIR=${dst} は ${src} の外に置いてください。" >&2; return 1 ;;
+	esac
+	mkdir -p "$dst" || return 1
+	for e in "$src"/* "$src"/.[!.]*; do
+		[ -e "$e" ] || [ -L "$e" ] || continue
+		[ -n "$skip" ] && [ "$e" = "$skip" ] && continue
+		name="$(basename "$e")"
+		[ "$name" = "OpenD.xml" ] && continue
+		rm -rf "${dst:?}/${name}" || return 1
+		cp -a "$e" "$dst/" || return 1
+	done
+	return 0
+}
+
 if [ "${AST_OPEND_LIB:-}" = "1" ]; then
 	return 0 2>/dev/null || exit 0
 fi
@@ -287,7 +310,8 @@ API_IP="${OPEND_API_IP:-0.0.0.0}"
 LANG_="${OPEND_LANG:-en}"
 LOG_LEVEL="${OPEND_LOG_LEVEL:-info}"
 
-cd /opt/opend
+OPEND_DIR=/opt/opend
+cd "$OPEND_DIR"
 
 # 暗号化: RSA 秘密鍵ファイルが指定されていれば OpenD.xml に <rsa_private_key> を追加する（#13）。
 # #132 / IADR-0060: 鍵が指定されているのに不在なら**起動時に落とす**。従来は黙って非暗号で起動していたが、
@@ -300,8 +324,18 @@ if [ -n "${OPEND_RSA_KEY_FILE:-}" ]; then
 	echo "==> RSA encryption enabled (key=${OPEND_RSA_KEY_FILE})"
 fi
 
+# NFR, IADR-0646: 作業の場所（OPEND_WORK_DIR）があれば、配布物の写しをそこに作り、以後はそこで動く（ルートは読み取り専用でよい）。
+if [ -n "${OPEND_WORK_DIR:-}" ]; then
+	rsa_dir=""
+	[ -n "${OPEND_RSA_KEY_FILE:-}" ] && rsa_dir="$(dirname "${OPEND_RSA_KEY_FILE}")"
+	prepare_work_dir /opt/opend "${OPEND_WORK_DIR}" "${rsa_dir}" || { echo "ERROR: 作業の場所 ${OPEND_WORK_DIR} に配布物を写せません。" >&2; exit 1; }
+	OPEND_DIR="${OPEND_WORK_DIR}"
+	cd "$OPEND_DIR"
+	echo "==> work dir: ${OPEND_DIR}（配布物の写し。ルートのファイルシステムは読み取り専用）"
+fi
+
 # OpenD.xml を env から生成する（既定 ip=0.0.0.0 でコンテナネットワークから到達可能に）。
-cat > /opt/opend/OpenD.xml <<EOF
+cat > "${OPEND_DIR}/OpenD.xml" <<EOF
 <moomoo_opend>
 	<ip>${API_IP}</ip>
 	<api_port>${API_PORT}</api_port>
@@ -313,10 +347,10 @@ cat > /opt/opend/OpenD.xml <<EOF
 </moomoo_opend>
 EOF
 # umask 077 で 600 になるが、既存ファイル（再起動・PVC 由来）を上書きした場合に備えて明示する（#132）。
-chmod 600 /opt/opend/OpenD.xml
+chmod 600 "${OPEND_DIR}/OpenD.xml"
 
 echo "==> starting moomoo OpenD (headless) api_port=${API_PORT} ip=${API_IP} (SIMULATE 前提・実弾なし)"
-[ -x ./OpenD ] || { echo "ERROR: /opt/opend/OpenD が見つかりません。" >&2; ls -la /opt/opend >&2; exit 1; }
+[ -x ./OpenD ] || { echo "ERROR: ${OPEND_DIR}/OpenD が見つかりません。" >&2; ls -la "${OPEND_DIR}" >&2; exit 1; }
 
 # #722: 標準入力は FIFO 経由にする（画面から検証コードを入れられるようにするため）。
 # 運用手順は deploy/opend/README.md を参照。`kubectl attach` の従来手順も引き続き使える。

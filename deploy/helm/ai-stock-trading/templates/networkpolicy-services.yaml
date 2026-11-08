@@ -2,7 +2,7 @@
   NFR, IADR-0631: 取引ユニットの 11 サービスの通信を、許可した組だけにする（入り・出）。既定 networkPolicy.enabled=false＝何も描かない。
 
   - 名前空間の全 Pod に既定の拒否（ast-default-deny。入り・出）を置き、サービスごとの方針で要る組だけを足す（NetworkPolicy は和で効く）。
-  - 入り: 呼び手として宣言したサービス（networkPolicy.services.<呼び手>.calls に自分を含むもの）からの 8080 と（あれば）gRPC の口だけ。
+  - 入り: 呼び手として宣言したサービス（networkPolicy.services.<呼び手>.calls に自分を含むもの）からの HTTP の口（8080。サービス間の TLS の段では TLS の口。IADR-0646）と（あれば）gRPC の口だけ。
   - 出 : 名前解決・基盤（DB を持つサービスだけ Postgres。全サービスがブローカ・Keycloak・collector）・宣言した呼び先の 8080 と gRPC の口・
          LLM ゲートウェイ（llmGateway: true）・OpenD の API（opend: true）・クラスタの外の 443（externalHttps: true）。
   - 応答: NetworkPolicy は接続の状態で応答を通すので、受けた接続への返りの規則は要らない。
@@ -58,6 +58,8 @@
 {{- if and $mq.tls $mq.tls.enabled }}
 {{- $mqPort = $mq.tls.port }}
 {{- end }}
+{{- /* NFR, NFR-05, IADR-0646: 取引ユニットの中の HTTP の口（Off は 8080、Listen・Call は 8080 と TLS の口、Enforce は TLS の口だけ）。 */}}
+{{- $httpPorts := splitList " " (include "ast.serviceTls.httpPorts" .) }}
 {{- $except := concat ($np.publicEgress.except | default list) ($np.publicEgress.extraExcept | default list) }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -99,7 +101,9 @@ spec:
             matchExpressions:
               - { key: app, operator: In, values: [{{ join ", " (sortAlpha $callers) }}] }
       ports:
-        - { protocol: TCP, port: 8080 }
+        {{- range $p := $httpPorts }}
+        - { protocol: TCP, port: {{ $p }} }
+        {{- end }}
         {{- if $svc.grpcPort }}
         - { protocol: TCP, port: {{ $svc.grpcPort }} }
         {{- end }}
@@ -156,7 +160,9 @@ spec:
         - podSelector:
             matchLabels: { app: {{ $callee }}-service }
       ports:
-        - { protocol: TCP, port: 8080 }
+        {{- range $p := $httpPorts }}
+        - { protocol: TCP, port: {{ $p }} }
+        {{- end }}
         {{- if $calleeSvc.grpcPort }}
         - { protocol: TCP, port: {{ $calleeSvc.grpcPort }} }
         {{- end }}

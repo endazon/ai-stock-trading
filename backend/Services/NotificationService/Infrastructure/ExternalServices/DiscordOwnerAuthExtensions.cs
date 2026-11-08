@@ -30,6 +30,11 @@ internal static class DiscordOwnerAuthExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(config);
 
+        // 🔴 NFR, NFR-05, IADR-0646: 所有者のトークンを載せる HttpClient の宛先は取引ユニットのサービスだけである。サービス間の HTTP を
+        // TLS にした段（chart の global.serviceTls）では、受け側の証明書を基盤の CA で確かめる（CA の場所が設定されているときだけ。
+        // 名前の照合は外さない。平文の宛先には効かない）。トークンの有無に依らず付ける。
+        builder.TrustPlatformInfraCa();
+
         var options = ReadOptions(config);
         if (!options.IsEnabled)
             return builder; // fail-safe: 未設定ならトークンを付けない（→ 401）。

@@ -71,12 +71,47 @@ public class PlatformInfraCaDestinationWiringTests
 
         using var withCa = Build(CaPath);
         PlatformInfraCaTrust.IsPlatformInfraCaHandler(PrimaryHandlerOf(withCa, "ai-stock-trading-service-token")).Should().BeTrue();
-        // 呼び出し先（取引ユニットのサービス。平文の HTTP）の HttpClient には付けない。
-        PlatformInfraCaTrust.IsPlatformInfraCaHandler(PrimaryHandlerOf(withCa, "risk")).Should().BeFalse();
 
         // 陰性対照: 場所が無ければトークンの取得の HttpClient も既定のまま。
         using var withoutCa = Build(null);
         PlatformInfraCaTrust.IsPlatformInfraCaHandler(PrimaryHandlerOf(withoutCa, "ai-stock-trading-service-token")).Should().BeFalse();
+    }
+
+    // 🔴 NFR, NFR-05, IADR-0646: サービスのトークンを載せる呼び出し先（取引ユニットのサービス）の HttpClient は、サービス間の TLS の段で
+    // 受け側の証明書を基盤の CA で確かめる。CA の場所が無ければ既定のまま。トークンの資格が無い（付与が no-op）ときも同じに付く。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void サービスのトークンを載せる呼び出し先はCAの場所があるときだけ基盤のCAで検証する(bool withCredentials)
+    {
+        ServiceProvider Build(string? caPath)
+        {
+            var pairs = new List<(string, string?)>
+            {
+                ("Auth:Authority", "https://keycloak:8443/realms/platform"),
+                (PlatformInfraCaTrust.PathKey, caPath),
+            };
+            if (withCredentials)
+            {
+                pairs.Add(("ServiceAuth:ClientId", "ai-stock-trading-svc-risk-management"));
+                pairs.Add(("ServiceAuth:ClientSecret", "test-only"));
+            }
+
+            var config = Config([.. pairs]);
+            var services = new ServiceCollection().AddLogging();
+            services.AddSingleton(config);
+            services.AddHttpClient("risk").AddAiStockTradingServiceToken(config);
+            // 陰性対照: サービスのトークンを載せない HttpClient（外部 API の形）には付かない。
+            services.AddHttpClient("external");
+            return services.BuildServiceProvider();
+        }
+
+        using var withCa = Build(CaPath);
+        PlatformInfraCaTrust.IsPlatformInfraCaHandler(PrimaryHandlerOf(withCa, "risk")).Should().BeTrue();
+        PlatformInfraCaTrust.IsPlatformInfraCaHandler(PrimaryHandlerOf(withCa, "external")).Should().BeFalse();
+
+        using var withoutCa = Build(null);
+        PlatformInfraCaTrust.IsPlatformInfraCaHandler(PrimaryHandlerOf(withoutCa, "risk")).Should().BeFalse();
     }
 
     [Fact]

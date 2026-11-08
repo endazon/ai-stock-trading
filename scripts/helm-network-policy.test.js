@@ -5,7 +5,8 @@
  * NFR, IADR-0631: **外の中継（OpenD）の権限と、取引ユニットの通信の制限を、実際に `helm template` で描いて固定する。**
  *
  * 固定するもの（values-cloud.yaml に検査用の digest を重ねた描画）:
- *   1. OpenD の Pod: seccomp RuntimeDefault・SA トークンなし。本体: 権限昇格なし・capabilities は ALL を落とし、戻すのは DAC_OVERRIDE・FOWNER だけ。
+ *   1. OpenD の Pod: seccomp RuntimeDefault・SA トークンなし・非 root（段 3。uid 10001。IADR-0646）。本体: 権限昇格なし・capabilities は ALL を
+ *      落として何も戻さない・ルートは読み取り専用。段 1 へ戻した描画（切り戻し）では、戻すのは DAC_OVERRIDE・FOWNER だけ（IADR-0631）。
  *   2. NetworkPolicy の在り: 名前空間の既定の拒否（入り・出）・11 サービスそれぞれの方針（入り・出）・OpenD の入りと出。
  *      OpenD の出は名前解決とクラスタの外（私設・リンクローカル・CGNAT・ループバックを除く）だけ。
  *   3. 呼び手の一覧と env の一致（多すぎも少なすぎも赤）:
@@ -40,6 +41,9 @@ const LOCAL_PROFILES = [
   { label: 'values-local.yaml + values-grpc-measurement.yaml', args: ['-f', `${CHART}/values-local.yaml`, '-f', `${CHART}/values-grpc-measurement.yaml`] },
 ];
 const OPEND_CAPS = ['DAC_OVERRIDE', 'FOWNER'];
+const OPEND_UID = '10001';
+// 段 1 へ戻す切り戻しの描画（values-cloud の段 3 の上に重ねる。IADR-0631 の形）。
+const OPEND_STAGE1 = ['--set', 'opend.podSecurity.stage=1', '--set', 'opend.podSecurity.readOnlyRootFilesystem=false', '--set', 'opend.home=/root'];
 const REQUIRED_EXCEPT = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '169.254.0.0/16', '100.64.0.0/10', '127.0.0.0/8'];
 const INFRA_NS = 'platform-infra';
 const LLM_NS = 'microservices-platform';
@@ -211,7 +215,8 @@ function allowedEdges(pol) {
 
 // ───────────────────────── 判定（違反を文字列の配列で返す。空＝適合） ─────────────────────────
 
-function opendSecurityViolations(text) {
+/** stage: 3（values-cloud。非 root・何も戻さない・読み取り専用のルート）か 1（切り戻し。root・DAC_OVERRIDE と FOWNER だけ）。 */
+function opendSecurityViolations(text, stage = 3) {
   const v = [];
   const d = deployments(text).find((r) => r.name === 'opend');
   if (!d) return ['OpenD の Deployment が無い'];
@@ -242,7 +247,13 @@ function opendSecurityViolations(text) {
   const drops = list('drop');
   const adds = list('add');
   if (!drops.includes('ALL')) v.push(`OpenD 本体の capabilities.drop に ALL が無い（${drops.join(',')}）`);
-  if (adds.slice().sort().join() !== OPEND_CAPS.join()) v.push(`OpenD 本体の capabilities.add が ${OPEND_CAPS.join('・')} でない（${adds.join(',')}）`);
+  const wantAdds = stage >= 3 ? [] : OPEND_CAPS;
+  if (adds.slice().sort().join() !== wantAdds.join()) v.push(`OpenD 本体の capabilities.add が ${wantAdds.join('・') || '無し'} でない（${adds.join(',')}）`);
+  if (stage >= 3) {
+    if (f.get(`${pre}securityContext.runAsNonRoot`) !== 'true') v.push('OpenD の Pod に runAsNonRoot: true が無い');
+    if (f.get(`${pre}securityContext.runAsUser`) !== OPEND_UID) v.push(`OpenD の Pod の runAsUser が ${OPEND_UID} でない（${f.get(`${pre}securityContext.runAsUser`)}）`);
+    if (f.get(`${c}readOnlyRootFilesystem`) !== 'true') v.push('OpenD 本体に readOnlyRootFilesystem: true が無い');
+  }
   if (adds.includes('NET_RAW')) v.push('OpenD 本体に NET_RAW が戻っている');
   return v;
 }
@@ -362,7 +373,8 @@ function main() {
   const cloud = mustRender(CLOUD);
 
   process.stdout.write('helm-network-policy: values-cloud\n');
-  ok('1. OpenD の securityContext（seccomp・権限昇格なし・ALL を落として DAC_OVERRIDE・FOWNER だけ・トークンなし）', () => assert.deepStrictEqual(opendSecurityViolations(cloud), []));
+  ok('1. OpenD の securityContext（非 root・seccomp・権限昇格なし・ALL を落として何も戻さない・読み取り専用のルート・トークンなし）', () => assert.deepStrictEqual(opendSecurityViolations(cloud), []));
+  ok('1. 段 1 へ戻した描画（切り戻し）: root・seccomp・権限昇格なし・ALL を落として DAC_OVERRIDE・FOWNER だけ', () => assert.deepStrictEqual(opendSecurityViolations(mustRender([...CLOUD, ...OPEND_STAGE1]), 1), []));
   ok('2. NetworkPolicy の在り（既定の拒否・11 サービス・OpenD の入りと出）', () => assert.deepStrictEqual(presenceViolations(cloud), []));
   ok('3. 呼び手の一覧と env の一致（入り・出・口・外の 443・OpenD の呼び手）', () => assert.deepStrictEqual(envMatchViolations(cloud), []));
   ok('3. 宣言の要約（呼び手 → 呼び先）が試験の期待と一致する', () => {
@@ -406,16 +418,19 @@ function main() {
   ok('CronJob と併用すると止まる', () => mustFail([...CLOUD, '--set', 'tradingCycle.cronjob.enabled=true'], 'tradingCycle.cronjob.enabled=true は併用できません'));
   ok('OpenD の出を無効にすると止まる', () => mustFail([...CLOUD, '--set', 'opend.networkPolicy.egress.enabled=false'], 'opend.networkPolicy.egress.enabled'));
   ok('OpenD の呼び手の宣言が入りの方針と違えば止まる', () => mustFail([...CLOUD, '--set', 'networkPolicy.services.backtest.opend=true'], 'OpenD の API の呼び手'));
-  ok('戻せないケーパビリティ（NET_RAW）を足すと止まる', () => mustFail([...CLOUD, '--set', 'opend.podSecurity.capabilities.add={DAC_OVERRIDE,NET_RAW}'], 'DAC_OVERRIDE / FOWNER だけ'));
+  ok('戻せないケーパビリティ（NET_RAW）を足すと止まる', () => mustFail([...CLOUD, ...OPEND_STAGE1, '--set', 'opend.podSecurity.capabilities.add={DAC_OVERRIDE,NET_RAW}'], 'DAC_OVERRIDE / FOWNER だけ'));
 
   process.stdout.write('helm-network-policy: 変異（修正を外すと赤）\n');
   const red = (label, fn, args) => ok(`変異: ${label} → 赤`, () => {
     const v = fn(mustRender(args));
     assert.ok(v.length > 0, '違反として数えられない');
   });
-  red('OpenD のケーパビリティの削除を外す', opendSecurityViolations, [...CLOUD, '--set', 'opend.podSecurity.capabilities.dropAll=false']);
-  red('OpenD の seccomp・権限昇格なしを外す', opendSecurityViolations, [...CLOUD, '--set', 'opend.podSecurity.seccomp=false']);
-  red('OpenD の戻すケーパビリティを 1 つ減らす', opendSecurityViolations, [...CLOUD, '--set', 'opend.podSecurity.capabilities.add={DAC_OVERRIDE}']);
+  red('OpenD を段 1（root）へ戻す', opendSecurityViolations, [...CLOUD, ...OPEND_STAGE1]);
+  red('OpenD の読み取り専用のルートを外す', opendSecurityViolations, [...CLOUD, '--set', 'opend.podSecurity.readOnlyRootFilesystem=false']);
+  const red1 = (label, args) => ok(`変異: ${label} → 赤`, () => assert.ok(opendSecurityViolations(mustRender(args), 1).length > 0, '違反として数えられない'));
+  red1('段 1: OpenD のケーパビリティの削除を外す', [...CLOUD, ...OPEND_STAGE1, '--set', 'opend.podSecurity.capabilities.dropAll=false']);
+  red1('段 1: OpenD の seccomp・権限昇格なしを外す', [...CLOUD, ...OPEND_STAGE1, '--set', 'opend.podSecurity.seccomp=false']);
+  red1('段 1: OpenD の戻すケーパビリティを 1 つ減らす', [...CLOUD, ...OPEND_STAGE1, '--set', 'opend.podSecurity.capabilities.add={DAC_OVERRIDE}']);
   red('通信の制限を外す（networkPolicy.enabled=false）', presenceViolations, [...CLOUD, '--set', 'networkPolicy.enabled=false']);
   ok('変異: 描画物から 1 サービスの方針を抜く → 赤', () => assert.ok(presenceViolations(dropDocument(cloud, 'NetworkPolicy', 'risk-management-service')).length > 0));
   ok('変異: 描画物から既定の拒否を抜く → 赤', () => assert.ok(presenceViolations(dropDocument(cloud, 'NetworkPolicy', 'ast-default-deny')).length > 0));
