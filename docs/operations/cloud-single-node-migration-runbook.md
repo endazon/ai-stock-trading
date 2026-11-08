@@ -4,12 +4,12 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-11-05
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 <!-- trace:
 ids: [FR-04, FR-08, NFR, NFR-03, NFR-05, NFR-06, FR-10]
 adrs: [ADR-0006, ADR-0024, ADR-0073, ADR-0076, ADR-0078, ADR-0080]
-iadrs: [IADR-0639, IADR-0637, IADR-0632, IADR-0631, IADR-0630, IADR-0629, IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627, IADR-0633]
+iadrs: [IADR-0639, IADR-0637, IADR-0632, IADR-0631, IADR-0630, IADR-0629, IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627, IADR-0633, IADR-0644]
 specs: [20261107_s2s-per-service-clients, 20261107_message-origin-asymmetric-signature, 20261107_cloud-openbao-tls-store, 20261107_cloud-opend-isolation-netpol, 20261107_cloud-db-per-service-users, 20261107_cloud-keycloak-tls, 20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
 issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471, MSP#2495]
 -->
@@ -254,6 +254,8 @@ bash scripts/ast-message-origin-keygen.sh --live
 - 🔴 **外の中継（OpenD）の権限の最小化と、サービス間の通信の制限（NetworkPolicy）は、[通信の制限の Runbook](cloud-network-policy-runbook.md) の順序で入れる。**
   最初の配備は通信の制限を外して行い（`--set networkPolicy.enabled=false --set opend.networkPolicy.egress.enabled=false`）、
   OpenD のログインと §8 の確かめが通った後に、場の時間外に入れる。
+  通信の制限（または OpenD の出）を入れる配備では、ノード自身の公開アドレス（`networkPolicy.publicEgress.extraExcept`）が要る。空なら描画で止まる。
+  §4 のファイルと同じくリポジトリの外に置く配備の値のファイルへ書いておく（手順は通信の制限の Runbook）。
 
 ### 5.5 突き合わせ（秘密を入れた後・取引を始める前）
 

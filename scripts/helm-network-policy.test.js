@@ -17,6 +17,13 @@
  *      OpenD の入り以外の NetworkPolicy が無く、OpenD 本体のケーパビリティ・seccomp も描かない。values.yaml の既定は全て off。
  *   5. 描画で止まる条件（宣言の欠け・未知の名前・CronJob との併用・OpenD の入り／出の無効・戻せないケーパビリティ）。
  *   6. 変異: 修正を外す（--set で戻す・描画物から 1 つ抜く）と 1〜4 の判定が赤になる（判定が空振りしない）。
+ *   7. NFR, IADR-0644: 外への HTTPS の中継（networkPolicy.egressProxy.mode）の段ごとの形:
+ *      - Off（既定）: どの Deployment にも HTTPS_PROXY・NO_PROXY が無く、中継の口も描かない（従来どおり外の 443）。
+ *      - Report: externalHttps のサービス（だけ）が HTTPS_PROXY を持ち、出は中継の口と外の 443 の両方。
+ *      - Enforce: 同じく HTTPS_PROXY を持ち、出は中継の口だけ（取引ユニットのサービスの方針に ipBlock が無い。OpenD の出は残る）。
+ *      - NO_PROXY（.NET の読み方を写した判定）が、env のクラスタの中の宛先を全て外し、外の宛先（情報源・市況・為替・Discord）を外さない。
+ *   8. NFR, IADR-0644 決定 3: 外への ipBlock の除外に、ノード自身の公開アドレス（extraExcept。検査用の digest の fixture が与える）が入り、
+ *      extraExcept が空・CIDR でない要素なら描画で止まる。
  *
  * 🔴 helm が無ければ落ちる（fail-closed）。CI は helm.yml で走らせる。helm の実行ファイルは env HELM で選べる。
  * 外部依存ゼロ（Node 標準モジュール ＋ helm。YAML の読みは helm-release-drift.js を再利用）。
@@ -42,6 +49,13 @@ const LOCAL_PROFILES = [
 const OPEND_CAPS = ['DAC_OVERRIDE', 'FOWNER'];
 const REQUIRED_EXCEPT = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '169.254.0.0/16', '100.64.0.0/10', '127.0.0.0/8'];
 const INFRA_NS = 'platform-infra';
+// NFR, IADR-0644: ノード自身の公開アドレスの除外（ci/values-cloud-digests.fixture.yaml の検査用の値。文書用のアドレスの範囲）。
+const NODE_EXCEPT = '203.0.113.10/32';
+const PROXY_URL = 'http://egress-proxy.platform-infra.svc.cluster.local:3128';
+// 外の宛先の見本（作業仕様書 20261108_egress-via-platform-proxy の宛先の表）。NO_PROXY がこれを外してはならない。
+const EXTERNAL_HOSTS = ['finnhub.io', 'news.google.com', 'data.sec.gov', 'www.sec.gov', 'api.stlouisfed.org', 'www.stat-search.boj.or.jp', 'api.edinet-fsa.go.jp', 'cdn.finra.org', 'discord.com', 'gateway.discord.gg'];
+const ENFORCE = ['--set', 'networkPolicy.egressProxy.mode=Enforce'];
+const REPORT = ['--set', 'networkPolicy.egressProxy.mode=Report'];
 const LLM_NS = 'microservices-platform';
 
 let passed = 0;
@@ -155,14 +169,20 @@ function deployments(text) {
 }
 
 /** env から、この Deployment が届く必要のある宛先を { key, port } の集合で返す。key は `svc:<app>`・`infra:<app>`・`llm`・`opend`・`public`。 */
-function requiredEdges(dep, astApps) {
+function requiredEdges(dep, astApps, mode = 'Off') {
   const need = new Map();
   const add = (key, port) => need.set(`${key}|${port}`, { key, port });
   const env = new Map();
   for (const c of dep.containers) for (const [k, v] of c.env) env.set(k, v.value ?? '');
-  for (const value of env.values()) {
+  for (const [name, value] of env) {
     if (!value) continue;
     let m;
+    if (name === 'NO_PROXY') continue;
+    if (name === 'HTTPS_PROXY') {
+      if (value === PROXY_URL) add(`infra:egress-proxy`, 3128);
+      else add(`unknown:${value}`, 0);
+      continue;
+    }
     if ((m = value.match(/^https?:\/\/([a-z0-9-]+-service)(\.[a-z0-9.-]+)?:(\d+)/))) {
       if (!m[2] && astApps.has(m[1])) add(`svc:${m[1]}`, Number(m[3]));
       else if (m[1] === 'llmgateway-service' && m[2] === `.${LLM_NS}`) add('llm', Number(m[3]));
@@ -185,7 +205,9 @@ function requiredEdges(dep, astApps) {
     (env.get('Collection__Source__Provider') || '') !== '' ||
     /discord/.test(env.get('Notifications__Provider') || '') ||
     env.get('Notifications__Discord__Bot__Enabled') === 'true';
-  if (external) add('public', 443);
+  // 段（IADR-0644）: Off＝外の 443、Report＝外の 443（中継の口は HTTPS_PROXY から上で足す）、Enforce＝外の 443 は要らない。
+  if (external && mode !== 'Enforce') add('public', 443);
+  if (mode !== 'Off' && external !== env.has('HTTPS_PROXY')) add(`unknown:HTTPS_PROXY の有無が外の HTTPS の構成と違う（${external ? '外へ出るのに無い' : '外へ出ないのに有る'}）`, 0);
   return need;
 }
 
@@ -282,6 +304,7 @@ function presenceViolations(text) {
     for (const r of p.egress) {
       for (const peer of r.peers) {
         if (peer.cidr && REQUIRED_EXCEPT.some((e) => !peer.except.includes(e))) v.push(`${p.name}: 外への出の除外が足りない`);
+        if (peer.cidr && !peer.except.includes(NODE_EXCEPT)) v.push(`${p.name}: 外への出の除外にノード自身の公開アドレス（${NODE_EXCEPT}）が無い`);
         if (peer.cidr && p.name !== 'opend-egress' && r.ports.some((x) => x.port !== 443)) v.push(`${p.name}: 外への出が 443 以外へ開いている`);
       }
     }
@@ -289,7 +312,7 @@ function presenceViolations(text) {
   return v;
 }
 
-function envMatchViolations(text) {
+function envMatchViolations(text, mode = 'Off') {
   const v = [];
   const deps = deployments(text).filter((d) => d.name !== 'opend');
   const astApps = new Set(deps.map((d) => d.name));
@@ -297,7 +320,7 @@ function envMatchViolations(text) {
   const callersOf = new Map([...astApps].map((a) => [a, new Set()]));
   const opendCallers = new Set();
   for (const d of deps) {
-    const need = requiredEdges(d, astApps);
+    const need = requiredEdges(d, astApps, mode);
     const pol = ps.find((p) => p.selects === d.name);
     if (!pol) { v.push(`${d.name}: 方針が無い`); continue; }
     const allowed = allowedEdges(pol);
@@ -331,6 +354,7 @@ function envMatchViolations(text) {
 function unchangedViolations(text, label) {
   const v = [];
   for (const p of policies(text)) if (p.name !== 'opend-ingress') v.push(`${label}: NetworkPolicy ${p.name} が描かれた（既定・ローカルは描かない）`);
+  for (const d of deployments(text)) for (const c of d.containers) for (const k of c.env.keys()) if (/^(HTTPS?_PROXY|ALL_PROXY|NO_PROXY)$/i.test(k)) v.push(`${label}: ${d.name} に ${k} が描かれた（既定・ローカルは中継を使わない）`);
   const d = deployments(text).find((r) => r.name === 'opend');
   if (!d) v.push(`${label}: OpenD が描かれない（母集合が欠けている）`);
   else {
@@ -341,6 +365,51 @@ function unchangedViolations(text, label) {
     if (/allowPrivilegeEscalation/.test(main)) v.push(`${label}: OpenD 本体に allowPrivilegeEscalation が描かれた`);
     if (d.lines.some((x) => /seccompProfile/.test(x))) v.push(`${label}: OpenD の Pod に seccompProfile が描かれた`);
   }
+  return v;
+}
+
+/** .NET（HttpEnvironmentProxy）の NO_PROXY の読み方: 先頭が「.」の項目は接尾辞（と点を除いた完全一致）、それ以外は完全一致（大小無視）。 */
+function bypassed(noProxy, host) {
+  const h = host.toLowerCase();
+  return noProxy.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean)
+    .some((e) => (e.startsWith('.') ? h.endsWith(e) || h === e.slice(1) : h === e));
+}
+
+/** NFR, IADR-0644: 外への HTTPS の中継の段ごとの形（違反を返す）。 */
+function egressProxyViolations(text, mode) {
+  const v = [];
+  const ps = policies(text);
+  for (const d of deployments(text)) {
+    if (d.name === 'opend') continue;
+    const env = new Map();
+    for (const c of d.containers) for (const [k, x] of c.env) env.set(k, x.value ?? '');
+    const pol = ps.find((p) => p.selects === d.name);
+    const hasIp = pol ? pol.egress.some((r) => r.peers.some((p) => p.cidr)) : false;
+    const hasProxy = pol ? pol.egress.some((r) => r.peers.some((p) => p.ns === INFRA_NS && p.apps.includes('egress-proxy'))) : false;
+    if (mode === 'Off') {
+      if (env.has('HTTPS_PROXY') || env.has('NO_PROXY')) v.push(`${d.name}: 段 Off なのに HTTPS_PROXY・NO_PROXY がある`);
+      if (hasProxy) v.push(`${d.name}: 段 Off なのに中継の口を許している`);
+      continue;
+    }
+    if (!env.has('HTTPS_PROXY')) {
+      if (hasProxy) v.push(`${d.name}: HTTPS_PROXY が無いのに中継の口を許している`);
+      if (hasIp) v.push(`${d.name}: HTTPS_PROXY が無いのに外の 443 を許している`);
+      continue;
+    }
+    if (env.get('HTTPS_PROXY') !== PROXY_URL) v.push(`${d.name}: HTTPS_PROXY が ${PROXY_URL} でない（${env.get('HTTPS_PROXY')}）`);
+    if (!hasProxy) v.push(`${d.name}: 中継の口を許していない`);
+    if (mode === 'Enforce' && hasIp) v.push(`${d.name}: 段 Enforce なのに外の 443 の ipBlock がある`);
+    if (mode === 'Report' && !hasIp) v.push(`${d.name}: 段 Report なのに外の 443 の ipBlock が無い`);
+    const np = env.get('NO_PROXY') || '';
+    if (!np) v.push(`${d.name}: NO_PROXY が無い`);
+    for (const [k, value] of env) {
+      if (k === 'HTTPS_PROXY' || k === 'NO_PROXY') continue;
+      const m = /^https?:\/\/([^/:+]+)(?::\d+)?/.exec(value || '');
+      if (m && !bypassed(np, m[1])) v.push(`${d.name}: env ${k} のクラスタの中の宛先 ${m[1]} を NO_PROXY が外さない（中継へ回って届かない）`);
+    }
+    for (const h of EXTERNAL_HOSTS) if (bypassed(np, h)) v.push(`${d.name}: NO_PROXY が外の宛先 ${h} を外している`);
+  }
+  if (mode !== 'Off' && !ps.some((p) => p.name === 'opend-egress' && p.egress.some((r) => r.peers.some((x) => x.cidr)))) v.push('OpenD の出（ipBlock）が無い（中継を通らない残余として残す）');
   return v;
 }
 
@@ -385,6 +454,36 @@ function main() {
     ].sort());
   });
 
+  process.stdout.write('helm-network-policy: 外への HTTPS の中継（IADR-0644）\n');
+  const enforce = mustRender([...CLOUD, ...ENFORCE]);
+  const report = mustRender([...CLOUD, ...REPORT]);
+  ok('7. values-cloud の既定（Off）: HTTPS_PROXY も中継の口も無い', () => assert.deepStrictEqual(egressProxyViolations(cloud, 'Off'), []));
+  ok('7. Report: 6 サービスが中継を使い、外の 443 も残る（env と方針の一致も）', () => {
+    assert.deepStrictEqual(egressProxyViolations(report, 'Report'), []);
+    assert.deepStrictEqual(envMatchViolations(report, 'Report'), []);
+    assert.deepStrictEqual(presenceViolations(report), []);
+  });
+  ok('7. Enforce: 6 サービスは中継の口だけ（外の 443 は OpenD の出だけに残る）', () => {
+    assert.deepStrictEqual(egressProxyViolations(enforce, 'Enforce'), []);
+    assert.deepStrictEqual(envMatchViolations(enforce, 'Enforce'), []);
+    assert.deepStrictEqual(presenceViolations(enforce), []);
+  });
+  ok('7. 中継を使うサービスの集合（Enforce の描画）', () => {
+    const got = deployments(enforce).filter((d) => d.containers.some((c) => c.env.has('HTTPS_PROXY'))).map((d) => d.name).sort();
+    assert.deepStrictEqual(got, ['information-collection-service', 'market-monitor-service', 'notification-service', 'report-service', 'risk-management-service', 'trade-decision-service']);
+  });
+  ok('7. NO_PROXY の判定（.NET の読み方）の見本', () => {
+    assert.ok(bypassed('keycloak,.microservices-platform', 'keycloak'));
+    assert.ok(bypassed('keycloak,.microservices-platform', 'llmgateway-service.microservices-platform'));
+    assert.ok(bypassed('.svc', 'openbao.openbao.svc'));
+    assert.ok(!bypassed('keycloak,.svc', 'keycloak2'));
+    assert.ok(!bypassed('keycloak,.svc', 'discord.com'));
+  });
+  ok('8. ノード自身の公開アドレスが全ての外への ipBlock の除外に入る（Off・Enforce）', () => {
+    assert.deepStrictEqual(presenceViolations(cloud).filter((x) => x.includes(NODE_EXCEPT)), []);
+    assert.ok(policies(cloud).filter((p) => p.egress.some((r) => r.peers.some((x) => x.cidr))).length >= 7, '外への ipBlock の母集合が痩せた');
+  });
+
   process.stdout.write('helm-network-policy: 既定とローカルは変わらない\n');
   ok('values.yaml の既定は全て off（networkPolicy・OpenD の出・OpenD のケーパビリティ）', () => {
     const base = fs.readFileSync(path.join(REPO_ROOT, CHART, 'values.yaml'), 'utf8');
@@ -392,6 +491,7 @@ function main() {
     assert.strictEqual(readValue(base, 'opend.networkPolicy.egress.enabled'), 'false');
     assert.strictEqual(readValue(base, 'opend.podSecurity.capabilities.dropAll'), 'false');
     assert.strictEqual(readValue(base, 'opend.podSecurity.seccomp'), 'false');
+    assert.strictEqual(readValue(base, 'networkPolicy.egressProxy.mode'), 'Off');
   });
   for (const prof of LOCAL_PROFILES) {
     ok(`4. ${prof.label}（OpenD・認証サイドカー・CronJob も有効）: OpenD の入り以外の NetworkPolicy も OpenD 本体の権限の変更も描かない`, () => {
@@ -406,6 +506,19 @@ function main() {
   ok('CronJob と併用すると止まる', () => mustFail([...CLOUD, '--set', 'tradingCycle.cronjob.enabled=true'], 'tradingCycle.cronjob.enabled=true は併用できません'));
   ok('OpenD の出を無効にすると止まる', () => mustFail([...CLOUD, '--set', 'opend.networkPolicy.egress.enabled=false'], 'opend.networkPolicy.egress.enabled'));
   ok('OpenD の呼び手の宣言が入りの方針と違えば止まる', () => mustFail([...CLOUD, '--set', 'networkPolicy.services.backtest.opend=true'], 'OpenD の API の呼び手'));
+  ok('8. extraExcept が空なら止まる（ノード自身の公開アドレスの外し忘れ）', () => mustFail([...CLOUD, '--set-json', 'networkPolicy.publicEgress.extraExcept=[]'], 'networkPolicy.publicEgress.extraExcept が空です'));
+  ok('8. extraExcept が CIDR でなければ止まる', () => mustFail([...CLOUD, '--set-json', 'networkPolicy.publicEgress.extraExcept=["203.0.113.10"]'], 'IPv4 の CIDR'));
+  ok('8. OpenD の出だけを有効にしても extraExcept が空なら止まる', () => mustFail([...def, '--set', 'opend.enabled=true', '--set', 'opend.networkPolicy.egress.enabled=true'], 'networkPolicy.publicEgress.extraExcept が空です'));
+  ok('8. Enforce で extraExcept が空でも OpenD の出（ipBlock）があれば止まる', () => mustFail([...CLOUD, ...ENFORCE, '--set-json', 'networkPolicy.publicEgress.extraExcept=[]'], 'networkPolicy.publicEgress.extraExcept が空です'));
+  ok('8. 陰性対照: Enforce で ipBlock を描くもの（OpenD を除いた）が無ければ、extraExcept が空でも通る', () => {
+    const t = mustRender([...CLOUD, ...ENFORCE, '--set-json', 'networkPolicy.publicEgress.extraExcept=[]', '--set', 'opend.enabled=false', '--set', 'networkPolicy.services.order-execution.opend=false']);
+    assert.strictEqual(policies(t).filter((p) => p.egress.some((r) => r.peers.some((x) => x.cidr))).length, 0, 'ipBlock が描かれた');
+    assert.ok(policies(t).length >= 12, '方針の母集合が痩せた');
+  });
+  ok('7. 段が値域の外なら止まる', () => mustFail([...CLOUD, '--set', 'networkPolicy.egressProxy.mode=On'], 'Off / Report / Enforce'));
+  ok('7. 段を引用符なしの真偽で書くと止まる', () => mustFail([...CLOUD, '--set', 'networkPolicy.egressProxy.mode=false'], '文字列で書きます'));
+  ok('7. 段 Report に networkPolicy.enabled=false は止まる', () => mustFail([...CLOUD, ...REPORT, '--set', 'networkPolicy.enabled=false'], 'networkPolicy.enabled=true が要ります'));
+  ok('7. extraEnv で HTTPS_PROXY を与えると止まる', () => mustFail([...CLOUD, '--set', 'services.audit.extraEnv[0].name=https_proxy', '--set', 'services.audit.extraEnv[0].value=http://x:1'], 'networkPolicy.egressProxy.mode で与えます'));
   ok('戻せないケーパビリティ（NET_RAW）を足すと止まる', () => mustFail([...CLOUD, '--set', 'opend.podSecurity.capabilities.add={DAC_OVERRIDE,NET_RAW}'], 'DAC_OVERRIDE / FOWNER だけ'));
 
   process.stdout.write('helm-network-policy: 変異（修正を外すと赤）\n');
@@ -428,7 +541,15 @@ function main() {
   red('LLM ゲートウェイの出を外す（report）', envMatchViolations, [...CLOUD, '--set', 'networkPolicy.services.report.llmGateway=false']);
   red('Keycloak の口を env と違えて描く', envMatchViolations, [...CLOUD, '--set', 'networkPolicy.infra.keycloak.port=8080']);
   red('env に呼び先を足して宣言を直さない（audit → configuration）', envMatchViolations, [...CLOUD, '--set', 'services.audit.extraEnv[0].name=Configuration__BaseUrl', '--set', 'services.audit.extraEnv[0].value=http://configuration-service:8080']);
-  red('ローカルで OpenD の出を有効にする', (t) => unchangedViolations(t, 'values-local'), [...LOCAL_PROFILES[1].args, ...ENABLE_ALL, '--set', 'opend.networkPolicy.egress.enabled=true']);
+  ok('変異: Report の描画を Enforce の期待で読む（外の 443 が残る）→ 赤', () => assert.ok(egressProxyViolations(report, 'Enforce').length > 0));
+  ok('変異: Enforce の描画を Off の期待で読む → 赤', () => assert.ok(egressProxyViolations(enforce, 'Off').length > 0));
+  ok('変異: Off の描画を Enforce の期待で読む（env と方針）→ 赤', () => assert.ok(envMatchViolations(cloud, 'Enforce').length > 0));
+  red('Enforce で外へ出るサービスの宣言を外す（notification。中継も外の 443 も無くなる）', (t) => envMatchViolations(t, 'Enforce'), [...CLOUD, ...ENFORCE, '--set', 'networkPolicy.services.notification.externalHttps=false']);
+  red('Enforce で基盤の別名を NO_PROXY から落とす（infraAliases.enabled=false → keycloak が中継へ回る）', (t) => egressProxyViolations(t, 'Enforce'), [...CLOUD, ...ENFORCE, '--set', 'infraAliases.enabled=false']);
+  red('Enforce で外の宛先を NO_PROXY に足す（finnhub.io）', (t) => egressProxyViolations(t, 'Enforce'), [...CLOUD, ...ENFORCE, '--set', 'networkPolicy.egressProxy.noProxyExtra={finnhub.io}']);
+  red('Enforce で中継の宛先を違える', (t) => egressProxyViolations(t, 'Enforce'), [...CLOUD, ...ENFORCE, '--set', 'networkPolicy.egressProxy.url=http://other:3128']);
+  ok('変異: 描画物の外への除外からノードの公開アドレスを消す → 赤', () => assert.ok(presenceViolations(cloud.split(`, ${NODE_EXCEPT}`).join('')).some((x) => x.includes(NODE_EXCEPT))));
+  red('ローカルで OpenD の出を有効にする', (t) => unchangedViolations(t, 'values-local'), [...LOCAL_PROFILES[1].args, ...ENABLE_ALL, '--set', 'opend.networkPolicy.egress.enabled=true', '--set-json', `networkPolicy.publicEgress.extraExcept=["${NODE_EXCEPT}"]`]);
   red('ローカルで OpenD のケーパビリティの削除を有効にする', (t) => unchangedViolations(t, 'values-local'), [...LOCAL_PROFILES[1].args, ...ENABLE_ALL, '--set', 'opend.podSecurity.capabilities.dropAll=true']);
 
   process.stdout.write(`\n${passed} passed, ${failed} failed\n`);
@@ -436,4 +557,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { opendSecurityViolations, presenceViolations, envMatchViolations, unchangedViolations, policies };
+module.exports = { opendSecurityViolations, presenceViolations, envMatchViolations, unchangedViolations, egressProxyViolations, bypassed, policies };

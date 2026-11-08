@@ -4,13 +4,13 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-11-07
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 <!-- trace:
 ids: [NFR]
 adrs: [ADR-0006, ADR-0024, ADR-0002]
-iadrs: [IADR-0631, IADR-0609, IADR-0566, IADR-0608, IADR-0629, IADR-0621]
-specs: [20261107_cloud-opend-isolation-netpol]
+iadrs: [IADR-0631, IADR-0609, IADR-0566, IADR-0608, IADR-0629, IADR-0621, IADR-0644]
+specs: [20261107_cloud-opend-isolation-netpol, 20261108_egress-via-platform-proxy]
 issues: []
 -->
 
@@ -59,6 +59,11 @@ issues: []
 
 - 「外」は `0.0.0.0/0` から私設（10/8・172.16/12・192.168/16）・リンクローカル（169.254/16。ノードのメタデータの口）・CGNAT（100.64/10）・ループバックを除いた範囲である。
   ノード自身の公開アドレスは配備のときに `networkPolicy.publicEgress.extraExcept` で足して除く（値はリポジトリに書かない）。
+  🔴 **外への出（`ipBlock`）を描くとき（`networkPolicy.enabled=true`、または OpenD の出の有効）に `extraExcept` が空なら、描画で止まる。**
+  要素は IPv4 の CIDR（`a.b.c.d/nn`）だけを受ける。毎回の `--set-json` に頼らず、**ノードに置く配備の値のファイル**（digest のファイルと同じく
+  リポジトリの外）に `networkPolicy: { publicEgress: { extraExcept: ["<ノードの公開アドレス>/32"] } }` を書いておくことを勧める。
+- 外への HTTPS（外の 443）は、`networkPolicy.egressProxy.mode` の段で基盤の外向きの中継へ寄せられる（下の「外への HTTPS を基盤の中継へ寄せる」）。
+  `values-cloud.yaml` の既定は `Off`（中継を使わず、上の表のとおり外の 443 へ直に出る）。
 - 受けた接続への応答は、NetworkPolicy が接続の状態で通す。応答のための規則は要らない。
 - 基盤の側の入りの一覧（Postgres は DB を持つ 7 つ・ブローカと Keycloak は 11 個・LLM ゲートウェイは report と trade-decision）と同じ組である。
 
@@ -94,7 +99,8 @@ NetworkPolicy には「記録だけして通す」段が無い。誤った方針
 2. OpenD が起動し（`kubectl -n ai-stock-trading logs deploy/opend -c opend` に起動の行が出て、権限の拒否で落ちていない）、SMS 認証（移行 Runbook の §7）でログインできることを確かめる。
    - 🔴 **権限の拒否（`Permission denied`・`Operation not permitted`）で落ちたら**、切り戻し B を行う。
 3. 全 Pod が Ready で、移行 Runbook の §8 の確かめ（口座照会・情報源・基盤への TLS）が通ることを確かめる。これが通信の制限を入れる前の基準になる。
-4. **OpenD の出だけを入れる**（Pod は作り直されない）: `helm upgrade … --set networkPolicy.enabled=false`（`opend.networkPolicy.egress` は values-cloud のまま有効）。
+4. **OpenD の出だけを入れる**（Pod は作り直されない）: `helm upgrade … --set networkPolicy.enabled=false --set-json 'networkPolicy.publicEgress.extraExcept=["<ノードの公開アドレス>/32"]'`
+   （`opend.networkPolicy.egress` は values-cloud のまま有効。`extraExcept` を配備の値のファイルに書いていれば `--set-json` は要らない。無いと描画で止まる）。
    - 10 分後に、発注執行の口座照会が成功し、OpenD のログに接続の切断と再接続の失敗が無いことを確かめる。
 5. **全体を入れる**（新規発注の一時停止を入れたまま。場の時間外）: `helm upgrade … -f values-cloud.yaml -f <digest のファイル> --set-json 'networkPolicy.publicEgress.extraExcept=["<ノードの公開アドレス>/32"]'`
 6. 5 分以内に次を確かめる。1 つでも外れたら、切り戻し A を行う。
@@ -128,8 +134,65 @@ NetworkPolicy には「記録だけして通す」段が無い。誤った方針
 2. 起動したら、どの操作が拒まれたか（ログの行）を記録し、実装の記録へ戻す（足すケーパビリティは、描画の検査が許す 2 つの外なら、記録を改めてから足す）。
 3. デバイスの信頼は PVC に残る。egress の IP が変わらなければ、SMS の再認証は要らない見込みである（要れば移行 Runbook の §7）。
 
+## 外への HTTPS を基盤の中継へ寄せる（段 Off → Report → Enforce）
+
+外への HTTPS を使う 6 つのサービス（information-collection・market-monitor・notification・report・risk-management・trade-decision）は、
+`networkPolicy.egressProxy.mode` で、基盤の外向きの中継（`platform-infra` の `egress-proxy`。宛先の名前の許可表を持つ CONNECT の中継。
+基盤の外向きの中継の手順書が扱う）を使う。OpenD の出は中継を通らない（独自の手順で外の任意の口へ繋ぐため。下の「残る範囲」）。
+
+| 段 | サービスの env | 出の方針 |
+| --- | --- | --- |
+| `Off`（既定） | 変えない | 外の 443（従来どおり） |
+| `Report` | `HTTPS_PROXY`（中継）・`NO_PROXY`（クラスタの中の名前）を渡す | 中継の 3128 **と** 外の 443 |
+| `Enforce` | 同上 | 中継の 3128 **だけ** |
+
+- 段を変えると、6 つのサービスの Pod が作り直される（env が変わる）。OpenD は作り直されない。
+- 宛先の一覧（中継の許可表に載せる名前。いずれも 443）は次の表である。設定（`values-cloud.yaml` の env）を変えて情報源を足したら、表と基盤の許可表も直す。
+
+| サービス | 宛先の名前（`values-cloud.yaml` の設定で使うもの） | 設定で有効にしたときだけ使う名前 |
+| --- | --- | --- |
+| information-collection | `finnhub.io`・`news.google.com`・`data.sec.gov`・`www.sec.gov`・`api.stlouisfed.org` | `api.edinet-fsa.go.jp`・`www.stat-search.boj.or.jp`・`cdn.finra.org` |
+| market-monitor | `finnhub.io` | |
+| notification | `discord.com`（webhook と REST）・`gateway.discord.gg`（Gateway） | 再接続の Gateway（`gateway-<地域>.discord.gg` の形。名前は Discord が接続ごとに返す）・webhook の URL が `discordapp.com` のとき `discordapp.com` |
+| report | `finnhub.io`・`www.stat-search.boj.or.jp` | `api.stlouisfed.org`（為替の FRED の鍵があるとき） |
+| risk-management | `finnhub.io`・`www.stat-search.boj.or.jp` | `api.stlouisfed.org`（同上） |
+| trade-decision | `finnhub.io`・`www.stat-search.boj.or.jp` | `api.stlouisfed.org`（同上）・Stage 0 の記録を有効にしたときの `finnhub.io`・`data.sec.gov`・`www.sec.gov`・`api.stlouisfed.org` |
+
+### 前提（基盤の側。🔴 これが揃うまで `Off` のまま）
+
+1. 基盤の中継が、名前空間 `ai-stock-trading` の 6 つのサービスの Pod からの 3128 を受ける（中継の入りの方針）。
+   確かめ: `kubectl -n platform-infra get networkpolicy egress-proxy -o yaml` の `ingress` に、`kubernetes.io/metadata.name: ai-stock-trading` の名前空間と
+   6 つのサービスの `app` ラベルがある。
+2. 中継の許可表に、6 つのサービスの宛先の名前がある（送り元ごとの表なら、送り元ごとに）。確かめは基盤の手順書の方法で行う。
+3. 基盤の中継が `report` の段で動いているか、`enforce` なら上の表が全て載っていること。
+
+### 段 Report に上げる（場の時間外。新規発注の一時停止を入れたまま）
+
+1. `helm upgrade … -f values-cloud.yaml -f <digest のファイル> -f <配備の値のファイル> --set networkPolicy.egressProxy.mode=Report`
+2. 6 つのサービスの Pod が Ready に戻ることを確かめる。`kubectl -n ai-stock-trading get deploy notification-service -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="HTTPS_PROXY")].value}'`
+   が中継の URL であること（6 つとも。他の 5 つのサービスには無い）。
+3. 中継のログ（`kubectl -n platform-infra logs deploy/egress-proxy`）に、取引ユニットの宛先の `allow:` が出て、`deny:` が無いこと。
+   `report:`（許可表に無いが report の段で通した）が出たら、その宛先を作業仕様書の表と突き合わせ、基盤の許可表へ足す（足すべきでない宛先なら設定を直す）。
+4. 少なくとも 1 営業日（情報収集の巡回・市況・為替・日報の生成・Discord の通知とボットの応答を含む）を通し、3 を毎回確かめる。
+   Discord のボットは再接続のときに別の名前の Gateway へ繋ぐことがある。数日のうちに再接続が起きたかをボットのログで確かめ、その名前も `allow:` であること。
+5. 一時停止を解く。
+
+### 段 Enforce に上げる（場の時間外。新規発注の一時停止を入れたまま）
+
+1. Report の段で 4 を通し、中継のログに取引ユニットの宛先の `report:` と `deny:` が 1 件も無いことを確かめる。
+2. `helm upgrade … --set networkPolicy.egressProxy.mode=Enforce`（ほかの引数は Report と同じ）。
+3. `kubectl -n ai-stock-trading get networkpolicy notification-service -o yaml` に `ipBlock` が無いこと（6 つとも）。`opend-egress` には残る。
+4. 段 1 の 6 の確かめ（全 Pod が Ready・各サービスのログに時間切れが無い・Discord の通知が届く・取引判断の 1 周が進む）を行う。
+5. 一時停止を解く。`values-cloud.yaml` の既定を `Enforce` へ上げるのは、稼働で 1 週間通った後の別の変更で行う。
+
+### 切り戻し C: 中継を通すと届かない
+
+- `helm upgrade … --set networkPolicy.egressProxy.mode=Report`（Enforce から。外の 443 が戻る）か `Off`（env も外す）。Pod は作り直される。
+- 届かなかった宛先を中継のログの `deny:` から特定し、基盤の許可表か、取引ユニットの設定を直してから上げ直す。
+
 ## 残る範囲
 
 - OpenD の出は、クラスタの外の公開アドレスなら TCP の全ての口へ届く。接続先の証券会社のサーバの宛先と口は公開された一覧が無く、IP でも口でも絞っていない。
-- 外の 443 を許したサービスは、外の公開アドレスの 443 ならどこへでも届く（ホスト名では絞れない）。
+- 外の 443 を許したサービスは、段が `Off` と `Report` の間は、外の公開アドレスの 443 ならどこへでも届く（ホスト名では絞れない）。
+  `Enforce` では、外への HTTPS は中継の許可表の名前だけになる。
 - 同じノードの中の Pod の間の通信は、許可した組でも平文の HTTP のままである（傍受への備えは、外の中継の権限の最小化で行う）。
