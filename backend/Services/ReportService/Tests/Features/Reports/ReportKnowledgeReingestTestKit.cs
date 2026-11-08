@@ -118,7 +118,9 @@ internal sealed class FakeKnowledgeCatalog : IKnowledgeDocumentCatalog
     // 文書ごとの本文の投入の結果の差し込み（404 以外の失敗・不明）。
     public Dictionary<Guid, KnowledgeCatalogWriteResult> PutOverride { get; } = [];
 
-    public Func<Task>? BeforeList { get; set; }
+    // 一覧の前に差し込む待ち。一覧に渡された取り消し（入れ直しの呼び出し元・確定の KB の後処理の時間予算）を受け取る
+    // （NFR: 予算の試験が実時間の遅延と予算の大小に頼らず、取り消しが届くまで待てるように）。
+    public Func<CancellationToken, Task>? BeforeList { get; set; }
 
     // project が null なら project 属性を持たない（#665 より前の保存の形）。表題の既定は確定時の写像の表題。
     public Doc AddExisting(string periodKey, string kind, string? body, bool ownedByAst = true, string? project = "ai-stock-trading",
@@ -161,7 +163,7 @@ internal sealed class FakeKnowledgeCatalog : IKnowledgeDocumentCatalog
     {
         ListCalls++;
         if (BeforeList is not null)
-            await BeforeList();
+            await BeforeList(cancellationToken);
         return ListOverride ?? KnowledgeCatalogListResult.Ok([.. Docs.Select(d => new KnowledgeCatalogEntry(
             d.Id, d.Title, new Dictionary<string, string>(d.Attributes, StringComparer.Ordinal), d.Body is not null, d.UpdatedAt))]);
     }
