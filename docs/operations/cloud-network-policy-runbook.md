@@ -143,15 +143,43 @@ OpenD は作り直される。1 段ずつ戻し、起動したところで止め
 root の OpenD が書いたデバイスの信頼のファイルは root の持ち物（モード 0600）で、非 root の OpenD は読めない。クラスタの既定の StorageClass（local-path）は、Pod の `fsGroup` で持ち主を直さない。段 3 を当てる前に、持ち主を 10001 へ移す（場の時間外・新規発注の一時停止を入れたまま）。
 
 1. `kubectl -n ai-stock-trading scale deploy/opend --replicas=0`（止まったことを確かめる）。
-2. 一度だけの Pod で持ち主を移す（OpenD のイメージを使う。ノードに取り込み済み・digest で固定。ネットワークは使わない）:
+2. 一度だけの Pod で持ち主を移す。OpenD のイメージを使う（ノードに取り込み済み・digest で固定。ネットワークは使わない）。
+   - コンテナは 1 つだけで、`command` が入口の処理（OpenD の起動）を置き換える＝OpenD は起動しない。
+   - `<OpenD のイメージの digest つきの参照>` は §4 のファイルの `opend.image` と同じ値にする。
 
    ```
-   kubectl -n ai-stock-trading run opend-chown --rm -i --restart=Never --image=<OpenD のイメージの digest つきの参照>      --overrides='{"spec":{"automountServiceAccountToken":false,"containers":[{"name":"c","image":"<同じ参照>","imagePullPolicy":"Never",
-       "command":["chown","-R","10001:10001","/d"],"securityContext":{"runAsUser":0,"allowPrivilegeEscalation":false,
-       "capabilities":{"drop":["ALL"],"add":["CHOWN","DAC_OVERRIDE"]}},"volumeMounts":[{"name":"p","mountPath":"/d"}]}],
-       "volumes":[{"name":"p","persistentVolumeClaim":{"claimName":"opend-persist"}}]}}'
+   kubectl apply -f - <<'YAML'
+   apiVersion: v1
+   kind: Pod
+   metadata:
+     name: opend-chown
+     namespace: ai-stock-trading
+   spec:
+     restartPolicy: Never
+     automountServiceAccountToken: false
+     containers:
+       - name: opend-chown
+         image: <OpenD のイメージの digest つきの参照>
+         imagePullPolicy: Never
+         command: ["chown", "-R", "10001:10001", "/d"]
+         securityContext:
+           runAsUser: 0
+           allowPrivilegeEscalation: false
+           capabilities:
+             drop: ["ALL"]
+             add: ["CHOWN", "DAC_OVERRIDE"]
+         volumeMounts:
+           - { name: persist, mountPath: /d }
+     volumes:
+       - name: persist
+         persistentVolumeClaim:
+           claimName: opend-persist
+   YAML
+   kubectl -n ai-stock-trading wait --for=jsonpath='{.status.phase}'=Succeeded pod/opend-chown --timeout=120s
+   kubectl -n ai-stock-trading delete pod opend-chown
    ```
 
+   - `wait` が時間切れになったら、`kubectl -n ai-stock-trading describe pod opend-chown` と `logs` で理由を見てから消す。段 3 へは進まない。
    - PSA の enforce が `restricted` のときは作れない（`baseline` のうちに行う）。
 3. 段 3 を当てる（`helm upgrade … -f values-cloud.yaml -f <digest のファイル>`）。OpenD が起動し、SMS の再認証を求められずにログインすることを確かめる。
    - 再認証を求められたら、移行 Runbook の §7 で入れ、回数と時刻を記録する（HOME の場所が変わったことが原因かを §9 の記録で見る）。

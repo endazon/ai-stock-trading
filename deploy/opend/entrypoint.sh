@@ -269,9 +269,6 @@ watch_captcha() {
 	done
 }
 
-# deploy/opend/entrypoint.test.sh から関数だけを読み込むための入口（起動手順は実行しない）。
-# scripts/k8s-local-deploy.sh の AST_DEPLOY_LIB と同じ idiom（#263 / IADR-0109）。
-# コンテナ実行時には設定されない（Dockerfile / chart のいずれにも現れない）。
 # NFR, IADR-0646: ルートを読み取り専用にした段（chart の opend.podSecurity.readOnlyRootFilesystem）で、OpenD の配布物が書く場所を
 # 作業の場所（emptyDir。env OPEND_WORK_DIR）へ寄せる。配布物（src）の各項目を写し（OpenD.xml と、src の中に mount された RSA 鍵の
 # ディレクトリ skip は写さない＝鍵を emptyDir へ複製しない）、OpenD はそこから起動する（実行ファイルの隣と作業ディレクトリが書ける）。
@@ -295,6 +292,9 @@ prepare_work_dir() {
 	return 0
 }
 
+# deploy/opend/entrypoint.test.sh から関数だけを読み込むための入口（起動手順は実行しない）。
+# scripts/k8s-local-deploy.sh の AST_DEPLOY_LIB と同じ idiom（#263 / IADR-0109）。
+# コンテナ実行時には設定されない（Dockerfile / chart のいずれにも現れない）。
 if [ "${AST_OPEND_LIB:-}" = "1" ]; then
 	return 0 2>/dev/null || exit 0
 fi

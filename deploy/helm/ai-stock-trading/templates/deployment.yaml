@@ -610,7 +610,7 @@ spec:
               {{- else }}
               {{- /* #245, IADR-0102: 上記 $envOverrides に同名の非空値があればそれを使う（無ければ values の値）。 */}}
               {{- /* NFR, NFR-05, IADR-0646: Call・Enforce では取引ユニットの呼び先（http://<サービス>-service:8080）を TLS の口へ替える。 */}}
-              value: {{ include "ast.serviceTls.rewrite" (dict "root" $ "value" (index $envOverrides $e.name | default $e.value)) | quote }}
+              value: {{ include "ast.serviceTls.rewrite" (dict "root" $ "mode" $svcTlsMode "value" (index $envOverrides $e.name | default $e.value)) | quote }}
               {{- end }}
             {{- end }}
             {{- /* NFR, IADR-0284 決定 5（段 1〜5）, IADR-0489, IADR-0559（#1391: 発注執行を足した）, #753: east-west gRPC の呼び出し側の宣言（`<提供側>__Grpc`）。

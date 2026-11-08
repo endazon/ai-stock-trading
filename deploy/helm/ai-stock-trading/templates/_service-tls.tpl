@@ -10,7 +10,8 @@ NFR, NFR-05, IADR-0646: 取引ユニットのサービス間の HTTP の TLS（g
 - ast.serviceTls.mode $          : 検証済みの段（Off / Listen / Call / Enforce）。組み合わせの誤りは描画で止める。
 - ast.serviceTls.httpPorts $     : 受け口の番号（空白区切り。Off は "8080"、Listen・Call は "8080 <port>"、Enforce は "<port>"）。
 - ast.serviceTls.secretName (dict "root" $ "name" <サービス名>) : サービス証明書の Secret の名前。
-- ast.serviceTls.rewrite (dict "root" $ "value" <env の値>) : 呼び手の宛先を TLS の口へ替えた値（Call・Enforce のときだけ替える）。
+- ast.serviceTls.rewrite (dict "root" $ "mode" <検証済みの段> "value" <env の値>) : 呼び手の宛先を TLS の口へ替えた値（Call・Enforce のときだけ替える）。
+                                   段は呼び出し側が ast.serviceTls.mode で一度だけ求めて渡す（env ごとに検証をやり直さない）。
 */}}
 {{- define "ast.serviceTls.mode" -}}
 {{- $st := .Values.global.serviceTls | default dict -}}
@@ -60,7 +61,7 @@ NFR, NFR-05, IADR-0646: 取引ユニットのサービス間の HTTP の TLS（g
 {{- end -}}
 
 {{- define "ast.serviceTls.rewrite" -}}
-{{- $m := include "ast.serviceTls.mode" .root -}}
+{{- $m := .mode -}}
 {{- $v := toString .value -}}
 {{- if has $m (list "Call" "Enforce") -}}
 {{- $mm := regexFind "^http://[a-z0-9-]+-service:8080(/|$)" $v -}}
