@@ -127,8 +127,8 @@ public sealed class MessageOriginVerifier
     /// </summary>
     public bool HasDurableReplayRecord => _store is not null;
 
-    /// <summary>確かめる（記録も段の判断もしない。試験が使う。置き場があれば読みを待つ）。</summary>
-    public MessageOriginCheck Check(Envelope envelope) =>
+    /// <summary>確かめる（記録も段の判断もしない）。🔴 試験専用の同期の口（置き場の読みを同期で待つ。本番の経路は <see cref="CheckAsync"/>）。</summary>
+    internal MessageOriginCheck Check(Envelope envelope) =>
         CheckAsync(envelope, CancellationToken.None).AsTask().GetAwaiter().GetResult();
 
     /// <summary>確かめる（記録も段の判断もしない）。置き場が読めなければ <see cref="MessageOriginReplayStoreUnavailableException"/>。</summary>
@@ -224,8 +224,8 @@ public sealed class MessageOriginVerifier
         return legacyOnly ? MessageOriginCheck.Legacy : MessageOriginCheck.Valid;
     }
 
-    /// <summary>処理へ進めてよいか。段 1 では常に true（記録だけ）。試験が使う。</summary>
-    public bool Admit(Envelope envelope) =>
+    /// <summary>処理へ進めてよいか。🔴 試験専用の同期の口（本番の経路は <see cref="AdmitAsync"/>）。</summary>
+    internal bool Admit(Envelope envelope) =>
         AdmitAsync(envelope, CancellationToken.None).AsTask().GetAwaiter().GetResult();
 
     /// <summary>処理へ進めてよいか。段 1 では常に true（記録だけ）。置き場が読めなければ例外（処理しない・再試行）。</summary>
@@ -257,8 +257,8 @@ public sealed class MessageOriginVerifier
         return true;
     }
 
-    /// <summary>処理が成功したメッセージの ID を記録する（以後の再到達は再送として拒む）。試験が使う。</summary>
-    public void MarkHandled(Envelope envelope) =>
+    /// <summary>処理が成功したメッセージの ID を記録する。🔴 試験専用の同期の口（本番の経路は <see cref="MarkHandledAsync"/>）。</summary>
+    internal void MarkHandled(Envelope envelope) =>
         MarkHandledAsync(envelope, CancellationToken.None).AsTask().GetAwaiter().GetResult();
 
     /// <summary>

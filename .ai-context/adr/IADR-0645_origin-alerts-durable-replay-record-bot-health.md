@@ -43,7 +43,13 @@ plan_refs: []
      読むので、平常は 0 件。群は `ai-stock-trading.access`（新設）。
 2. **再送の記録を受け手の DB に残す。**
    - 構成 `MessageOrigin:ReplayStore`（`Memory` 既定 ／ `Database`）。`Database` は `ConnectionStrings:DefaultConnection` の DB の表 `message_origin_handled`
-     （`message_id uuid` 主キー・`expires_at`。最初の使用で作る。EF の表と分ける）に、処理し終えた ID を窓（`MaxAge`＋`MaxFutureSkew`）の間だけ残す。
+     （`message_id uuid` 主キー・`expires_at`。EF の表と分ける）に、処理し終えた ID を窓（`MaxAge`＋`MaxFutureSkew`）の間だけ残す。
+   - 🔴 **表は起動時の移行の経路で作る**（DB を持つサービスの Program.cs の `MigrateAsync` の直後の `EnsureMessageOriginReplayStoreAsync`。ホストの起動＝購読の開始より前）。
+     作る利用者は EF の移行と同じ（その DB の所有者。基盤がサービスごとの利用者へ DB の所有を移す）なので、移行が通れば作れる。作れなければ
+     `MessageOriginReplayStoreSetupException`（SQLSTATE だけを載せる）で起動を止める（受けてから落とさない）。実行時は表を作らず、作っていない置き場の
+     読み書きは例外（処理せずに再試行）。呼び忘れは Architecture の試験（`MessageOriginReplayStoreStartupTests`）が止める。
+     初めの案（最初の使用で作る）は、作る権限が無いときに全メッセージが再試行を経てエラーキューへ流れるので採らなかった（AI レビュー 🟡）。
+   - 置き場は DI の Singleton（ホストが破棄し、接続の池を閉じる）。
      確かめはプロセスの中の記録を先に見て、無ければ DB を見る（同じ配信の再試行を再送に数えない扱いは従来どおり）。
    - 🔴 **読みの失敗は例外**（`MessageOriginReplayStoreUnavailableException`）。拒否として捨てず、Wolverine の再試行・エラーキューへ回す
      （約定などを黙って失わない。計器 `ast.messaging.origin_replay_store_failures{operation="lookup"}`）。**書きの失敗は例外にしない**
@@ -52,7 +58,8 @@ plan_refs: []
    - **置き場が無い受け手**（DB の無い trade-decision・notification、`Memory` の構成）: 起動の時刻（配線の時点）から猶予 `MessageOrigin:UnrecordedGrace`
      （既定 5 分。入れ替えの間に送られたもの）を引いた時刻より前に発行されたものは、処理し終えたかを確かめられないので結果 `unrecorded`
      とする（段 2 は処理しない・段 1 と記録だけの受け手は記録して通す）。trade-decision の入力（定時の起点・急変の検知）は自身が古い起点を捨て、
-     判断の DecisionId は起点から決まるので、取りこぼしは次の巡回で埋まる。通知（いまは段 1）を段 2 へ上げると、止まっていた間に溜まった通知は届かない。
+     判断の DecisionId は起点から決まるので、取りこぼしは次の巡回で埋まる。🔴 通知（いまは段 1）を段 2 へ上げると、起動より 5 分を超えて前に発行された
+     **正当な**通知（止まっていた間・再起動の前に溜まった約定・損切り到達など）も処理しない（手順書の「受け手を足したときの段」に明記）。
    - 置き場を `Database` にして接続文字列が無ければ起動で止める。値は `Memory`・`Database` だけ。
    - chart: `global.messageOrigin.replayStore`（既定 `Memory`）を、DB を持つ受け手（`services.<名前>.db` のある verifiers。risk-management・market-monitor・
      order-execution・cost-control・audit）にだけ `MessageOrigin__ReplayStore` として描く。values-cloud は `Database`。戻すときは `Memory`。

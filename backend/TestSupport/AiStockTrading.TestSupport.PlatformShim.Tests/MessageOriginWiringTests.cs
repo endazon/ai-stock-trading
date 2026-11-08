@@ -480,6 +480,27 @@ public class MessageOriginWiringTests
         await host.StopAsync();
     }
 
+    // 🔴 IADR-0645 決定 2: 置き場は DI の Singleton（検証器と同じ実体・ホストが破棄する）。起動時の移行の経路で表を作れなければ明示の例外で止まる。
+    [Fact]
+    public async Task 置き場はDIのSingletonで起動時に表を作れなければ明示の例外で止まる()
+    {
+        using var host = await ReceiverAsync(
+            WithReplayStore(ReceiverConfig("Enforce"), "Database", "Host=127.0.0.1;Port=1;Database=x;Username=x;Password=x;Timeout=1"));
+        var store = host.Services.GetRequiredService<PostgresMessageOriginReplayStore>();
+        store.Should().BeSameAs(host.Services.GetRequiredService<PostgresMessageOriginReplayStore>());
+
+        var ensure = () => host.Services.EnsureMessageOriginReplayStoreAsync();
+        await ensure.Should().ThrowAsync<MessageOriginReplayStoreSetupException>();
+        store.IsReady.Should().BeFalse();
+        await host.StopAsync();
+
+        // 陰性対照: Memory では置き場を登録せず、表を作る段は何もしない。
+        using var memory = await ReceiverAsync(ReceiverConfig("Enforce"));
+        memory.Services.GetService<PostgresMessageOriginReplayStore>().Should().BeNull();
+        await memory.Services.EnsureMessageOriginReplayStoreAsync();
+        await memory.StopAsync();
+    }
+
     [Fact]
     public async Task 再送の記録の置き場を読めなければハンドラへ渡さない()
     {

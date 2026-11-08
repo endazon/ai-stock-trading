@@ -196,6 +196,11 @@ bash scripts/ast-message-origin-keygen.sh --live
 - **受け手を足したときの段**: 新しく確かめる側に加えたサービスは、`global.messageOrigin.modeOverrides` でそのサービスだけ段 1（`Report`）にして当てる
   （鍵は段 2 のまま必須で読む。いまは通知が該当する）。そのサービスのログに「発行元を確かめられませんでした」（EventId 16261）が
   1 日出ないことを確かめてから、values-cloud の行を外して当て直す（段 2 では、確かめられない事象を通知しない）。
+  - 🔴 **通知を段 2 へ上げたときの副作用**: 通知は DB を持たないので、処理し終えたメッセージの記録はプロセスの中だけにある。段 2 の通知は、
+    **起動（Pod の作り直し）より 5 分（構成 `MessageOrigin:UnrecordedGrace`）を超えて前に発行されたメッセージを、正当なものでも処理しない**
+    （結果 `unrecorded`。ログ EventId 16260・警報 `AstMessageOriginRejected`）。通知が止まっていた間・作り直しの前に溜まった約定・損切り到達などの
+    通知は Discord へ届かない。上げた後に通知の Pod を作り直したら、その前後の約定・建玉は画面と証券会社の画面で確かめる。
+    台帳（リスク管理）・発注（発注執行）は DB に記録を持つので、この副作用は無い。
 - **gRPC 面の所有者のトークンの宛先**: gRPC の所有者の口（ボットが呼ぶ面）も、REST と同じ段（`global.ownerTokenBinding.mode`）と
   許可集合でトークンの宛先（aud）を確かめる。**いまのクラウドでは gRPC の口に届かない**（`values-cloud.yaml` はどのサービスにも
   `grpcPort` と `grpcClients` を宣言しない。gRPC 専用のポートが立たず、Service と NetworkPolicy は 8080 だけを通し、通知は REST で呼ぶ）。
@@ -232,7 +237,8 @@ bash scripts/ast-message-origin-keygen.sh --live
     受け手が拒んだメッセージは処理されず、ログ（EventId 16260）とメトリクス `ast_messaging_origin_failures_total{outcome="rejected"}`・警報 `AstMessageOriginRejected` に残る。
     記録だけの受け手（監査）と段 1 の受け手（通知）が記録して処理した分は `outcome="admitted"`・警報 `AstMessageOriginUnverifiedAdmitted` に残る。
   - 処理し終えたメッセージの記録（再送を拒むための記録）は、DB を持つ受け手（risk-management・market-monitor・order-execution・cost-control・audit）の
-    DB の表 `message_origin_handled` に残る（`global.messageOrigin.replayStore: Database`。表は最初の使用で作られる）。DB を読めなければメッセージは処理されずに
+    DB の表 `message_origin_handled` に残る（`global.messageOrigin.replayStore: Database`）。表は起動時の DB の移行の直後に作られ、作れなければ（権限・接続）そのサービスは
+    起動しない（ログに「再送の記録の表（message_origin_handled）を作れないため起動しません（SQLSTATE …）」）。DB を読めなければメッセージは処理されずに
     再試行され、警報 `AstMessageOriginReplayStoreFailing` が鳴る。戻すときは `--set global.messageOrigin.replayStore=Memory`（プロセスの中だけ）。
   - TOTP が無いと、取引を再開・緩める 7 操作は拒まれる。
 - 値を替えたら（作り直し・更新）、ESO が写した後に読む側を作り直す（`kubectl -n ai-stock-trading rollout restart deploy/<名前>`）。クラウドに Reloader は無い。

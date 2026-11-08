@@ -44,7 +44,8 @@ plan_refs: []
 | AC3-1 | DB の置き場では、処理し終えた ID を再起動（検証器の作り直し）の後も再送として拒む（段 2）。置き場が無ければ通ってしまう（陰性対照） | `MessageOriginReplayStoreTests`・Integration `MessageOriginReplayStoreE2ETests`（実 PostgreSQL） |
 | AC3-2 | 置き場の読みに失敗したら、例外で処理を止める（拒否として捨てない。Wolverine の再試行・エラーキューへ）。書きに失敗したら計器 `ast.messaging.origin_replay_store_failures` に残し、プロセスの中の記録で続ける | `MessageOriginReplayStoreTests` |
 | AC3-3 | 置き場が無い受け手は、起動より前に、猶予（既定 5 分）を超えて発行されたメッセージを結果 `unrecorded` とする（段 2 は処理しない・段 1 は記録して通す）。起動の後に発行されたもの・猶予の中のものは従来どおり | `MessageOriginReplayStoreTests` |
-| AC3-4 | 構成 `MessageOrigin:ReplayStore=Database` で接続文字列が無ければ起動で止まる。値が `Memory`・`Database` 以外なら起動で止まる | `MessageOriginWiringTests` |
+| AC3-4 | 構成 `MessageOrigin:ReplayStore=Database` で接続文字列が無ければ起動で止まる。値が `Memory`・`Database` 以外なら起動で止まる。置き場は DI の Singleton（ホストが破棄） | `MessageOriginWiringTests` |
+| AC3-6 | 表は起動時の移行の経路（`MigrateAsync` の直後の `EnsureMessageOriginReplayStoreAsync`）で作る。作る権限が無ければ明示の例外（SQLSTATE）で起動を止める。作っていない置き場の読みは例外。全サービスの Program.cs が移行の後に呼ぶ | Integration `MessageOriginReplayStoreE2ETests`（権限の無い利用者）・`MessageOriginWiringTests`・Architecture `MessageOriginReplayStoreStartupTests` |
 | AC3-5 | chart は `global.messageOrigin.replayStore` を、DB を持つ受け手にだけ `MessageOrigin__ReplayStore` として描く。DB の無い受け手には描かない。`values-cloud` は `Database` | `helm template`（`helm.yml` の assert） |
 | AC4-1 | ボットが無効・設定の欠け・切断・接続のどれかを `ast.notification.discord_bot_status`（タグ `state`。今の状態だけ 1）に出す | `DiscordBotGatewayFactoryTests` |
 | AC4-2 | 構成 `Notifications:Discord:Bot:MissingSettingsMode=Enforce` で、有効なのに設定が欠けていれば readiness が Unhealthy。`Report`（既定）・無効では Healthy（陰性対照） | `DiscordBotReadinessTests` |

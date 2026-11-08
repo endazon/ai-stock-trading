@@ -153,20 +153,22 @@ public static class MessageOriginWiringExtensions
             var recordOnly = MessageOriginCatalog.IsRecordOnly(issuerId);
             // 🔴 IADR-0645 決定 2: 再送の記録の置き場。Database は受け手のサービスの DB（接続文字列が無ければ起動で止める）。
             //   Memory（既定）は起動より前に猶予を超えて発行されたものを Unrecorded とする（処理し終えたかを確かめられない）。
-            PostgresMessageOriginReplayStore? store = null;
-            if (settings.ReplayStore == MessageOriginReplayStoreKind.Database)
+            //   🔴 置き場は DI の Singleton（ホストが破棄し、接続の池を閉じる）。表は起動時の移行の経路で作る（EnsureMessageOriginReplayStoreAsync）。
+            var durable = settings.ReplayStore == MessageOriginReplayStoreKind.Database;
+            if (durable)
             {
                 var connectionString = configuration.GetConnectionString("DefaultConnection");
                 if (string.IsNullOrWhiteSpace(connectionString))
                     throw new InvalidOperationException(
                         $"MessageOrigin:ReplayStore=Database には ConnectionStrings:DefaultConnection が要ります（{serviceName}。値は表示しません）。");
-                store = new PostgresMessageOriginReplayStore(connectionString);
+                options.Services.AddSingleton(_ => new PostgresMessageOriginReplayStore(connectionString));
             }
 
             options.Services.AddSingleton(sp => new MessageOriginVerifier(
                 settings.Mode, signature, settings.MaxAge, settings.MaxFutureSkew, clock,
                 sp.GetRequiredService<ILogger<MessageOriginVerifier>>(), sp.GetService<BusinessMetrics>(), legacy, recordOnly,
-                store, store is null ? startedAt - settings.UnrecordedGrace : null));
+                durable ? sp.GetRequiredService<PostgresMessageOriginReplayStore>() : null,
+                durable ? null : startedAt - settings.UnrecordedGrace));
             options.Policies.AddMiddleware(typeof(MessageOriginMiddleware), chain => types.Contains(chain.MessageType));
         }
 

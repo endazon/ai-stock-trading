@@ -521,6 +521,8 @@ if (JasperFxCommandLine.IsHostRun(args))
     var db = scope.ServiceProvider.GetRequiredService<RiskManagementDbContext>();
     if (db.Database.IsRelational())
         await db.Database.MigrateAsync();
+    // 🔴 NFR, FR-10, IADR-0645 決定 2: 発行元の確かめの再送の記録の表も移行の経路で作る（置き場が Database のとき。作れなければ起動で止める）。
+    await app.Services.EnsureMessageOriginReplayStoreAsync();
 
     // NFR, FR-10, UC-06, #1530, IADR-0613: 保持が入っていれば、受け付けを始める前に既存の kill switch を起動する（変更履歴に残る）。
     // 印の文字列（operator-kill-switch-hold:）は scripts/ast-trading-stop.sh がログから確かめる。変えるときは両方を直す。
