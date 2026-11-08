@@ -290,7 +290,7 @@ public class BusinessMetricsTests
             .Should().ContainSingle().Which.Value.Should().BeApproximately(percent, 0.001);
     }
 
-    // FR-01, ADR-0031（計画）決定2〜3, IADR-0292: Finnhub 日次要求見積りと暫定上限に対する比率の計上。
+    // FR-01, ADR-0031（計画）決定2〜3, IADR-0294: Finnhub 日次要求見積りと暫定上限に対する比率の計上。
     [Fact]
     public void Finnhub日次要求見積りは与えた値をそのまま計上する()
     {

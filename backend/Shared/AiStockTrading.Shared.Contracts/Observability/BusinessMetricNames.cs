@@ -141,14 +141,14 @@ public static class BusinessMetricNames
     public const string LlmCostLimitRatioPercent = "ast.llm.cost_limit_ratio_percent";
 
     /// <summary>
-    /// FR-01, ADR-0031（計画）決定2〜3, IADR-0292: プロセスごとの Finnhub 日次要求見積り（回/日）。
+    /// FR-01, ADR-0031（計画）決定2〜3, IADR-0294: プロセスごとの Finnhub 日次要求見積り（回/日）。
     /// #1132, IADR-0477: 市場監視・リスク管理は巡回ごとに巡回の対象の実数から、情報収集は起動時に計上する。
     /// 取引判断・報告書（事象ごとに引く）と、Finnhub へ送らない構成のプロセスは計上しない。
     /// </summary>
     public const string FinnhubDailyVolumeEstimate = "ast.finnhub.daily_request_estimate";
 
     /// <summary>
-    /// FR-01, ADR-0031（計画）決定3, IADR-0292: 上記見積りが日次上限に占める割合（%）。100 超で警告。
+    /// FR-01, ADR-0031（計画）決定3, IADR-0294: 上記見積りが日次上限に占める割合（%）。100 超で警告。
     /// ADR-0043（計画）決定 1, IADR-0437: 暫定の 300 回/日は撤回。上限は実測して設定したときだけあり、未設定（既定）なら記録しない。
     /// </summary>
     public const string FinnhubDailyVolumeLimitRatioPercent = "ast.finnhub.daily_request_limit_ratio_percent";

@@ -3,7 +3,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 
-// FR-01, ADR-0031（計画）決定3, IADR-0292: Finnhub の日次上限。
+// FR-01, ADR-0031（計画）決定3, IADR-0294: Finnhub の日次上限。
 //
 // 🔴 ADR-0043（計画）決定 1, #1030, IADR-0437: 暫定の前提値「約 300 回/日」（第三者観測）は**撤回された**。
 // 日次上限は「公式に記載が無く、未実測」であり、**既定は未設定（null）＝何とも比べない**。日次上限を実測したら

@@ -97,7 +97,7 @@ public sealed class IntrospectionBuilder
             : AddPort(port, httpImplementation, baseUrl);
     }
 
-    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: ポート選択に当たらない数値等の自己申告値を足す
+    // FR-01, ADR-0031（計画）決定2〜4, IADR-0294: ポート選択に当たらない数値等の自己申告値を足す
     // （例: AddMetric("finnhub-daily-request-estimate", "142")）。
     public IntrospectionBuilder AddMetric(string name, string value)
     {

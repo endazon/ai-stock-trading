@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 
-// FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub の**日次総量**を見積もる純関数。
+// FR-01, ADR-0031（計画）決定2〜4, IADR-0294: Finnhub の**日次総量**を見積もる純関数。
 //
 // ADR-0031 決定2（🔴 撤回しない統制）: 分次の自制レート（トークンバケット）は瞬間的な要求レートしか
 // 保証せず、**一定期間の総量は守らない**。1 日の要求数は概ね
