@@ -15,6 +15,57 @@ const { execSync } = require('child_process');
 // `skip` は受け口（scripts.test.js）が渡す（#888）。古い受け口から読まれても壊れないよう
 // **既定を「黙らない no-op」ではなく ok 相当の記録**にはせず、最低限の出力を出すスタブにする。
 module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${name}（${reason}）\n`), assert }) => {
+  // --- NFR / IADR-0648: 実コミットを食わせる回帰テストの「履歴の素材」 -----------------------------
+  //   素材の多くは**スカッシュマージ前の PR ブランチのコミット**であり、develop からは辿れない。
+  //   `fetch-depth: 0` の checkout はブランチとタグしか取らないので CI には**存在せず**、旧実装は
+  //   「履歴が浅いため skip」と誤った理由で黙って緑を返していた（実際の CI は浅くない）。
+  //   素材を持つ PR の head を ci.yml の scripts-tests が明示的に取得し、`REQUIRE_HISTORY_FIXTURES=1`
+  //   のときは素材の欠落を**赤**にする（手元の既定は理由つきの skip）。PR 番号は本表が単一情報源で、
+  //   ci.yml の取得と食い違えば下の配線テストが赤になる。
+  const HISTORY_FIXTURE_PRS = [491, 495, 830, 877, 878];
+  const historyFixtureMissing = (what) => {
+    const msg =
+      `${what} が手元のオブジェクトに無い（スカッシュマージ前の PR ブランチのコミット。` +
+      `git fetch origin ${HISTORY_FIXTURE_PRS.map((n) => `refs/pull/${n}/head`).join(' ')} で取得できる）`;
+    if (process.env.REQUIRE_HISTORY_FIXTURES === '1') {
+      throw new Error(`REQUIRE_HISTORY_FIXTURES=1 なのに ${msg}。検査していないことを成功として報告しない`);
+    }
+    process.stdout.write(`      (skip) ${msg}\n`);
+  };
+  ok('IADR-0648（対照）: REQUIRE_HISTORY_FIXTURES=1 では素材の欠落を赤にし、未設定では skip を出力して返る', () => {
+    const prev = process.env.REQUIRE_HISTORY_FIXTURES;
+    const w = process.stdout.write;
+    let out = '';
+    try {
+      process.env.REQUIRE_HISTORY_FIXTURES = '1';
+      assert.throws(() => historyFixtureMissing('0000000'), /REQUIRE_HISTORY_FIXTURES=1/);
+      delete process.env.REQUIRE_HISTORY_FIXTURES;
+      process.stdout.write = (c) => { out += c; return true; };
+      historyFixtureMissing('0000000');
+    } finally {
+      process.stdout.write = w;
+      if (prev === undefined) delete process.env.REQUIRE_HISTORY_FIXTURES;
+      else process.env.REQUIRE_HISTORY_FIXTURES = prev;
+    }
+    assert.match(out, /\(skip\) 0000000 が手元のオブジェクトに無い/);
+  });
+  ok('IADR-0648: ci.yml の scripts-tests が素材の PR head を取得し REQUIRE_HISTORY_FIXTURES=1 で走らせる', () => {
+    const fsH = require('fs');
+    const ci = fsH.readFileSync(require('path').resolve(__dirname, '../.github/workflows/ci.yml'), 'utf8');
+    const start = ci.indexOf('\n  scripts-tests:');
+    assert(start !== -1, 'scripts-tests ジョブが ci.yml に無い');
+    const rest = ci.slice(start + 1);
+    const nextJob = rest.search(/\n {2}[a-z][a-z0-9-]*:\n/);
+    const body = (nextJob === -1 ? rest : rest.slice(0, nextJob))
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('#'))
+      .join('\n');
+    for (const n of HISTORY_FIXTURE_PRS) {
+      assert(body.includes(`refs/pull/${n}/head`), `scripts-tests が refs/pull/${n}/head を取得していない`);
+    }
+    assert(/REQUIRE_HISTORY_FIXTURES:\s*"1"/.test(body), 'scripts-tests が REQUIRE_HISTORY_FIXTURES=1 を渡していない');
+  });
+
   // --- NFR / #1540: guard-secrets.js が Anthropic の API キーの形（sk-ant-<種別><2 桁>-…）を止める ------------------------
   //   既存の `sk-[A-Za-z0-9]{20,}` は `sk-` の直後に `-` を含む形に掛からない。見張り値は実行時に連結で組む
   //   （本ファイル自体がフックや秘密の走査に掛からないように）。
@@ -2766,7 +2817,9 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
   //
   // 🔴 **過去の事故そのものを回帰として固定する。**
   // 自己試験は合成した差分で判定規則を確かめるが、**実データで捕まえられることは示さない**。
-  // #491 / #495 の実コミットを食わせて赤になることを確かめる（履歴が浅い環境では skip）。
+  // #491 / #495 の実コミットを食わせて赤になることを確かめる（素材が無ければ historyFixtureMissing。IADR-0648）。
+  // ［2026-11-08 追記 / IADR-0648］素材は IADR が `docs/adr/` に在った頃（資料再編 #536 より前）のコミットであり、
+  // 検査器が旧配置を見なくなっていた間は、素材を持つ手元でだけ本テストが赤になっていた。
   ok('過去の索引追随漏れ 2 件を検出できる（#491 / #495 の実コミットで回帰）', () => {
     const { execFileSync } = require('child_process');
     const repo = pathFb.resolve(__dirname, '..');
@@ -2784,10 +2837,11 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       ['270a7c1^', '270a7c1'],
       ['4788905', 'a39e3e7'],
     ];
-    let checked = 0;
     for (const [base, head] of cases) {
-      if (!revOk(base) || !revOk(head)) continue; // 浅いクローンでは対象外
-      checked += 1;
+      if (!revOk(base) || !revOk(head)) {
+        historyFixtureMissing(`${base}..${head}`);
+        continue;
+      }
       let exitCode = 0;
       try {
         execFileSync(process.execPath, [pathFb.join(__dirname, 'check-adr-index-sync.js')], {
@@ -2807,10 +2861,8 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
         env: { ...process.env, COMMIT_RANGE: '270a7c1..04126d8' },
         stdio: 'pipe',
       });
-    }
-    if (checked === 0) {
-      // 履歴が無い環境では検査していないことを明示する（黙って緑にしない）
-      process.stdout.write('       （履歴が浅いため過去コミットでの回帰は skip した）\n');
+    } else {
+      historyFixtureMissing('270a7c1..04126d8');
     }
   });
 
@@ -4182,6 +4234,8 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     // 🔴 **実際に起きた 2 件を実データで固定する。** 合成データだけだと「事故の形を取り違えたまま
     // 緑」になり得る（自己試験の固定ケースは短縮した散文で持っているため、実物との差は残る）。
     // 履歴が無い環境（浅いクローン・当該ブランチ未取得）では best-effort で skip する。
+    // ［2026-11-08 追記 / IADR-0648］CI は浅くないが、事故 1 と BLK-1 の素材はスカッシュマージ前の PR ブランチに
+    // しか無い。ci.yml が PR head を取得し、REQUIRE_HISTORY_FIXTURES=1 では欠落を赤にする（historyFixtureMissing）。
     // 🔴 `^{commit}` を付けない。Windows の `cmd.exe` では `^` がエスケープ文字であり、
     // 手元では常に「履歴に無い」へ倒れて**検査していないのに緑**になる（実測した）。
     const revAl = (sha) => {
@@ -4201,8 +4255,8 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       ok(`check-adr-index-addendum-loss: ${inc.name} を実データで再現して赤になる`, () => {
         const [base, head] = inc.range.split('..');
         if (!revAl(base) || !revAl(head)) {
-          // 検査していないことを黙らせない（skip も出力に残す）。
-          process.stdout.write(`      (skip) ${inc.range} が履歴に無い\n`);
+          // 検査していないことを黙らせない（CI では赤。IADR-0648）。
+          historyFixtureMissing(inc.range);
           return;
         }
         let out = '';
@@ -4234,7 +4288,7 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     for (const [pr, ours] of [['#877', 'e6f58d1e'], ['#830', 'e02b4229']]) {
       ok(`check-adr-index-addendum-loss[BLK-1 実データ]: ${pr} の取り込み直前 tip（${ours}）は緑（statement: 偽陽性を出さない）`, () => {
         if (!revAl('be97cf2b') || !revAl(ours)) {
-          process.stdout.write(`      (skip) be97cf2b / ${ours} が履歴に無い\n`);
+          historyFixtureMissing(`be97cf2b / ${ours}`);
           return;
         }
         const out = execAl(
