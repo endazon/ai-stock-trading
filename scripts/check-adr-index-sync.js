@@ -47,6 +47,14 @@
  *   **浅いクローン以外の読み取り失敗は赤**（浅いクローンの skip は ci.yml の設計どおり残す）。
  *   併せて `revExists` の `^{commit}` を引用符で囲んだ（Windows の `cmd.exe` が `^` を食い、
  *   手元では範囲が決まらず常に skip していた。姉妹検査器は既に囲んでいた）。
+ *
+ * ■ 🔴 旧配置（`docs/adr/`）も見る（［2026-11-08 追記 / IADR-0648］）
+ *   資料再編（#536・9b9c676）で IADR と索引は `docs/adr/` から `.ai-context/adr/` へ移ったが、
+ *   本検査器のパスを新配置だけへ書き換えたため、**再編前の範囲を食わせると IADR を 1 件も
+ *   見つけられず「OK: 実装ADR の本文を変更していません」を返していた**（偽陰性。#491 / #495 の
+ *   実コミットでの回帰テストが、オブジェクトを持つ手元でだけ赤になって発覚した）。
+ *   配置を `ADR_LAYOUTS` に列挙し、**IADR は自分と同じ配置の索引の行で突き合わせる**
+ *   （旧配置の IADR を新配置の索引で満たしたことにしない）。
  */
 
 const path = require('path');
@@ -55,9 +63,22 @@ const { isShallowSkip, gitArgv, isSafeRevArg } = require('./lib/git-read.js');
 
 const REPO = path.join(__dirname, '..');
 const INDEX_PATH = '.ai-context/adr/README.md';
+/**
+ * IADR の配置。先頭が現行、以降は過去の配置（IADR-0648）。**索引は配置ごとに 1 つ**で、
+ * IADR は自分と同じ配置の索引で突き合わせる。
+ */
+const ADR_LAYOUTS = [
+  { dir: '.ai-context/adr', index: INDEX_PATH },
+  { dir: 'docs/adr', index: 'docs/adr/README.md' }, // 資料再編（#536・9b9c676）より前
+];
+const INDEX_PATHS = new Set(ADR_LAYOUTS.map((l) => l.index));
 // 規約の書式は `IADR-\d{3,4}`（.claude/rules/traceability.md）。現在 3 桁のファイルは無いが、
 // 4 桁固定にすると**3 桁運用へ戻ったとき静かに検査対象から漏れる**（AI レビューの指摘）。
-const ADR_RE = /^\.ai-context\/adr\/(IADR-\d{3,4})_[^/]+\.md$/;
+const escapeRe = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const ADR_RE = new RegExp(
+  `^(${ADR_LAYOUTS.map((l) => escapeRe(l.dir)).join('|')})/(IADR-\\d{3,4})_[^/]+\\.md$`,
+);
+const indexOfDir = (dir) => ADR_LAYOUTS.find((l) => l.dir === dir).index;
 
 /**
  * 意図的に索引を変えない場合の逃げ道。**コミット本文の「行頭から単独で」書く。**
@@ -124,26 +145,38 @@ function resolveRange(explicit) {
  *
  * 索引側は **追加行（`+`）と削除行（`-`）の両方**を見る。行の書き換えは
  * 「削除＋追加」として現れるため、追加行だけを見ると**行を消しただけの変更を見逃す**。
+ *
+ * `rowsTouched` は「索引のパス|IADR-XXXX」の集合（配置ごとに突き合わせる。IADR-0648）。
+ * `changedAdrs` の値は `{ path, index }`（そのファイルを満たす索引のパス）。
+ * 自己試験の `opts.indexDiff` は文字列なら現行の索引の差分、オブジェクトなら索引のパスごとの差分。
  */
 function collect(range, opts = {}) {
   const git = opts.readGit ?? sh; // テスト用の差し替え（#1009）
   const nameStatus = opts.nameStatus ?? git(['diff', '--name-only', checkedRange(range)]);
-  const changedAdrs = new Map(); // IADR-XXXX -> path
-  let indexTouched = false;
+  const changedAdrs = new Map(); // IADR-XXXX -> { path, index }
+  const indexesTouched = new Set();
   for (const line of nameStatus.split('\n')) {
     const f = line.trim();
     if (!f) continue;
-    if (f === INDEX_PATH) indexTouched = true;
+    if (INDEX_PATHS.has(f)) indexesTouched.add(f);
     const m = ADR_RE.exec(f);
-    if (m) changedAdrs.set(m[1], f);
+    if (m) changedAdrs.set(m[2], { path: f, index: indexOfDir(m[1]) });
   }
 
-  const indexDiff = opts.indexDiff ?? (indexTouched ? git(['diff', '-U0', checkedRange(range), '--', INDEX_PATH]) : '');
+  const diffs =
+    typeof opts.indexDiff === 'string'
+      ? { [INDEX_PATH]: opts.indexDiff }
+      : opts.indexDiff ??
+        Object.fromEntries(
+          [...indexesTouched].map((p) => [p, git(['diff', '-U0', checkedRange(range), '--', p])]),
+        );
   const rowsTouched = new Set();
-  for (const line of indexDiff.split('\n')) {
-    if (!/^[+-]/.test(line) || /^(\+\+\+|---)/.test(line)) continue;
-    const m = /^[+-]\s*\|\s*(IADR-\d{3,4})\s*\|/.exec(line);
-    if (m) rowsTouched.add(m[1]);
+  for (const [indexPath, indexDiff] of Object.entries(diffs)) {
+    for (const line of String(indexDiff).split('\n')) {
+      if (!/^[+-]/.test(line) || /^(\+\+\+|---)/.test(line)) continue;
+      const m = /^[+-]\s*\|\s*(IADR-\d{3,4})\s*\|/.exec(line);
+      if (m) rowsTouched.add(`${indexPath}|${m[1]}`);
+    }
   }
   return { changedAdrs, rowsTouched };
 }
@@ -193,11 +226,11 @@ function main(opts = {}) {
     return 0;
   }
 
-  const missing = [...changedAdrs.keys()].filter((n) => !rowsTouched.has(n)).sort();
+  const missing = [...changedAdrs.keys()].filter((n) => !rowsTouched.has(`${changedAdrs.get(n).index}|${n}`)).sort();
   if (missing.length === 0) {
     console.log(
       `[check-adr-index-sync] OK: 変更された実装ADR ${changedAdrs.size} 件すべてについて、` +
-        `${INDEX_PATH} の索引行も変更されています。`,
+        '同じ配置の索引（README.md）の索引行も変更されています。',
     );
     return 0;
   }
@@ -211,11 +244,12 @@ function main(opts = {}) {
   }
 
   console.error(
-    `[check-adr-index-sync] 実装ADR の本文を変更したのに ${INDEX_PATH} の索引行を変更していないものが ` +
+    '[check-adr-index-sync] 実装ADR の本文を変更したのに、同じ配置の索引（README.md）の索引行を変更していないものが ' +
       `${missing.length} 件あります:`,
   );
   for (const n of missing) {
-    console.error(`    ${n}  （変更したファイル: ${changedAdrs.get(n)}）`);
+    const { path: f, index } = changedAdrs.get(n);
+    console.error(`    ${n}  （変更したファイル: ${f}／突き合わせた索引: ${index}）`);
   }
   console.error('');
   console.error('  索引行は ADR 一覧を読む人が最初に見る要約です。本文だけ直すと、');
@@ -361,6 +395,51 @@ function selfTest() {
 
   t('索引ファイル自体だけの変更は緑', quiet(() => run({ nameStatus: '.ai-context/adr/README.md\n', indexDiff: '+| IADR-0190 | x |\n' })) === 0);
 
+  // ---- 🔴 旧配置 `docs/adr/`（資料再編 #536 より前）も見る（IADR-0648） ----
+  t(
+    '🔴 IADR-0648: 旧配置 docs/adr/ の IADR を変更し索引行を変えていなければ赤（旧: IADR を見つけられず緑）',
+    quiet(() => run({ nameStatus: 'docs/adr/IADR-0190_x.md\n', indexDiff: {} })) === 1,
+  );
+  t(
+    'IADR-0648（否定形）: 旧配置の IADR と旧配置の索引行を一緒に変えていれば緑',
+    quiet(() =>
+      run({
+        nameStatus: 'docs/adr/IADR-0190_x.md\ndocs/adr/README.md\n',
+        indexDiff: { 'docs/adr/README.md': '+| IADR-0190 | 要約 | Accepted |\n' },
+      }),
+    ) === 0,
+  );
+  t(
+    '🔴 IADR-0648（対照）: 旧配置の IADR を現行の索引の行で満たしたことにしない（配置ごとに突き合わせる）',
+    quiet(() =>
+      run({
+        nameStatus: 'docs/adr/IADR-0190_x.md\n.ai-context/adr/README.md\n',
+        indexDiff: { '.ai-context/adr/README.md': '+| IADR-0190 | 要約 | Accepted |\n' },
+      }),
+    ) === 1,
+  );
+  t(
+    '🔴 IADR-0648（対照）: 現行の IADR を旧配置の索引の行で満たしたことにしない',
+    quiet(() =>
+      run({
+        nameStatus: '.ai-context/adr/IADR-0190_x.md\ndocs/adr/README.md\n',
+        indexDiff: { 'docs/adr/README.md': '+| IADR-0190 | 要約 | Accepted |\n' },
+      }),
+    ) === 1,
+  );
+  t(
+    'IADR-0648: 実の git 経路でも索引の差分を配置ごとに読む（旧配置の索引だけを触った差分）',
+    quiet(() =>
+      run({
+        readGit: (args) => {
+          if (args.includes('--name-only')) return 'docs/adr/IADR-0190_x.md\ndocs/adr/README.md\n';
+          if (args.includes('docs/adr/README.md')) return '-| IADR-0190 | 旧 | Accepted |\n+| IADR-0190 | 新 | Accepted |\n';
+          throw new Error(`想定外の読み取り: ${args.join(' ')}`);
+        },
+      }),
+    ) === 0,
+  );
+
   // ---- 🔴 読めなかったら赤（#1009）。浅いクローンの skip だけは設計どおり残す ----
   const failGit = (code) => () => {
     const err = new Error(`spawnSync /bin/sh ${code || 'EFAKE'}`);
@@ -416,4 +495,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { main, collect, resolveRange, declaresSkip, SKIP_TOKEN };
+module.exports = { main, collect, resolveRange, declaresSkip, SKIP_TOKEN, ADR_LAYOUTS };

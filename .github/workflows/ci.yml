@@ -116,12 +116,26 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
+      # NFR / IADR-0648: 実コミットを食わせる回帰テストの素材は、スカッシュマージ前の PR ブランチにしか無い
+      # （develop から辿れない）。fetch-depth: 0 でもブランチとタグしか取らないため、取らないとテストは
+      # 「履歴に無い」で skip して緑を返していた。PR 番号の単一情報源は scripts.repo.test.js の
+      # HISTORY_FIXTURE_PRS（食い違えば同ファイルの配線テストが赤）。
+      - name: Fetch history fixtures (squash-merged PR heads)
+        run: >-
+          git fetch --no-tags origin
+          +refs/pull/491/head:refs/fixtures/pr-491
+          +refs/pull/495/head:refs/fixtures/pr-495
+          +refs/pull/830/head:refs/fixtures/pr-830
+          +refs/pull/877/head:refs/fixtures/pr-877
+          +refs/pull/878/head:refs/fixtures/pr-878
       - name: Run scripts unit tests
         # 本リポジトリは固有テスト（scripts/scripts.repo.test.js）を持つため有効化する。
         # companion が消失（誤削除・リネーム・キット同期での上書き）したときに失敗する。
         # 未設定だとテスト件数が静かに減るだけで CI は green のままになる。
+        # REQUIRE_HISTORY_FIXTURES は上で取得した素材の欠落を skip ではなく赤にする（IADR-0648）。
         env:
           REQUIRE_REPO_TESTS: "1"
+          REQUIRE_HISTORY_FIXTURES: "1"
         run: node scripts/scripts.test.js
 
   # NFR / IADR-0208 決定 6: 依存ゼロの検査（Node ＋ bash）を 1 ジョブへ束ねる（統合前は 15 の独立ジョブ）。
