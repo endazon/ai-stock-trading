@@ -52,7 +52,14 @@ public sealed class MeterCapture : IDisposable
     /// 使い方: 本メソッドで作った名前を <see cref="MeterCapture(string)"/> と、計器を持つ側
     /// （<c>BusinessMetrics</c> の <c>meterName</c> 引数）の<b>両方へ同じ値で渡す</b>。
     /// 肯定形（「発火した」）の表明は既定名のままでよい——他人の測定値が混ざっても
-    /// 「含む」の表明は壊れないためである。
+    /// 「含む」（<c>Contain</c> / <c>NotBeEmpty</c> / 下限だけの比較）の表明は壊れないためである。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>件数・合計を数える表明も否定形と同じく隔離する</b>（<c>ContainSingle</c> / <c>HaveCount</c> /
+    /// <c>Equal</c> / <c>SumOf(...).Should().Be(...)</c>）。肯定形に見えても、他人の測定値が 1 件混ざれば
+    /// 「1 件だけ」は 2 件になる。2026-11-06 の結合ビルドで実際に起きた
+    /// （`ast.finnhub.daily_request_estimate` の値 48 が 2 件で赤。結線の試験の巡回ごとの記録が混入）。
+    /// 例外は、計器を使うテストクラスがアセンブリに 1 つだけで、クラス内は直列に走る場合に限る。
     /// </para>
     /// </summary>
     /// <param name="caller">呼び出し元のテストメソッド名（自動）。名前を読める形にするためだけに使う。</param>

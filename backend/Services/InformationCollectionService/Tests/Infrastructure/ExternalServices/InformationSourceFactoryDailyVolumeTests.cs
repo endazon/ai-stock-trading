@@ -61,8 +61,11 @@ public class InformationSourceFactoryDailyVolumeTests
     [Fact]
     public void 暫定上限内の銘柄数は警告を出さないがメトリクスは記録する()
     {
-        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
-        using var metrics = new BusinessMetrics();
+        // #695 と同じ隔離: ContainSingle は件数を数える表明なので、既定名だと並行する別テスト
+        // （例: 結線の試験の巡回ごとの記録 2 銘柄 × 1 要求 × 24 巡回 = 48）の測定値を拾って 2 件になる。
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
         var logs = new CapturingLoggerFactory();
         // finnhub のみ有効（1 要求/巡回）× 1 銘柄 × 48 巡回/日（30 分間隔） = 48 件/日。
         var options = new CollectionSourceOptions
@@ -81,8 +84,11 @@ public class InformationSourceFactoryDailyVolumeTests
     [Fact]
     public void finnhub_newsも有効なら1銘柄2要求で見積る()
     {
-        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
-        using var metrics = new BusinessMetrics();
+        // #695 と同じ隔離: ContainSingle は件数を数える表明なので、既定名だと並行する別テスト
+        // （例: 結線の試験の巡回ごとの記録 2 銘柄 × 1 要求 × 24 巡回 = 48）の測定値を拾って 2 件になる。
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
         var logs = new CapturingLoggerFactory();
         var options = new CollectionSourceOptions
         {
@@ -99,8 +105,11 @@ public class InformationSourceFactoryDailyVolumeTests
     [Fact]
     public void 暫定上限を超える銘柄数は警告を出しメトリクスへ超過比率を記録する()
     {
-        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
-        using var metrics = new BusinessMetrics();
+        // #695 と同じ隔離: ContainSingle は件数を数える表明なので、既定名だと並行する別テスト
+        // （例: 結線の試験の巡回ごとの記録 2 銘柄 × 1 要求 × 24 巡回 = 48）の測定値を拾って 2 件になる。
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
         var logs = new CapturingLoggerFactory();
         // finnhub 1 要求/巡回 × 10 銘柄 × 48 巡回/日 = 480 件/日 > 300。
         // ［2026-09-26 / #1030・ADR-0043 決定 1］既定の 300 回/日は撤回（既定は比べない）。比べるのは上限を設定したときだけ。
