@@ -5,6 +5,9 @@
   - 入り: 呼び手として宣言したサービス（networkPolicy.services.<呼び手>.calls に自分を含むもの）からの HTTP の口（8080。サービス間の TLS の段では TLS の口。IADR-0646）と（あれば）gRPC の口だけ。
   - 出 : 名前解決・基盤（DB を持つサービスだけ Postgres。全サービスがブローカ・Keycloak・collector）・宣言した呼び先の 8080 と gRPC の口・
          LLM ゲートウェイ（llmGateway: true）・OpenD の API（opend: true）・クラスタの外の 443（externalHttps: true）。
+  - 外への HTTPS（externalHttps: true）は networkPolicy.egressProxy.mode の段で変わる（IADR-0644）: Off＝外の 443 の ipBlock だけ、
+    Report＝基盤の外向きの中継の口と外の 443 の両方、Enforce＝中継の口だけ（外の 443 は描かない）。
+  - 外の 443 の ipBlock は networkPolicy.publicEgress.extraExcept（ノード自身の公開アドレス）が空なら描画で止める（IADR-0644 決定 3）。
   - 応答: NetworkPolicy は接続の状態で応答を通すので、受けた接続への返りの規則は要らない。
   - 既定の拒否の外にあるもの（描かなくても落ちない）: readinessProbe（kubelet がノードから打つ）・kubectl exec / port-forward / attach
     （API サーバ → kubelet の経路）。🔴 稼働のクラスタで先に確かめる手順は docs/operations/cloud-network-policy-runbook.md。
@@ -60,7 +63,8 @@
 {{- end }}
 {{- /* NFR, NFR-05, IADR-0646: 取引ユニットの中の HTTP の口（Off は 8080、Listen・Call は 8080 と TLS の口、Enforce は TLS の口だけ）。 */}}
 {{- $httpPorts := splitList " " (include "ast.serviceTls.httpPorts" .) }}
-{{- $except := concat ($np.publicEgress.except | default list) ($np.publicEgress.extraExcept | default list) }}
+{{- $proxyMode := include "ast.egressProxy.mode" . }}
+{{- $px := $np.egressProxy }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -185,12 +189,23 @@ spec:
       ports:
         - { protocol: TCP, port: {{ $np.llmGateway.port }} }
     {{- end }}
-    {{- if $d.externalHttps }}
+    {{- if and $d.externalHttps (ne $proxyMode "Off") }}
+    # 基盤の外向きの中継（外への HTTPS は HTTPS_PROXY でここを通す。段 {{ $proxyMode }}。IADR-0644）。
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $px.namespace | quote }} } }
+          podSelector:
+            matchLabels:
+              {{- toYaml $px.podLabels | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: {{ $px.port }} }
+    {{- end }}
+    {{- if and $d.externalHttps (ne $proxyMode "Enforce") }}
     # クラスタの外の HTTPS（情報源・市況・為替・Discord）。私設・リンクローカル・CGNAT・ループバック・ノードの公開アドレスへは出さない。
     - to:
         - ipBlock:
             cidr: {{ $np.publicEgress.cidr }}
-            except: [{{ join ", " $except }}]
+            {{- /* IADR-0644 決定 3: ipBlock を描くときだけ評価する（extraExcept が空ならここで止まる）。 */}}
+            except: [{{ include "ast.publicEgress.except" $ }}]
       ports:
         - { protocol: TCP, port: 443 }
     {{- end }}
