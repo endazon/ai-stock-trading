@@ -246,9 +246,11 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
 - **守りは段 2 で始める**（#1560 / IADR-0623 決定 3・IADR-0633）: `global.orderApprovalSigning`・`messageOrigin`・`ownerTokenBinding`・`ownerBotScope` は `Enforce`、
   risk-management・report の `OwnerSecondFactor__Mode` は `Enforce`、risk-management の `RiskControls__KillSwitch__Precondition` は `Require`。
 - **外の中継（OpenD）の権限を最小にし、サービス間の通信を許可した組だけにする**（[IADR-0631](../../../.ai-context/adr/IADR-0631_cloud-opend-least-privilege-and-service-network-policy.md)）:
-  - OpenD: `opend.podSecurity.seccomp: true`（Pod に seccomp `RuntimeDefault`・本体に権限昇格なし）と
-    `opend.podSecurity.capabilities`（`dropAll: true`・`add: [DAC_OVERRIDE, FOWNER]`。ALL を落とし、root の入口の処理が要る 2 つだけを戻す。
-    戻せるのはこの 2 つだけで、ほかは描画で止める）。出は `opend.networkPolicy.egress`（名前解決とクラスタの外の公開アドレスの TCP だけ）。
+  - OpenD: 段 3（非 root。`opend.podSecurity.stage: 3`・`opend.home: /home/opend`）と読み取り専用のルート
+    （`opend.podSecurity.readOnlyRootFilesystem: true`。[IADR-0646](../../../.ai-context/adr/IADR-0646_service-to-service-tls-and-opend-nonroot.md)。下の「OpenD のルートを読み取り専用にする」）。
+    段 1 へ戻したときだけ `opend.podSecurity.seccomp: true` と `opend.podSecurity.capabilities`（`dropAll: true`・`add: [DAC_OVERRIDE, FOWNER]`。
+    ALL を落とし、root の入口の処理が要る 2 つだけを戻す。戻せるのはこの 2 つだけで、ほかは描画で止める）が効く。
+    出は `opend.networkPolicy.egress`（名前解決とクラスタの外の公開アドレスの TCP だけ）。
   - 11 サービス: `networkPolicy.enabled: true` で名前空間に入り・出の既定の拒否（`ast-default-deny`）と、サービスごとの方針を描く。
     呼び出しの組は `networkPolicy.services.<呼び手>`（`calls`・`llmGateway`・`externalHttps`・`opend`）に呼び手の側で宣言する。
     入りは宣言した呼び手からの 8080（と gRPC の口）だけ、出は名前解決・基盤（DB を持つサービスだけ Postgres。全サービスがブローカ・Keycloak・collector）・
@@ -262,6 +264,15 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
     中継の受け口は送り元ごと（`networkPolicy.services.<名前>.egressProxyPort`。values-cloud が 3141〜3146 を持つ）で、`HTTPS_PROXY` と出の方針の口は
     そのサービスの受け口になる。受け口の欠け（Report・Enforce）・重なり・旧の単一の `url` / `port` は描画で止める（[IADR-0647](../../../.ai-context/adr/IADR-0647_egress-proxy-per-source-ports.md)）。
   - 適用の順序と切り戻しは [通信の制限の Runbook](../../../docs/operations/cloud-network-policy-runbook.md)。
+- **サービス間の HTTP を TLS にする段**（`global.serviceTls.mode`。[IADR-0646](../../../.ai-context/adr/IADR-0646_service-to-service-tls-and-opend-nonroot.md)）:
+  `"Off"`（既定・values-cloud の今の値）→ `Listen`（受け側が 8080 と 8443 の両方）→ `Call`（呼び手の `http://<サービス>-service:8080` を
+  描画が `https://<サービス>-service:8443` へ替える）→ `Enforce`（8443 だけ。probe・Service・NetworkPolicy も）。
+  - 証明書は基盤の OpenBao の PKI（`pki_cloud/issue/<サービス>-service`）が発行し、ESO の `VaultDynamicSecret` が Secret `ast-<サービス>-service-tls`
+    へ写す（`externalSecrets.openbaoStore` の受け口・role で呼ぶ）。Kestrel は `Kestrel__Certificates__Default__Path / KeyPath` で読む。Secret は非 optional。
+  - 呼び手（サービス・所有者のトークンを載せる HttpClient）は基盤の CA で受け側の証明書を確かめる。Off 以外では全 Worker に CA をマウントする。
+  - gRPC（h2c）の口・呼び手との併用、Enforce と CronJob の併用、`global.infraCa` の欠け、引用符の無い `Off`（YAML の false）は描画で止める。
+  - 🔴 基盤の前提（PKI の role 11 個と `ast-eso` の発行の許可）が入るまで `"Off"`。段の切り替えは
+    [サービス間の TLS Runbook](../../../docs/operations/cloud-service-tls-runbook.md)。描画の検査は `scripts/helm-service-tls.test.js`。
 - 既定（本番）と `values-local.yaml` の描画は、これらの部品を入れる前と 1 バイトも変わらない（`helm.yml` が digest・DB_PASSWORD・
   利用者名の Secret・ストアの不在と、利用者名 `ai`・段 1 を検査する。通信の制限と OpenD の権限は `helm-network-policy.test.js` が検査する）。
 
@@ -1245,6 +1256,16 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 > と 8 進で書ける（YAML が解釈する）が、`--set` では **10 進**（`256` / `288`）で渡すこと。非 root では Secret の所有 uid が
 > root のままなので、`fsGroup` を付けたうえで**グループ読み（0440）**が要る。
 
+#### OpenD のルートを読み取り専用にする（`opend.podSecurity.readOnlyRootFilesystem`。段 3 でだけ。[IADR-0646](../../../.ai-context/adr/IADR-0646_service-to-service-tls-and-opend-nonroot.md)）
+
+- 入口の処理（`deploy/opend/entrypoint.sh`）は env `OPEND_WORK_DIR`（`opend.podSecurity.workDir`。既定 `/var/lib/opend`。emptyDir・上限 `workDirSizeLimit`）に
+  `/opt/opend` の写しを作り（`OpenD.xml` と、`/opt/opend` の下に mount された RSA 鍵のディレクトリは写さない）、`OpenD.xml` をそこへ書いてそこから OpenD を起動する。
+- HOME（`opend.home`）と `/tmp` も emptyDir（上限 `scratchSizeLimit`）。デバイス信頼の PVC は `$HOME/.com.moomoo.OpenD` に重ねて張る。
+- 段 1 と併用すると描画で止まる。作業の場所は `/opt/opend`・HOME・`/tmp` の外の絶対パスでなければ止まる。
+- values-cloud は有効にする。🔴 実 OpenD ではまだ確かめていない。落ちたら、まずこれだけを `false` に戻す（段 3 のまま）。
+- 稼働中の root の OpenD から段 3 へ移すときは、PVC の中身（root の持ち物・0600）の持ち主を先に 10001 へ移す（local-path は `fsGroup` で直さない。
+  手順は [通信の制限の Runbook](../../../docs/operations/cloud-network-policy-runbook.md) の「PVC の持ち主の移し替え」）。
+
 ## Pod のセキュリティ設定の段（`podSecurity.stage` / `opend.podSecurity.stage`。[IADR-0609](../../../.ai-context/adr/IADR-0609_pod-security-context-staged.md)）
 
 Worker のイメージ（`backend/Dockerfile`）は aspnet の非特権ユーザー（`USER $APP_UID`＝1654）で動く。chart は起動を止め得る設定を
@@ -1254,7 +1275,7 @@ Worker のイメージ（`backend/Dockerfile`）は aspnet の非特権ユーザ
 | --- | --- | --- |
 | 1（既定） | 動作を変えない。Worker は `runAsUser: 0` を明示（イメージが非 root でも root のまま） | root のまま。認証サイドカーだけ `allowPrivilegeEscalation: false`・`capabilities.drop: [ALL]`。**OpenD 本体には何も足さない**（未検証の変更を既定にしない）。`opend.podSecurity.seccomp=true`（明示の opt-in）で Pod に seccomp `RuntimeDefault`・OpenD 本体に権限昇格なし。`opend.podSecurity.capabilities.dropAll=true`（明示の opt-in。IADR-0631）で本体の ALL を落とし `add`（DAC_OVERRIDE・FOWNER だけ）を戻す |
 | 2 | root のまま seccomp `RuntimeDefault`・権限昇格なし・ケーパビリティを全て落とす | （受け付けない。段 1 へ繰り上げた） |
-| 3 | 非 root（Worker 1654:1654・fsGroup 1654、CronJob 100:101）。発注執行の鍵の mount は 0440 | 非 root（10001:10001・fsGroup）・ケーパビリティなし・鍵の mount 0440。`opend.home=/home/opend` が要る |
+| 3 | 非 root（Worker 1654:1654・fsGroup 1654、CronJob 100:101）。発注執行の鍵の mount は 0440 | 非 root（10001:10001・fsGroup）・ケーパビリティなし・鍵の mount 0440。`opend.home=/home/opend` が要る。`opend.podSecurity.readOnlyRootFilesystem=true`（明示の opt-in。段 3 でだけ）でルートを読み取り専用にする |
 
 - **全 Pod で段に依らず SA トークンを置かない**（`automountServiceAccountToken: false`。AST の Pod は k8s API を使わない）。
 - **認証サイドカーは段に依らず OpenD 本体と同じ uid** で動く（uid の指定が無ければ `runAsUser: 0` を明示する）。

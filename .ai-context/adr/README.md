@@ -656,3 +656,4 @@
 | IADR-0643 | **検証の下限の検査器は、レビュー本文の引用（引用ブロック・語句を紹介する括弧）と、コマンドの出力そのものを読んでいないと書いた文を、下限の自己申告として数えない**（狭く外し、下限は緩めない。基盤の同じ直しと同時） | Accepted |
 | IADR-0644 | **取引ユニットの外への HTTPS を、段（`Off` 既定 / `Report` / `Enforce`）つきで基盤の外向きの中継（名前の許可表）へ寄せ、Discord.Net も環境の中継に従わせる。外への ipBlock はノード自身の公開アドレスの除外が無ければ描かない**（IADR-0631 の残る範囲を改める） | Accepted |
 | IADR-0647 | **外への HTTPS の中継の受け口を送り元（サービス）ごとに描き（`networkPolicy.services.<名前>.egressProxyPort`）、受け口の欠け・重なり・旧の単一の口は描画で止める**（IADR-0644 決定 1 を改める。基盤の送り元ごとの受け口に合わせる） | Accepted |
+| IADR-0646 | **取引ユニットのサービス間の HTTP を、基盤の OpenBao の PKI が発行し ESO が写すサービス証明書で TLS にする段（`global.serviceTls.mode`: Off → Listen → Call → Enforce。既定・クラウドの今の値は Off）を持ち、呼び手（サービス・所有者のトークンを載せる HttpClient）は基盤の CA で受け側の証明書を確かめる**。gRPC（h2c）・Enforce と CronJob の併用は描画で止める。基盤の前提（PKI の role 11 個・`ast-eso` の発行の許可）が入ってから上げる。**クラウドの OpenD は段 3（非 root）と読み取り専用のルートで動かし、配布物が書く場所を emptyDir へ寄せる**（IADR-0631 の段 1 を置き換え、切り戻しの形として残す）。PSA の restricted は実機で確かめた後 | Accepted |

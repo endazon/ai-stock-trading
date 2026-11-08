@@ -9,8 +9,8 @@ updated: 2026-11-08
 <!-- trace:
 ids: [FR-04, FR-08, NFR, NFR-03, NFR-05, NFR-06, FR-10]
 adrs: [ADR-0006, ADR-0024, ADR-0073, ADR-0076, ADR-0078, ADR-0080]
-iadrs: [IADR-0639, IADR-0637, IADR-0632, IADR-0631, IADR-0630, IADR-0629, IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627, IADR-0633, IADR-0644]
-specs: [20261107_s2s-per-service-clients, 20261107_message-origin-asymmetric-signature, 20261107_cloud-openbao-tls-store, 20261107_cloud-opend-isolation-netpol, 20261107_cloud-db-per-service-users, 20261107_cloud-keycloak-tls, 20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
+iadrs: [IADR-0646, IADR-0639, IADR-0637, IADR-0632, IADR-0631, IADR-0630, IADR-0629, IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627, IADR-0633, IADR-0644]
+specs: [20261108_s2s-tls-opend-nonroot, 20261107_s2s-per-service-clients, 20261107_message-origin-asymmetric-signature, 20261107_cloud-openbao-tls-store, 20261107_cloud-opend-isolation-netpol, 20261107_cloud-db-per-service-users, 20261107_cloud-keycloak-tls, 20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
 issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471, MSP#2495]
 -->
 
@@ -256,6 +256,10 @@ bash scripts/ast-message-origin-keygen.sh --live
   OpenD のログインと §8 の確かめが通った後に、場の時間外に入れる。
   通信の制限（または OpenD の出）を入れる配備では、ノード自身の公開アドレス（`networkPolicy.publicEgress.extraExcept`）が要る。空なら描画で止まる。
   §4 のファイルと同じくリポジトリの外に置く配備の値のファイルへ書いておく（手順は通信の制限の Runbook）。
+  - OpenD は非 root（段 3）と読み取り専用のルートで動く（`values-cloud.yaml`）。🔴 稼働中の root の OpenD から移すときは、先に PVC の持ち主を移す
+    （同じ Runbook の「PVC の持ち主の移し替え」）。新しく入れるときは要らない。
+- 🔴 **サービス間の HTTP の TLS は、[サービス間の TLS Runbook](cloud-service-tls-runbook.md) の段（Off → Listen → Call → Enforce）で入れる。**
+  `values-cloud.yaml` は `"Off"` で、基盤の前提（PKI の role と発行の許可）が入るまで上げない。§8 の確かめが通った後に、1 段ずつ場の時間外に上げる。
 
 ### 5.5 突き合わせ（秘密を入れた後・取引を始める前）
 
@@ -302,6 +306,13 @@ bash scripts/ast-message-origin-keygen.sh --live
 - [ ] digest の参照で全 Pod が起動している（§4 の 5）。
 - [ ] 基盤への接続が TLS で通っている: DB・ブローカの接続の失敗と、LLM ゲートウェイの証明書の検証の失敗がログに無い。
 - [ ] 取引判断のログ（判断の記録）の `ragContext` が `not-configured` で、判断が失敗していない。
+- [ ] OpenD が非 root（段 3）と読み取り専用のルートで動いている（実機の OpenD で初めて確かめる項目）:
+  - `kubectl -n ai-stock-trading logs deploy/opend -c opend` に `==> work dir:` の行があり、`Permission denied`・`Read-only file system`・`Operation not permitted` が無い。
+  - ログインでき（§7）、発注執行の口座照会が成功する。
+  - デバイスの信頼が PVC に残る: 場の時間外に `kubectl -n ai-stock-trading rollout restart deploy/opend` を 1 回だけ行い、SMS の再認証を求められずにログインする
+    （HOME が `/home/opend` になっても PVC の中身が使われることの確かめ。求められたら §7 で入れ、回数と時刻を記録する）。
+  - 落ちたら[通信の制限の Runbook](cloud-network-policy-runbook.md) の「切り戻し B」（まず読み取り専用のルートだけを外す）。
+- [ ] サービス間の HTTP の TLS の段（[サービス間の TLS Runbook](cloud-service-tls-runbook.md)）: 基盤の前提が入ったら `Listen` → `Call` → `Enforce` の順に上げ、各段の確かめを記録する。
 - [ ] 取引判断が月次 LLM 費用の停止を読めている: 取引判断のログに「費用統制の停止を読めません」が続いていない。
   - クラウドは読めないときに閉じる側へ倒す（`CostControl__HaltQuery__UnavailableMode=Enforce`）。最後に読めた時から 15 分（`CostControl__HaltQuery__GraceSeconds`）を過ぎても読めなければ、LLM を呼ぶ前に判断を見送る。損切り・利用者の手仕舞い・閉場前の手仕舞いは止まらない。
   - 費用統制を直せないまま判断を続ける必要があるときだけ、`values-cloud.yaml` の値を `Report`（判断を止めず記録だけ）へ替えて helm を再実行する。直したら `Enforce` へ戻す。
@@ -317,7 +328,9 @@ bash scripts/ast-message-origin-keygen.sh --live
 - [ ] Pod のセキュリティの段を確かめる: Worker は**稼働の前から**段 3（`podSecurity.stage: 3`・非 root）と `podSecurity.readOnlyRootFilesystem: true` で動く（`values-cloud.yaml`）。PSA の enforce は baseline。
   - 初日に、起動・判断・発注・日報が通り、Worker のログに一時ファイル・書き込みの拒否（`Read-only file system`・`UnauthorizedAccessException`）が出ていないことを確かめる。
   - 落ちたら、`values-cloud.yaml` の `podSecurity.stage: 2` と `readOnlyRootFilesystem: false` を一緒に戻して helm を再実行し、原因を記録する（戻したまま稼働を続けない。直して段 3 へ戻す）。
-  - OpenD は実機で確かめてから `opend.podSecurity.stage: 3` にする（chart の README「必須の前提」）。OpenD も段 3 にしたら、`podSecurity.admission.enforce: restricted` へ上げる。
+  - OpenD も段 3（`values-cloud.yaml`）。§8 の OpenD の確かめが通ったら、`podSecurity.admission.enforce: restricted` へ上げる
+    （`helm upgrade … --set podSecurity.admission.enforce=restricted` で全 Pod が作れることを確かめてから、値を `values-cloud.yaml` に PR で書く）。
+    OpenD を段 1 へ戻すときは、enforce も `baseline` へ一緒に戻す（描画が止める）。
 
 ## 10. 戻し方（クラウドから自宅へ）
 

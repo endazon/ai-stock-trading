@@ -345,6 +345,8 @@ const opendStageFor = (st) => (st >= 3 ? 3 : 1);
 function stageArgs(w, o, ro = false) {
   const a = ['--set', `podSecurity.stage=${w}`, '--set', `opend.podSecurity.stage=${o}`];
   if (o >= 3) a.push(...OPEND_HOME_NONROOT);
+  // NFR, IADR-0646: OpenD の読み取り専用のルートは段 3 でだけ使える（values-cloud が宣言していても、段 1 の描画では外す）。
+  else a.push('--set', 'opend.podSecurity.readOnlyRootFilesystem=false');
   // NFR, L-3: 段を上書きする描画では readOnlyRootFilesystem も明示する（プロファイルが true を宣言していても、段 1 の描画で止まらない）。
   a.push('--set', `podSecurity.readOnlyRootFilesystem=${ro}`);
   return a;
@@ -393,7 +395,7 @@ function main() {
 
   // 🔴 NFR, IADR-0609（2026-11-07 追記）: クラウドの Worker は稼働の前から段 3（非 root）と読み取り専用のルートで動かす
   // （段 2 のまま root で稼働を始めない）。宣言を外すと、上の「宣言どおりの段の形」は緑のまま通るので、ここで値を固定する。
-  ok('values-cloud: Worker は段 3・readOnlyRootFilesystem・PSA の enforce は baseline（OpenD は段 1 のまま）', () => {
+  ok('values-cloud: Worker は段 3・readOnlyRootFilesystem・PSA の enforce は baseline（OpenD も段 3。restricted へ上げるのは実機で確かめた後）', () => {
     const cloud = profiles().find((p) => p.files.includes('values-cloud.yaml'));
     assert.ok(cloud, 'values-cloud.yaml のプロファイルが見つからない');
     const d = declaredStages(cloud);
@@ -407,6 +409,41 @@ function main() {
       assert.strictEqual(podSc(w).get('runAsNonRoot'), 'true', `${w.name}: runAsNonRoot が無い`);
       assert.strictEqual(ctrSc(w, 0).get('readOnlyRootFilesystem'), 'true', `${w.name}: readOnlyRootFilesystem が無い`);
     }
+  });
+
+  // 🔴 NFR, IADR-0646: クラウドの OpenD は段 3（非 root）と読み取り専用のルートで動かし、配布物が書く場所を emptyDir へ寄せる。
+  ok('values-cloud: OpenD は段 3（uid 10001・HOME=/home/opend）・読み取り専用のルート・作業の場所・HOME・/tmp は emptyDir', () => {
+    const cloud = profiles().find((p) => p.files.includes('values-cloud.yaml'));
+    const d = declaredStages(cloud);
+    assert.strictEqual(d.o, 3, `values-cloud の opend.podSecurity.stage が 3 でない（${d.o}）`);
+    const t = read(`${CHART}/values-cloud.yaml`);
+    assert.strictEqual(readValue(t, 'opend.home'), '/home/opend');
+    assert.strictEqual(readValue(t, 'opend.podSecurity.readOnlyRootFilesystem'), 'true');
+    const o = workloads(mustRender([...cloud.args])).find((w) => role(w) === 'opend');
+    assert.ok(o, 'OpenD が描かれない');
+    assert.strictEqual(podSc(o).get('runAsNonRoot'), 'true');
+    assert.strictEqual(podSc(o).get('runAsUser'), String(OPEND_UID));
+    assert.strictEqual(ctrSc(o, 0).get('readOnlyRootFilesystem'), 'true');
+    const env = new Map();
+    for (let j = 0; o.flat.has(`${o.prefix}containers.0.env.${j}.name`); j++) env.set(o.flat.get(`${o.prefix}containers.0.env.${j}.name`), o.flat.get(`${o.prefix}containers.0.env.${j}.value`));
+    const workDir = env.get('OPEND_WORK_DIR');
+    assert.ok(workDir && workDir.startsWith('/') && !workDir.startsWith('/opt/opend'), `OPEND_WORK_DIR が ${workDir}`);
+    assert.strictEqual(env.get('HOME'), '/home/opend');
+    const mounts = new Map();
+    for (let j = 0; o.flat.has(`${o.prefix}containers.0.volumeMounts.${j}.name`); j++) mounts.set(o.flat.get(`${o.prefix}containers.0.volumeMounts.${j}.mountPath`), o.flat.get(`${o.prefix}containers.0.volumeMounts.${j}.name`));
+    for (const p of [workDir, '/home/opend', '/tmp']) {
+      const name = mounts.get(p);
+      assert.ok(name, `${p} の mount が無い`);
+      const j = volumeByName(o, name);
+      assert.ok(j >= 0 && o.flat.has(`${o.prefix}volumes.${j}.emptyDir.sizeLimit`), `${p} が emptyDir（sizeLimit つき）でない`);
+    }
+    assert.strictEqual(mounts.get('/home/opend/.com.moomoo.OpenD'), 'persist', 'デバイス信頼の PVC が HOME の下に無い');
+  });
+  ok('OpenD の読み取り専用のルートは段 1 では止まる・作業の場所は /opt/opend の外', () => {
+    const cloud = profiles().find((p) => p.files.includes('values-cloud.yaml'));
+    mustFail([...cloud.args, '--set', 'opend.podSecurity.stage=1'], 'opend.podSecurity.readOnlyRootFilesystem=true は opend.podSecurity.stage=3');
+    mustFail([...cloud.args, '--set', 'opend.podSecurity.workDir=/opt/opend/work'], 'opend.podSecurity.workDir は');
+    mustFail([...cloud.args, '--set', 'opend.podSecurity.workDir=/home/opend/w'], 'opend.podSecurity.workDir は');
   });
 
   process.stdout.write('helm-pod-security: 既定の描画\n');

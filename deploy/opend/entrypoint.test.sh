@@ -579,5 +579,40 @@ assert_eq 'T-722-09 HOME から導く（既定の root）' \
   "$(opend_captcha_source_path)" '/root/.com.moomoo.OpenD/F3CNN/PicVerifyCode.png'
 HOME="$OLD_HOME"
 
+# ---- T-646-01: 作業の場所へ配布物を写す（ルートを読み取り専用にした段。IADR-0646） -------------------
+# 配布物の項目（実行ファイル・ライブラリ・下位ディレクトリ・ドットファイル・symlink）を写し、OpenD.xml と mount された RSA 鍵の
+# ディレクトリは写さない。前回の写しは置き換え、OpenD が書いたもの（配布物に無いもの）は残す。
+SRC_DIR="$WORK/opt-opend"
+DST_DIR="$WORK/work"
+rm -rf "$SRC_DIR" "$DST_DIR"
+mkdir -p "$SRC_DIR/sub" "$SRC_DIR/rsa"
+printf '#!/bin/sh\n' > "$SRC_DIR/OpenD"; chmod 755 "$SRC_DIR/OpenD"
+printf 'lib-v1\n' > "$SRC_DIR/libx.so"
+printf 'nested\n' > "$SRC_DIR/sub/data"
+printf 'dot\n' > "$SRC_DIR/.hidden"
+( cd "$SRC_DIR" && ln -s libx.so libx.so.1 )
+printf '<old/>\n' > "$SRC_DIR/OpenD.xml"
+write_dummy_key "$SRC_DIR/rsa/opend_rsa.pem"
+prepare_work_dir "$SRC_DIR" "$DST_DIR" "$SRC_DIR/rsa"
+RC=$?
+assert_eq 'T-646-01 写しが成功する（戻り値 0）' "$RC" "0"
+[ -x "$DST_DIR/OpenD" ] && ok 'T-646-01 実行ファイルを実行可能のまま写す' || ng 'T-646-01 実行ファイルを実行可能のまま写す' "$DST_DIR/OpenD が無いか実行できない"
+assert_eq 'T-646-01 下位ディレクトリを写す' "$(cat "$DST_DIR/sub/data" 2>/dev/null)" 'nested'
+assert_eq 'T-646-01 ドットファイルを写す' "$(cat "$DST_DIR/.hidden" 2>/dev/null)" 'dot'
+[ -L "$DST_DIR/libx.so.1" ] && ok 'T-646-01 symlink は symlink のまま写す' || ng 'T-646-01 symlink は symlink のまま写す' "$DST_DIR/libx.so.1 が symlink でない"
+[ -e "$DST_DIR/rsa" ] && ng 'T-646-01 RSA 鍵のディレクトリは写さない' "$DST_DIR/rsa が在る" || ok 'T-646-01 RSA 鍵のディレクトリは写さない'
+[ -e "$DST_DIR/OpenD.xml" ] && ng 'T-646-01 OpenD.xml は写さない（入口の処理が作る）' "$DST_DIR/OpenD.xml が在る" || ok 'T-646-01 OpenD.xml は写さない（入口の処理が作る）'
+# 再起動（emptyDir は残る）: 配布物の項目は置き換え、OpenD が書いたものは残す。
+printf 'lib-v2\n' > "$SRC_DIR/libx.so"
+printf 'appdata\n' > "$DST_DIR/AppData.dat"
+prepare_work_dir "$SRC_DIR" "$DST_DIR" "$SRC_DIR/rsa"
+assert_eq 'T-646-01 再起動で配布物の項目を置き換える' "$(cat "$DST_DIR/libx.so")" 'lib-v2'
+assert_eq 'T-646-01 OpenD が書いたものは残す' "$(cat "$DST_DIR/AppData.dat" 2>/dev/null)" 'appdata'
+# 作業の場所を配布物の中に置くと止める（自分の中へ写し続けない）。
+( prepare_work_dir "$SRC_DIR" "$SRC_DIR/w" "" ) 2> "$WORK/err"
+RC=$?
+assert_eq 'T-646-01 作業の場所が配布物の中なら止める（非0）' "$([ "$RC" -ne 0 ] && echo nonzero || echo zero)" 'nonzero'
+assert_contains 'T-646-01 止めた理由を出す' "$(cat "$WORK/err")" 'の外に置いてください'
+
 printf '\n%d passed, %d failed, %d skipped\n' "$PASSED" "$FAILED" "$SKIPPED"
 [ "$FAILED" -eq 0 ] || exit 1

@@ -39,6 +39,8 @@ on:
       # NFR, IADR-0637: サービス間の認証の身元をサービスごとに分けた描画検査（口の既定の一覧は backend の ServiceCallerNames.cs を読む）。
       - "scripts/helm-service-auth-clients.test.js"
       - "backend/TestSupport/AiStockTrading.TestSupport.PlatformShim/Foundation/Auth/ServiceCallerNames.cs"
+      # NFR, NFR-05, IADR-0646: サービス間の HTTP の TLS の段の描画検査。
+      - "scripts/helm-service-tls.test.js"
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
@@ -65,6 +67,8 @@ on:
       # NFR, IADR-0637: サービス間の認証の身元をサービスごとに分けた描画検査（口の既定の一覧は backend の ServiceCallerNames.cs を読む）。
       - "scripts/helm-service-auth-clients.test.js"
       - "backend/TestSupport/AiStockTrading.TestSupport.PlatformShim/Foundation/Auth/ServiceCallerNames.cs"
+      # NFR, NFR-05, IADR-0646: サービス間の HTTP の TLS の段の描画検査。
+      - "scripts/helm-service-tls.test.js"
 
 # NFR / IADR-0208 決定 1: 連続 push で古い実行を捨てる（PR のみ）。
 # 本ワークフローは約 40 回の `helm template` を直列に回すため、重複実行の無駄が大きい。
@@ -138,7 +142,7 @@ jobs:
       # Pod Security Admission の水準、描画で止まる条件、Dockerfile・起動器・生 manifest との一致、変異。
       - name: Test pod security settings (render, supply, mutation)
         run: node scripts/helm-pod-security.test.js
-      # NFR, IADR-0631: values-cloud の OpenD の権限（seccomp・権限昇格なし・ALL を落として DAC_OVERRIDE・FOWNER だけ）、
+      # NFR, IADR-0631, IADR-0646: values-cloud の OpenD の権限（非 root・seccomp・権限昇格なし・ALL を落として何も戻さない・読み取り専用のルート。段 1 へ戻す描画では DAC_OVERRIDE・FOWNER だけ）、
       # 11 サービスと OpenD の NetworkPolicy の在り、呼び手の一覧と env（*__BaseUrl 等）の一致、既定とローカルが変わらないこと、
       # 描画で止まる条件、変異（修正を外すと赤）を固定する。
       - name: Test OpenD privileges and service NetworkPolicy (render, env match, mutation)
@@ -147,6 +151,10 @@ jobs:
       # 同じ Secret を共有しない・受け側は Enforce＋移行の段・口の一覧の呼び手が描画に在る・既定とローカルは変わらない・変異で赤）。
       - name: Test per-service s2s clients (render, sharing, mutation)
         run: node scripts/helm-service-auth-clients.test.js
+      # NFR, NFR-05, IADR-0646: サービス間の HTTP の TLS の段（Off・Listen・Call・Enforce）の形（受け口・証明書・probe・呼び手の宛先・
+      # 基盤の CA・NetworkPolicy・証明書の発行）、Enforce での呼び手の一覧と env の一致、描画で止まる条件、変異（修正を外すと赤）を固定する。
+      - name: Test service-to-service TLS stages (render, env match, mutation)
+        run: node scripts/helm-service-tls.test.js
       # #584 / IADR-0284 決定5（段0）/ IADR-0328: east-west gRPC の h2c ポート（services.<name>.grpcPort）。
       # 既定では**どのサービスも宣言しない**ため既定描画では評価されない。ON にした派生を描画し、
       # 有効化時に初めて壊れるテンプレートを CI で捕まえる（IADR-0058 の核心）。

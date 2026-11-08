@@ -21,6 +21,9 @@ public class LlmGatewayInfraCaTrustWiringTests
         var handlers = factory.Services.GetRequiredService<IHttpMessageHandlerFactory>();
 
         PlatformInfraCaTrust.IsPlatformInfraCaHandler(Primary(handlers.CreateHandler("llm"))).Should().BeTrue();
+        // NFR, NFR-05, IADR-0646: サービスのトークンを載せる取引ユニットの呼び先（サービス間の TLS の段で基盤の CA が発行した証明書を受ける）。
+        foreach (var internalClient in new[] { "reports", "risk", "order-execution", "monitor", "cost" })
+            PlatformInfraCaTrust.IsPlatformInfraCaHandler(Primary(handlers.CreateHandler(internalClient))).Should().BeTrue(internalClient);
         foreach (var external in new[] { "marketdata", "fx" })
             PlatformInfraCaTrust.IsPlatformInfraCaHandler(Primary(handlers.CreateHandler(external))).Should().BeFalse(external);
     }
