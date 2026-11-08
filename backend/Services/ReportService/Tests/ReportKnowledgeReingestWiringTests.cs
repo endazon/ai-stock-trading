@@ -191,7 +191,7 @@ public class ReportKnowledgeReingestWiringTests
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var kb = new FakeKnowledgeCatalog
         {
-            BeforeList = async () =>
+            BeforeList = async _ =>
             {
                 entered.TrySetResult();
                 await release.Task;

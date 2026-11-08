@@ -100,10 +100,30 @@ public class ReportConfirmKnowledgeBudgetTests
 
     // T-10-2726: 再確定で KB の一覧が予算より遅い。置き換えは試みず（入れ直しは取り消しで止まる）、確定は 200。ドラフトの写しは消さず、
     // 確定版の写しの本文も古いまま（次の入れ直しが揃える）。
+    //
+    // NFR（Integration の揺らぎ・run 42431353521）: 一覧は**予算の取り消しが届いてから**返す。以前は「一覧は実時間で 1 秒かかる・予算は
+    // 0.2 秒」の大小に頼っており、遅い runner で予算のタイマーの呼び戻し（取り消しの印）が 1 秒の遅延の継続より後に回ると、
+    // 入れ直しが「取り消されていない」と読んで置き換え・ドラフトの写しの削除まで進んだ（同期の偽物は取り消しを見ない）。
+    // 取り消しの印が立つのは呼び戻しの中で継続より先なので、この形は実時間の速さに依らず「予算の後に一覧が返った」を作る。
     [Fact]
     public async Task T_10_2726_再確定で置き換えが予算内に終わらなければドラフトの写しを消さない()
     {
-        var catalog = new FakeKnowledgeCatalog { BeforeList = () => Task.Delay(TimeSpan.FromSeconds(1)) };
+        var listSawBudgetCancellation = false;
+        var catalog = new FakeKnowledgeCatalog
+        {
+            BeforeList = async cancellationToken =>
+            {
+                try
+                {
+                    // 上限は退行の検知用（予算が働かなければ 30 秒後にそのまま一覧を返し、下の期待が落ちる）。
+                    await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    listSawBudgetCancellation = true;
+                }
+            },
+        };
         await using var factory = Factory(catalog, new HangingWriter(), "0.2");
         using (var scope = factory.Services.CreateScope())
         {
@@ -136,8 +156,11 @@ public class ReportConfirmKnowledgeBudgetTests
             response = await ReportKnowledgeReingestTestKit.OwnerClient(factory).PostAsJsonAsync($"/reports/{Key}/confirm", new { ExpectedVersion = 3 }));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        catalog.ListCalls.Should().Be(1, "置き換えは一覧まで進んだ");
+        listSawBudgetCancellation.Should().BeTrue("一覧は予算の取り消しが届いた後に返った");
         catalog.Docs.Should().Contain(draft, "置き換えが終わっていないのでドラフトの写しは消さない（ADR-0068 決定6 の順序）");
         confirmedCopy.Body.Should().Be("版2の本文", "置き換えは予算内に終わらなかった（次の入れ直しが揃える）");
+        catalog.PutCalls.Should().Be(0, "予算の後は本文を差し替えない");
         catalog.DeleteCalls.Should().Be(0);
     }
 
