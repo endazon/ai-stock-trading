@@ -468,11 +468,34 @@ networkPolicy:
     port: 8080
   # クラスタの外の公開アドレス。私設・リンクローカル（ノードのメタデータの口）・CGNAT・ループバックを除く（基盤の LLM ゲートウェイの出と同じ範囲）。
   # extraExcept にはノード自身の公開アドレス（/32）を配備のときに足す（手順書。値はリポジトリに書かない）。
+  # 🔴 NFR, IADR-0644 決定 3: networkPolicy.enabled=true（または OpenD の出の有効）で extraExcept が空なら描画で止める
+  #   （付け忘れのまま描かない）。要素は IPv4 の CIDR（a.b.c.d/nn）だけを受ける。
   publicEgress:
     cidr: 0.0.0.0/0
     except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 127.0.0.0/8]
     extraExcept: []
+  # 🔴 NFR, IADR-0644 決定 1・2: 外への HTTPS（externalHttps: true のサービス）を基盤の外向きの中継（platform-infra の egress-proxy。
+  #   名前の許可表を持つ CONNECT の中継）へ寄せる段。既定 Off＝従来どおり（中継を使わず、外の 443 へ直に出る）。
+  #   - Off    : 何も変えない（HTTPS_PROXY を渡さない・外の 443 の ipBlock を描く）。
+  #   - Report : externalHttps のサービスへ HTTPS_PROXY・NO_PROXY を渡して中継を使わせ、出の方針に中継の口を足す。外の 443 の ipBlock も残す
+  #              （中継を通らない接続が残っていても止まらない。中継の記録で宛先を確かめる間の段）。
+  #   - Enforce: 中継の口だけを許し、外の 443 の ipBlock を描かない（外への HTTPS は中継を通るものだけ）。
+  #   🔴 Report・Enforce は基盤の側で中継が取引ユニットの Pod を受ける（入りと許可表）ことが前提。上げる手順は
+  #      docs/operations/cloud-network-policy-runbook.md §外への HTTPS を基盤の中継へ寄せる。networkPolicy.enabled=true が要る。
+  #   NO_PROXY は描画が導く（localhost・クラスタの中の名前・取引ユニットのサービス名・基盤の別名・関係する名前空間の接尾辞）。
+  #   足りない内側の名前があれば noProxyExtra に足す（外の名前は足さない）。
+  # 🔴 NFR, IADR-0647: 中継の受け口は送り元ごとに分かれる（基盤の中継は受け口で送り元を見分け、送り元ごとの許可表を使う）。
+  #   受け口は networkPolicy.services.<名前>.egressProxyPort に置き（values-cloud が割り当てを持つ）、HTTPS_PROXY は
+  #   http://<host>:<そのサービスの受け口>、出の方針もその受け口の TCP だけを許す。Report・Enforce で externalHttps のサービスに
+  #   受け口が無い・受け口が重なる・externalHttps でないサービスに受け口がある・旧の url / port を書いた、は描画で止める。
+  egressProxy:
+    mode: "Off"
+    host: egress-proxy.platform-infra.svc.cluster.local
+    namespace: platform-infra
+    podLabels: { app: egress-proxy }
+    noProxyExtra: []
   # サービスごとの宣言（キーは services の名前）。calls: 呼び先（取引ユニットのサービス名）。llmGateway / externalHttps / opend: 真なら許す。
+  # egressProxyPort: 基盤の外向きの中継の、このサービス専用の受け口（externalHttps: true のサービスだけ。IADR-0647）。
   services: {}
 
 # #132, IADR-0060 決定 4: 秘匿情報の External Secrets（Vault）**受け口**。既定 disabled = fail-safe。

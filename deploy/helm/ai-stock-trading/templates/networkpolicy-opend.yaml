@@ -89,7 +89,7 @@ spec:
     - to:
         - ipBlock:
             cidr: {{ $pe.cidr }}
-            except: [{{ join ", " (concat ($pe.except | default list) ($pe.extraExcept | default list)) }}]
+            except: [{{ include "ast.publicEgress.except" $ }}]
       ports:
         {{- range $p := ($np.egress.tcpPorts | default list) }}
         - { protocol: TCP, port: {{ $p }} }

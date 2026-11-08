@@ -29,3 +29,7 @@ opend:
   authGateway:
     image:
       digest: sha256:000000000000000000000000000000000000000000000000000000000000000d
+# NFR, IADR-0644 決定 3: ノード自身の公開アドレスの除外（配備では --set-json で与える。🔴 検査用の値。文書用のアドレスの範囲 203.0.113.0/24）。
+networkPolicy:
+  publicEgress:
+    extraExcept: [203.0.113.10/32]

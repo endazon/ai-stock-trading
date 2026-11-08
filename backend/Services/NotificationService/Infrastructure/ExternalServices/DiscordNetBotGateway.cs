@@ -10,6 +10,8 @@ using NotificationService.Features.Notifications.OperateTradingPause;
 using NotificationService.Features.Notifications.ReviewReport;
 using NotificationService.Features.Notifications.RevisePolicy;
 using Discord;
+using Discord.Net.Rest;
+using Discord.Net.WebSockets;
 using Discord.WebSocket;
 using Microsoft.Extensions.Logging;
 
@@ -115,13 +117,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         _logger = logger;
         _health = health ?? new DiscordBotHealth();
 
-        // IADR-0062 決定2: 最小 Intents。Guilds のみでスラッシュコマンドは受けられる。
-        _client = new DiscordSocketClient(new DiscordSocketConfig
-        {
-            GatewayIntents = GatewayIntents.Guilds,
-            AlwaysDownloadUsers = false,
-            LogLevel = LogSeverity.Info,
-        });
+        _client = new DiscordSocketClient(CreateSocketConfig());
 
         _client.Log += OnLogAsync;
         // 🔴 NFR, IADR-0645 決定 3: 接続・切断を計器へ（切断が続けばオーナーの帯域内の停止の経路が無い。警報 AstDiscordBotUnavailable）。
@@ -141,6 +137,21 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         _client.ButtonExecuted += OnButtonAsync;
         _client.ModalSubmitted += OnModalAsync;
     }
+
+    /// <summary>
+    /// Discord.Net の接続の構成。IADR-0062 決定2: 最小 Intents（Guilds のみでスラッシュコマンドは受けられる）。
+    /// NFR, IADR-0644 決定 2: REST と Gateway（WebSocket）の両方を、環境の中継の設定（HTTPS_PROXY・NO_PROXY。
+    /// <see cref="HttpClient.DefaultProxy"/>）に従わせる。Discord.Net の既定の提供者はどちらも環境の中継を読まない（実測）ため、
+    /// 中継を使う段では明示しないと中継を通らない。HTTPS_PROXY が無ければ <see cref="HttpClient.DefaultProxy"/> は直に繋ぐので、従来と同じ。
+    /// </summary>
+    internal static DiscordSocketConfig CreateSocketConfig() => new()
+    {
+        GatewayIntents = GatewayIntents.Guilds,
+        AlwaysDownloadUsers = false,
+        LogLevel = LogSeverity.Info,
+        RestClientProvider = DefaultRestClientProvider.Create(useProxy: true),
+        WebSocketProvider = DefaultWebSocketProvider.Create(HttpClient.DefaultProxy),
+    };
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
