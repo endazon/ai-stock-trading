@@ -4,13 +4,13 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-11-05
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 <!-- trace:
 ids: [FR-04, FR-08, NFR, NFR-03, NFR-05, NFR-06, FR-10]
 adrs: [ADR-0006, ADR-0024, ADR-0073, ADR-0076, ADR-0078, ADR-0080]
-iadrs: [IADR-0639, IADR-0637, IADR-0632, IADR-0631, IADR-0630, IADR-0629, IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627, IADR-0633]
-specs: [20261107_s2s-per-service-clients, 20261107_message-origin-asymmetric-signature, 20261107_cloud-openbao-tls-store, 20261107_cloud-opend-isolation-netpol, 20261107_cloud-db-per-service-users, 20261107_cloud-keycloak-tls, 20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
+iadrs: [IADR-0645, IADR-0639, IADR-0637, IADR-0632, IADR-0631, IADR-0630, IADR-0629, IADR-0621, IADR-0608, IADR-0053, IADR-0598, IADR-0341, IADR-0623, IADR-0613, IADR-0615, IADR-0627, IADR-0633]
+specs: [20261108_origin-alerts-replay-store-bot-health, 20261107_s2s-per-service-clients, 20261107_message-origin-asymmetric-signature, 20261107_cloud-openbao-tls-store, 20261107_cloud-opend-isolation-netpol, 20261107_cloud-db-per-service-users, 20261107_cloud-keycloak-tls, 20261106_1560_cloud-openbao-eso-and-stage2, 20261106_1535_platform-infra-tls, 20261105_1525_cloud-single-node-values-and-runbook]
 issues: [#1560, #1535, #1525, #24, planning#868, MSP#2401, MSP#2402, MSP#2471, MSP#2495]
 -->
 
@@ -230,6 +230,10 @@ bash scripts/ast-message-origin-keygen.sh --live
   - 注文の承認の鍵が無いと、risk-management と order-execution の Pod は起動しない。
   - メッセージの発行元の鍵（`ast-message-origin-signing-keys`・`ast-message-origin-verify-keys`）が無いと、鍵を読む 9 サービス（監査を含む）の Pod は起動しない。
     受け手が拒んだメッセージは処理されず、ログ（EventId 16260）とメトリクス `ast_messaging_origin_failures_total{outcome="rejected"}`・警報 `AstMessageOriginRejected` に残る。
+    記録だけの受け手（監査）と段 1 の受け手（通知）が記録して処理した分は `outcome="admitted"`・警報 `AstMessageOriginUnverifiedAdmitted` に残る。
+  - 処理し終えたメッセージの記録（再送を拒むための記録）は、DB を持つ受け手（risk-management・market-monitor・order-execution・cost-control・audit）の
+    DB の表 `message_origin_handled` に残る（`global.messageOrigin.replayStore: Database`。表は最初の使用で作られる）。DB を読めなければメッセージは処理されずに
+    再試行され、警報 `AstMessageOriginReplayStoreFailing` が鳴る。戻すときは `--set global.messageOrigin.replayStore=Memory`（プロセスの中だけ）。
   - TOTP が無いと、取引を再開・緩める 7 操作は拒まれる。
 - 値を替えたら（作り直し・更新）、ESO が写した後に読む側を作り直す（`kubectl -n ai-stock-trading rollout restart deploy/<名前>`）。クラウドに Reloader は無い。
 - DB の資格はサービスごとに分かれている（audit・configuration・cost-control・market-monitor・order-execution・report・risk-management が、それぞれ
@@ -296,6 +300,12 @@ bash scripts/ast-message-origin-keygen.sh --live
 
 - [ ] moomoo への接続: OpenD がログインし、発注執行の口座照会が成功する。
 - [ ] 情報源への到達は §1 の段 4 で確かめ済み（秘密を入れる前）。ここでは API キーを要する取得が成功することを、各サービスのログで確かめる。
+- [ ] Discord ボットが繋がっている: 通知サービスのメトリクス `ast_notification_discord_bot_status{state="connected"}` が 1 で、警報 `AstDiscordBotUnavailable` が出ていない。
+  - 確かめたら、ボットの設定の欠けで readiness を落とす段へ上げる: `values-cloud.yaml` の通知の `extraEnv` に
+    `- { name: Notifications__Discord__Bot__MissingSettingsMode, value: "Enforce" }` を足して helm を再実行する（設定の欠けたまま入れ替えが進まなくなる。
+    切断では落とさない）。readiness が落ちても購読と Webhook の通知は止まらない。戻すときはこの行を外す。
+- [ ] 警報の規則を取り込み直した: 基盤の ConfigMap `ast-prometheus-rules` を、この版の `deploy/observability/alerts/ai-stock-trading-alerts.yaml` から作り直して
+  Prometheus を作り直す（基盤の手順書「バックアップ・警報・死活」§4 の 3）。群 `ai-stock-trading.access` が `rule_group` に並ぶこと。
 - [ ] 遅延: `scripts/measure-region-latency.sh --count 10 --tcp-only <OpenD の接続先のホスト>:<ポート>` の中央値を記録する。
 - [ ] digest の参照で全 Pod が起動している（§4 の 5）。
 - [ ] 基盤への接続が TLS で通っている: DB・ブローカの接続の失敗と、LLM ゲートウェイの証明書の検証の失敗がログに無い。

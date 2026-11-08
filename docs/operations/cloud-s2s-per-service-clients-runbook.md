@@ -4,13 +4,13 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-11-07
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 <!-- trace:
 ids: [NFR, NFR-05, NFR-06]
 adrs: [ADR-0047, ADR-0080]
-iadrs: [IADR-0637, IADR-0626, IADR-0611, IADR-0623, MSP:IADR-0689, MSP:IADR-0700]
-specs: [20261107_s2s-per-service-clients]
+iadrs: [IADR-0645, IADR-0637, IADR-0626, IADR-0611, IADR-0623, MSP:IADR-0689, MSP:IADR-0700]
+specs: [20261108_origin-alerts-replay-store-bot-health, 20261107_s2s-per-service-clients]
 issues: []
 -->
 
@@ -65,11 +65,13 @@ issues: []
    - 11 サービスが Ready。`ast-service-auth-<サービス>` が無いと、その Pod は起動しない（`CreateContainerConfigError`）。
    - 受け側のログに「この口を呼んでよいサービスでないため拒否します」が出ない。出たら、ログの `azp` と `口` の組を本書の §戻し方で止めてから一覧を直す。
    - 受け側のログの「移行の段の共有クライアントのトークンを通します」が、入れ替えが済んだ後に出なくなる（旧の Pod が残っていない）。
+     同じ回はメトリクス `ast_auth_legacy_service_client_uses_total`（口ごとの `endpoint`）にも数えられ、警報 `AstLegacyServiceClientUsed` が最初の 1 件で鳴る
+     （入れ替えの途中の旧の Pod の分で鳴るのは想定どおり。入れ替えが済んだ後に鳴ったら、旧の資格で動いている呼び手を探す）。
    - 取引の判断の 1 巡回・報告書の確定（第 2 要素つき）・Discord の操作が 401 / 403 にならない。
 
 ### 段 3: 旧の共有クライアントを外す
 
-**いつ**: 段 2 から**1 日**、受け側のログに「移行の段の共有クライアント」が出ないことを確かめた後。**本番の取引（実資金）へ進む前に必ず済ませる。**
+**いつ**: 段 2 から**1 日**、受け側のログに「移行の段の共有クライアント」が出ず、`ast_auth_legacy_service_client_uses_total` が増えていないことを確かめた後。**本番の取引（実資金）へ進む前に必ず済ませる。**
 
 🔴 **段 3 までは、第 2 要素の確かめの口を呼べるのが報告書だけにならない。** 移行の段の旧の共有クライアントは、口の名前と一覧を見ずに通る。その資格は 7 つのサービスが
 持っていたので、どのサービスの旧い資格でも確かめの口（危険な操作の第 2 要素）を呼べる。段 2 と段 3 の間を長く置かない。目安は上の 1 日である。

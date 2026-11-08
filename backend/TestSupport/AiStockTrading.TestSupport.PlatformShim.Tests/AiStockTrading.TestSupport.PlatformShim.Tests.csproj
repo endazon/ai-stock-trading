@@ -16,5 +16,7 @@
     <ProjectReference Include="..\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
     <!-- NFR, IADR-0168, IADR-0627: Wolverine の追跡は予算つきの入口（TrackActivityForTest）を使う。 -->
     <ProjectReference Include="..\AiStockTrading.TestSupport.Messaging\AiStockTrading.TestSupport.Messaging.csproj" />
+    <!-- NFR, IADR-0645: 計器の発火（旧の共有クライアントの通過・再送の記録の置き場の失敗）を MeterCapture で確かめる。 -->
+    <ProjectReference Include="..\AiStockTrading.TestSupport.Metrics\AiStockTrading.TestSupport.Metrics.csproj" />
   </ItemGroup>
 </Project>

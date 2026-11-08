@@ -37,6 +37,12 @@ public enum MessageOriginCheck
     /// IADR-0633 決定 4: 新しい署名が無く、旧い共有の鍵の HMAC の印だけが合う（移行の間）。段 1 は記録して通し、段 2 は処理しない。
     /// </summary>
     Legacy = 8,
+
+    /// <summary>
+    /// 🔴 IADR-0645 決定 2: 再送の記録の置き場が無い受け手で、起動より前に（猶予を超えて）発行された（処理し終えたかを確かめられない）。
+    /// 段 1 は記録して通し、段 2 は処理しない。
+    /// </summary>
+    Unrecorded = 9,
 }
 
 /// <summary>
@@ -49,6 +55,9 @@ public enum MessageOriginCheck
 ///   （<see cref="MarkHandled"/>。失敗からの再試行は再送に数えない。同じ配信〔同じ封筒〕の再試行も数えない）。</item>
 /// <item>段 1（Report）: 合わないものは構造化した Warning とメトリクスに残して<b>通す</b>。段 2（Enforce）: <b>処理しない</b>。</item>
 /// <item>記録だけの受け手（監査。<see cref="RecordOnly"/>）: 段に依らず、合わないものを記録して<b>通す</b>（証跡を欠かさない）。</item>
+/// <item>🔴 IADR-0645 決定 2: 再送の記録は、置き場（<see cref="IMessageOriginReplayStore"/>。受け手の DB）があればそこにも残し、再起動の後も再送を拒む。
+///   置き場が読めなければ例外で処理を止める（拒否として捨てない）。置き場が無い受け手は、起動より前に猶予を超えて発行されたものを
+///   <see cref="MessageOriginCheck.Unrecorded"/> とする（処理し終えたかを確かめられない）。</item>
 /// </list>
 /// 鍵の値も印の値もログに出さない。
 /// </summary>
@@ -60,6 +69,9 @@ public sealed class MessageOriginVerifier
     /// <summary>段 1 で確かめられなかったメッセージの記録。</summary>
     public static readonly EventId UnverifiedEvent = new(16261, "MessageOriginUnverified");
 
+    /// <summary>IADR-0645 決定 2: 再送の記録の置き場の読み書きの失敗。</summary>
+    public static readonly EventId ReplayStoreFailedEvent = new(16262, "MessageOriginReplayStoreFailed");
+
     private readonly MessageOriginMode _mode;
     private readonly MessageOriginSignature _signature;
     private readonly MessageOriginLegacyHmac _legacy;
@@ -70,6 +82,8 @@ public sealed class MessageOriginVerifier
     private readonly ILogger<MessageOriginVerifier> _logger;
     private readonly BusinessMetrics? _metrics;
     private readonly ConcurrentDictionary<Guid, HandledEntry> _handled = new();
+    private readonly IMessageOriginReplayStore? _store;
+    private readonly long? _unrecordedBeforeTicks;
     private long _nextPruneTicks;
 
     public MessageOriginVerifier(
@@ -81,7 +95,9 @@ public sealed class MessageOriginVerifier
         ILogger<MessageOriginVerifier> logger,
         BusinessMetrics? metrics = null,
         MessageOriginLegacyHmac? legacy = null,
-        bool recordOnly = false)
+        bool recordOnly = false,
+        IMessageOriginReplayStore? replayStore = null,
+        DateTimeOffset? unrecordedBefore = null)
     {
         ArgumentNullException.ThrowIfNull(signature);
         ArgumentNullException.ThrowIfNull(time);
@@ -95,6 +111,8 @@ public sealed class MessageOriginVerifier
         _metrics = metrics;
         _legacy = legacy ?? MessageOriginLegacyHmac.None;
         _recordOnly = recordOnly;
+        _store = replayStore;
+        _unrecordedBeforeTicks = unrecordedBefore?.UtcTicks;
     }
 
     /// <summary>段。</summary>
@@ -103,8 +121,18 @@ public sealed class MessageOriginVerifier
     /// <summary>記録だけの受け手か（段に依らず拒まない）。</summary>
     public bool RecordOnly => _recordOnly;
 
-    /// <summary>確かめる（記録も段の判断もしない。試験と <see cref="Admit"/> が使う）。</summary>
-    public MessageOriginCheck Check(Envelope envelope)
+    /// <summary>
+    /// 再送の記録を受け手の DB に残すか（IADR-0645）。<c>unrecordedBefore</c>（置き場が無いとき）: これより前に発行されたものは
+    /// 処理し終えたかを確かめられない（配線が「起動の時刻 − 猶予」を渡す）。
+    /// </summary>
+    public bool HasDurableReplayRecord => _store is not null;
+
+    /// <summary>確かめる（記録も段の判断もしない。試験が使う。置き場があれば読みを待つ）。</summary>
+    public MessageOriginCheck Check(Envelope envelope) =>
+        CheckAsync(envelope, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+
+    /// <summary>確かめる（記録も段の判断もしない）。置き場が読めなければ <see cref="MessageOriginReplayStoreUnavailableException"/>。</summary>
+    public async ValueTask<MessageOriginCheck> CheckAsync(Envelope envelope, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         var message = envelope.Message;
@@ -160,18 +188,50 @@ public sealed class MessageOriginVerifier
         // 同じ配信の中の再試行（後処理が処理の記録の後に失敗した場合）は再送に数えない。判定は「記録したときと同じ封筒の
         // 実体」かつ「2 回目以降の試行」の両方（Wolverine はプロセス内の呼び出しで封筒の実体を使い回すので、実体だけでは足りない。
         // 試行の回数は見出しから読まれ得るので、回数だけでも足りない）。ブローカから届き直したもの（再送）は別の実体になる。
-        if (_handled.TryGetValue(id, out var handled)
-            && !(envelope.Attempts > 1 && handled.Delivery.TryGetTarget(out var delivered) && ReferenceEquals(delivered, envelope)))
-            return MessageOriginCheck.Replayed;
+        if (_handled.TryGetValue(id, out var handled))
+        {
+            if (!(envelope.Attempts > 1 && handled.Delivery.TryGetTarget(out var delivered) && ReferenceEquals(delivered, envelope)))
+                return MessageOriginCheck.Replayed;
+        }
+        else if (_store is not null)
+        {
+            // 🔴 IADR-0645 決定 2: プロセスの中に記録が無ければ置き場を見る（再起動の前・別のレプリカが処理し終えたもの）。
+            bool seen;
+            try
+            {
+                seen = await _store.ContainsAsync(id, _time.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _metrics?.RecordMessageOriginReplayStoreFailure("lookup");
+                _logger.LogError(
+                    ReplayStoreFailedEvent,
+                    "発行元の確かめの再送の記録の置き場を読めませんでした（処理せずに再試行します）: 型={MessageType} 例外の型={ExceptionType}",
+                    message.GetType().Name, ex.GetType().Name);
+                throw new MessageOriginReplayStoreUnavailableException(ex);
+            }
+
+            if (seen)
+                return MessageOriginCheck.Replayed;
+        }
+        else if (_unrecordedBeforeTicks is { } before && ticks < before)
+        {
+            // 🔴 IADR-0645 決定 2: 置き場が無い受け手は、起動より前（猶予を超えて）に発行されたものを処理し終えたか確かめられない。
+            return MessageOriginCheck.Unrecorded;
+        }
 
         // 旧い印は、ほかの確かめをすべて通っても段 2 では受けない（段の判断は Admit）。
         return legacyOnly ? MessageOriginCheck.Legacy : MessageOriginCheck.Valid;
     }
 
-    /// <summary>処理へ進めてよいか。段 1 では常に true（記録だけ）。</summary>
-    public bool Admit(Envelope envelope)
+    /// <summary>処理へ進めてよいか。段 1 では常に true（記録だけ）。試験が使う。</summary>
+    public bool Admit(Envelope envelope) =>
+        AdmitAsync(envelope, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+
+    /// <summary>処理へ進めてよいか。段 1 では常に true（記録だけ）。置き場が読めなければ例外（処理しない・再試行）。</summary>
+    public async ValueTask<bool> AdmitAsync(Envelope envelope, CancellationToken cancellationToken)
     {
-        var result = Check(envelope);
+        var result = await CheckAsync(envelope, cancellationToken).ConfigureAwait(false);
         if (result == MessageOriginCheck.Valid)
             return true;
 
@@ -197,22 +257,48 @@ public sealed class MessageOriginVerifier
         return true;
     }
 
-    /// <summary>処理が成功したメッセージの ID を記録する（以後の再到達は再送として拒む）。</summary>
-    public void MarkHandled(Envelope envelope)
+    /// <summary>処理が成功したメッセージの ID を記録する（以後の再到達は再送として拒む）。試験が使う。</summary>
+    public void MarkHandled(Envelope envelope) =>
+        MarkHandledAsync(envelope, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// 処理が成功したメッセージの ID を記録する（以後の再到達は再送として拒む）。置き場があればそこにも残す。
+    /// 🔴 置き場への書きに失敗しても例外にしない（処理は終わっている。やり直すと副作用が重なる）。計器と Error に残し、プロセスの中の記録で続ける。
+    /// </summary>
+    public async ValueTask MarkHandledAsync(Envelope envelope, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         if (!envelope.Headers.TryGetValue(MessageOriginSignature.IdHeader, out var idText)
             || !Guid.TryParseExact(idText, "D", out var id))
             return;
 
-        var now = _time.GetUtcNow().UtcTicks;
-        _handled[id] = new HandledEntry(now + _maxAge.Ticks + _maxFutureSkew.Ticks, new WeakReference<Envelope>(envelope));
-        Prune(now);
+        var nowAt = _time.GetUtcNow();
+        var now = nowAt.UtcTicks;
+        var expires = now + _maxAge.Ticks + _maxFutureSkew.Ticks;
+        _handled[id] = new HandledEntry(expires, new WeakReference<Envelope>(envelope));
+        if (_store is not null)
+        {
+            try
+            {
+                await _store.RecordAsync(id, new DateTimeOffset(expires, TimeSpan.Zero), cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _metrics?.RecordMessageOriginReplayStoreFailure("record");
+                _logger.LogError(
+                    ReplayStoreFailedEvent,
+                    "発行元の確かめの再送の記録を置き場に残せませんでした（プロセスの中の記録だけで続けます。再起動の後はこの ID の再送を拒めません）: 型={MessageType} 例外の型={ExceptionType}",
+                    envelope.Message?.GetType().Name ?? "-", ex.GetType().Name);
+            }
+        }
+
+        await PruneAsync(nowAt, cancellationToken).ConfigureAwait(false);
     }
 
     // 窓を過ぎた記録を捨てる（窓の外の ID は時刻の検査が拒むので、記録が無くても再送は通らない）。
-    private void Prune(long now)
+    private async ValueTask PruneAsync(DateTimeOffset nowAt, CancellationToken cancellationToken)
     {
+        var now = nowAt.UtcTicks;
         if (now < Interlocked.Read(ref _nextPruneTicks))
             return;
         Interlocked.Exchange(ref _nextPruneTicks, now + TimeSpan.FromMinutes(10).Ticks);
@@ -220,6 +306,18 @@ public sealed class MessageOriginVerifier
         {
             if (entry.Expires < now)
                 _handled.TryRemove(id, out _);
+        }
+
+        if (_store is null)
+            return;
+        try
+        {
+            await _store.PruneAsync(nowAt, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 捨て損ねても確かめは正しい（期限は読みの条件にも入っている）。次の機会に捨てる。
+            _logger.LogWarning(ReplayStoreFailedEvent, "再送の記録の期限切れを捨てられませんでした: 例外の型={ExceptionType}", ex.GetType().Name);
         }
     }
 
@@ -234,6 +332,7 @@ public sealed class MessageOriginVerifier
         MessageOriginCheck.Replayed => "replayed",
         MessageOriginCheck.Unverifiable => "unverifiable",
         MessageOriginCheck.Legacy => "legacy",
+        MessageOriginCheck.Unrecorded => "unrecorded",
         _ => "unknown",
     };
 

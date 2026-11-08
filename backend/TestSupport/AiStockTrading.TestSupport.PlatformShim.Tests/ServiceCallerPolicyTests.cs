@@ -1,5 +1,7 @@
 using System.Net;
 using System.Security.Cryptography;
+using AiStockTrading.Shared.Contracts.Observability;
+using AiStockTrading.TestSupport.Metrics;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
@@ -83,7 +85,7 @@ public class ServiceCallerPolicyTests
         public ValueTask DisposeAsync() => app.DisposeAsync();
     }
 
-    private static async Task<Host> StartAsync(IDictionary<string, string?> settings)
+    private static async Task<Host> StartAsync(IDictionary<string, string?> settings, BusinessMetrics? metrics = null)
     {
         var key = new SymmetricSecurityKey(RandomNumberGenerator.GetBytes(32));
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing" });
@@ -92,6 +94,8 @@ public class ServiceCallerPolicyTests
             .AddInMemoryCollection(new Dictionary<string, string?>(settings) { ["Auth:Authority"] = Issuer })
             .Build();
         builder.Services.AddAiStockTradingAuth(config);
+        if (metrics is not null)
+            builder.Services.AddSingleton(metrics);
         // 鍵の取得（メタデータ）を試験の鍵へ置き換える（発行元・宛先・署名の検証は本物の JwtBearer が行う）。
         builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, o =>
         {
@@ -181,6 +185,32 @@ public class ServiceCallerPolicyTests
         await using var final = await StartAsync(Settings("Enforce"));
         (await final.SendAsync(HttpMethod.Get, "/open-positions", legacyToken(final))).Should().Be(HttpStatusCode.Unauthorized);
         (await final.SendAsync(HttpMethod.Get, "/open-positions", final.Service(Legacy, Api))).Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    // 🔴 NFR, NFR-05, IADR-0645 決定 1: 旧の共有クライアントを通した回は計器に残る（ログだけでは警報にならない）。
+    // 陰性対照: 自分のクライアントのトークン・段を外した後の旧のトークン（拒否）は数えない。
+    [Fact]
+    public async Task 移行の段_旧の共有クライアントを通した回は口ごとに計器へ残る_自分のクライアントは数えない()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        await using (var migrating = await StartAsync(Settings("Enforce", legacy: true), metrics))
+        {
+            (await migrating.SendAsync(HttpMethod.Get, "/open-positions", migrating.Service(Report, Api))).Should().Be(HttpStatusCode.OK);
+            capture.ValuesOf(BusinessMetricNames.LegacyServiceClientUses).Should().BeEmpty("自分のクライアントは旧の扱いを通らない");
+
+            (await migrating.SendAsync(HttpMethod.Get, "/open-positions", migrating.Service(Legacy, Api))).Should().Be(HttpStatusCode.OK);
+            (await migrating.SendAsync(HttpMethod.Get, "/unnamed", migrating.Service(Legacy, Api))).Should().Be(HttpStatusCode.OK);
+        }
+
+        capture.SumOf(BusinessMetricNames.LegacyServiceClientUses).Should().Be(2);
+        capture.TagValuesOf(BusinessMetricNames.LegacyServiceClientUses, BusinessMetricNames.TagEndpoint)
+            .Should().BeEquivalentTo(["open-positions", "-"]);
+
+        await using var final = await StartAsync(Settings("Enforce"), metrics);
+        (await final.SendAsync(HttpMethod.Get, "/open-positions", final.Service(Legacy, Api))).Should().Be(HttpStatusCode.Forbidden);
+        capture.SumOf(BusinessMetricNames.LegacyServiceClientUses).Should().Be(2, "段を外した後の旧のトークンは通らないので数えない");
     }
 
     [Theory]

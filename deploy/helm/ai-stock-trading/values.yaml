@@ -128,6 +128,11 @@ global:
     #   Report にして当て、ログに「発行元を確かめられませんでした」（EventId 16261）が出ないことを確かめてから外す（手順書 §5.1）。
     #   鍵（Secret の参照）の optional は global の mode のまま。値は Report か Enforce。
     modeOverrides: {}
+    # 🔴 NFR, FR-10, IADR-0645 決定 2: 再送の記録（処理し終えたメッセージ ID）の置き場。Memory（既定）か Database。
+    #   Database は DB を持つ受け手（services.<名前>.db のある verifiers）にだけ env MessageOrigin__ReplayStore で渡し、
+    #   そのサービスの DB の表 message_origin_handled に残す（再起動で消えない。窓は MessageOrigin:MaxAge＝24 時間）。DB の無い受け手には描かない
+    #   （プロセスの中だけ。起動より前に猶予 5 分を超えて発行されたものは段 2 で処理しない）。戻すときは Memory。
+    replayStore: Memory
     previousVerifySecretName: ast-message-origin-previous-verify-keys
     previousVerify: []
     legacyHmac:

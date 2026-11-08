@@ -12,6 +12,8 @@ using NotificationService.Infrastructure.Steps;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Messaging;
+using AiStockTrading.Shared.Contracts.Observability;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Serilog;
 using Wolverine;
 
@@ -58,6 +60,15 @@ builder.Services.AddSingleton<INotificationSender>(sp => NotificationSenderFacto
 // Notifications:Discord:Bot:Enabled=true ＋ Token ＋ 多層認証の設定が揃った時のみ実接続する。
 var discordBotOptions = DiscordBotOptionsReader.Read(builder.Configuration);
 builder.Services.AddSingleton(discordBotOptions);
+// 🔴 NFR, FR-14, IADR-0645 決定 3: ボットの接続状態（計器 ast.notification.discord_bot_status と readiness）。
+// 段 Enforce（Notifications:Discord:Bot:MissingSettingsMode）では、有効なのに設定が欠けて接続しないとき readiness を落とす。既定 Report。
+var discordBotMissingSettingsMode = DiscordBotReadinessCheck.ReadMode(builder.Configuration);
+builder.Services.AddSingleton(sp => new DiscordBotHealth(sp.GetService<BusinessMetrics>()));
+builder.Services.AddHealthChecks().Add(new HealthCheckRegistration(
+    "discord-bot",
+    sp => new DiscordBotReadinessCheck(sp.GetRequiredService<DiscordBotHealth>(), discordBotMissingSettingsMode),
+    failureStatus: null,
+    tags: ["ready"]));
 
 // NFR, FR-14, MSP:ADR-0029, ADR-0047 決定 1・2, IADR-0284 決定 5（段 5）, IADR-0449, IADR-0450, #753: east-west gRPC（ボットの読み取り 6 本・書き込み 13 本）。
 // **`RiskManagement:Grpc` / `Reports:Grpc` / `MarketMonitor:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。
@@ -257,7 +268,8 @@ builder.Services.AddSingleton<IDiscordBotGateway>(sp => DiscordBotGatewayFactory
     sp.GetRequiredService<PositionDriftAdoptionCommandHandler>(),
     sp.GetRequiredService<PolicyRevisionCommandHandler>(),
     sp.GetRequiredService<PolicyApprovalCommandHandler>(),
-    sp.GetRequiredService<ILoggerFactory>()));
+    sp.GetRequiredService<ILoggerFactory>(),
+    sp.GetRequiredService<DiscordBotHealth>()));
 builder.Services.AddHostedService<DiscordBotHostedService>();
 
 // ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。取引実行・リスク統制発動のイベントを購読して通知する。

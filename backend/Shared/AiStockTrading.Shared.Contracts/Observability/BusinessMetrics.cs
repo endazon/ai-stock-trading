@@ -137,6 +137,9 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Counter<long> _orderExecutions;
     private readonly Counter<long> _orderDispatchForgone;
     private readonly Counter<long> _messageOriginFailures;
+    private readonly Counter<long> _messageOriginReplayStoreFailures;
+    private readonly Counter<long> _legacyServiceClientUses;
+    private readonly Gauge<long> _discordBotStatus;
     private readonly Counter<long> _driftAdoptionFollowUpAbandoned;
     private readonly Counter<long> _orderReservationReconciliations;
     private readonly Counter<double> _llmCostJpy;
@@ -246,6 +249,21 @@ public sealed class BusinessMetrics : IDisposable
         _messageOriginFailures = _meter.CreateCounter<long>(
             BusinessMetricNames.MessageOriginFailures,
             description: "受け手で発行元を確かめられなかったメッセージの件数（type・reason・outcome 別。outcome=rejected は段 2 で処理しなかった。NFR/FR-10）");
+
+        // 🔴 NFR, FR-10, IADR-0645 決定 2: 再送の記録の置き場（DB）の読み書きの失敗。
+        _messageOriginReplayStoreFailures = _meter.CreateCounter<long>(
+            BusinessMetricNames.MessageOriginReplayStoreFailures,
+            description: "発行元の確かめの再送の記録の置き場（DB）の読み書きに失敗した件数（operation 別。平常は 0。NFR/FR-10）");
+
+        // 🔴 NFR, NFR-05, IADR-0645 決定 1: 移行の段の旧の共有クライアントのトークンを通した件数。
+        _legacyServiceClientUses = _meter.CreateCounter<long>(
+            BusinessMetricNames.LegacyServiceClientUses,
+            description: "移行の段の旧の共有クライアントのトークンを口の一覧を見ずに通した件数（endpoint 別。全サービスが移っていれば 0。NFR-05）");
+
+        // 🔴 NFR, FR-14, IADR-0645 決定 3: Discord ボットの接続状態（今の状態だけ 1）。
+        _discordBotStatus = _meter.CreateGauge<long>(
+            BusinessMetricNames.DiscordBotStatus,
+            description: "Discord ボットの接続状態（state 別。今の状態だけ 1。misconfigured・disconnected はオーナーの帯域内の停止の経路が無い。FR-14）");
 
         // FR-10, #942, IADR-0395: 乖離の取り込みの追随を、建玉照会の不明・失敗のまま再試行を使い切って打ち切った件数。
         _driftAdoptionFollowUpAbandoned = _meter.CreateCounter<long>(
@@ -450,6 +468,46 @@ public sealed class BusinessMetrics : IDisposable
             new KeyValuePair<string, object?>(BusinessMetricNames.TagMessageType, messageType),
             new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, reason),
             new KeyValuePair<string, object?>(BusinessMetricNames.TagOutcome, rejected ? "rejected" : "admitted"));
+
+    /// <summary>NFR, FR-10, IADR-0645 決定 2: 再送の記録の置き場の読み（lookup）か書き（record）の失敗を 1 件計上する。</summary>
+    public void RecordMessageOriginReplayStoreFailure(string operation) =>
+        _messageOriginReplayStoreFailures.Add(
+            1, new KeyValuePair<string, object?>(BusinessMetricNames.TagOperation, operation));
+
+    /// <summary>NFR, NFR-05, IADR-0645 決定 1: 旧の共有クライアントのトークンを通した 1 回を計上する（<paramref name="endpoint"/> は口の名前）。</summary>
+    public void RecordLegacyServiceClientUse(string endpoint) =>
+        _legacyServiceClientUses.Add(
+            1, new KeyValuePair<string, object?>(BusinessMetricNames.TagEndpoint, endpoint));
+
+    /// <summary>NFR, FR-14, IADR-0645 決定 3: Discord ボットの状態の語彙（タグ state の値）。</summary>
+    public static IReadOnlyList<string> DiscordBotStates { get; } =
+        [DiscordBotDisabled, DiscordBotMisconfigured, DiscordBotDisconnected, DiscordBotConnected];
+
+    /// <summary>ボットは明示的に無効（Enabled=false）。</summary>
+    public const string DiscordBotDisabled = "disabled";
+
+    /// <summary>有効なのに Token・多層認証の設定が欠けて接続しない。</summary>
+    public const string DiscordBotMisconfigured = "misconfigured";
+
+    /// <summary>接続しようとしているが Gateway に繋がっていない。</summary>
+    public const string DiscordBotDisconnected = "disconnected";
+
+    /// <summary>Gateway に繋がっている。</summary>
+    public const string DiscordBotConnected = "connected";
+
+    /// <summary>
+    /// NFR, FR-14, IADR-0645 決定 3: Discord ボットの今の状態を記録する（<paramref name="state"/> だけ 1、語彙のほかの値は 0）。
+    /// 語彙の外の値は例外（系列を増やさない）。
+    /// </summary>
+    public void RecordDiscordBotState(string state)
+    {
+        if (!DiscordBotStates.Contains(state, StringComparer.Ordinal))
+            throw new ArgumentOutOfRangeException(nameof(state), state, "Discord ボットの状態の語彙の外の値です。");
+        foreach (var s in DiscordBotStates)
+            _discordBotStatus.Record(
+                string.Equals(s, state, StringComparison.Ordinal) ? 1 : 0,
+                new KeyValuePair<string, object?>(BusinessMetricNames.TagState, s));
+    }
 
     /// <summary>FR-05, FR-10: 発注を見送った 1 件を計上する。</summary>
     public void RecordOrderDispatchForgone(OrderDispatchForgoneReason reason) =>

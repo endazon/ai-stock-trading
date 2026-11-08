@@ -7,6 +7,7 @@ using NotificationService.Features.Notifications.OperateStageGate;
 using NotificationService.Features.Notifications.OperateTradingPause;
 using NotificationService.Features.Notifications.ReviewReport;
 using NotificationService.Features.Notifications.RevisePolicy;
+using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.Logging;
 
 namespace NotificationService.Infrastructure.ExternalServices;
@@ -22,6 +23,9 @@ namespace NotificationService.Infrastructure.ExternalServices;
 // 3 が要点である。認証設定が欠けたまま Gateway に接続すると、着信は Authorizer が全拒否するため実害は
 // 出ないが、「操作を受け付けない Bot がオンラインに見える」状態になる。設定不備は接続前に落とす方が明確で、
 // 誤設定に気付ける（起動時ログ）。IADR-0016 の実弾防止ゲートと同じく、設定不備では動かさない。
+//
+// 🔴 NFR, IADR-0645 決定 3: 選んだ結果（無効・設定の欠け・接続へ進む）を DiscordBotHealth に残す（計器と readiness が読む）。
+// 設定の欠けはログの Warning だけでは誰にも知らされず、オーナーが操作を試みるまで帯域内の停止の経路が無いことに気付けない。
 public static class DiscordBotGatewayFactory
 {
     public static IDiscordBotGateway Create(
@@ -39,18 +43,24 @@ public static class DiscordBotGatewayFactory
         PolicyRevisionCommandHandler policyRevisionHandler,
         // FR-13, ADR-0042 決定 1, #1025: `/policy` の確認ボタン（確定＋入れ替え案の適用）。
         PolicyApprovalCommandHandler policyApprovalHandler,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        DiscordBotHealth? health = null)
     {
         var logger = loggerFactory.CreateLogger(typeof(DiscordBotGatewayFactory).FullName!);
+        health ??= new DiscordBotHealth();
 
         if (!options.Enabled)
+        {
+            health.Set(BusinessMetrics.DiscordBotDisabled);
             return NoOp(loggerFactory);
+        }
 
         if (string.IsNullOrWhiteSpace(options.Token))
         {
             logger.LogWarning(
                 "Notifications:Discord:Bot:Enabled=true ですが Token が未設定のため Gateway に接続しません" +
                 "（no-op へフォールバック・IADR-0062）。");
+            health.Set(BusinessMetrics.DiscordBotMisconfigured);
             return NoOp(loggerFactory);
         }
 
@@ -61,12 +71,15 @@ public static class DiscordBotGatewayFactory
             logger.LogWarning(
                 "Discord Bot の多層認証の設定が不足しているため Gateway に接続しません（不足: {Missing}・IADR-0062）。",
                 string.Join(", ", missing));
+            health.Set(BusinessMetrics.DiscordBotMisconfigured);
             return NoOp(loggerFactory);
         }
 
+        // 接続するまでは disconnected（Gateway の接続・切断の事象が更新する）。
+        health.Set(BusinessMetrics.DiscordBotDisconnected);
         return new DiscordNetBotGateway(
             handler, pauseHandler, stageGateHandler, goodFaithViolationHandler, reportHandler, driftAdoptionHandler, policyRevisionHandler, policyApprovalHandler, options,
-            loggerFactory.CreateLogger<DiscordNetBotGateway>());
+            loggerFactory.CreateLogger<DiscordNetBotGateway>(), health);
     }
 
     // 不足している認証設定の一覧（運用者が起動時ログで欠落を特定できるようにする）。

@@ -164,3 +164,78 @@ spec:
               最初に見る場所: 受け手のサービスのログの WRN「メッセージの発行元を確かめられないため処理しません」（EventId 16260。型・名乗った発行元・メッセージ ID が載る）。
               missing / unverifiable なら鍵の Secret（ast-message-origin-signing-keys・ast-message-origin-verify-keys）と ESO の同期を、
               legacy なら旧い共有の鍵の印だけを付ける発行元（移行の取り残し）を、forbidden_issuer / mismatch / replayed ならブローカの利用者と Pod の侵害を疑う。
+        # 🔴 NFR, FR-10, IADR-0645 決定 1: 記録だけの受け手（監査）・段 1 の受け手（Report。通知を足した間など）が、発行元を確かめられない
+        # メッセージを記録して処理した。拒まないので処理は続くが、偽の事象が証跡・オーナーへの通知に入った疑いがある。
+        # 🔴 この閾値は実測を要しない。正規の発行元は必ず印を付けるので平常は 0 件である（reason=unrecorded は再送の記録の置き場が無い受け手が
+        # 起動より前のものを受けた。止まっている間に溜まったものか、過去のメッセージの再送かを見分ける）。
+        # for は置かない（1 件で知らせる。AstMessageOriginRejected と同じ形。左の枝は最初の 1 件、右の枝は 2 件目以降）。
+        - alert: AstMessageOriginUnverifiedAdmitted
+          expr: >-
+            (sum by (type, reason) (ast_messaging_origin_failures_total{outcome="admitted"})
+              unless sum by (type, reason) (ast_messaging_origin_failures_total{outcome="admitted"} offset 15m))
+            or sum by (type, reason) (increase(ast_messaging_origin_failures_total{outcome="admitted"}[15m])) > 0
+          labels:
+            severity: warning
+            service: ai-stock-trading
+          annotations:
+            summary: 発行元を確かめられないメッセージを、記録だけで処理した（監査・段 1 の受け手）
+            description: >-
+              統制の入力になるメッセージ（型は type）を、記録だけの受け手（監査）か段 1 の受け手（通知など）が、発行元を確かめられないまま処理した（理由は reason）。
+              最初に見る場所: 受け手のサービスのログの WRN「メッセージの発行元を確かめられませんでした」（EventId 16261。型・名乗った発行元・メッセージ ID が載る）。
+              missing / unverifiable なら鍵の Secret と ESO の同期を、unrecorded なら受け手の再起動の前後に溜まったメッセージを、
+              forbidden_issuer / mismatch / replayed ならブローカの利用者と Pod の侵害を疑い、同じ時刻の通知・証跡を信じない。
+        # 🔴 NFR, FR-10, IADR-0645 決定 2: 発行元の確かめの再送の記録の置き場（受け手の DB）を読み書きできなかった。
+        # lookup の失敗はそのメッセージを処理せず再試行する（続けばエラーキューへ）。record の失敗は処理は終えたが、再起動の後にその ID の再送を拒めない。
+        # 🔴 平常は 0 件（DB の障害の印）。for は置かない（1 件で知らせる。左の枝は最初の 1 件、右の枝は 2 件目以降）。
+        - alert: AstMessageOriginReplayStoreFailing
+          expr: >-
+            (sum by (operation) (ast_messaging_origin_replay_store_failures_total)
+              unless sum by (operation) (ast_messaging_origin_replay_store_failures_total offset 15m))
+            or sum by (operation) (increase(ast_messaging_origin_replay_store_failures_total[15m])) > 0
+          labels:
+            severity: warning
+            service: ai-stock-trading
+          annotations:
+            summary: 発行元の確かめの再送の記録の置き場（受け手の DB）を読み書きできない
+            description: >-
+              受け手が、処理し終えたメッセージ ID の記録（表 message_origin_handled）を読めない（operation=lookup）か書けない（operation=record）。
+              lookup ならメッセージは処理されずに再試行され、続けば受け手のエラーキューへ移る。record なら再起動の後にその ID の再送を拒めない。
+              最初に見る場所: 受け手のサービスのログの ERR（EventId 16262）と、そのサービスの DB への接続（readiness の DB 疎通）。
+    - name: ai-stock-trading.access
+      rules:
+        # 🔴 NFR, NFR-05, IADR-0637, IADR-0645 決定 1: 移行の段の旧の共有クライアントのトークンを、口の一覧を見ずに通した。
+        # 全サービスが自分の機密クライアントで動いていれば平常は 0 件である（values-cloud はすべて自分のクライアントを読む）。
+        # 1 件でも出れば、旧の共有の資格で動いている呼び手が残っている（段の取り残し）か、旧の資格の持ち出しを疑う。
+        # for は置かない（1 件で知らせる。左の枝は最初の 1 件、右の枝は 2 件目以降）。
+        - alert: AstLegacyServiceClientUsed
+          expr: >-
+            (sum by (endpoint) (ast_auth_legacy_service_client_uses_total)
+              unless sum by (endpoint) (ast_auth_legacy_service_client_uses_total offset 15m))
+            or sum by (endpoint) (increase(ast_auth_legacy_service_client_uses_total[15m])) > 0
+          labels:
+            severity: warning
+            service: ai-stock-trading
+          annotations:
+            summary: 旧の共有クライアントのトークンで取引ユニットの口が呼ばれた
+            description: >-
+              移行の段の旧の共有クライアント（Auth:ServiceToken:LegacyClients）のトークンを、口（endpoint）の呼び手の一覧を見ずに通した。
+              最初に見る場所: 呼ばれたサービスのログの WRN「移行の段の共有クライアントのトークンを通します」（口・azp が載る）。
+              全サービスが自分のクライアントで動いていることを確かめ、手順書 docs/operations/cloud-s2s-per-service-clients-runbook.md の段 3 で
+              legacyClients と旧の資格を外す。呼び手に心当たりが無ければ旧の資格の持ち出しを疑い、資格を作り直す。
+        # 🔴 NFR, FR-14, IADR-0062, IADR-0645 決定 3: Discord ボットが有効なのに設定が欠けて接続しない（misconfigured）か、切断が続く（disconnected）。
+        # どちらも、オーナーが Discord から kill switch・一時停止を入れられない（帯域外の停止の手順書 docs/operations/out-of-band-trading-stop-runbook.md はある）。
+        # for: 10m は Discord 側の一過性の切断と再接続を鳴らさないための猶予。設定の欠けは配備の直後から続くので 10 分で鳴る。
+        # 系列は通知サービスの起動で作られる（無効〔disabled〕のときは鳴らさない＝明示の選択）。
+        - alert: AstDiscordBotUnavailable
+          expr: max by (state) (ast_notification_discord_bot_status{state=~"misconfigured|disconnected"}) > 0
+          for: 10m
+          labels:
+            severity: warning
+            service: ai-stock-trading
+          annotations:
+            summary: Discord ボットに繋がっておらず、オーナーの帯域内の停止の経路が無い
+            description: >-
+              通知サービスの Discord ボットが、設定の欠け（state=misconfigured）か切断（state=disconnected）のまま 10 分続いている。
+              この間、Discord から kill switch・一時停止を入れられない。止める必要があれば帯域外の停止（docs/operations/out-of-band-trading-stop-runbook.md）を使う。
+              最初に見る場所: 通知サービスの起動ログの WRN「Discord Bot の多層認証の設定が不足しているため Gateway に接続しません（不足: …）」か
+              「Token が未設定のため」、ESO の同期（Secret ast-secrets の discord-bot-* のキー）と、配備で与える GuildId・ChannelId・許可ユーザーの値。

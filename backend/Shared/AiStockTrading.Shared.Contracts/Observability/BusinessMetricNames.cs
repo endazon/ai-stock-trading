@@ -235,6 +235,25 @@ public static class BusinessMetricNames
     /// </summary>
     public const string MessageOriginFailures = "ast.messaging.origin_failures";
 
+    /// <summary>
+    /// 🔴 NFR, FR-10, IADR-0645 決定 2: 発行元の確かめの<b>再送の記録の置き場（DB）</b>の読み書きの失敗の件数。タグ <c>operation</c>（lookup / record）。
+    /// 平常は 0 件である。lookup の失敗はそのメッセージを処理しない（例外で再試行・エラーキューへ）、record の失敗はプロセスの中の記録だけで続ける。
+    /// </summary>
+    public const string MessageOriginReplayStoreFailures = "ast.messaging.origin_replay_store_failures";
+
+    /// <summary>
+    /// 🔴 NFR, NFR-05, IADR-0637, IADR-0645 決定 1: 移行の段の<b>旧の共有クライアント</b>（<c>Auth:ServiceToken:LegacyClients</c>）のトークンを、
+    /// 口の一覧を見ずに通した件数。タグ <c>endpoint</c>（口の名前。名前の無い口は <c>-</c>）。全サービスが自分のクライアントで動いていれば 0 件である。
+    /// </summary>
+    public const string LegacyServiceClientUses = "ast.auth.legacy_service_client_uses";
+
+    /// <summary>
+    /// 🔴 NFR, FR-14, IADR-0062, IADR-0645 決定 3: Discord ボットの接続状態（ゲージ）。タグ <c>state</c>
+    /// （disabled / misconfigured / disconnected / connected）。今の状態だけ 1、ほかは 0。
+    /// misconfigured と disconnected は、オーナーの帯域内の停止（kill switch・一時停止）の経路が無い状態である。
+    /// </summary>
+    public const string DiscordBotStatus = "ast.notification.discord_bot_status";
+
     /// <summary>タグ名: メッセージ型の名前（IADR-0627）。</summary>
     public const string TagMessageType = "type";
 
@@ -261,4 +280,13 @@ public static class BusinessMetricNames
 
     /// <summary>NFR-01, NFR-02, #689: タグ名: 端点間計測の区間（order-completion / record-completion）。</summary>
     public const string TagStage = "stage";
+
+    /// <summary>タグ名: 口の名前（IADR-0645）。</summary>
+    public const string TagEndpoint = "endpoint";
+
+    /// <summary>タグ名: 状態（IADR-0645）。</summary>
+    public const string TagState = "state";
+
+    /// <summary>タグ名: 操作（IADR-0645）。</summary>
+    public const string TagOperation = "operation";
 }

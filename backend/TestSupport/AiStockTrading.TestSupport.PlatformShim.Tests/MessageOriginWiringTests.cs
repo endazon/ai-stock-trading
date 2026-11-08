@@ -438,6 +438,70 @@ public class MessageOriginWiringTests
         await host.StopAsync();
     }
 
+    // 🔴 NFR, FR-10, IADR-0645 決定 2（AC3-4）: 再送の記録の置き場の構成。
+    private static IConfiguration WithReplayStore(IConfiguration baseConfig, string? store, string? connectionString)
+    {
+        var values = new Dictionary<string, string?>();
+        if (store is not null)
+            values["MessageOrigin:ReplayStore"] = store;
+        if (connectionString is not null)
+            values["ConnectionStrings:DefaultConnection"] = connectionString;
+        return new ConfigurationBuilder().AddConfiguration(baseConfig).AddInMemoryCollection(values).Build();
+    }
+
+    [Fact]
+    public void 再送の記録の置き場がDatabaseで接続文字列が無ければ起動で止まる()
+    {
+        var act = () => new WolverineOptions().UseAiStockTradingMessageOrigin(
+            OrderExecution, WithReplayStore(ReceiverConfig("Enforce"), "Database", null));
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ConnectionStrings:DefaultConnection*");
+    }
+
+    [Fact]
+    public void 知らない再送の記録の置き場は起動で止まる()
+    {
+        var act = () => new WolverineOptions().UseAiStockTradingMessageOrigin(
+            OrderExecution, WithReplayStore(ReceiverConfig("Enforce"), "Redis", "Host=127.0.0.1"));
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Theory]
+    [InlineData("Database", true)]
+    [InlineData("Memory", false)]
+    [InlineData(null, false)]
+    public async Task 再送の記録の置き場はDatabaseのときだけ受け手のDBを使う(string? store, bool durable)
+    {
+        // 接続は最初の確かめのときに開く（起動では繋がない）。ここでは選択だけを見る。
+        using var host = await ReceiverAsync(WithReplayStore(ReceiverConfig("Enforce"), store, "Host=127.0.0.1;Port=1;Database=x;Username=x;Password=x"));
+
+        host.Services.GetRequiredService<MessageOriginVerifier>().HasDurableReplayRecord.Should().Be(durable);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task 再送の記録の置き場を読めなければハンドラへ渡さない()
+    {
+        // 陰性対照つき: 同じメッセージを置き場の無い受け手は処理する。
+        MessageOriginProbeHandler.Reset();
+        var message = Trigger();
+        var signed = SignedBy(MessageOriginCatalog.MarketMonitor, MessageOriginTestKeys.For(MessageOriginCatalog.MarketMonitor), message);
+        using (var unreachable = await ReceiverAsync(
+            WithReplayStore(ReceiverConfig("Enforce"), "Database", "Host=127.0.0.1;Port=1;Database=x;Username=x;Password=x;Timeout=1")))
+        {
+            var act = () => InvokeAsync(unreachable, message, signed);
+            await act.Should().ThrowAsync<MessageOriginReplayStoreUnavailableException>();
+            MessageOriginProbeHandler.Handled.Should().BeEmpty();
+            await unreachable.StopAsync();
+        }
+
+        using var memory = await ReceiverAsync(ReceiverConfig("Enforce"));
+        await InvokeAsync(memory, message, signed);
+        MessageOriginProbeHandler.Handled.Should().ContainSingle();
+        await memory.StopAsync();
+    }
+
     [Fact]
     public void 知らない段は起動で止まる()
     {

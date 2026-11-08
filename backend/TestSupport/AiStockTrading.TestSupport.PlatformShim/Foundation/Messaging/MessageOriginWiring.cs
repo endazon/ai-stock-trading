@@ -63,19 +63,23 @@ public sealed class MessageOriginSigningRule : IEnvelopeRule
 /// <summary>
 /// 🔴 NFR, FR-10, IADR-0627 決定 3: 受ける側。表の型のハンドラの前で確かめ、段 2 で合わなければ処理しない。
 /// 処理が成功したら ID を記録する（再送の検出）。
+/// 🔴 IADR-0645 決定 2: 再送の記録の置き場（受け手の DB）を読み書きするので非同期。置き場が読めなければ例外（処理しない・再試行）。
 /// </summary>
 public static class MessageOriginMiddleware
 {
-    public static HandlerContinuation Before(Envelope envelope, MessageOriginVerifier verifier)
+    public static async Task<HandlerContinuation> BeforeAsync(
+        Envelope envelope, MessageOriginVerifier verifier, CancellationToken cancellation)
     {
         ArgumentNullException.ThrowIfNull(verifier);
-        return verifier.Admit(envelope) ? HandlerContinuation.Continue : HandlerContinuation.Stop;
+        return await verifier.AdmitAsync(envelope, cancellation).ConfigureAwait(false)
+            ? HandlerContinuation.Continue
+            : HandlerContinuation.Stop;
     }
 
-    public static void After(Envelope envelope, MessageOriginVerifier verifier)
+    public static Task AfterAsync(Envelope envelope, MessageOriginVerifier verifier, CancellationToken cancellation)
     {
         ArgumentNullException.ThrowIfNull(verifier);
-        verifier.MarkHandled(envelope);
+        return verifier.MarkHandledAsync(envelope, cancellation).AsTask();
     }
 }
 
@@ -101,6 +105,11 @@ public static class MessageOriginWiringExtensions
             throw new InvalidOperationException($"MessageOrigin:Mode は Report か Enforce です（値: {modeText}）。");
         if (settings.MaxAge <= TimeSpan.Zero || settings.MaxFutureSkew < TimeSpan.Zero)
             throw new InvalidOperationException("MessageOrigin:MaxAge は正、MaxFutureSkew は 0 以上です。");
+        if (settings.UnrecordedGrace < TimeSpan.Zero)
+            throw new InvalidOperationException("MessageOrigin:UnrecordedGrace は 0 以上です。");
+        var storeText = section["ReplayStore"];
+        if (!string.IsNullOrEmpty(storeText) && !Enum.IsDefined(settings.ReplayStore))
+            throw new InvalidOperationException($"MessageOrigin:ReplayStore は Memory か Database です（値: {storeText}）。");
 
         var issued = MessageOriginCatalog.IssuedBy(issuerId);
         var verified = MessageOriginCatalog.VerifiedBy(issuerId);
@@ -120,6 +129,8 @@ public static class MessageOriginWiringExtensions
                 $"記録だけの受け手（{serviceName}）には旧い共有の鍵（MessageOrigin:Keys）を渡しません（共有の鍵から全発行元を名乗れるため。値は表示しません）。");
 
         var clock = time ?? TimeProvider.System;
+        // 起動の時刻（配線の時点）。受け手の検証器は最初のメッセージで作られるので、そこで時刻を取ると起動より遅れる。
+        var startedAt = clock.GetUtcNow();
         var missing = new List<string>();
         if (issued.Count > 0 && !signature.CanSign(issuerId))
             missing.Add("MessageOrigin:SigningKey");
@@ -140,9 +151,22 @@ public static class MessageOriginWiringExtensions
         {
             var types = verified.Select(r => r.MessageType).ToHashSet();
             var recordOnly = MessageOriginCatalog.IsRecordOnly(issuerId);
+            // 🔴 IADR-0645 決定 2: 再送の記録の置き場。Database は受け手のサービスの DB（接続文字列が無ければ起動で止める）。
+            //   Memory（既定）は起動より前に猶予を超えて発行されたものを Unrecorded とする（処理し終えたかを確かめられない）。
+            PostgresMessageOriginReplayStore? store = null;
+            if (settings.ReplayStore == MessageOriginReplayStoreKind.Database)
+            {
+                var connectionString = configuration.GetConnectionString("DefaultConnection");
+                if (string.IsNullOrWhiteSpace(connectionString))
+                    throw new InvalidOperationException(
+                        $"MessageOrigin:ReplayStore=Database には ConnectionStrings:DefaultConnection が要ります（{serviceName}。値は表示しません）。");
+                store = new PostgresMessageOriginReplayStore(connectionString);
+            }
+
             options.Services.AddSingleton(sp => new MessageOriginVerifier(
                 settings.Mode, signature, settings.MaxAge, settings.MaxFutureSkew, clock,
-                sp.GetRequiredService<ILogger<MessageOriginVerifier>>(), sp.GetService<BusinessMetrics>(), legacy, recordOnly));
+                sp.GetRequiredService<ILogger<MessageOriginVerifier>>(), sp.GetService<BusinessMetrics>(), legacy, recordOnly,
+                store, store is null ? startedAt - settings.UnrecordedGrace : null));
             options.Policies.AddMiddleware(typeof(MessageOriginMiddleware), chain => types.Contains(chain.MessageType));
         }
 

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
@@ -160,7 +161,9 @@ public static class ServiceCallersEndpointExtensions
 }
 
 /// <summary>NFR, IADR-0637: <see cref="ServiceCallerRequirement"/> の判定器。</summary>
-public sealed class ServiceCallerHandler(ServiceTokenSettings settings, ILogger<ServiceCallerHandler> logger)
+// 🔴 IADR-0645 決定 1: 旧の共有クライアントを通した回は計器（ast.auth.legacy_service_client_uses）にも残す（ログだけでは誰にも知らされない）。
+public sealed class ServiceCallerHandler(
+    ServiceTokenSettings settings, ILogger<ServiceCallerHandler> logger, BusinessMetrics? metrics = null)
     : AuthorizationHandler<ServiceCallerRequirement>
 {
     protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, ServiceCallerRequirement requirement)
@@ -183,6 +186,9 @@ public sealed class ServiceCallerHandler(ServiceTokenSettings settings, ILogger<
             logger.LogWarning(
                 "移行の段の共有クライアントのトークンを通します（全サービスが自分のクライアントへ移ったら Auth:ServiceToken:LegacyClients を外す）: azp={Azp} 口={Name}",
                 Shorten(azp), Shorten(name ?? "-"));
+            // 口の名前はコードの宣言だけ（系列は増えない）。要件が重なる口（OwnerOrService＋RequireServiceCallers）でも 1 要求 1 件。
+            if (metrics is not null && FirstLegacyUseInRequest(context.Resource))
+                metrics.RecordLegacyServiceClientUse(name ?? "-");
             context.Succeed(requirement);
             return Task.CompletedTask;
         }
@@ -212,6 +218,15 @@ public sealed class ServiceCallerHandler(ServiceTokenSettings settings, ILogger<
             Shorten(azp ?? "-"), Shorten(name ?? "（名前なし）"), aud);
         context.Succeed(requirement);
         return Task.CompletedTask;
+    }
+
+    private static readonly object LegacyUseCountedKey = new();
+
+    private static bool FirstLegacyUseInRequest(object? resource)
+    {
+        if (resource is not HttpContext http)
+            return true;
+        return http.Items.TryAdd(LegacyUseCountedKey, true);
     }
 
     private static string? NameOf(object? resource) =>

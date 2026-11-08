@@ -3369,6 +3369,41 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.deepStrictEqual(fires({ before: { [key]: 2 }, now: { [key]: 2 }, increase: { [key]: 0 } }), [], '拒否が無いのに鳴る');
       function esc(t) { return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
     });
+
+    // 🔴 NFR, FR-10, NFR-05, FR-14, IADR-0645 決定 1〜3: 記録だけ・段 1 の受け手の確かめの失敗、再送の記録の置き場の失敗、旧の共有クライアントの通過は、
+    // どれも最初の計上で系列が生まれる（起動時に 0 で作らない）ので、AstMessageOriginRejected と同じ「最初の 1 件で鳴る」形であること。
+    // Discord ボットの接続状態は今の状態だけ 1 のゲージで、設定の欠け・切断を 10 分で鳴らす（無効は鳴らさない）。
+    ok('アラート: 確かめの記録・置き場の失敗・旧の共有クライアントは最初の 1 件で鳴り、ボットの不在は 10 分で鳴る（IADR-0645）', () => {
+      const alertDir = pathOa.join(REPO_ROOT_OA, 'deploy', 'observability', 'alerts');
+      const rules = fsOa.readdirSync(alertDir)
+        .filter((f) => /\.ya?ml$/.test(f))
+        .flatMap((f) => oa.parseAlertRules(fsOa.readFileSync(pathOa.join(alertDir, f), 'utf8')));
+      const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const firstOccurrence = [
+        ['AstMessageOriginUnverifiedAdmitted', 'ast_messaging_origin_failures_total{outcome="admitted"}', 'sum by (type, reason)'],
+        ['AstMessageOriginReplayStoreFailing', 'ast_messaging_origin_replay_store_failures_total', 'sum by (operation)'],
+        ['AstLegacyServiceClientUsed', 'ast_auth_legacy_service_client_uses_total', 'sum by (endpoint)'],
+      ];
+      for (const [name, sel, by] of firstOccurrence) {
+        const rule = rules.find((r) => r.alert === name);
+        assert.ok(rule, `${name} が無い`);
+        const expr = rule.expr.replace(/\s+/g, ' ').trim();
+        const shape = new RegExp(
+          `^\\(${esc(by)} \\(${esc(sel)}\\) unless ${esc(by)} \\(${esc(sel)} offset (\\d+m)\\)\\) ` +
+          `or ${esc(by)} \\(increase\\(${esc(sel)}\\[(\\d+m)\\]\\)\\) > 0$`);
+        const m = shape.exec(expr);
+        assert.ok(m, `${name} の式の形が違う（初回の 1 件を取りこぼす形になっていないか）: ${expr}`);
+        assert.strictEqual(m[1], m[2], `${name}: offset（${m[1]}）と increase の窓（${m[2]}）を揃える`);
+        assert.ok(rule.noForReason, `${name}: 1 件で知らせるので for は置かない（印が要る）`);
+      }
+      const bot = rules.find((r) => r.alert === 'AstDiscordBotUnavailable');
+      assert.ok(bot, 'AstDiscordBotUnavailable が無い');
+      assert.strictEqual(
+        bot.expr.replace(/\s+/g, ' ').trim(),
+        'max by (state) (ast_notification_discord_bot_status{state=~"misconfigured|disconnected"}) > 0',
+        '設定の欠けと切断の 2 つだけを引く（disabled は明示の選択なので鳴らさない）');
+      assert.strictEqual(bot.for, '10m');
+    });
   }
 
   // --- check-integration-skips: integration.yml の「全 skip で緑」を検知する（NFR / #1200 / IADR-0497） ---
