@@ -39,6 +39,7 @@ updated: 2026-11-08
 | `frontend/src/features/sc04-opend-auth/components/VerificationCodeForm.tsx:113` | 直した（画面の文言） |
 | `frontend/src/locales/ja/messages.po`・`messages.ts` | `npm run i18n` で作り直した |
 | `docs/screens/20260909_SC-04_opend-auth.md:78` | 直した（issue の表に無かった追加分。`docs/` なので計画の issue 参照は書かない） |
+| `docs/screens/20260909_SC-04_opend-auth.md:222`（スコープ外（後続）の「再送間隔の実測」） | 直した（［2026-11-08 追記］AI レビューの指摘で追加。初回の走査は `docs/` に「実測待ち」だけを掛けており、「暫定 60 秒」を取りこぼした。`docs/` と `frontend/e2e` に「暫定」を掛けて引き直し、再送の制限に関わるのは 78・222 行目だけであることを確かめた） |
 
 除外:
 
