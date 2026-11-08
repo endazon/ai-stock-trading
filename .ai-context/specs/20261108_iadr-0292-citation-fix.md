@@ -20,12 +20,12 @@ plan_refs: []
   見積もる純関数 `FinnhubDailyVolumeEstimator`（決定1）、`FinnhubDailyVolumeGuardOptions` の日次上限（決定1・3）、
   業務メトリクス `ast.finnhub.daily_request_estimate` / `..._limit_ratio_percent`（決定3）、introspection の
   `Metrics` 枠（`IntrospectionBuilder.AddMetric`。決定4）、情報収集は静的構成の実数から見積もる（決定2）。
-- 引用 21 行はすべて #668（`229a413b4`）で入った。同じコミットが IADR-0294 を新設し、IADR-0292 は新設していない。
+- 置換対象の 19 行（コード・設定）はすべて #668（`229a413b4`）で入った（除外の 1 行は #680 `ce7185b27` の作業仕様書）。#668 は IADR-0294 を新設し、IADR-0292 は新設していない。
   起票時の番号の書き違いと判断する。
 
 ## 母集合（規則 9: 誤りの側の文字列で全リポジトリを走査）
 
-`git grep -n -E 'IADR[- _]?0?292\b' origin/develop` → 22 行（表記揺れ `IADR 292` 等は 0 件）。依頼文の「約 16 件」は使わない（規則 10）。
+`git grep -n -E 'IADR[- _]?0?292\b' origin/develop` → 20 行＝置換 19 行＋除外 1 行（表記揺れ `IADR 292` 等は 0 件）。依頼文の「約 16 件」は使わない（規則 10）。
 
 | # | ファイル:行 | 主題 | 処置 |
 | --- | --- | --- | --- |
