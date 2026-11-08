@@ -142,11 +142,17 @@ assert_contains 'T-274-06 不在: Secret のマウント確認を促す' "$ERR" 
 # 読み手（起動中の child）が FIFO を開くまでの間は塞がるので、数回やり直す。
 # **1 回で諦めると、FIFO が既に在る場合（＝再起動を模したケース）に競走で落ちる** ——
 # `wait_for_fifo` は「在ること」しか見られず、「読み手が開いたこと」は見られない。
+#
+# 🔴 **パスを作らずに開く**（`dd conv=nocreat`＝O_CREAT を付けない。本番の書き手 FifoOpendStdinWriter も O_CREAT を付けない）。
+# シェルの `>` は O_CREAT で開くので、起動の処理が古い FIFO を消してから作り直すまでの隙間に当たると**通常のファイルを作ってしまい**、
+# 起動の処理の mkfifo が EEXIST で落ちる（T-722-04 が負荷の下で 1/25 ほど落ちた原因。試験の書き手の欠陥で、本番の経路には無い）。
+# 隙間に当たったとき（ENOENT）は少し待ってやり直す。
 write_line() {
   local i=0
-  while [ "$i" -lt 4 ]; do
-    timeout 3 bash -c 'printf "%s\n" "$2" > "$1"' _ "$1" "$2" && return 0
+  while [ "$i" -lt 8 ]; do
+    timeout 3 bash -c 'printf "%s\n" "$2" | dd of="$1" conv=nocreat status=none 2>/dev/null' _ "$1" "$2" && return 0
     i=$((i + 1))
+    sleep 0.2
   done
   return 1
 }
@@ -240,6 +246,16 @@ fifo_mechanism_works() {
   done
   return 0
 }
+
+# T-722-11: 試験の書き手（write_line）はパスを作らない（FIFO が無い間に書いても通常のファイルを作らない）。
+# 作ってしまうと、起動の処理の「消して作り直す」の隙間に当たったときに mkfifo が EEXIST で落ち、T-722-04 が揺れる。
+NOPATH="$WORK/no-such-dir-for-write/stdin"
+mkdir -p "$(dirname "$NOPATH")"
+write_line "$NOPATH" 'x'
+RC=$?
+assert_eq 'T-722-11 パスが無ければ書けない（戻り値 非0）' "$([ "$RC" -ne 0 ] && echo nonzero || echo zero)" 'nonzero'
+[ -e "$NOPATH" ] && ng 'T-722-11 試験の書き手は通常のファイルを作らない' "$NOPATH が作られた" \
+                 || ok 'T-722-11 試験の書き手は通常のファイルを作らない'
 
 FIFO_OK=0
 fifo_mechanism_works && FIFO_OK=1
