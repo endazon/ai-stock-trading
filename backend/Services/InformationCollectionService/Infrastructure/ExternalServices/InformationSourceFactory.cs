@@ -133,7 +133,7 @@ public static class InformationSourceFactory
     }
 
     /// <summary>
-    /// FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 情報収集ぶんの Finnhub 日次要求見積り（回/日）。
+    /// FR-01, ADR-0031（計画）決定2〜4, IADR-0294: 情報収集ぶんの Finnhub 日次要求見積り（回/日）。
     /// finnhub / finnhub-news がいずれも無効、または銘柄が未設定なら 0（挙動中立）。
     /// introspection 自己申告（数値のみ・ログ副作用なし）から使う軽量版。
     /// </summary>
@@ -176,7 +176,7 @@ public static class InformationSourceFactory
     }
 
     /// <summary>
-    /// FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 情報収集ぶんの Finnhub 日次要求量を見積もり、
+    /// FR-01, ADR-0031（計画）決定2〜4, IADR-0294: 情報収集ぶんの Finnhub 日次要求量を見積もり、
     /// 業務メトリクスへ記録する。<see cref="Create"/> の実行後に呼ぶ（有効化中のソース集合を要る）。
     /// finnhub / finnhub-news がいずれも無効、または銘柄が未設定なら見積らない（挙動中立）。
     /// </summary>

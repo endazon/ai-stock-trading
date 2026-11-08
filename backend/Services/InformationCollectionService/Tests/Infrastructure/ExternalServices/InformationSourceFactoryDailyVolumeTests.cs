@@ -8,7 +8,7 @@ using Xunit;
 
 namespace InformationCollectionService.Tests;
 
-// FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 情報収集ぶんの Finnhub 日次要求見積りの配線
+// FR-01, ADR-0031（計画）決定2〜4, IADR-0294: 情報収集ぶんの Finnhub 日次要求見積りの配線
 // （警告ログ・業務メトリクス）。銘柄未設定・Finnhub 系ソース未有効なら挙動中立であることを固定する。
 public class InformationSourceFactoryDailyVolumeTests
 {

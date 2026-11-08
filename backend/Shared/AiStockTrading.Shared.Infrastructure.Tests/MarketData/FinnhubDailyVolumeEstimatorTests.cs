@@ -4,7 +4,7 @@ using Xunit;
 
 namespace AiStockTrading.Shared.Infrastructure.Tests.MarketData;
 
-// FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub の日次総量見積り（純関数）の境界を固定する。
+// FR-01, ADR-0031（計画）決定2〜4, IADR-0294: Finnhub の日次総量見積り（純関数）の境界を固定する。
 // ADR-0031 決定2: 「監視銘柄数を日次上限から逆算する」統制は撤回しない——分次の自制レートは瞬間的な
 // 要求レートしか保証せず、日次の総量（銘柄数 × 1巡回あたりの要求数 × 1日の巡回回数）は別に見積もる。
 public class FinnhubDailyVolumeEstimatorTests
@@ -12,7 +12,7 @@ public class FinnhubDailyVolumeEstimatorTests
     [Fact]
     public void CyclesPerDayは巡回間隔から切り捨てで算出する()
     {
-        // 30 分間隔（IADR-0292 の InformationCollectionService 既定）＝ 48 巡回/日。
+        // 30 分間隔（IADR-0294 の InformationCollectionService 既定）＝ 48 巡回/日。
         FinnhubDailyVolumeEstimator.CyclesPerDay(1800).Should().Be(48);
         // 60 秒間隔（MarketMonitorService 既定）＝ 1440 巡回/日。
         FinnhubDailyVolumeEstimator.CyclesPerDay(60).Should().Be(1440);

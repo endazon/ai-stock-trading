@@ -57,7 +57,7 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     // FR-01, FR-02, #1363, IADR-0547 決定 1: 収集の対象へ足す保有銘柄の出所。RiskManagement:BaseUrl 設定時=http
     // （リスク管理の open-positions）、未設定/不正=none（保有を足さない。従来の挙動）。
     .AddPortFromBaseUrl("held-symbols", builder.Configuration["RiskManagement:BaseUrl"], "http", "none")
-    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub 日次要求見積り（回/日）の自己申告（現在の実現手段が
+    // FR-01, ADR-0031（計画）決定2〜4, IADR-0294: Finnhub 日次要求見積り（回/日）の自己申告（現在の実現手段が
     // 無かった「日次総量の可視化」を、外部から /internal/introspection 経由で読めるようにする）。
     // FR-01, ADR-0043（計画）決定 3, #1030, IADR-0437: 監視銘柄に追随する構成（MarketMonitor:BaseUrl）では構成の固定リストは対象ではない。
     // 自己申告は起動時に 1 回だけ決まるため、1 巡回に収まる対象の数（上限）で数える。巡回ごとの実数は業務メトリクスが持つ。
@@ -185,7 +185,7 @@ builder.Services.AddSingleton<ISourceFetcher>(sp =>
         // #1363, IADR-0547 決定 2: 監視銘柄に追随するなら、SEC EDGAR の CIK も収集の対象の銘柄（保有が先）から導く。
         finnhubSymbols.FollowsWatchlist ? finnhubSymbols : null);
 
-    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 情報収集ぶんの Finnhub 日次要求量の見積り
+    // FR-01, ADR-0031（計画）決定2〜4, IADR-0294: 情報収集ぶんの Finnhub 日次要求量の見積り
     // （銘柄未設定・Finnhub 系ソース未有効なら挙動中立）。巡回間隔は本サービス自身の CollectionOptions を使う。
     // ADR-0043（計画）決定 3, #1030, IADR-0437: 監視銘柄に追随するなら、起動時は 1 巡回の上限で数え、巡回ごとに実数で記録し直す（下の装飾）。
     var pollIntervalSeconds =

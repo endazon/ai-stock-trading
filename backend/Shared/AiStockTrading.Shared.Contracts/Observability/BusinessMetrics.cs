@@ -621,7 +621,7 @@ public sealed class BusinessMetrics : IDisposable
     }
 
     /// <summary>
-    /// FR-01, ADR-0031（計画）決定2〜3, IADR-0292: プロセスの Finnhub 日次要求見積りと、日次上限に対する比率を記録する。
+    /// FR-01, ADR-0031（計画）決定2〜3, IADR-0294: プロセスの Finnhub 日次要求見積りと、日次上限に対する比率を記録する。
     /// ADR-0043（計画）決定 1, #1030, IADR-0437: 日次上限は既定で未設定（未実測）であり、そのときは比率を記録しない
     /// （<paramref name="limitRatioPercent"/> が null）。推測の分母で割った比率を出さない。
     /// </summary>
