@@ -242,16 +242,21 @@ networkPolicy:
     configuration: {}
     cost-control:
       calls: [configuration]
+    # NFR, IADR-0647: egressProxyPort は基盤の外向きの中継の送り元ごとの受け口（基盤の割り当て。OpenD の 3147 は使わない＝独自の手順で中継を通らない）。
+    #   段（networkPolicy.egressProxy.mode）が Off の間は使わない。
     information-collection:
       calls: [cost-control, market-monitor, risk-management]
       externalHttps: true
+      egressProxyPort: 3141
     market-monitor:
       # NFR-06, IADR-0634: report は入れ替えの適用の結び付きの照会（報告書の台帳）。
       calls: [report, risk-management]
       externalHttps: true
+      egressProxyPort: 3142
     notification:
       calls: [market-monitor, report, risk-management]
       externalHttps: true
+      egressProxyPort: 3143
     order-execution:
       calls: [risk-management]
       opend: true
@@ -259,12 +264,15 @@ networkPolicy:
       calls: [audit, risk-management]
       llmGateway: true
       externalHttps: true
+      egressProxyPort: 3144
     risk-management:
       externalHttps: true
+      egressProxyPort: 3145
     trade-decision:
       calls: [cost-control, market-monitor, order-execution, report, risk-management]
       llmGateway: true
       externalHttps: true
+      egressProxyPort: 3146
 
 # Pod のセキュリティの段（IADR-0609）。🔴 NFR, IADR-0609（2026-11-07 追記）: Worker は**稼働の前から**段 3 で動かす（段 2 のまま root で始めない）。
 # 段 3: 非 root（aspnet の app＝1654）・seccomp RuntimeDefault・権限昇格なし・ケーパビリティを全て落とす・fsGroup（発注執行の鍵の mount は 0440）。
