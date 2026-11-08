@@ -9,8 +9,8 @@ updated: 2026-11-08
 <!-- trace:
 ids: [NFR]
 adrs: [ADR-0006, ADR-0024, ADR-0002]
-iadrs: [IADR-0631, IADR-0609, IADR-0566, IADR-0608, IADR-0629, IADR-0621, IADR-0644, IADR-0647]
-specs: [20261107_cloud-opend-isolation-netpol, 20261108_egress-via-platform-proxy, 20261108_egress-proxy-per-source-ports]
+iadrs: [IADR-0631, IADR-0646, IADR-0609, IADR-0566, IADR-0608, IADR-0629, IADR-0621, IADR-0644, IADR-0647]
+specs: [20261107_cloud-opend-isolation-netpol, 20261108_s2s-tls-opend-nonroot, 20261108_egress-via-platform-proxy, 20261108_egress-proxy-per-source-ports]
 issues: [MSP#2517]
 -->
 
@@ -30,13 +30,16 @@ issues: [MSP#2517]
 
 | 項目 | 値 | 理由 |
 | --- | --- | --- |
-| 実行の利用者 | root のまま（段 1） | HOME とデバイスの信頼の置き場を変えない。非 root を初回に採らない理由は実装の記録にある |
+| 実行の利用者 | 非 root（段 3。uid 10001・HOME `/home/opend`） | イメージが用意した利用者。デバイスの信頼の PVC は HOME の下に張る |
 | seccomp | `RuntimeDefault`（Pod） | 既定のシステムコールの制限 |
 | 権限昇格 | `allowPrivilegeEscalation: false` | |
-| ケーパビリティ | `drop: [ALL]`・`add: [DAC_OVERRIDE, FOWNER]` | 起動の処理が、所有者の違う `/opt/opend` の設定ファイルへ書き（DAC_OVERRIDE）、モードを変える（FOWNER）。ほかは要らない（実測） |
+| ケーパビリティ | `drop: [ALL]`（戻すものは無い） | 非 root の OpenD は自分の持ち物の `/opt/opend` へ書くので、権限は要らない |
+| ルートのファイルシステム | 読み取り専用 | 起動の処理が `/opt/opend` の写しを作業の場所（emptyDir）に作り、そこで動く。HOME と `/tmp` も emptyDir |
 | SA トークン | 置かない | k8s の API を使わない |
 
-`opend.podSecurity.capabilities.add` に足せるのは `DAC_OVERRIDE` と `FOWNER` だけである。ほかを足すと描画で止まる。
+段 1（root）へ戻したときだけ、ケーパビリティは `drop: [ALL]`・`add: [DAC_OVERRIDE, FOWNER]` になる（root の起動の処理が、持ち主の違う `/opt/opend` の設定ファイルへ書き、モードを変えるため）。`opend.podSecurity.capabilities.add` に足せるのはこの 2 つだけで、ほかを足すと描画で止まる。
+
+> 🔴 **実機の OpenD ではまだ確かめていない。** 最初の起動で確かめ（下の段 1 の 2）、落ちたら切り戻し B を行う。
 
 ### 通信の制限（NetworkPolicy）
 
@@ -97,7 +100,8 @@ NetworkPolicy には「記録だけして通す」段が無い。誤った方針
 1. **最初の配備は、OpenD の権限の最小化を入れ、通信の制限は外して行う**（OpenD の Pod の変更を最初に済ませ、SMS 認証の後に OpenD を作り直さないため）:
    `helm upgrade --install ast … -f values-cloud.yaml -f <digest のファイル> --set networkPolicy.enabled=false --set opend.networkPolicy.egress.enabled=false`
 2. OpenD が起動し（`kubectl -n ai-stock-trading logs deploy/opend -c opend` に起動の行が出て、権限の拒否で落ちていない）、SMS 認証（移行 Runbook の §7）でログインできることを確かめる。
-   - 🔴 **権限の拒否（`Permission denied`・`Operation not permitted`）で落ちたら**、切り戻し B を行う。
+   - 🔴 **権限の拒否（`Permission denied`・`Operation not permitted`・`Read-only file system`）で落ちたら**、切り戻し B を行う。
+   - ログに `==> work dir:` の行が出る（作業の場所へ写して動いている）。
 3. 全 Pod が Ready で、移行 Runbook の §8 の確かめ（口座照会・情報源・基盤への TLS）が通ることを確かめる。これが通信の制限を入れる前の基準になる。
 4. **OpenD の出だけを入れる**（Pod は作り直されない）: `helm upgrade … --set networkPolicy.enabled=false --set-json 'networkPolicy.publicEgress.extraExcept=["<ノードの公開アドレス>/32"]'`
    （`opend.networkPolicy.egress` は values-cloud のまま有効。`extraExcept` を配備の値のファイルに書いていれば `--set-json` は要らない。無いと描画で止まる）。
@@ -130,9 +134,61 @@ NetworkPolicy には「記録だけして通す」段が無い。誤った方針
 
 ### 切り戻し B: OpenD が権限の不足で起動しない
 
-1. `helm upgrade … --set opend.podSecurity.capabilities.dropAll=false --set opend.podSecurity.seccomp=false`（OpenD は作り直される）。
-2. 起動したら、どの操作が拒まれたか（ログの行）を記録し、実装の記録へ戻す（足すケーパビリティは、描画の検査が許す 2 つの外なら、記録を改めてから足す）。
-3. デバイスの信頼は PVC に残る。egress の IP が変わらなければ、SMS の再認証は要らない見込みである（要れば移行 Runbook の §7）。
+OpenD は作り直される。1 段ずつ戻し、起動したところで止める。
+
+1. **読み取り専用のルートだけを外す**（段 3・非 root のまま）: `helm upgrade … --set opend.podSecurity.readOnlyRootFilesystem=false`
+2. それでも落ちたら、**段 1（root）へ戻す**: `helm upgrade … --set opend.podSecurity.stage=1 --set opend.podSecurity.readOnlyRootFilesystem=false --set opend.home=/root`
+   - PSA の enforce を `restricted` へ上げていたら、`--set podSecurity.admission.enforce=baseline` も付ける（段 1 の OpenD は restricted の名前空間では作れない）。
+   - HOME が `/root` へ戻るので、デバイスの信頼の PVC は `/root/.com.moomoo.OpenD` に張られる（同じ PVC。中身の持ち主は 10001 のままでよい。段 1 の OpenD は DAC_OVERRIDE を持つので読み書きできる）。
+3. それでも落ちたら、段 1 の権限の最小化も外す: `… --set opend.podSecurity.capabilities.dropAll=false --set opend.podSecurity.seccomp=false`
+4. 起動したら、どの操作が拒まれたか（ログの行）を記録し、実装の記録へ戻す（足すケーパビリティは、描画の検査が許す 2 つの外なら、記録を改めてから足す）。
+5. デバイスの信頼は PVC に残る。egress の IP が変わらなければ、SMS の再認証は要らない見込みである（要れば移行 Runbook の §7）。
+
+### 稼働中の root の OpenD から段 3 へ移すとき（PVC の持ち主の移し替え）
+
+root の OpenD が書いたデバイスの信頼のファイルは root の持ち物（モード 0600）で、非 root の OpenD は読めない。クラスタの既定の StorageClass（local-path）は、Pod の `fsGroup` で持ち主を直さない。段 3 を当てる前に、持ち主を 10001 へ移す（場の時間外・新規発注の一時停止を入れたまま）。
+
+1. `kubectl -n ai-stock-trading scale deploy/opend --replicas=0`（止まったことを確かめる）。
+2. 一度だけの Pod で持ち主を移す。OpenD のイメージを使う（ノードに取り込み済み・digest で固定。ネットワークは使わない）。
+   - コンテナは 1 つだけで、`command` が入口の処理（OpenD の起動）を置き換える＝OpenD は起動しない。
+   - `<OpenD のイメージの digest つきの参照>` は §4 のファイルの `opend.image` と同じ値にする。
+
+   ```
+   kubectl apply -f - <<'YAML'
+   apiVersion: v1
+   kind: Pod
+   metadata:
+     name: opend-chown
+     namespace: ai-stock-trading
+   spec:
+     restartPolicy: Never
+     automountServiceAccountToken: false
+     containers:
+       - name: opend-chown
+         image: <OpenD のイメージの digest つきの参照>
+         imagePullPolicy: Never
+         command: ["chown", "-R", "10001:10001", "/d"]
+         securityContext:
+           runAsUser: 0
+           allowPrivilegeEscalation: false
+           capabilities:
+             drop: ["ALL"]
+             add: ["CHOWN", "DAC_OVERRIDE"]
+         volumeMounts:
+           - { name: persist, mountPath: /d }
+     volumes:
+       - name: persist
+         persistentVolumeClaim:
+           claimName: opend-persist
+   YAML
+   kubectl -n ai-stock-trading wait --for=jsonpath='{.status.phase}'=Succeeded pod/opend-chown --timeout=120s
+   kubectl -n ai-stock-trading delete pod opend-chown
+   ```
+
+   - `wait` が時間切れになったら、`kubectl -n ai-stock-trading describe pod opend-chown` と `logs` で理由を見てから消す。段 3 へは進まない。
+   - PSA の enforce が `restricted` のときは作れない（`baseline` のうちに行う）。
+3. 段 3 を当てる（`helm upgrade … -f values-cloud.yaml -f <digest のファイル>`）。OpenD が起動し、SMS の再認証を求められずにログインすることを確かめる。
+   - 再認証を求められたら、移行 Runbook の §7 で入れ、回数と時刻を記録する（HOME の場所が変わったことが原因かを §9 の記録で見る）。
 
 ## 外への HTTPS を基盤の中継へ寄せる（段 Off → Report → Enforce）
 
@@ -216,4 +272,4 @@ NetworkPolicy には「記録だけして通す」段が無い。誤った方針
 - OpenD の出は、クラスタの外の公開アドレスなら TCP の全ての口へ届く。接続先の証券会社のサーバの宛先と口は公開された一覧が無く、IP でも口でも絞っていない。
 - 外の 443 を許したサービスは、段が `Off` と `Report` の間は、外の公開アドレスの 443 ならどこへでも届く（ホスト名では絞れない）。
   `Enforce` では、外への HTTPS は中継の許可表の名前だけになる。
-- 同じノードの中の Pod の間の通信は、許可した組でも平文の HTTP のままである（傍受への備えは、外の中継の権限の最小化で行う）。
+- 同じノードの中の Pod の間の通信は、サービス間の TLS の段（[サービス間の TLS Runbook](cloud-service-tls-runbook.md)）を上げるまで平文の HTTP のままである。

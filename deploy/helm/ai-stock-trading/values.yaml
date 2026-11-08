@@ -49,6 +49,23 @@ global:
   #   🔴 認可サーバーの TLS への移行の間だけ使う（旧の発行元 http://keycloak:8080/realms/platform）。外す時期は手順書
   #   docs/operations/cloud-keycloak-tls-runbook.md（基盤の段 6）。
   authValidIssuers: ""
+  # 🔴 NFR, NFR-05, IADR-0646: 取引ユニットのサービス間の HTTP を TLS にする段（templates/_service-tls.tpl）。既定 Off＝従来どおり平文の 8080 だけ。
+  #   Listen : 受け側が平文の 8080 と TLS の口（port）の両方で受ける。呼び手は平文のまま（証明書の配りと受け口を先に確かめる段）。
+  #   Call   : 受け側は両方で受け、呼び手（env の http://<サービス>-service:8080）を https://<サービス>-service:<port> へ替える（平文の口は戻しのために残す）。
+  #   Enforce: TLS の口だけで受ける（平文の 8080 を閉じる。probe と NetworkPolicy も TLS の口だけ）。
+  #   証明書は基盤の OpenBao の PKI（pki_cloud）が発行し、ESO の VaultDynamicSecret が Secret <secretPrefix><サービス>-service-tls へ写す
+  #   （externalSecrets.openbaoStore の受け口・role で呼ぶ。基盤の側に role <サービス>-service と発行の許可が要る。手順書 docs/operations/cloud-service-tls-runbook.md）。
+  #   呼び手は基盤の CA（global.infraCa）で受け側の証明書を確かめる（名前の照合は外さない）。gRPC（h2c）の口とは併用できない（描画で止める）。
+  serviceTls:
+    mode: "Off"
+    port: 8443
+    secretPrefix: ast-
+    mountPath: /etc/ast-service-tls
+    # ESO の VaultDynamicSecret の発行の条件（pki_cloud/issue/<サービス>-service）。ttl を過ぎる前に refreshInterval で作り直す。
+    pki:
+      mount: pki_cloud
+      ttl: 2160h
+      refreshInterval: 720h
   # 🔴 NFR, #1529, IADR-0612: ASPNETCORE_ENVIRONMENT=Production の認証を持つサービスは、単体実行向けのレルム（ai-stock-trading。
   #   infra/keycloak/realm-export.json）を指す Authority では起動しない。意図して使うときだけ true にする（env Auth__AllowStandaloneRealm=true を描く）。
   allowStandaloneRealm: false
@@ -373,6 +390,16 @@ opend:
     capabilities:
       dropAll: false
       add: []
+    # NFR, IADR-0646: 段 3 のルートのファイルシステムの読み取り専用（明示の opt-in。段 3 でだけ使える。values-cloud が有効にする）。
+    #   OpenD の配布物が書く場所を emptyDir へ寄せる: 入口の処理（deploy/opend/entrypoint.sh）が /opt/opend の写しを作業の場所
+    #   （workDir。emptyDir）に作り、OpenD.xml をそこへ書いてそこから OpenD を起動する（RSA 鍵の mount は写さない）。
+    #   HOME（/home/opend）と /tmp も emptyDir（デバイス信頼の PVC は HOME の下にそのまま張る）。
+    #   🔴 実 OpenD で確かめる（移行の手順書 §8）。落ちたら readOnlyRootFilesystem だけを false に戻す（段 3 のまま）。
+    readOnlyRootFilesystem: false
+    workDir: /var/lib/opend
+    # 作業の場所の上限（配布物の写し＋OpenD が書くもの）と、HOME・/tmp の上限。
+    workDirSizeLimit: 2Gi
+    scratchSizeLimit: 256Mi
   # 段 3 の uid / gid / fsGroup（deploy/opend/Dockerfile が用意する opend:opend）。
   runAsUser: 10001
   resources:

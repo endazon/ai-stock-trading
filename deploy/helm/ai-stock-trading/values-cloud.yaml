@@ -53,6 +53,11 @@ global:
   #   （ここには書かない。外す時期は手順書の段 6）。
   authTls:
     enabled: true
+  # 🔴 NFR, NFR-05, IADR-0646: 取引ユニットのサービス間の HTTP の TLS の段。"Off" → Listen → Call → Enforce の順に、1 段ずつ helm を当てて確かめる。
+  #   前提は基盤（MSP）の側の 2 つ（OpenBao の PKI の role <サービス>-service（名前空間 ai-stock-trading）の 11 個と、role ast-eso の発行の許可）。
+  #   前提が入るまで "Off" のまま（Listen 以上では証明書の Secret が無いと Pod が起動しない）。手順は docs/operations/cloud-service-tls-runbook.md。
+  serviceTls:
+    mode: "Off"
   # 🔴 段 2（IADR-0610 / 0611 / 0622）。鍵の Secret が無ければ注文の承認の発行元・受け手の Pod は起動しない（Enforce は非 optional）。
   orderApprovalSigning:
     mode: Enforce
@@ -117,19 +122,20 @@ opend:
   enabled: true
   authGateway:
     enabled: false
-  # NFR, IADR-0631: 外の中継（OpenD）の権限を最小にする。段 1（root のまま。HOME とデバイス信頼の置き場を変えない）に、
-  #   seccomp RuntimeDefault と権限昇格なし（seccomp: true）・ケーパビリティは全て落として起動に要る 2 つだけを足す。
-  #   - DAC_OVERRIDE: 入口の処理（deploy/opend/entrypoint.sh）が uid 10001 の所有する /opt/opend の OpenD.xml へ書き、OpenD が同じ場所へ
-  #     AppData.dat 等を書く（deploy/opend/README の観測）。所有者でない root の書き込みに要る。
-  #   - FOWNER: 入口の処理が所有者でない OpenD.xml へ chmod 600 をかける。
-  #   実測（2026-11-07。deploy/opend/Dockerfile のまま、OpenD の実行ファイルだけを同じファイル操作をする代わりの物に替えたイメージ）:
-  #   ALL を落とすだけ → OpenD.xml の書き込みで拒否／DAC_OVERRIDE だけ → chmod で拒否／FOWNER だけ → 書き込みで拒否／
-  #   2 つと権限昇格なし・既定の seccomp → 起動まで通る。NET_RAW（同じノードの通信への細工に使える）は落ちる。
-  #   🔴 実 OpenD の実行ファイルそのものでは確かめていない（配布物は取り込みの前に手元に無い）。初回の起動で確かめ、落ちたら手順書の切り戻し
-  #   （docs/operations/cloud-network-policy-runbook.md）で上書きを外す。非 root（段 3）を初回に採らない理由は IADR-0631。
+  # NFR, IADR-0646（IADR-0631 の段 1 を置き換える）: 外の中継（OpenD）を非 root（段 3。uid 10001・HOME=/home/opend）で動かす。
+  #   段 3 は seccomp RuntimeDefault・権限昇格なし・ケーパビリティを全て落とす（戻すものは無い）・RSA 鍵の mount は 0440。
+  #   readOnlyRootFilesystem: OpenD の配布物が書く場所を emptyDir へ寄せる（入口の処理が /opt/opend の写しを作業の場所に作り、
+  #   OpenD.xml をそこへ書いてそこから起動する。HOME と /tmp も emptyDir。デバイス信頼の PVC は HOME の下）。
+  #   🔴 実 OpenD の実行ファイルそのものでは確かめていない（配布物は取り込みの前に手元に無い）。初回の起動で確かめる（移行の手順書 §8）。
+  #   落ちたら、まず readOnlyRootFilesystem だけを false に戻す（段 3 のまま。/opt/opend は uid 10001 の持ち物なので書ける）。それでも
+  #   落ちたら段 1 へ戻す（stage: 1・home: /root。下の capabilities は段 1 でだけ効く。IADR-0631）。戻し方は
+  #   docs/operations/cloud-network-policy-runbook.md の「切り戻し B」。PSA の enforce を restricted へ上げるのは、段 3 で確かめた後（§9）。
+  #   🔴 稼働中の root の OpenD から移すときは、PVC のデバイス信頼のファイル（root の持ち物・0600）の持ち主を先に 10001 へ移す（同じ手順書）。
+  home: /home/opend
   podSecurity:
-    stage: 1
+    stage: 3
     seccomp: true
+    readOnlyRootFilesystem: true
     capabilities:
       dropAll: true
       add: [DAC_OVERRIDE, FOWNER]

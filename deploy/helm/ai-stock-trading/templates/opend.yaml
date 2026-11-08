@@ -95,6 +95,19 @@
 {{- $_ := set $sideSc "runAsUser" 0 }}
 {{- end }}
 {{- $rsaMode := ternary 288 $o.rsaSecretDefaultMode (ge $ost 3) }}
+{{- /* NFR, IADR-0646: 段 3 のルートの読み取り専用（opend.podSecurity.readOnlyRootFilesystem。明示の opt-in）。OpenD の配布物が書く場所を
+       emptyDir へ寄せる（作業の場所 workDir に /opt/opend の写しを作り、そこから起動する。HOME と /tmp も emptyDir）。段 3 でだけ使える。 */}}
+{{- $oro := ($o.podSecurity | default dict).readOnlyRootFilesystem }}
+{{- if and $oro (lt $ost 3) }}
+{{- fail "opend.podSecurity.readOnlyRootFilesystem=true は opend.podSecurity.stage=3（非 root）でだけ使えます（root の OpenD は /opt/opend へ書く。IADR-0646）。" }}
+{{- end }}
+{{- if $oro }}
+{{- $wd := toString ($o.podSecurity.workDir | default "") }}
+{{- if or (not (hasPrefix "/" $wd)) (hasPrefix "/opt/opend" $wd) (eq $wd (toString $o.home)) (hasPrefix (printf "%s/" $o.home) $wd) (eq $wd "/tmp") }}
+{{- fail (printf "opend.podSecurity.workDir は /opt/opend・HOME・/tmp の外の絶対パスです（受け取った値: %s。IADR-0646）。" $wd) }}
+{{- end }}
+{{- $_ := set $ctrSc "readOnlyRootFilesystem" true }}
+{{- end }}
 {{- if $o.persistence.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -202,6 +215,11 @@ spec:
                    非 root 化（securityContext）時は /home/opend を指す（Dockerfile が uid 10001 用に用意済み）。 */}}
             - name: HOME
               value: {{ $o.home | quote }}
+            {{- if $oro }}
+            {{- /* NFR, IADR-0646: 入口の処理は /opt/opend の写しをここに作り、OpenD.xml をここへ書いてここから起動する。 */}}
+            - name: OPEND_WORK_DIR
+              value: {{ $o.podSecurity.workDir | quote }}
+            {{- end }}
             {{- /* #13: cross-network（worker→opend）trade は RSA 暗号化必須。OpenD 側も同一鍵を使う。 */}}
             - name: OPEND_RSA_KEY_FILE
               value: {{ printf "%s/%s" $o.rsaMountPath $o.rsaSecretKey | quote }}
@@ -235,6 +253,16 @@ spec:
                    有効／無効で置き場が変わらないほうが挙動が読みやすい。 */}}
             - name: runtime
               mountPath: {{ $o.authGateway.runtimeDirectory | quote }}
+            {{- if $oro }}
+            {{- /* NFR, IADR-0646: 読み取り専用のルートの下で OpenD と入口の処理が書く場所（作業の場所・HOME・/tmp）。
+                   デバイス信頼の PVC は HOME の下（上の persist）に重ねて張る。 */}}
+            - name: work
+              mountPath: {{ $o.podSecurity.workDir | quote }}
+            - name: home
+              mountPath: {{ $o.home | quote }}
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
           resources:
             {{- toYaml $o.resources | nindent 12 }}
         {{- if $o.authGateway.enabled }}
@@ -296,6 +324,17 @@ spec:
         - name: runtime
           emptyDir:
             sizeLimit: {{ $o.authGateway.runtimeSizeLimit | quote }}
+        {{- if $oro }}
+        - name: work
+          emptyDir:
+            sizeLimit: {{ $o.podSecurity.workDirSizeLimit | quote }}
+        - name: home
+          emptyDir:
+            sizeLimit: {{ $o.podSecurity.scratchSizeLimit | quote }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ $o.podSecurity.scratchSizeLimit | quote }}
+        {{- end }}
         {{- if $o.authGateway.enabled }}
         {{- /* NFR, IADR-0566: サイドカーだけがマウントする。optional: true ＝ Secret が無くても Pod は起動する
                （サイドカーは未構成として全口 503 を返す＝fail-closed。OpenD の API と発注経路は止めない）。 */}}

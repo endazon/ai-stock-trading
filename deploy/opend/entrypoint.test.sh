@@ -142,11 +142,17 @@ assert_contains 'T-274-06 不在: Secret のマウント確認を促す' "$ERR" 
 # 読み手（起動中の child）が FIFO を開くまでの間は塞がるので、数回やり直す。
 # **1 回で諦めると、FIFO が既に在る場合（＝再起動を模したケース）に競走で落ちる** ——
 # `wait_for_fifo` は「在ること」しか見られず、「読み手が開いたこと」は見られない。
+#
+# 🔴 **パスを作らずに開く**（`dd conv=nocreat`＝O_CREAT を付けない。本番の書き手 FifoOpendStdinWriter も O_CREAT を付けない）。
+# シェルの `>` は O_CREAT で開くので、起動の処理が古い FIFO を消してから作り直すまでの隙間に当たると**通常のファイルを作ってしまい**、
+# 起動の処理の mkfifo が EEXIST で落ちる（T-722-04 が負荷の下で 1/25 ほど落ちた原因。試験の書き手の欠陥で、本番の経路には無い）。
+# 隙間に当たったとき（ENOENT）は少し待ってやり直す。
 write_line() {
   local i=0
-  while [ "$i" -lt 4 ]; do
-    timeout 3 bash -c 'printf "%s\n" "$2" > "$1"' _ "$1" "$2" && return 0
+  while [ "$i" -lt 8 ]; do
+    timeout 3 bash -c 'printf "%s\n" "$2" | dd of="$1" conv=nocreat status=none 2>/dev/null' _ "$1" "$2" && return 0
     i=$((i + 1))
+    sleep 0.2
   done
   return 1
 }
@@ -240,6 +246,16 @@ fifo_mechanism_works() {
   done
   return 0
 }
+
+# T-722-11: 試験の書き手（write_line）はパスを作らない（FIFO が無い間に書いても通常のファイルを作らない）。
+# 作ってしまうと、起動の処理の「消して作り直す」の隙間に当たったときに mkfifo が EEXIST で落ち、T-722-04 が揺れる。
+NOPATH="$WORK/no-such-dir-for-write/stdin"
+mkdir -p "$(dirname "$NOPATH")"
+write_line "$NOPATH" 'x'
+RC=$?
+assert_eq 'T-722-11 パスが無ければ書けない（戻り値 非0）' "$([ "$RC" -ne 0 ] && echo nonzero || echo zero)" 'nonzero'
+[ -e "$NOPATH" ] && ng 'T-722-11 試験の書き手は通常のファイルを作らない' "$NOPATH が作られた" \
+                 || ok 'T-722-11 試験の書き手は通常のファイルを作らない'
 
 FIFO_OK=0
 fifo_mechanism_works && FIFO_OK=1
@@ -578,6 +594,41 @@ HOME=/root
 assert_eq 'T-722-09 HOME から導く（既定の root）' \
   "$(opend_captcha_source_path)" '/root/.com.moomoo.OpenD/F3CNN/PicVerifyCode.png'
 HOME="$OLD_HOME"
+
+# ---- T-646-01: 作業の場所へ配布物を写す（ルートを読み取り専用にした段。IADR-0646） -------------------
+# 配布物の項目（実行ファイル・ライブラリ・下位ディレクトリ・ドットファイル・symlink）を写し、OpenD.xml と mount された RSA 鍵の
+# ディレクトリは写さない。前回の写しは置き換え、OpenD が書いたもの（配布物に無いもの）は残す。
+SRC_DIR="$WORK/opt-opend"
+DST_DIR="$WORK/work"
+rm -rf "$SRC_DIR" "$DST_DIR"
+mkdir -p "$SRC_DIR/sub" "$SRC_DIR/rsa"
+printf '#!/bin/sh\n' > "$SRC_DIR/OpenD"; chmod 755 "$SRC_DIR/OpenD"
+printf 'lib-v1\n' > "$SRC_DIR/libx.so"
+printf 'nested\n' > "$SRC_DIR/sub/data"
+printf 'dot\n' > "$SRC_DIR/.hidden"
+( cd "$SRC_DIR" && ln -s libx.so libx.so.1 )
+printf '<old/>\n' > "$SRC_DIR/OpenD.xml"
+write_dummy_key "$SRC_DIR/rsa/opend_rsa.pem"
+prepare_work_dir "$SRC_DIR" "$DST_DIR" "$SRC_DIR/rsa"
+RC=$?
+assert_eq 'T-646-01 写しが成功する（戻り値 0）' "$RC" "0"
+[ -x "$DST_DIR/OpenD" ] && ok 'T-646-01 実行ファイルを実行可能のまま写す' || ng 'T-646-01 実行ファイルを実行可能のまま写す' "$DST_DIR/OpenD が無いか実行できない"
+assert_eq 'T-646-01 下位ディレクトリを写す' "$(cat "$DST_DIR/sub/data" 2>/dev/null)" 'nested'
+assert_eq 'T-646-01 ドットファイルを写す' "$(cat "$DST_DIR/.hidden" 2>/dev/null)" 'dot'
+[ -L "$DST_DIR/libx.so.1" ] && ok 'T-646-01 symlink は symlink のまま写す' || ng 'T-646-01 symlink は symlink のまま写す' "$DST_DIR/libx.so.1 が symlink でない"
+[ -e "$DST_DIR/rsa" ] && ng 'T-646-01 RSA 鍵のディレクトリは写さない' "$DST_DIR/rsa が在る" || ok 'T-646-01 RSA 鍵のディレクトリは写さない'
+[ -e "$DST_DIR/OpenD.xml" ] && ng 'T-646-01 OpenD.xml は写さない（入口の処理が作る）' "$DST_DIR/OpenD.xml が在る" || ok 'T-646-01 OpenD.xml は写さない（入口の処理が作る）'
+# 再起動（emptyDir は残る）: 配布物の項目は置き換え、OpenD が書いたものは残す。
+printf 'lib-v2\n' > "$SRC_DIR/libx.so"
+printf 'appdata\n' > "$DST_DIR/AppData.dat"
+prepare_work_dir "$SRC_DIR" "$DST_DIR" "$SRC_DIR/rsa"
+assert_eq 'T-646-01 再起動で配布物の項目を置き換える' "$(cat "$DST_DIR/libx.so")" 'lib-v2'
+assert_eq 'T-646-01 OpenD が書いたものは残す' "$(cat "$DST_DIR/AppData.dat" 2>/dev/null)" 'appdata'
+# 作業の場所を配布物の中に置くと止める（自分の中へ写し続けない）。
+( prepare_work_dir "$SRC_DIR" "$SRC_DIR/w" "" ) 2> "$WORK/err"
+RC=$?
+assert_eq 'T-646-01 作業の場所が配布物の中なら止める（非0）' "$([ "$RC" -ne 0 ] && echo nonzero || echo zero)" 'nonzero'
+assert_contains 'T-646-01 止めた理由を出す' "$(cat "$WORK/err")" 'の外に置いてください'
 
 printf '\n%d passed, %d failed, %d skipped\n' "$PASSED" "$FAILED" "$SKIPPED"
 [ "$FAILED" -eq 0 ] || exit 1

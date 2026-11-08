@@ -1,5 +1,7 @@
 {{- /* #122: 各 Worker の ClusterIP Service（:8080）。サービス間同期照会・CronJob トリガ・
        BFF/introspection の到達点。ホストへは公開しない（port-forward で個別到達）。 */ -}}
+{{- /* NFR, NFR-05, IADR-0646: TLS の段（global.serviceTls.mode）。Off は従来どおり 8080 だけ（既定の描画は不変）。 */ -}}
+{{- $svcTlsMode := include "ast.serviceTls.mode" . -}}
 {{- range $name, $svc := .Values.services }}
 ---
 apiVersion: v1
@@ -13,6 +15,19 @@ spec:
   selector:
     app: {{ $name }}-service
   ports:
+    {{- if ne $svcTlsMode "Off" }}
+    {{- if ne $svcTlsMode "Enforce" }}
+    - port: 8080
+      targetPort: 8080
+      name: http
+      appProtocol: http
+    {{- end }}
+    {{- /* NFR, NFR-05, IADR-0646: TLS の受け口（Listen・Call は平文の 8080 と併存。Enforce はこれだけ）。 */}}
+    - port: {{ $.Values.global.serviceTls.port }}
+      targetPort: {{ $.Values.global.serviceTls.port }}
+      name: https
+      appProtocol: https
+    {{- else }}
     - port: 8080
       targetPort: 8080
     {{- if $svc.grpcPort }}
@@ -26,5 +41,6 @@ spec:
       targetPort: {{ $svc.grpcPort }}
       name: grpc
       appProtocol: grpc
+    {{- end }}
     {{- end }}
 {{- end }}
