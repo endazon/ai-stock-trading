@@ -1,7 +1,7 @@
 ---
 title: 作業仕様書 — 取引ユニットの外への HTTPS を基盤の外向きの中継へ寄せる段（Off / Report / Enforce）と、ノード自身の公開アドレスの除外の必須化
 type: spec
-status: in-progress
+status: done
 related_ids: [NFR, IADR-0644, IADR-0631]
 author: claude (Claude Code)
 created: 2026-11-08
@@ -66,6 +66,7 @@ plan_refs: [ADR-0006, ADR-0024]
   - `NO_PROXY`: `localhost`・`127.0.0.1`・`.svc`・`.cluster.local`・`.<自分の名前空間>`・`.platform-infra`・`.microservices-platform`・11 の `<名前>-service`・基盤の別名（postgres・rabbitmq・keycloak・otel-collector）・`opend`（有効時）・`noProxyExtra`。
 - Discord.Net: `DiscordNetBotGateway.CreateSocketConfig()` で REST と Gateway の提供者を環境の中継に従わせる（`HTTPS_PROXY` が無ければ直に繋ぐ＝従来と同じ）。
 - ノードの公開アドレス: `ast.publicEgress.except`（`templates/_egress.tpl`）が、`extraExcept` が空・IPv4 の CIDR でない要素で止める。
+  評価は ipBlock を描く分岐の中だけで行う（Enforce で OpenD の出も無ければ、空でも描ける。レビューの指摘で直した）。
   サービスの方針（`networkPolicy.enabled=true`）と OpenD の出（`opend.networkPolicy.egress.enabled=true`）の両方が使う。検査用の digest の fixture が文書用のアドレス（`203.0.113.10/32`）を与える。
 - 監査の案にあった「ノードのファイアウォールの `cni0` の受け入れを絞る」は、このリポジトリの外（基盤のノードの設定）で、稼働中の通信に触れるため本 PR の範囲外。
 

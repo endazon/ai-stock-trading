@@ -509,6 +509,12 @@ function main() {
   ok('8. extraExcept が空なら止まる（ノード自身の公開アドレスの外し忘れ）', () => mustFail([...CLOUD, '--set-json', 'networkPolicy.publicEgress.extraExcept=[]'], 'networkPolicy.publicEgress.extraExcept が空です'));
   ok('8. extraExcept が CIDR でなければ止まる', () => mustFail([...CLOUD, '--set-json', 'networkPolicy.publicEgress.extraExcept=["203.0.113.10"]'], 'IPv4 の CIDR'));
   ok('8. OpenD の出だけを有効にしても extraExcept が空なら止まる', () => mustFail([...def, '--set', 'opend.enabled=true', '--set', 'opend.networkPolicy.egress.enabled=true'], 'networkPolicy.publicEgress.extraExcept が空です'));
+  ok('8. Enforce で extraExcept が空でも OpenD の出（ipBlock）があれば止まる', () => mustFail([...CLOUD, ...ENFORCE, '--set-json', 'networkPolicy.publicEgress.extraExcept=[]'], 'networkPolicy.publicEgress.extraExcept が空です'));
+  ok('8. 陰性対照: Enforce で ipBlock を描くもの（OpenD を除いた）が無ければ、extraExcept が空でも通る', () => {
+    const t = mustRender([...CLOUD, ...ENFORCE, '--set-json', 'networkPolicy.publicEgress.extraExcept=[]', '--set', 'opend.enabled=false', '--set', 'networkPolicy.services.order-execution.opend=false']);
+    assert.strictEqual(policies(t).filter((p) => p.egress.some((r) => r.peers.some((x) => x.cidr))).length, 0, 'ipBlock が描かれた');
+    assert.ok(policies(t).length >= 12, '方針の母集合が痩せた');
+  });
   ok('7. 段が値域の外なら止まる', () => mustFail([...CLOUD, '--set', 'networkPolicy.egressProxy.mode=On'], 'Off / Report / Enforce'));
   ok('7. 段を引用符なしの真偽で書くと止まる', () => mustFail([...CLOUD, '--set', 'networkPolicy.egressProxy.mode=false'], '文字列で書きます'));
   ok('7. 段 Report に networkPolicy.enabled=false は止まる', () => mustFail([...CLOUD, ...REPORT, '--set', 'networkPolicy.enabled=false'], 'networkPolicy.enabled=true が要ります'));

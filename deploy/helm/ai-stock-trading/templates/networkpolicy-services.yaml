@@ -61,7 +61,6 @@
 {{- if and $mq.tls $mq.tls.enabled }}
 {{- $mqPort = $mq.tls.port }}
 {{- end }}
-{{- $except := include "ast.publicEgress.except" . }}
 {{- $proxyMode := include "ast.egressProxy.mode" . }}
 {{- $px := $np.egressProxy }}
 apiVersion: networking.k8s.io/v1
@@ -199,7 +198,8 @@ spec:
     - to:
         - ipBlock:
             cidr: {{ $np.publicEgress.cidr }}
-            except: [{{ $except }}]
+            {{- /* IADR-0644 決定 3: ipBlock を描くときだけ評価する（extraExcept が空ならここで止まる）。 */}}
+            except: [{{ include "ast.publicEgress.except" $ }}]
       ports:
         - { protocol: TCP, port: 443 }
     {{- end }}
