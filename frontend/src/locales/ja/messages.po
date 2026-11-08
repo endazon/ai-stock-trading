@@ -1435,10 +1435,6 @@ msgstr "時価"
 msgid "時間"
 msgstr "時間"
 
-#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
-msgid "暫定値・算定根拠が無く実測待ち"
-msgstr "暫定値・算定根拠が無く実測待ち"
-
 #: src/features/sc01-settings/components/SettingsPage.tsx
 msgid "月次費用上限（円／月。総額 ＝ LLM＋インフラ＋データ）"
 msgstr "月次費用上限（円／月。総額 ＝ LLM＋インフラ＋データ）"
@@ -1906,6 +1902,10 @@ msgstr "相場操縦パターン禁止"
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 msgid "相場操縦パターン禁止を無効化"
 msgstr "相場操縦パターン禁止を無効化"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "確定値・算定根拠は無い"
+msgstr "確定値・算定根拠は無い"
 
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 msgid "確認のため「"

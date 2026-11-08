@@ -3,7 +3,7 @@ title: 画面仕様書 — SC-04 OpenD 認証操作画面
 type: screen
 status: Draft
 created: 2026-09-09
-updated: 2026-10-23
+updated: 2026-11-08
 author: endazon (with Claude Code)
 ---
 <!-- trace:
@@ -75,7 +75,7 @@ OpenD のコンソールは検証コード以外のコマンドも受け付け�
 | --- | --- | --- | --- |
 | `input_phone_verify_code` | SMS 検証コードの入力 | 許可 | 待機中プロンプトが SMS のときだけ |
 | `input_pic_verify_code` | 画像 CAPTCHA の入力 | 許可 | 待機中プロンプトが画像のときだけ |
-| `req_phone_verify_code` | SMS の再送要求 | 許可 | レート制限を 2 つ重ねる。**再送だけの間隔 60 秒に 1 回**と、検証コードの投入と合算した**サービス全体の 60 秒に 5 件**（いずれも認証サイドカーが課す。**暫定値。算定根拠が無く実測待ち**）。検証コードの投入は前者に数えない |
+| `req_phone_verify_code` | SMS の再送要求 | 許可 | レート制限を 2 つ重ねる。**再送だけの間隔 60 秒に 1 回**と、検証コードの投入と合算した**サービス全体の 60 秒に 5 件**（いずれも認証サイドカーが課す。**確定値。算定根拠は無く、利用者裁定 2026-11-06 により暫定値をそのまま確定した。実測は任意の確認**）。検証コードの投入は前者に数えない |
 | `relogin -login_pwd=` ／ `exit` ／ `close_api_conn` ／ `set_log_level` | 再ログイン・終了・接続切断・ログ水準変更 | **送れない** | 統制の外からゲートウェイを止められてしまう |
 | `show_delay_report -detail_report_path=` ／ `show_sub_info -sub_info_path=` | レポート出力（任意パス指定） | **送れない** | 🔴 **root 権限で任意パスへ書ける** —— デバイス信頼の実体や `OpenD.xml` を潰せる |
 
