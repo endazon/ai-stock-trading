@@ -246,6 +246,22 @@ spec:
             {{- end }}
             - name: ASPNETCORE_URLS
               value: http://+:8080
+            {{- /* NFR, IADR-0644 決定 1・2: 外への HTTPS を基盤の外向きの中継へ寄せる（networkPolicy.egressProxy.mode が Off でなく、
+                   networkPolicy.services.<名前>.externalHttps: true のサービスだけ）。.NET の HttpClient（IHttpClientFactory・SocketsHttpHandler）は
+                   HTTPS_PROXY・NO_PROXY を読む（http:// の宛先には効かない。HTTP_PROXY・ALL_PROXY は渡さない）。Discord.Net は
+                   既定で読まないので、通知サービスが明示で読ませる（DiscordNetBotGateway.CreateSocketConfig）。
+                   NO_PROXY はクラスタの中の名前だけ（ast.egressProxy.noProxy）。extraEnv で与える抜け道は塞ぐ。 */}}
+            {{- range $e := $svc.extraEnv }}
+            {{- if has (upper ($e.name | toString)) (list "HTTPS_PROXY" "HTTP_PROXY" "ALL_PROXY" "NO_PROXY") }}
+            {{- fail (printf "services.%s の extraEnv に %s は書けません。中継は networkPolicy.egressProxy.mode で与えます（IADR-0644）。" $name $e.name) }}
+            {{- end }}
+            {{- end }}
+            {{- if include "ast.egressProxy.applies" (dict "root" $ "name" $name) }}
+            - name: HTTPS_PROXY
+              value: {{ $.Values.networkPolicy.egressProxy.url | quote }}
+            - name: NO_PROXY
+              value: {{ include "ast.egressProxy.noProxy" $ | quote }}
+            {{- end }}
             {{- /* NFR, ADR-0006, #778: 512Mi の小容器で ASP.NET Core 既定の Server GC は、ヒープ上限（limit の 75%）に
                    達する前にネイティブ分を含む RSS が limit を超えて OOMKilled になる（audit-service が 3h で 5 回・
                    risk-management も 1 回実測）。Workstation GC ＋ GCConserveMemory で RSS を抑える。全 .NET サービス共通。 */}}
