@@ -166,14 +166,16 @@ spec:
               legacy なら旧い共有の鍵の印だけを付ける発行元（移行の取り残し）を、forbidden_issuer / mismatch / replayed ならブローカの利用者と Pod の侵害を疑う。
         # 🔴 NFR, FR-10, IADR-0645 決定 1: 記録だけの受け手（監査）・段 1 の受け手（Report。通知を足した間など）が、発行元を確かめられない
         # メッセージを記録して処理した。拒まないので処理は続くが、偽の事象が証跡・オーナーへの通知に入った疑いがある。
-        # 🔴 この閾値は実測を要しない。正規の発行元は必ず印を付けるので平常は 0 件である（reason=unrecorded は再送の記録の置き場が無い受け手が
-        # 起動より前のものを受けた。止まっている間に溜まったものか、過去のメッセージの再送かを見分ける）。
+        # 🔴 この閾値は実測を要しない。正規の発行元は必ず印を付けるので平常は 0 件である。
+        # 🔴 IADR-0645: reason=unrecorded は数えない。再送の記録の置き場が無い段 1 の受け手（通知）は、Pod を作り直すたびに起動より 5 分を超えて
+        # 前に発行された正当なメッセージをこの理由で記録して通すので、作り直しのたびに鳴ってしまう（段 2 の受け手が処理しなかった unrecorded は
+        # AstMessageOriginRejected が引く）。
         # for は置かない（1 件で知らせる。AstMessageOriginRejected と同じ形。左の枝は最初の 1 件、右の枝は 2 件目以降）。
         - alert: AstMessageOriginUnverifiedAdmitted
           expr: >-
-            (sum by (type, reason) (ast_messaging_origin_failures_total{outcome="admitted"})
-              unless sum by (type, reason) (ast_messaging_origin_failures_total{outcome="admitted"} offset 15m))
-            or sum by (type, reason) (increase(ast_messaging_origin_failures_total{outcome="admitted"}[15m])) > 0
+            (sum by (type, reason) (ast_messaging_origin_failures_total{outcome="admitted",reason!="unrecorded"})
+              unless sum by (type, reason) (ast_messaging_origin_failures_total{outcome="admitted",reason!="unrecorded"} offset 15m))
+            or sum by (type, reason) (increase(ast_messaging_origin_failures_total{outcome="admitted",reason!="unrecorded"}[15m])) > 0
           labels:
             severity: warning
             service: ai-stock-trading
@@ -182,7 +184,7 @@ spec:
             description: >-
               統制の入力になるメッセージ（型は type）を、記録だけの受け手（監査）か段 1 の受け手（通知など）が、発行元を確かめられないまま処理した（理由は reason）。
               最初に見る場所: 受け手のサービスのログの WRN「メッセージの発行元を確かめられませんでした」（EventId 16261。型・名乗った発行元・メッセージ ID が載る）。
-              missing / unverifiable なら鍵の Secret と ESO の同期を、unrecorded なら受け手の再起動の前後に溜まったメッセージを、
+              missing / unverifiable なら鍵の Secret と ESO の同期を、
               forbidden_issuer / mismatch / replayed ならブローカの利用者と Pod の侵害を疑い、同じ時刻の通知・証跡を信じない。
         # 🔴 NFR, FR-10, IADR-0645 決定 2: 発行元の確かめの再送の記録の置き場（受け手の DB）を読み書きできなかった。
         # lookup の失敗はそのメッセージを処理せず再試行する（続けばエラーキューへ）。record の失敗は処理は終えたが、再起動の後にその ID の再送を拒めない。

@@ -36,7 +36,9 @@ plan_refs: []
 ## 決定
 
 1. **確かめの記録と旧の共有クライアントの通過を警報にする。**
-   - 警報 `AstMessageOriginUnverifiedAdmitted`: `ast_messaging_origin_failures_total{outcome="admitted"}`。`AstMessageOriginRejected` と同じ「最初の 1 件で鳴る」形
+   - 警報 `AstMessageOriginUnverifiedAdmitted`: `ast_messaging_origin_failures_total{outcome="admitted",reason!="unrecorded"}`
+     （`unrecorded` は除く。置き場の無い段 1 の受け手〔通知〕は Pod の作り直しのたびに正当なものをこの理由で通すので、含めると作り直しのたびに鳴る。
+     段 2 の受け手が処理しなかった `unrecorded` は `AstMessageOriginRejected` が引く）。`AstMessageOriginRejected` と同じ「最初の 1 件で鳴る」形
      （系列は最初の計上で生まれるので、`unless … offset 15m` の枝で初回を拾う）。
    - 計器 `ast.auth.legacy_service_client_uses`（タグ `endpoint`）を `ServiceCallerHandler` が旧の共有クライアントを通した回に 1 増やす
      （要件が重なる口でも 1 要求 1 件）。警報 `AstLegacyServiceClientUsed` は最初の 1 件で鳴る。values-cloud は全サービスが自分のクライアントを
@@ -88,5 +90,7 @@ plan_refs: []
   読めない置き場ではハンドラへ渡さない）、Integration `MessageOriginReplayStoreE2ETests`（実 PostgreSQL）、`ServiceCallerPolicyTests`（旧の共有クライアントの計上）、
   `DiscordBotGatewayFactoryTests`・`DiscordBotReadinessTests`、`scripts.repo.test.js`（警報の式の形）、`helm.yml`（values-cloud の描画）。
 - 警報は基盤の Prometheus が ConfigMap `ast-prometheus-rules` で読む（基盤の手順書）。本リポをマージした後に作り直す（利用者の作業）。
+- 残余: 置き場の確かめ（`ContainsAsync`）から記録（`RecordAsync`）までは原子的でない。複数のレプリカが同じ ID を同時に受けると、両方が処理しうる
+  （今は受け手がどれも 1 Pod なので実害は無い。レプリカを増やすときは、処理の前に ID を予約する形〔挿入の一意制約で 1 つだけを通す〕へ改める）。
 - 残余: 通知の表の外の型は発行元の印が付かず確かめない（IADR-0638 決定 2 のまま）。系列が無い（サービスが止まっている）ときこれらの警報は鳴らない
   （Pod の死活は別の警報が見る）。

@@ -3380,7 +3380,8 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
         .flatMap((f) => oa.parseAlertRules(fsOa.readFileSync(pathOa.join(alertDir, f), 'utf8')));
       const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const firstOccurrence = [
-        ['AstMessageOriginUnverifiedAdmitted', 'ast_messaging_origin_failures_total{outcome="admitted"}', 'sum by (type, reason)'],
+        // reason=unrecorded（置き場の無い段 1 の受け手が作り直しの後に記録して通す正当なもの）は数えない。
+        ['AstMessageOriginUnverifiedAdmitted', 'ast_messaging_origin_failures_total{outcome="admitted",reason!="unrecorded"}', 'sum by (type, reason)'],
         ['AstMessageOriginReplayStoreFailing', 'ast_messaging_origin_replay_store_failures_total', 'sum by (operation)'],
         ['AstLegacyServiceClientUsed', 'ast_auth_legacy_service_client_uses_total', 'sum by (endpoint)'],
       ];

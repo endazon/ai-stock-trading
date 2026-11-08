@@ -196,6 +196,12 @@ bash scripts/ast-message-origin-keygen.sh --live
 - **受け手を足したときの段**: 新しく確かめる側に加えたサービスは、`global.messageOrigin.modeOverrides` でそのサービスだけ段 1（`Report`）にして当てる
   （鍵は段 2 のまま必須で読む。いまは通知が該当する）。そのサービスのログに「発行元を確かめられませんでした」（EventId 16261）が
   1 日出ないことを確かめてから、values-cloud の行を外して当て直す（段 2 では、確かめられない事象を通知しない）。
+  - 🔴 **通知の Pod を作り直した直後の分は想定内**である。通知は DB を持たないので（段 1・置き場は Memory）、作り直しのたびに、起動より 5 分を超えて前に
+    発行された正当なメッセージが結果 `unrecorded` として記録され（ログの EventId 16261 の `結果=Unrecorded`）、メトリクス
+    `ast_messaging_origin_failures_total{outcome="admitted",reason="unrecorded"}` に数えられる。この分は警報 `AstMessageOriginUnverifiedAdmitted` も数えない。
+    1 日の確かめでは、これを除いて見る:
+    - ログ: `kubectl -n ai-stock-trading logs deploy/notification-service --since=24h | grep '発行元を確かめられませんでした' | grep -v '結果=Unrecorded'` が空であること。
+    - メトリクス: `sum by (type, reason) (increase(ast_messaging_origin_failures_total{outcome="admitted",reason!="unrecorded"}[1d]))` が空か 0 であること。
   - 🔴 **通知を段 2 へ上げたときの副作用**: 通知は DB を持たないので、処理し終えたメッセージの記録はプロセスの中だけにある。段 2 の通知は、
     **起動（Pod の作り直し）より 5 分（構成 `MessageOrigin:UnrecordedGrace`）を超えて前に発行されたメッセージを、正当なものでも処理しない**
     （結果 `unrecorded`。ログ EventId 16260・警報 `AstMessageOriginRejected`）。通知が止まっていた間・作り直しの前に溜まった約定・損切り到達などの
