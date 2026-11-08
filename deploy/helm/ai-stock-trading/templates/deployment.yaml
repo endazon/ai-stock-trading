@@ -446,6 +446,15 @@ spec:
             {{- end }}
             - name: MessageOrigin__Mode
               value: {{ $moMode | quote }}
+            {{- /* 🔴 NFR, FR-10, IADR-0645 決定 2: 再送の記録の置き場。DB を持つ受け手にだけ描く（DB の無い受け手はプロセスの中だけ）。 */}}
+            {{- $moStore := $mo.replayStore | default "Memory" }}
+            {{- if not (has $moStore (list "Memory" "Database")) }}
+            {{- fail (printf "global.messageOrigin.replayStore は Memory か Database です（値: %v）。" $moStore) }}
+            {{- end }}
+            {{- if and $moVerifies $svc.db }}
+            - name: MessageOrigin__ReplayStore
+              value: {{ $moStore | quote }}
+            {{- end }}
             {{- if $moSigns }}
             - name: MessageOrigin__SigningKey
               valueFrom:

@@ -82,8 +82,12 @@ global:
     mode: Enforce
     # 🔴 NFR, FR-09, IADR-0638 決定 3: 通知は新しく足した受け手なので、段 1（記録だけ）で当てる。鍵は段 2 のまま必須で読む。
     #   通知のログに EventId 16261 が 1 日出ないことを確かめてから、この行を外す（手順書 docs/operations/cloud-single-node-migration-runbook.md §5.1「受け手を足したときの段」）。
+    #   🔴 IADR-0645: 外す（段 2 にする）と、通知は DB を持たないので、Pod の起動より 5 分を超えて前に発行された正当な通知も処理しない（手順書の同じ節の副作用）。
     modeOverrides:
       notification: Report
+    # 🔴 NFR, FR-10, IADR-0645 決定 2: 再送の記録を DB を持つ受け手の DB に残す（再起動で消えない）。DB の障害で読めなければ処理せずに再試行する
+    #   （警報 AstMessageOriginReplayStoreFailing）。戻すときは Memory（プロセスの中だけ）。
+    replayStore: Database
   # NFR-18, #1535, IADR-0621: 基盤の DB・ブローカへの接続を TLS にする（経路 B の values-local と同じスイッチ）。
   rabbitmq:
     tls:

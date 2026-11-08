@@ -8,6 +8,7 @@ using NotificationService.Features.Notifications.OperateTradingPause;
 using NotificationService.Features.Notifications.ReviewReport;
 using NotificationService.Features.Notifications.RevisePolicy;
 using NotificationService.Infrastructure.ExternalServices;
+using AiStockTrading.Shared.Contracts.Observability;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -36,7 +37,7 @@ public class DiscordBotGatewayFactoryTests
         return options;
     }
 
-    private static IDiscordBotGateway Create(DiscordBotOptions options)
+    private static IDiscordBotGateway Create(DiscordBotOptions options, DiscordBotHealth? health = null)
     {
         var handler = new KillSwitchCommandHandler(
             new StubKillSwitchController(), options, NullLogger<KillSwitchCommandHandler>.Instance);
@@ -65,7 +66,59 @@ public class DiscordBotGatewayFactoryTests
             NullLogger<PolicyApprovalCommandHandler>.Instance);
         return DiscordBotGatewayFactory.Create(
             options, handler, pauseHandler, stageGateHandler, gfvHandler, reportHandler, driftHandler, policyHandler, policyApprovalHandler,
-            NullLoggerFactory.Instance);
+            NullLoggerFactory.Instance, health);
+    }
+
+    // 🔴 NFR, IADR-0645 決定 3（AC4-1）: 選んだ結果を状態として残す（計器 ast.notification.discord_bot_status は今の状態だけ 1）。
+    [Fact]
+    public void 選んだ結果を状態として残し計器は今の状態だけを1にする()
+    {
+        var meterName = $"AiStockTrading.Business.Test.{nameof(DiscordBotGatewayFactoryTests)}.{Guid.NewGuid():N}";
+        var latest = new Dictionary<string, long>(StringComparer.Ordinal);
+        using var listener = new System.Diagnostics.Metrics.MeterListener();
+        listener.InstrumentPublished = (i, l) =>
+        {
+            if (i.Meter.Name == meterName)
+                l.EnableMeasurementEvents(i);
+        };
+        listener.SetMeasurementEventCallback<long>((i, v, tags, _) =>
+        {
+            if (i.Name != BusinessMetricNames.DiscordBotStatus)
+                return;
+            foreach (var t in tags)
+            {
+                if (t.Key == BusinessMetricNames.TagState)
+                    latest[(string)t.Value!] = v;
+            }
+        });
+        listener.Start();
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        var health = new DiscordBotHealth(metrics);
+
+        Create(new DiscordBotOptions(), health);
+        health.State.Should().Be(BusinessMetrics.DiscordBotDisabled);
+
+        var missing = FullyConfigured();
+        missing.KillSwitchConfirmationPhrase = "";
+        Create(missing, health);
+        health.State.Should().Be(BusinessMetrics.DiscordBotMisconfigured);
+        latest.Should().BeEquivalentTo(new Dictionary<string, long>
+        {
+            [BusinessMetrics.DiscordBotDisabled] = 0,
+            [BusinessMetrics.DiscordBotMisconfigured] = 1,
+            [BusinessMetrics.DiscordBotDisconnected] = 0,
+            [BusinessMetrics.DiscordBotConnected] = 0,
+        });
+
+        Create(FullyConfigured(), health).Should().BeOfType<DiscordNetBotGateway>();
+        health.State.Should().Be(BusinessMetrics.DiscordBotDisconnected, "接続するまでは切断として数える");
+        latest[BusinessMetrics.DiscordBotMisconfigured].Should().Be(0);
+
+        // Token の欠けも設定の欠け（直前の状態〔disconnected〕から移る）。
+        var noToken = FullyConfigured();
+        noToken.Token = "";
+        Create(noToken, health);
+        health.State.Should().Be(BusinessMetrics.DiscordBotMisconfigured);
     }
 
     // 受け入れ基準11: 何も設定しなければ接続しない。

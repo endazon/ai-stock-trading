@@ -601,6 +601,15 @@ jobs:
           [ "$(grep -cE '^ +- name: MessageOrigin__SigningKey$' <<<"$out" || true)" = 7 ] || fail "発行元の秘密の鍵が 7 サービスちょうどに描かれていない。"
           if grep -A6 -E '^ +- name: MessageOrigin__(SigningKey|VerifyKeys__[a-z_]+)$' <<<"$out" | grep -q 'optional: true'; then fail "values-cloud の発行元の鍵が optional で描かれた（段 2 は必須）。"; fi
           if grep -qE '^ +- name: MessageOrigin__Keys__' <<<"$out"; then fail "values-cloud に旧い共有の鍵（HMAC）が描かれた（段 2 では使わない）。"; fi
+          # NFR, FR-10, IADR-0645 決定 2: 再送の記録の置き場は、DB を持つ受け手 5 つ（risk-management・market-monitor・order-execution・cost-control・audit）
+          #   にだけ Database で描く。DB の無い受け手（trade-decision・notification）には描かない。Memory・Database の外の値は描画で止める。
+          [ "$(grep -A1 -E '^ +- name: MessageOrigin__ReplayStore$' <<<"$out" | grep -c 'value: "Database"' || true)" = 5 ] \
+            || fail "values-cloud の MessageOrigin__ReplayStore=Database が DB を持つ受け手 5 つちょうどでない: $(mode MessageOrigin__ReplayStore "$out")"
+          [ "$(grep -cE '^ +- name: MessageOrigin__ReplayStore$' <<<"$out" || true)" = 5 ] || fail "MessageOrigin__ReplayStore が DB の無いサービスにも描かれた。"
+          if helm template ast "$CHART" -f "$CHART/values-cloud.yaml" -f "$CHART/ci/values-cloud-digests.fixture.yaml" \
+                --set global.messageOrigin.replayStore=Redis >/dev/null 2>&1; then
+            fail "再送の記録の置き場に Memory・Database の外の値が描画で止まらない。"
+          fi
           if helm template ast "$CHART" -f "$CHART/values-cloud.yaml" -f "$CHART/ci/values-cloud-digests.fixture.yaml" \
                 --set global.messageOrigin.legacyHmac.enabled=true >/dev/null 2>&1; then
             fail "段 2 と旧い共有の鍵の併用が描画で止まらない。"

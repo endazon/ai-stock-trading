@@ -49,4 +49,15 @@ public sealed class MessageOriginOptions
 
     /// <summary>発行の時刻が受け手の時計より先にあってよい幅（既定 5 分）。</summary>
     public TimeSpan MaxFutureSkew { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// 🔴 IADR-0645 決定 2: 再送の記録の置き場（既定 Memory）。Database は <c>ConnectionStrings:DefaultConnection</c> の DB に残す（再起動で消えない）。
+    /// </summary>
+    public MessageOriginReplayStoreKind ReplayStore { get; set; } = MessageOriginReplayStoreKind.Memory;
+
+    /// <summary>
+    /// 🔴 IADR-0645 決定 2: 置き場が Memory のとき、起動より前に発行されたものを受ける猶予（既定 5 分。入れ替えの間に送られたもの）。
+    /// これより前に発行されたものは処理し終えたかを確かめられないので <c>unrecorded</c>（段 2 は処理しない）。
+    /// </summary>
+    public TimeSpan UnrecordedGrace { get; set; } = TimeSpan.FromMinutes(5);
 }

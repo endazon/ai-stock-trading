@@ -676,6 +676,23 @@ public class BusinessMetricsTests
         public const string Llm = nameof(Llm);
     }
 
+    // 🔴 NFR, FR-14, IADR-0645 決定 3: ボットの接続状態は今の状態だけ 1 で、語彙の外の値は拒む（系列を増やさない）。
+    [Fact]
+    public void ボットの接続状態は今の状態だけを1にし語彙の外を拒む()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        metrics.RecordDiscordBotState(BusinessMetrics.DiscordBotMisconfigured);
+
+        var values = capture.ValuesOf(BusinessMetricNames.DiscordBotStatus);
+        values.Should().HaveCount(BusinessMetrics.DiscordBotStates.Count);
+        values.Where(m => m.Value == 1).Select(m => m.Tags[BusinessMetricNames.TagState]).Should().Equal(BusinessMetrics.DiscordBotMisconfigured);
+        var act = () => metrics.RecordDiscordBotState("offline");
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
     /// <summary>レジストリの全計器を 1 回ずつ発火させる（「宣言はあるが誰も発火させない計器」を検出するため）。</summary>
     private static void RecordEveryInstrument(BusinessMetrics metrics)
     {
@@ -701,6 +718,10 @@ public class BusinessMetricsTests
         metrics.RecordOrderExecutedPublishPending(0);
         // NFR, FR-10, IADR-0627 決定 4: 受け手で発行元を確かめられなかったメッセージ。
         metrics.RecordMessageOriginCheck("StopLossTriggered", "missing", rejected: true);
+        // NFR, FR-10, NFR-05, FR-14, IADR-0645 決定 1〜3: 再送の記録の置き場の失敗・旧の共有クライアントの通過・ボットの接続状態。
+        metrics.RecordMessageOriginReplayStoreFailure("lookup");
+        metrics.RecordLegacyServiceClientUse("open-positions");
+        metrics.RecordDiscordBotState(BusinessMetrics.DiscordBotConnected);
 
         // NFR-01, NFR-02, #689: 端点間の 3 計器。**未観測カウンタも 1 回発火させる** ——
         // 起点なしの呼び出しでしか出ない計器であり、ここを落とすとレジストリとの一致検査がすり抜ける。

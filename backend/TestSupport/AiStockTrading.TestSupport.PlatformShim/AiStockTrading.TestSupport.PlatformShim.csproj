@@ -28,6 +28,8 @@
          MassTransit（旧 MassTransitExtensions）は #354 第 3 段階で撤去済み。 -->
     <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="WolverineFx.RuntimeCompilation" />
+    <!-- NFR, FR-10, IADR-0645 決定 2: 発行元の確かめの再送の記録の置き場（受け手のサービスの DB）。 -->
+    <PackageReference Include="Npgsql" />
   </ItemGroup>
   <ItemGroup>
     <!-- NFR-07, #287, IADR-0255: 業務メトリクスの計器（BusinessMetrics）は契約プロジェクトが持つ。

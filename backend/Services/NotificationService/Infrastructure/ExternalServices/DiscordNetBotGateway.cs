@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Logging;
+using AiStockTrading.Shared.Contracts.Observability;
 using NotificationService.Domain;
 using NotificationService.Features.Notifications;
 using NotificationService.Features.Notifications.AdoptPositionDrift;
@@ -89,6 +90,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     private readonly PolicyApprovalCommandHandler _policyApprovalHandler;
     private readonly DiscordBotOptions _options;
     private readonly ILogger<DiscordNetBotGateway> _logger;
+    private readonly DiscordBotHealth _health;
 
     public DiscordNetBotGateway(
         KillSwitchCommandHandler handler,
@@ -100,7 +102,8 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         PolicyRevisionCommandHandler policyHandler,
         PolicyApprovalCommandHandler policyApprovalHandler,
         DiscordBotOptions options,
-        ILogger<DiscordNetBotGateway> logger)
+        ILogger<DiscordNetBotGateway> logger,
+        DiscordBotHealth? health = null)
     {
         _handler = handler;
         _pauseHandler = pauseHandler;
@@ -112,10 +115,22 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         _policyApprovalHandler = policyApprovalHandler;
         _options = options;
         _logger = logger;
+        _health = health ?? new DiscordBotHealth();
 
         _client = new DiscordSocketClient(CreateSocketConfig());
 
         _client.Log += OnLogAsync;
+        // 🔴 NFR, IADR-0645 決定 3: 接続・切断を計器へ（切断が続けばオーナーの帯域内の停止の経路が無い。警報 AstDiscordBotUnavailable）。
+        _client.Connected += () =>
+        {
+            _health.Set(BusinessMetrics.DiscordBotConnected);
+            return Task.CompletedTask;
+        };
+        _client.Disconnected += _ =>
+        {
+            _health.Set(BusinessMetrics.DiscordBotDisconnected);
+            return Task.CompletedTask;
+        };
         _client.Ready += OnReadyAsync;
         _client.SlashCommandExecuted += OnSlashCommandAsync;
         _client.AutocompleteExecuted += OnAutocompleteAsync;

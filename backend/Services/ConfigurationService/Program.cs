@@ -75,6 +75,8 @@ if (JasperFxCommandLine.IsHostRun(args))
     var db = scope.ServiceProvider.GetRequiredService<ConfigurationDbContext>();
     if (db.Database.IsRelational())
         await db.Database.MigrateAsync();
+    // 🔴 NFR, FR-10, IADR-0645 決定 2: 発行元の確かめの再送の記録の表も移行の経路で作る（このサービスが受け手で置き場が Database のときだけ。いまは何もしない）。
+    await app.Services.EnsureMessageOriginReplayStoreAsync();
 }
 
 // 相関ID・認証・認可のミドルウェア。
