@@ -110,7 +110,7 @@ export function VerificationCodeForm({
               </Button>
               <span className="text-[11px] text-fg-muted">
                 {i18n._(msg`再送は 60 秒に 1 回まで（`)}
-                <strong>{i18n._(msg`暫定値・算定根拠が無く実測待ち`)}</strong>
+                <strong>{i18n._(msg`確定値・算定根拠は無い`)}</strong>
                 {i18n._(msg`）。間隔はサーバ側が課します。`)}
               </span>
             </div>

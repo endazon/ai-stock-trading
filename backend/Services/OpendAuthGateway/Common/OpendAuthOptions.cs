@@ -56,7 +56,7 @@ public sealed class OpendAuthOptions
     public int RateLimitMaxSubmissions { get; set; } = 5;
 
     /// <summary>
-    /// #1456, SC-04, IADR-0579: SMS の<b>再送だけ</b>に課す最小の間隔（秒）。既定 60（暫定値・実測待ち）。
+    /// #1456, SC-04, IADR-0579: SMS の<b>再送だけ</b>に課す最小の間隔（秒）。既定 60（確定値。算定根拠は無く、planning#826 の利用者裁定 2026-11-06 で暫定値をそのまま確定した）。
     /// 上の流量制限（投入と再送の合算）の<b>内側に重ねる</b>ものであり、置き換えない。投入（検証）は数えない。
     /// </summary>
     public int ResendIntervalSeconds { get; set; } = 60;

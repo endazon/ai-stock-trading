@@ -83,7 +83,7 @@ public static class OpendAuthBffEndpoints
         g.MapPost("/code", PostCodeAsync).WithName("BffOpendAuthCode");
 
         // SC-04: SMS の再送要求（本文なし）。レート制限は上流（サイドカー）が課す —— 再送だけの間隔（60 秒に 1 回）と、
-        // 投入と合算したサービス全体の上限（60 秒に 5 件）。いずれも暫定値・実測待ち（#1456・IADR-0579 / IADR-0322 決定 4）。
+        // 投入と合算したサービス全体の上限（60 秒に 5 件）。いずれも確定値で、算定根拠は無い。planning#826 の利用者裁定 2026-11-06 で暫定値をそのまま確定し、実測は任意の確認とした（#1456・IADR-0579 / IADR-0322 決定 4）。
         g.MapPost("/resend", PostResendAsync).WithName("BffOpendAuthResend");
 
         return app;

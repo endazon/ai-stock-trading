@@ -134,7 +134,7 @@ export const ALLOWED_OPERATIONS: readonly {
     command: 'req_phone_verify_code',
     purpose: 'SMS の再送要求',
     allowed: true,
-    note: 'レート制限（暫定 60 秒に 1 回・実測待ち）',
+    note: 'レート制限（60 秒に 1 回・確定値）',
   },
   {
     command: 'relogin -login_pwd= ／ exit ／ close_api_conn ／ set_log_level',
