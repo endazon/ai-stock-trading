@@ -64,6 +64,18 @@ node scripts/helm-service-tls.test.js
    - `kubectl -n ai-stock-trading get externalsecret | grep service-tls` の 11 個がすべて `SecretSynced`。
    - 全 Pod が Ready（probe は平文の 8080 のまま）。
    - 各サービスのログに `Now listening on: https://[::]:8443` が出ている。証明書の読み込みの失敗が無い。
+   - 受け口が出す証明書の鎖が、基盤の CA だけで検証できる（Secret は葉の証明書だけを持つ。基盤の PKI に中間の CA があると、ここで落ちる）。
+     手元の端末で 1 つのサービスに対して行う（port-forward は通信の制限の外の経路。CA は公開してよい証明書）:
+
+     ```
+     kubectl -n ai-stock-trading get secret platform-infra-ca -o jsonpath='{.data.ca\.crt}' | base64 -d > platform-infra-ca.crt
+     kubectl -n ai-stock-trading port-forward deploy/risk-management-service 18443:8443 &
+     openssl s_client -connect 127.0.0.1:18443 -servername risk-management-service -verify_hostname risk-management-service \
+       -CAfile platform-infra-ca.crt -verify_return_error -showcerts </dev/null 2>&1 | grep -E 'Verify return code|^ *[0-9] s:'
+     kill %1
+     ```
+
+     - `Verify return code: 0 (ok)` が出ること。`unable to get local issuer certificate` なら中間の CA が鎖に無い。`Off` へ戻し、記録して実装へ戻す（発行の写しに鎖を足す）。
 4. 一時停止を解く。
 
 ## 段 2: Call（場の時間外）

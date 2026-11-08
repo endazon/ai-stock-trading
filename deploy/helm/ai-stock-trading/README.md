@@ -261,6 +261,8 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   - 外への HTTPS は `networkPolicy.egressProxy.mode`（`Off` 既定 / `Report` / `Enforce`）で基盤の外向きの中継へ寄せる。`Off` 以外では
     `externalHttps: true` のサービスへ `HTTPS_PROXY`・`NO_PROXY`（クラスタの中の名前を描画が導く）を渡し、出の方針に中継の口を足す。
     `Enforce` は外の 443 の `ipBlock` を描かない（IADR-0644 決定 1・2）。上げる手順と前提（基盤の側の受け入れ）は通信の制限の Runbook。
+    中継の受け口は送り元ごと（`networkPolicy.services.<名前>.egressProxyPort`。values-cloud が 3141〜3146 を持つ）で、`HTTPS_PROXY` と出の方針の口は
+    そのサービスの受け口になる。受け口の欠け（Report・Enforce）・重なり・旧の単一の `url` / `port` は描画で止める（[IADR-0647](../../../.ai-context/adr/IADR-0647_egress-proxy-per-source-ports.md)）。
   - 適用の順序と切り戻しは [通信の制限の Runbook](../../../docs/operations/cloud-network-policy-runbook.md)。
 - **サービス間の HTTP を TLS にする段**（`global.serviceTls.mode`。[IADR-0646](../../../.ai-context/adr/IADR-0646_service-to-service-tls-and-opend-nonroot.md)）:
   `"Off"`（既定・values-cloud の今の値）→ `Listen`（受け側が 8080 と 8443 の両方）→ `Call`（呼び手の `http://<サービス>-service:8080` を

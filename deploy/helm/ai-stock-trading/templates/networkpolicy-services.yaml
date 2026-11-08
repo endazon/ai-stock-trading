@@ -65,6 +65,7 @@
 {{- $httpPorts := splitList " " (include "ast.serviceTls.httpPorts" .) }}
 {{- $proxyMode := include "ast.egressProxy.mode" . }}
 {{- $px := $np.egressProxy }}
+{{- include "ast.egressProxy.validate" . }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -190,14 +191,14 @@ spec:
         - { protocol: TCP, port: {{ $np.llmGateway.port }} }
     {{- end }}
     {{- if and $d.externalHttps (ne $proxyMode "Off") }}
-    # 基盤の外向きの中継（外への HTTPS は HTTPS_PROXY でここを通す。段 {{ $proxyMode }}。IADR-0644）。
+    # 基盤の外向きの中継のこのサービスの受け口（外への HTTPS は HTTPS_PROXY でここを通す。段 {{ $proxyMode }}。IADR-0644・IADR-0647）。
     - to:
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $px.namespace | quote }} } }
           podSelector:
             matchLabels:
               {{- toYaml $px.podLabels | nindent 14 }}
       ports:
-        - { protocol: TCP, port: {{ $px.port }} }
+        - { protocol: TCP, port: {{ include "ast.egressProxy.port" (dict "root" $ "name" $name) }} }
     {{- end }}
     {{- if and $d.externalHttps (ne $proxyMode "Enforce") }}
     # クラスタの外の HTTPS（情報源・市況・為替・Discord）。私設・リンクローカル・CGNAT・ループバック・ノードの公開アドレスへは出さない。
