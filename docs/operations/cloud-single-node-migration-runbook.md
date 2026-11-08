@@ -207,6 +207,9 @@ bash scripts/ast-message-origin-keygen.sh --live
     （結果 `unrecorded`。ログ EventId 16260・警報 `AstMessageOriginRejected`）。通知が止まっていた間・作り直しの前に溜まった約定・損切り到達などの
     通知は Discord へ届かない。上げた後に通知の Pod を作り直したら、その前後の約定・建玉は画面と証券会社の画面で確かめる。
     台帳（リスク管理）・発注（発注執行）は DB に記録を持つので、この副作用は無い。
+  - 🔴 **取引判断（trade-decision）も同じ**である。DB を持たず置き場は Memory で、values-cloud では段 2 なので、Pod を作り直すと、起動より 5 分を超えて前に
+    発行された正当な起点（定時の情報収集の完了・急変の検知）を `unrecorded` として処理しない（ログ EventId 16260・警報 `AstMessageOriginRejected`）。
+    その起点の判断は行われず、次の巡回の起点から判断する（古い起点はもともと判断せずに捨てる）。作り直しの直後に鳴ったこの分は想定内である。
 - **gRPC 面の所有者のトークンの宛先**: gRPC の所有者の口（ボットが呼ぶ面）も、REST と同じ段（`global.ownerTokenBinding.mode`）と
   許可集合でトークンの宛先（aud）を確かめる。**いまのクラウドでは gRPC の口に届かない**（`values-cloud.yaml` はどのサービスにも
   `grpcPort` と `grpcClients` を宣言しない。gRPC 専用のポートが立たず、Service と NetworkPolicy は 8080 だけを通し、通知は REST で呼ぶ）。
