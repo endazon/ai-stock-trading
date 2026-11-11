@@ -14,7 +14,7 @@
 # ---------------------------------------------------------------------------
 # NFR, IADR-0609, #1526: 基底イメージは digest で固定する（2026-11-05 時点の 10.0 の manifest list の digest。aspnet は 10.0.14）。
 # 更新は Dependabot（.github/dependabot.yml の docker）が digest ごと提案する。
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:212fe4cb74627d5adf9817a4088906ae3edff1bd853bb27565d4b46731efe61e AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea AS build
 ARG SERVICE_PROJECT
 WORKDIR /src
 # 単一情報源（SDK/CPM/import-chain props）を先に投入する。
