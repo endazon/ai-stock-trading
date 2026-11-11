@@ -21,7 +21,7 @@
 # 他イメージ同様 mcr は pull 可能）。runtime-deps:8.0-jammy は Ubuntu 22.04 最小＋C/C++ ランタイム native 依存。
 # 🔴 NFR, IADR-0639: 基底イメージは digest で固定する（2026-11-07 時点の 8.0-jammy の manifest list の digest）。
 # 更新は Dependabot（.github/dependabot.yml の docker・/deploy/opend）が digest ごと提案する。
-FROM mcr.microsoft.com/dotnet/runtime-deps:8.0-jammy@sha256:6c2897cdeeeab455da2601403cf9f64ca2d8726e3419ffc312f2accf527a059b
+FROM mcr.microsoft.com/dotnet/runtime-deps:8.0-jammy@sha256:01e4e9b15b57a2e8012a872dfe52ca333e0ee8a18e5a9bbd16830c86b0b232b0
 
 # コマンドライン OpenD の実行時依存。ssl/crypto/curl/protobuf は同梱 .so で解決するため、
 # ベース未収録の共有ライブラリのみ追加する。不足時は `ldd OpenD` を見て追加する。
