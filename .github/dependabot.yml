@@ -17,11 +17,20 @@ updates:
 
   # NFR, IADR-0609, #1526: Worker 共有イメージ（backend/Dockerfile）の基底イメージは digest で固定している。
   # digest の更新（基底のセキュリティ修正の取り込み）を提案させる。既定は自動マージしない（人手レビュー必須）。
+  # NFR, IADR-0649（#1624 / #1625 の是正）: 基底の大版（dotnet/sdk・dotnet/aspnet の 10.0 → 11.0）は出させない。
+  # 対象の枠（net10.0。IADR-0046）を変えるフレームワークの移行であり、依存の更新ではない。移行は人が IADR で決めて上げる。
+  # 同じ 10.0 の tag の digest の更新（基底のセキュリティ修正）と小版・修正版は従来どおり提案させる。
+  # dependency-name は registry の host を除いた名前（#1624 / #1625 の題の表記。MSP の IADR-0711 と同じ形）。
   - package-ecosystem: "docker"
     directory: "/backend"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "dotnet/sdk"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "dotnet/aspnet"
+        update-types: ["version-update:semver-major"]
 
   # 🔴 NFR, IADR-0639: OpenD のイメージ（deploy/opend/Dockerfile）の基底イメージも digest で固定している。digest の更新を提案させる。
   - package-ecosystem: "docker"
@@ -45,3 +54,13 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    # NFR, IADR-0649（#1630 の是正）: react と react-dom は完全に同じ版でないと実行時に落ちる
+    # （"Incompatible React versions"）。型（@types/react・@types/react-dom）も含めた 4 つを 1 本の PR で上げる。
+    # パターンは名前の完全一致（@tanstack/react-* 等は含めない）。
+    groups:
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
