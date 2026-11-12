@@ -5956,6 +5956,30 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
         assert.ok(entries.includes(want), `${want} が無い（実物: ${entries.join(' / ')}）`);
       }
     });
+
+    // NFR, IADR-0649: react 系の 4 つは 1 つの group（#1630 は react だけを上げ react-dom と版が割れて赤）。
+    // docker /backend は dotnet/sdk・dotnet/aspnet の大版を出させない（#1624 / #1625 の 10.0 → 11.0 は枠の移行）。
+    ok('NFR, IADR-0649: dependabot.yml は react 系 4 つを 1 group にし、/backend の dotnet 基底の大版を ignore する', () => {
+      const dep = fs.readFileSync(path.join(__dirname, '..', '.github', 'dependabot.yml'), 'utf8').replace(/^\s*#.*$/gm, '');
+      const blocks = dep.split(/\n(?=  - package-ecosystem: )/);
+      const block = (eco, dir) => {
+        const b = blocks.find((x) => x.includes(`- package-ecosystem: "${eco}"`) && x.includes(`directory: "${dir}"`));
+        assert.ok(b, `${eco} ${dir} の項が無い`);
+        return b;
+      };
+      const npm = block('npm', '/frontend');
+      const group = /groups:\n\s+react:\n\s+patterns:\n((?:\s+- "[^"]+"\n?)+)/.exec(npm);
+      assert.ok(group, 'npm /frontend に react の group が無い');
+      const patterns = [...group[1].matchAll(/- "([^"]+)"/g)].map((x) => x[1]).sort();
+      assert.deepStrictEqual(patterns, ['@types/react', '@types/react-dom', 'react', 'react-dom'], `react の group の中身が違う: ${patterns}`);
+      const backend = block('docker', '/backend');
+      for (const name of ['dotnet/sdk', 'dotnet/aspnet']) {
+        const re = new RegExp(`- dependency-name: "${name}"\\n\\s+update-types: \\["version-update:semver-major"\\]`);
+        assert.ok(re.test(backend), `docker /backend に ${name} の semver-major の ignore が無い`);
+      }
+      // 広げない: OpenD の基底（/deploy/opend）には ignore を足していない。
+      assert.ok(!/ignore:/.test(block('docker', '/deploy/opend')), 'docker /deploy/opend に ignore が足されている（本決定の範囲外）');
+    });
   }
 
   // --- NFR: 検査器が git へ渡す値をシェルを通さずに渡す（execSync の文字列連結をやめる） -----------------

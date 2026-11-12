@@ -586,6 +586,10 @@ msgstr "なし"
 msgid "のため、実弾（moomoo REAL）へ切り替えられません。先に損切りの実行機構を S0（ブローカー側逆指値）へ戻してください。"
 msgstr "のため、実弾（moomoo REAL）へ切り替えられません。先に損切りの実行機構を S0（ブローカー側逆指値）へ戻してください。"
 
+#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
+msgid "のテーマを外す"
+msgstr "のテーマを外す"
+
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "の使用率"
 msgstr "の使用率"
@@ -653,10 +657,6 @@ msgstr "をテーマから外す"
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 msgid "を併記します（基準通貨＝米ドル建て。統制の判定はすべて自己資金の USD 建てで行います）。"
 msgstr "を併記します（基準通貨＝米ドル建て。統制の判定はすべて自己資金の USD 建てで行います）。"
-
-#: src/features/sc02-risk-settings/components/ThemeConcentrationForm.tsx
-msgid "を外す"
-msgstr "を外す"
 
 #: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
 msgid "を持ちます。取引の統制操作（昇格承認・一時停止/再開・緊急停止）は Discord からのみ行えます。"

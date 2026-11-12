@@ -287,4 +287,15 @@ describe('SC-02 テーマごとの同時保有の上限（#1407・ADR-0071 決�
     await waitFor(() => expect(within(form).getByRole('button', { name: 'テーマの定義を保存' })).toBeEnabled());
     expect(putCalls(THEMES)).toHaveLength(0);
   });
+
+  // SC-02, WCAG 2.5.3（Label in Name）: テーマを外すボタンのアクセシブルネームは可視の「テーマを外す」を含む
+  // （axe 4.14 の label-content-name-mismatch。名前だけの「暗号資産を外す」は可視文言を含まず違反になる）。
+  it('テーマを外すボタンのアクセシブルネームは可視の文言を含む', async () => {
+    mockBff();
+    renderWithProviders(<RiskSettingsPage />);
+    const form = await themeForm();
+    const remove = within(form).getByRole('button', { name: '暗号資産のテーマを外す' });
+    expect(remove).toHaveTextContent('テーマを外す');
+    expect(within(form).queryByRole('button', { name: '暗号資産を外す' })).not.toBeInTheDocument();
+  });
 });
