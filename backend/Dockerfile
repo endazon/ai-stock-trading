@@ -48,7 +48,7 @@ RUN if grep -Ev '^[[:space:]]*(//|\*|/\*)' "$(dirname "${SERVICE_PROJECT}")/Prog
     fi
 RUN dotnet publish "${SERVICE_PROJECT}" -c Release -o /app --no-restore
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:1a48394b6f29d3a32c79d9edecd4abda0ecbe8776d567dbfc4590ed6979c740c AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:bfd912c83295ce66d4b706ebb8541b9f14259b0e76fbb88b2751f58ce2399d2e AS runtime
 ARG SERVICE_DLL
 # 🔴 NFR, IADR-0639: 稼働のイメージに HTTP の取得の道具（curl 等）を入れない（基底イメージに無いものを足さない）。
 # k8s の probe は kubelet の httpGet（イメージの中の道具を使わない）。compose の healthcheck（IADR-0049）は基底イメージの bash の
