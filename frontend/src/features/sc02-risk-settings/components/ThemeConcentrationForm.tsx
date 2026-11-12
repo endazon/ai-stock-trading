@@ -320,7 +320,9 @@ export function ThemeConcentrationForm({ view }: { view: ThemeConcentrationContr
                   setThemes(themes.filter((_, i) => i !== index));
                   setThemeIds(themeIds.filter((_, i) => i !== index));
                 }}
-                aria-label={`${theme.name || `${i18n._(msg`テーマ`)} ${index + 1}`}${i18n._(msg`を外す`)}`}
+                // SC-02, WCAG 2.5.3（Label in Name。axe `label-content-name-mismatch`）: アクセシブルネームは
+                // 可視の「テーマを外す」を含める（音声操作は見えている文言で押すため）。どのテーマかは前置きで足す。
+                aria-label={`${theme.name || `${i18n._(msg`テーマ`)} ${index + 1}`}${i18n._(msg`のテーマを外す`)}`}
               >
                 {i18n._(msg`テーマを外す`)}
               </Button>
