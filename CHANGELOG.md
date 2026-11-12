@@ -253,6 +253,7 @@
 
 ### 不具合修正
 
+- **SC-02**: テーマを外すボタンの名前に可視文言を含め @axe-core/playwright を 4.14.0 へ更新 (#1632) (78b56024)
 - **SC-04**: 再送の制限の注記・コメント・画面の文言を「暫定値・実測待ち」から確定値へ直す（値は不変） (#1619) (3dd268b7)
 - **NFR**: 索引追随の検査器が旧配置 docs/adr/ を見ず再編前の範囲で偽陰性になっていたのを直し、実コミットの回帰の素材を CI で取得して欠落を赤にする (#1617) (a9073ba3)
 - **NFR**: 存在しない IADR-0292 の引用を正しい IADR へ直す (#1616) (3c86efa4)
@@ -623,6 +624,7 @@
 
 ### ドキュメント
 
+- **NFR**: CHANGELOG を自動更新 (#1620) (d4ebaeb3)
 - **NFR**: CHANGELOG を自動更新 (#1618) (94367125)
 - **NFR**: CHANGELOG を自動更新 (#1614) (0dcdf51a)
 - **NFR**: CHANGELOG を自動更新 (#1610) (ca1628c7)
@@ -840,6 +842,14 @@
 
 ### その他
 
+- **deps-dev**: bump jsdom from 25.0.1 to 31.0.0 in /frontend (#1627) (3051d013)
+- **NFR**: Dependabot の react 系を 1 group にして 19.3 へ揃え /backend の .NET 基底の大版を出させない (#1634) (cefbf293)
+- **deps-dev**: bump @playwright/test from 1.64.1 to 1.65.0 in /frontend (#1631) (5438f9a6)
+- **deps**: bump @tanstack/react-router from 1.170.32 to 1.170.46 in /frontend (#1628) (1eedc156)
+- **deps**: bump dotnet/runtime-deps from `6c2897c` to `01e4e9b` in /deploy/opend (#1626) (cdc8b6b6)
+- **deps**: bump anthropics/claude-code-action from 1.0.268 to 1.0.269 (#1623) (0572cd32)
+- **deps**: bump peter-evans/create-pull-request from 8.1.1 to 8.1.2 (#1622) (d86b0126)
+- **deps**: bump softprops/action-gh-release from 3.0.3 to 3.0.4 (#1621) (723a67d7)
 - **NFR**: フロントエンドの vitest 5・plugin-react 6（vite 8）・@lingui/* 6.12 を 1 本で上げる (#1604) (baf41579)
 - **deps-dev**: bump @playwright/test from 1.61.1 to 1.64.1 in /frontend (#1602) (b2a2e876)
 - **deps-dev**: bump @types/node from 22.20.1 to 26.6.6 in /frontend (#1599) (67e06c08)
