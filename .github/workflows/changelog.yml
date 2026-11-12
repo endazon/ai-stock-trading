@@ -56,7 +56,7 @@ jobs:
       #   c) 現状のまま運用し、当該 PR のチェックを手動承認する（毎回の手作業が必要）。
       - name: Create PR with CHANGELOG update
         if: startsWith(github.ref, 'refs/heads/')
-        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        uses: peter-evans/create-pull-request@15733dbdfeedb4f7fdb73d13c6f5ac83b710fab8 # v8.1.2
         with:
           token: ${{ secrets.AUTOMATION_PR_TOKEN || secrets.GITHUB_TOKEN }}
           add-paths: CHANGELOG.md
