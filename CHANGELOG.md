@@ -624,6 +624,7 @@
 
 ### ドキュメント
 
+- **NFR**: CHANGELOG を自動更新 (#1633) (d0db9425)
 - **NFR**: CHANGELOG を自動更新 (#1620) (d4ebaeb3)
 - **NFR**: CHANGELOG を自動更新 (#1618) (94367125)
 - **NFR**: CHANGELOG を自動更新 (#1614) (0dcdf51a)
@@ -842,6 +843,14 @@
 
 ### その他
 
+- **deps**: bump lucide-react from 0.577.0 to 1.70.0 in /frontend (#1641) (5a37f6ee)
+- **deps**: bump @tanstack/react-query from 5.105.3 to 5.107.1 in /frontend (#1639) (b3e34df3)
+- **deps-dev**: bump @testing-library/dom from 10.4.1 to 10.4.2 in /frontend (#1642) (5b6e583b)
+- **deps-dev**: bump @testing-library/react from 16.3.2 to 16.3.3 in /frontend (#1637) (ad6f8b7b)
+- **deps**: bump azure/setup-helm from 5.0.1 to 5.1.0 (#1640) (9a5d9eff)
+- **deps**: bump anthropics/claude-code-action from 1.0.269 to 1.0.270 (#1638) (d610306f)
+- **deps**: bump dotnet/aspnet from `1a48394` to `bfd912c` in /backend (#1636) (835bee97)
+- **deps**: bump dotnet/sdk from `212fe4c` to `fe0fd4e` in /backend (#1635) (2b815917)
 - **deps-dev**: bump jsdom from 25.0.1 to 31.0.0 in /frontend (#1627) (3051d013)
 - **NFR**: Dependabot の react 系を 1 group にして 19.3 へ揃え /backend の .NET 基底の大版を出させない (#1634) (cefbf293)
 - **deps-dev**: bump @playwright/test from 1.64.1 to 1.65.0 in /frontend (#1631) (5438f9a6)
